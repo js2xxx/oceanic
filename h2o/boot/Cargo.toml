@@ -1,0 +1,12 @@
+[package]
+name = "h2o_boot"
+version = "0.1.0"
+authors = ["徐启航 <akucxy@163.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+uefi = "0.7"
+uefi-services = "0.4"
+log = "0.4"

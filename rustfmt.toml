@@ -1,0 +1,10 @@
+max_width = 100
+hard_tabs = false
+tab_spaces = 6
+reorder_imports = true
+reorder_modules = true
+remove_nested_parens = true
+edition = '2018'
+merge_derives = true
+use_try_shorthand = true
+use_field_init_shorthand = true
