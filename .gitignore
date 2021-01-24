@@ -3,3 +3,5 @@
 target
 build
 /debug
+
+Cargo.lock
