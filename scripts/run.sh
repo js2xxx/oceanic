@@ -3,5 +3,15 @@
 if [ $1 = "qemu" ]; then
       qemu-system-x86_64 -L /usr/share/ovmf -bios OVMF.fd \
             -m 4096 -cpu max -smp $2 -serial file:qemu.log \
-            -monitor stdio -drive format=raw,file=target/img/efi.img -boot c 
+            -drive format=raw,file=target/img/efi.img -boot c \
+            -monitor stdio $3 $4 $5 $6 $7 $8 $9
+elif [ $1 = "qdbg" ]; then
+      qemu-system-x86_64 -L /usr/share/ovmf -bios OVMF.fd \
+            -m 4096 -cpu max -smp $2 -serial file:qemu.log \
+            -drive format=raw,file=target/img/efi.img -boot c \
+            -monitor stdio -s -S $3 $4 $5 $6 $7 $8 $9
+elif [ $1 = "vbox" ]; then
+    /usr/lib/virtualbox/VirtualBoxVM --startvm "OV3" --dbg $2 $3 $4 $5 $6 $7 $8 $9
+elif [ $1 = "vmware" ]; then
+    vmplayer ~/vmware/OV3/OV3.vmx $2 $3 $4 $5 $6 $7 $8 $9
 fi

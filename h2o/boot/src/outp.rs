@@ -6,19 +6,17 @@ use uefi::proto::console::gop::*;
 static LOGO_FILE: &[u8] = include_bytes!("../../assets/Oceanic.500.bmp");
 static mut RESOLUTION: Option<(usize, usize)> = None;
 
-unsafe fn gop() -> NonNull<GraphicsOutput<'static>> {
-      let syst = uefi_services::system_table();
+unsafe fn gop<'a>(syst: &SystemTable<Boot>) -> NonNull<GraphicsOutput<'a>> {
       NonNull::new_unchecked(
-            syst.as_ref()
-                  .boot_services()
+            syst.boot_services()
                   .locate_protocol::<GraphicsOutput>()
                   .expect_success("Failed to locate graphics output protocol")
                   .get(),
       )
 }
 
-pub fn choose_mode(preferred_res: (usize, usize)) -> (usize, usize) {
-      let mut gop = unsafe { self::gop() };
+pub fn choose_mode(syst: &SystemTable<Boot>, preferred_res: (usize, usize)) -> (usize, usize) {
+      let mut gop = unsafe { self::gop(syst) };
       let mode = {
             let modes = unsafe { gop.as_ref() }.modes();
             let mut selected = None;
@@ -64,15 +62,13 @@ fn get_logo_data() -> (Vec<BltPixel>, (usize, usize)) {
       (blt_buffer, (size.0 as usize, size.1 as usize))
 }
 
-pub fn draw_logo() {
-      let mut gop = unsafe { self::gop() };
-
+pub fn draw_logo(syst: &SystemTable<Boot>) {
       let (blt_buffer, dims) = get_logo_data();
 
       let res = unsafe { RESOLUTION.expect("Unset resolution (should it be initialized?)") };
       let dest = ((res.0 - dims.0 as usize) / 2, (res.1 - dims.1 as usize) / 2);
 
-      unsafe { gop.as_mut() }
+      unsafe { self::gop(syst).as_mut() }
             .blt(BltOp::BufferToVideo {
                   buffer: &blt_buffer,
                   src: BltRegion::Full,

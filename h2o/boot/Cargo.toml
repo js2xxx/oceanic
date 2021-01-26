@@ -9,5 +9,4 @@ edition = "2018"
 [dependencies]
 log = "0.4"
 tinybmp = "0.2"
-uefi = "0.7"
-uefi-services = "0.4"
+uefi = { version = "0.7", features = [ "logger", "alloc" ]}

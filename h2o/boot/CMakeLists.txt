@@ -1,5 +1,5 @@
 if (CMAKE_BUILD_TYPE STREQUAL "Debug")
-    set(CARGO_CMD cargo xbuild --target x86_64-unknown-uefi)
+    set(CARGO_CMD cargo xbuild --target x86_64-unknown-uefi --verbose)
     set(GLOB_PATH ${CMAKE_CURRENT_BINARY_DIR}/x86_64-unknown-uefi/debug)
 else ()
     set(CARGO_CMD cargo xbuild --target x86_64-unknown-uefi --release)
