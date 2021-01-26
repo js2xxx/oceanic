@@ -15,13 +15,13 @@ pub fn get_mapping(syst: &SystemTable<Boot>) {
       let mut addr_max = 0;
 
       for block in mmap {
-            log::info!(
-                  "{:?}:\t ({:x})\t{:x} `\t {:x}",
-                  block.ty,
-                  block.virt_start,
-                  block.phys_start,
-                  block.page_count * 4096
-            );
+            // log::info!(
+            //       "{:?}:\t ({:x})\t{:x} `\t {:x}",
+            //       block.ty,
+            //       block.virt_start,
+            //       block.phys_start,
+            //       block.page_count * 4096
+            // );
 
             addr_max = core::cmp::max(
                   addr_max,

@@ -1,8 +1,8 @@
 if (CMAKE_BUILD_TYPE STREQUAL "Debug")
-    set(CARGO_CMD cargo xbuild --target x86_64-unknown-uefi --verbose)
+    set(CARGO_CMD cargo xbuild --target x86_64-unknown-uefi)
     set(GLOB_PATH ${CMAKE_CURRENT_BINARY_DIR}/x86_64-unknown-uefi/debug)
 else ()
-    set(CARGO_CMD cargo xbuild --target x86_64-unknown-uefi --release)
+    set(CARGO_CMD cargo xbuild --target x86_64-unknown-uefi)
     set(GLOB_PATH ${CMAKE_CURRENT_BINARY_DIR}/x86_64-unknown-uefi/rls)
 endif ()
 
@@ -14,7 +14,6 @@ add_custom_target(
 file(GLOB RS_EFI ${GLOB_PATH}/h2o_boot.efi)
 
 add_dependencies(GEN_IMG H2O_BOOT)
-
 add_custom_command(
     TARGET H2O_BOOT POST_BUILD
     COMMAND cp ${RS_EFI} ${CMAKE_SOURCE_DIR}/target/BootX64.efi

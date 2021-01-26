@@ -16,9 +16,15 @@ file(GLOB_RECURSE ASM_SRC "entry/x86_64/*.asm")
 
 set(CMAKE_ASM_NASM_FLAGS "-f elf64")
 
-add_link_options(-T ${CMAKE_CURRENT_SOURCE_DIR}/kernel.ld)
+add_link_options(-T ${CMAKE_CURRENT_SOURCE_DIR}/h2o.ld)
 
 add_executable(KERNEL ${ASM_SRC})
 add_dependencies(KERNEL H2O)
 
 target_link_libraries(KERNEL ${RS_LIB})
+
+add_dependencies(GEN_IMG KERNEL)
+add_custom_command(
+    TARGET KERNEL POST_BUILD
+    COMMAND cp KERNEL ${CMAKE_SOURCE_DIR}/target/H2O.k
+)

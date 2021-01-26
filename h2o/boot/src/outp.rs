@@ -18,8 +18,8 @@ unsafe fn gop<'a>(syst: &SystemTable<Boot>) -> NonNull<GraphicsOutput<'a>> {
 pub fn choose_mode(syst: &SystemTable<Boot>, preferred_res: (usize, usize)) -> (usize, usize) {
       let mut gop = unsafe { self::gop(syst) };
       let mode = {
-            let modes = unsafe { gop.as_ref() }.modes();
             let mut selected = None;
+            let modes = unsafe { gop.as_ref() }.modes();
             for mode in modes {
                   let mode = mode.unwrap();
 
