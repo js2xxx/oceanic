@@ -3,9 +3,11 @@
 #![feature(abi_efiapi)]
 #![feature(alloc_error_handler)]
 #![feature(asm)]
+#![feature(box_syntax)]
 #![feature(maybe_uninit_ref)]
 #![feature(nonnull_slice_from_raw_parts)]
 #![feature(panic_info_message)]
+#![feature(vec_into_raw_parts)]
 
 extern crate alloc;
 
@@ -14,7 +16,7 @@ mod mem;
 mod outp;
 mod rxx;
 
-use core::mem::{MaybeUninit, ManuallyDrop};
+use core::mem::{ManuallyDrop, MaybeUninit};
 use log::*;
 use uefi::logger::Logger;
 use uefi::prelude::*;
@@ -48,7 +50,7 @@ unsafe fn init_services(img: Handle, syst: &SystemTable<Boot>) {
       .expect_success("Failed to subscribe exit_boot_services callback");
 
       file::init(img, syst);
-      mem::init();
+      mem::init(syst);
 }
 
 #[entry]
@@ -60,7 +62,7 @@ fn efi_main(img: Handle, syst: SystemTable<Boot>) -> Status {
       outp::draw_logo(&syst);
 
       let h2o = ManuallyDrop::new(file::load("\\EFI\\Oceanic\\H2O.k"));
-      let (entry, size) = file::map(&h2o);
+      let (entry, size) = file::map(&syst, &h2o);
 
       let rsdp = mem::get_acpi_rsdp(&syst);
       let mut buffer = alloc::vec![0; mem::PAGE_SIZE];

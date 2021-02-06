@@ -50,7 +50,7 @@ fn get_logo_data() -> (Vec<BltPixel>, (usize, usize)) {
       let blt_data = unsafe {
             let data = bmp.image_data();
             core::slice::from_raw_parts(
-                  data.as_ptr() as *const BltPixel,
+                  data.as_ptr().cast(),
                   data.len() * core::mem::size_of::<u8>() / core::mem::size_of::<BltPixel>(),
             )
       };

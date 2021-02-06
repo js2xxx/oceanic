@@ -4,20 +4,18 @@
 #![feature(step_trait)]
 #![feature(step_trait_ext)]
 
+pub mod addr;
 pub mod alloc;
 pub mod entry;
 pub mod level;
 
-use core::num::NonZeroUsize;
 use core::ops::Range;
-use core::ops::{Deref, DerefMut};
 use core::ptr::NonNull;
 
+pub use addr::{LAddr, PAddr};
 pub use alloc::PageAlloc;
 pub use entry::{Attr, Entry};
 pub use level::Level;
-
-pub type PAddr = NonZeroUsize;
 
 pub const PAGE_SHIFT: usize = 12;
 pub const PAGE_SIZE: usize = 1 << PAGE_SHIFT;
@@ -29,9 +27,6 @@ pub const NR_ENTRIES: usize = 1 << NR_ENTRIES_SHIFT;
 pub const CANONICAL_PREFIX: usize = 0xFFFF_0000_0000_0000;
 
 pub const RECURSIVE_IDX: usize = 510;
-
-#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub struct LAddr(NonNull<u8>);
 
 #[derive(Copy, Clone, Debug)]
 pub enum Error {
@@ -53,34 +48,6 @@ pub struct MapInfo {
       pub id_off: usize,
 }
 
-impl Deref for LAddr {
-      type Target = NonNull<u8>;
-
-      fn deref(&self) -> &Self::Target {
-            &self.0
-      }
-}
-
-impl DerefMut for LAddr {
-      fn deref_mut(&mut self) -> &mut Self::Target {
-            &mut self.0
-      }
-}
-
-impl LAddr {
-      pub fn new(ptr: NonNull<u8>) -> Self {
-            LAddr(ptr)
-      }
-
-      pub fn val(&self) -> usize {
-            self.as_ptr() as usize
-      }
-
-      pub fn advance(&mut self, offset: usize) {
-            self.0 = NonNull::new(unsafe { self.0.as_ptr().add(offset) }).expect("Pointer is zero")
-      }
-}
-
 impl Error {
       fn is_misaligned_invalid(&self) -> bool {
             matches!(
@@ -97,8 +64,7 @@ impl Error {
 impl MapInfo {
       fn advance(&mut self, offset: usize) {
             self.virt.start.advance(offset);
-            self.phys =
-                  NonZeroUsize::new(self.phys.get() + offset).expect("Physical address is zero");
+            self.phys = PAddr::new(*self.phys + offset);
       }
 
       fn distance(&self, other: &MapInfo) -> Range<LAddr> {
@@ -124,7 +90,7 @@ fn create_table<'a, 'b: 'a>(
                               .alloc_zeroed(id_off)
                               .map_or(Err(Error::OutOfMemory), Ok)?;
                         let attr = Attr::INTERMEDIATE;
-                        *entry = Entry::new(Some(phys), attr, level);
+                        *entry = Entry::new(phys, attr, level);
                         Ok(entry
                               .get_table(id_off, level)
                               .expect("Failed to get the table of the entry"))
@@ -134,7 +100,7 @@ fn create_table<'a, 'b: 'a>(
 }
 
 unsafe fn invalidate_page(virt: LAddr) {
-      asm!("invlpg [{}]", in(reg) virt.as_ptr());
+      asm!("invlpg [{}]", in(reg) *virt);
 }
 
 fn new_page(
@@ -161,8 +127,8 @@ fn new_page(
             Err(Error::EntryExistent(true))
       } else {
             let attr = level.leaf_attr(attr);
-            table_mut[idx] = Entry::new(Some(phys), attr, level);
-            
+            table_mut[idx] = Entry::new(phys, attr, level);
+
             unsafe { invalidate_page(virt) };
             Ok(())
       }
@@ -182,7 +148,7 @@ fn check(virt: &Range<LAddr>, phys: Option<PAddr>) -> Result<(), Error> {
       let ret = Error::AddrMisaligned {
             vstart: misaligned(vstart, virt.start),
             vend: misaligned(vend, virt.end),
-            phys: phys.and_then(|phys| misaligned(phys.get(), phys)),
+            phys: phys.and_then(|phys| misaligned(*phys, phys)),
       };
       if !ret.is_misaligned_invalid() {
             return Err(ret);
@@ -247,7 +213,7 @@ fn split_table(
       let mut table = create_table(entry, level, id_off, allocator)?;
       let table_mut = unsafe { table.as_mut() };
       for (i, item) in table_mut.iter_mut().enumerate() {
-            let item_phys = PAddr::new(phys.map_or(0, |p| p.get()) + i * item_level.page_size());
+            let item_phys = PAddr::new(*phys + i * item_level.page_size());
             *item = Entry::new(item_phys, item_attr, item_level);
       }
 

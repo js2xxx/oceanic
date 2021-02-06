@@ -93,7 +93,7 @@ impl Level {
 
       #[inline]
       pub fn addr_idx(&self, addr: LAddr, end: bool) -> usize {
-            let val = addr.as_ptr() as u64;
+            let val = *addr as u64;
             let ret = ((val & self.addr_mask()) >> self.page_bits()) as usize & (NR_ENTRIES - 1);
             if end && ret == 0 {
                   NR_ENTRIES

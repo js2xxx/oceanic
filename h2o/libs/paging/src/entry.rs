@@ -2,7 +2,6 @@ use crate::{level::Level, NR_ENTRIES};
 use crate::{PAddr, ENTRY_SIZE_SHIFT};
 
 use bitflags::bitflags;
-use core::num::NonZeroUsize;
 use core::ptr::NonNull;
 use static_assertions::*;
 
@@ -64,14 +63,14 @@ impl From<Entry> for Attr {
 }
 
 impl Entry {
-      pub fn get(self, level: Level) -> (Option<PAddr>, Attr) {
+      pub fn get(self, level: Level) -> (PAddr, Attr) {
             let attr = Attr::from(self);
-            let phys = NonZeroUsize::new((self.0 & level.addr_mask()) as usize);
+            let phys = PAddr::new((self.0 & level.addr_mask()) as usize);
             (phys, attr)
       }
 
-      pub fn new(phys: Option<PAddr>, attr: Attr, level: Level) -> Self {
-            let phys = phys.map_or(0, |phys| phys.get() as u64) & level.addr_mask();
+      pub fn new(phys: PAddr, attr: Attr, level: Level) -> Self {
+            let phys = *phys as u64 & level.addr_mask();
             Entry(phys | attr.bits)
       }
 
@@ -82,7 +81,7 @@ impl Entry {
       pub(crate) fn get_table(&self, id_off: usize, level: Level) -> Option<NonNull<[Entry]>> {
             let (phys, attr) = self.get(level);
             if attr.contains(Attr::PRESENT) && attr.has_table(level) {
-                  NonNull::new((phys.map_or(0, |p| p.get()) + id_off) as *mut Entry)
+                  NonNull::new(phys.to_laddr(id_off).cast())
                         .map(|r| NonNull::slice_from_raw_parts(r, NR_ENTRIES))
             } else {
                   None
@@ -90,7 +89,7 @@ impl Entry {
       }
 
       pub fn is_leaf(&self, level: Level) -> bool {
-            let (phys, attr) = self.get(level);
-            phys.is_some() && attr.contains(level.leaf_attr(Attr::empty()))
+            let (_, attr) = self.get(level);
+            attr.contains(level.leaf_attr(Attr::empty()))
       }
 }

@@ -6,9 +6,9 @@ pub trait PageAlloc {
 
       fn alloc_zeroed(&mut self, id_off: usize) -> Option<PAddr> {
             let phys = self.alloc()?;
-            let virt = phys.get() + id_off;
+            let virt = phys.to_laddr(id_off);
 
-            let page = unsafe { core::slice::from_raw_parts_mut(virt as *mut u8, PAGE_SIZE)};
+            let page = unsafe { core::slice::from_raw_parts_mut(*virt, PAGE_SIZE)};
             page.copy_from_slice(&[0; PAGE_SIZE]);
             
             Some(phys)
