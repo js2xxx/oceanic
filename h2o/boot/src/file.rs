@@ -98,6 +98,62 @@ fn flags_to_pg_attr(flags: u32) -> paging::Attr {
       ret
 }
 
+fn load_prog(
+      syst: &SystemTable<Boot>,
+      flags: u32,
+      virt: paging::LAddr,
+      phys: paging::PAddr,
+      fsize: usize,
+      msize: usize,
+) {
+      log::trace!(
+            "file::load_prog: flags = {:?}, virt = {:?}, phys = {:?}, fsize = {:?}, msize = {:?}",
+            flags,
+            virt,
+            phys,
+            fsize,
+            msize
+      );
+
+      let pg_attr = flags_to_pg_attr(flags);
+      let (vstart, vend) = (virt.val(), virt.val() + fsize);
+
+      if fsize > 0 {
+            let virt = paging::LAddr::from(vstart)..paging::LAddr::from(vend);
+            crate::mem::maps(syst, virt, phys, pg_attr).expect("Failed to map virtual memory");
+      }
+
+      if msize > fsize {
+            let extra = msize - fsize;
+            let phys = crate::mem::alloc(syst)
+                  .alloc_n(extra >> paging::PAGE_SHIFT)
+                  .expect("Failed to allocate extra memory");
+            let virt = paging::LAddr::from(vend)..paging::LAddr::from(vend + extra);
+            crate::mem::maps(syst, virt, phys, pg_attr).expect("Failed to map virtual memory");
+      }
+}
+
+fn load_tls(size: usize) {
+      log::trace!("file::map: loading TLS: size = {:?}", size);
+
+      unsafe {
+            let tls_vec = alloc::vec::Vec::<u8>::with_capacity(size + size_of::<*mut usize>());
+            let (tls, _, _) = tls_vec.into_raw_parts();
+            let self_ptr = tls.add(size).cast::<usize>();
+            // TLS's self-pointer is written its physical address there,
+            // and therefore should be modified in the kernel.
+            self_ptr.write(self_ptr as usize);
+
+            const FS_BASE: u64 = 0xC0000100;
+            asm!(
+                  "wrmsr",
+                  in("ecx") FS_BASE,
+                  in("eax") self_ptr,
+                  in("edx") self_ptr as u64 >> 32
+            );
+      };
+}
+
 pub fn map(syst: &SystemTable<Boot>, data: &[u8]) -> (*mut u8, Option<usize>) {
       log::trace!(
             "file::map: syst = {:?}, data = {:?}",
@@ -116,69 +172,23 @@ pub fn map(syst: &SystemTable<Boot>, data: &[u8]) -> (*mut u8, Option<usize>) {
       let mut tls_size = None;
       for phdr in elf.program_headers() {
             match phdr.ph_type() {
-                  ProgramType::LOAD => {
-                        let fsize = round_up_p2(phdr.filesz() as usize, paging::PAGE_SIZE);
-                        let msize = round_up_p2(phdr.memsz() as usize, paging::PAGE_SIZE);
-                        log::trace!(
-                              "file::map: loading PHDR: flags = {:?}, fsize = {:?}, msize = {:?}",
-                              phdr.flags(),
-                              fsize,
-                              msize
-                        );
+                  ProgramType::LOAD => load_prog(
+                        syst,
+                        phdr.flags(),
+                        paging::LAddr::from(phdr.vaddr() as usize),
+                        paging::PAddr::new(
+                              unsafe { data.as_ptr().add(phdr.offset() as usize) } as usize
+                        ),
+                        round_up_p2(phdr.filesz() as usize, paging::PAGE_SIZE),
+                        round_up_p2(phdr.memsz() as usize, paging::PAGE_SIZE),
+                  ),
 
-                        let pg_attr = flags_to_pg_attr(phdr.flags());
-                        let (vstart, vend) = (phdr.vaddr() as usize, phdr.vaddr() as usize + fsize);
-
-                        if fsize > 0 {
-                              let phys = paging::PAddr::new(unsafe {
-                                    data.as_ptr().add(phdr.offset() as usize)
-                              }
-                                    as usize);
-                              let virt = paging::LAddr::from(vstart)..paging::LAddr::from(vend);
-                              crate::mem::maps(syst, virt, phys, pg_attr)
-                                    .expect("Failed to map virtual memory");
-                        }
-
-                        if msize > fsize {
-                              let extra = msize - fsize;
-                              let phys = crate::mem::alloc(syst)
-                                    .alloc_n(extra >> paging::PAGE_SHIFT)
-                                    .expect("Failed to allocate extra memory");
-                              let virt =
-                                    paging::LAddr::from(vend)..paging::LAddr::from(vend + extra);
-                              crate::mem::maps(syst, virt, phys, pg_attr)
-                                    .expect("Failed to map virtual memory");
-                        }
-                  }
                   ProgramType::Unknown(7) => {
                         let ts = phdr.memsz() as usize;
                         tls_size = Some(ts);
-
-                        log::trace!(
-                              "file::map: loading TLS: flags = {:?}, size = {:?}",
-                              phdr.flags(),
-                              ts,
-                        );
-
-                        unsafe {
-                              let tls_vec = alloc::vec::Vec::<u8>::with_capacity(
-                                    ts + size_of::<*mut usize>(),
-                              );
-                              let (tls, _, _) = tls_vec.into_raw_parts();
-                              let self_ptr = tls.add(ts).cast::<usize>();
-                              // TLS's self-pointer is written its physical address there,
-                              // and therefore should be modified in the kernel.
-                              self_ptr.write(self_ptr as usize);
-
-                              const FS_BASE: u64 = 0xC0000100;
-                              asm!(
-                                    "wrmsr",
-                                    in("ecx") FS_BASE,
-                                    in("eax") self_ptr,
-                                    in("edx") self_ptr as u64 >> 32
-                              );
-                        };
+                        load_tls(ts);
                   }
+
                   _ => {}
             }
       }
