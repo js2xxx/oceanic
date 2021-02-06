@@ -1,3 +1,12 @@
+//! The x86_64 UEFI boot loader for H2O kernel.
+//!
+//! The H2O's boot loader simply loads the kernel file and binary data for initialization, and then 
+//! sets up some basic environment variables for it.
+//! 
+//! In order to properly boot H2O, a kernel file and its binary data - initial memory FS is needed.
+//!
+//! TODO: Add more explanation
+
 #![no_std]
 #![no_main]
 #![feature(abi_efiapi)]
@@ -24,15 +33,17 @@ use uefi::table::boot::{EventType, Tpl};
 
 static mut LOGGER: MaybeUninit<Logger> = MaybeUninit::uninit();
 
+/// Initialize `log` crate for logging messages.
 unsafe fn init_log(syst: &SystemTable<Boot>, level: log::LevelFilter) {
       let stdout = syst.stdout();
       LOGGER.as_mut_ptr().write(Logger::new(stdout));
       log::set_logger(LOGGER.assume_init_ref()).expect("Failed to set logger");
-      // paging::set_logger(LOGGER.assume_init_ref()).expect("Failed to set logger for paging");
       log::set_max_level(level);
 }
 
+/// Initialize high-level boot services such as memory, logging and FS.
 unsafe fn init_services(img: Handle, syst: &SystemTable<Boot>) {
+      /// A callback disabling logging service right before exiting UEFI boot services.
       fn exit_boot_services_callback(_: uefi::Event) {
             unsafe { LOGGER.assume_init_mut().disable() };
             uefi::alloc::exit_boot_services();
@@ -41,6 +52,7 @@ unsafe fn init_services(img: Handle, syst: &SystemTable<Boot>) {
       let bs = &syst.boot_services();
 
       uefi::alloc::init(bs);
+
       init_log(&syst, log::LevelFilter::Info);
 
       bs.create_event(
@@ -51,6 +63,7 @@ unsafe fn init_services(img: Handle, syst: &SystemTable<Boot>) {
       .expect_success("Failed to subscribe exit_boot_services callback");
 
       file::init(img, syst);
+
       mem::init(syst);
 }
 
@@ -65,7 +78,7 @@ fn efi_main(img: Handle, syst: SystemTable<Boot>) -> Status {
       let (h2o_addr, ksize) = file::load(&syst, "\\EFI\\Oceanic\\H2O.k");
       log::info!("Kernel file loaded at {:?}, ksize = {:?}", h2o_addr, ksize);
       let h2o = unsafe { core::slice::from_raw_parts(*h2o_addr as *mut u8, ksize) };
-      let (entry, tls_size) = file::map(&syst, &h2o);
+      let (entry, tls_size) = file::map_elf(&syst, &h2o);
 
       let rsdp = mem::get_acpi_rsdp(&syst);
       let mut buffer = alloc::vec![0; mem::PAGE_SIZE];

@@ -1,31 +1,49 @@
+//! The FS module of H2O's boot loader.
+
 use core::mem::size_of;
 use elf_rs::*;
 use uefi::prelude::*;
 use uefi::proto::loaded_image::*;
 use uefi::proto::media::{file::File, *};
 
+/// The volume where the boot loader and other files are located.
 static mut LOCAL_VOL: Option<file::Directory> = None;
 
+/// Initialize the FS module.
 pub fn init(img: Handle, syst: &SystemTable<Boot>) {
+      log::trace!("file::init: syst = {:?}", syst as *const _);
+
       let bs = syst.boot_services();
 
+      // Get the boot loader image.
       let local_img = bs
             .handle_protocol::<LoadedImage>(img)
             .expect_success("Failed to locate loaded image protocol");
+
+      // Get the file system of the device where the BL image is located.
       let fs = bs
             .handle_protocol::<fs::SimpleFileSystem>(unsafe { &*local_img.get() }.device())
             .expect_success("Failed to locate file system protocol");
 
       unsafe {
+            // Open the volume with the file system.
             LOCAL_VOL = Some((&mut *fs.get())
                   .open_volume()
                   .expect_success("Failed to open the local volume"));
       }
 }
 
+/// Load a file in the local volume.
+///
+/// # Returns
+///
+/// This function returns a tuple with 2 elements where the former element is the physical address
+/// of the loaded file, and the latter is the file size. It can be used to construct a slice to read
+/// data.
 pub fn load(syst: &SystemTable<Boot>, filename: &str) -> (paging::PAddr, usize) {
       log::trace!("file::load: filename = {}", filename);
 
+      // Take the volume out of the local static variable to keep consistency.
       let mut volume = unsafe {
             LOCAL_VOL
                   .take()
@@ -45,10 +63,14 @@ pub fn load(syst: &SystemTable<Boot>, filename: &str) -> (paging::PAddr, usize) 
             finfo.file_size() as usize
       };
 
-      let ksize_aligned = round_up_p2(ksize, paging::PAGE_SIZE);
-      let kfile_addr = crate::mem::alloc(syst)
-            .alloc_n(ksize_aligned >> paging::PAGE_SHIFT)
-            .expect("Failed to allocate memory");
+      let kfile_addr = {
+            // We need to manually allocate the memory for the kernel file instead of creating a new
+            // `Vec<u8>` because we need to align the file properly and the latter is badly aligned.
+            let ksize_aligned = round_up_p2(ksize, paging::PAGE_SIZE);
+            crate::mem::alloc(syst)
+                  .alloc_n(ksize_aligned >> paging::PAGE_SHIFT)
+                  .expect("Failed to allocate memory")
+      };
       let mut kfile_data =
             unsafe { core::slice::from_raw_parts_mut(*kfile_addr as *mut u8, ksize) };
 
@@ -70,6 +92,7 @@ pub fn load(syst: &SystemTable<Boot>, filename: &str) -> (paging::PAddr, usize) 
             _ => panic!("Kernel file should be a regular file"),
       }
 
+      // Put back the local volume.
       unsafe { LOCAL_VOL = Some(volume) };
       (kfile_addr, ksize)
 }
@@ -79,11 +102,9 @@ fn round_up_p2(x: usize, u: usize) -> usize {
       (x.wrapping_sub(1) | (u - 1)).wrapping_add(1)
 }
 
-#[inline]
-fn round_down_p2(x: usize, u: usize) -> usize {
-      x & !(u - 1)
-}
-
+/// Transform the flags of a ELF program header into the attribute of a paging entry.
+///
+/// In this case, we only focus on the read/write-ability and executability.
 fn flags_to_pg_attr(flags: u32) -> paging::Attr {
       const PF_W: u32 = 0x2;
       const PF_X: u32 = 0x1;
@@ -98,6 +119,18 @@ fn flags_to_pg_attr(flags: u32) -> paging::Attr {
       ret
 }
 
+/// Load a loadable ELF program header.
+///
+/// The program segment mapping is like the graph below:
+///
+///       |<----File size: Directly mapping----->|<-Extra: Allocation & Mapping->|
+///       |<----------------------Memory size----------------------------------->|
+///
+/// # Arguments
+/// * `virt` - The base linear address where the segment should be loaded.
+/// * `phys` - The base physical address where the segment is located.
+/// * `fsize` - The size of the file stored in the media.
+/// * `msize` - The size of the program required in the memory.
 fn load_prog(
       syst: &SystemTable<Boot>,
       flags: u32,
@@ -133,6 +166,7 @@ fn load_prog(
       }
 }
 
+/// Load a Thread-Local Storage (TLS) segment.
 fn load_tls(size: usize) {
       log::trace!("file::map: loading TLS: size = {:?}", size);
 
@@ -154,7 +188,13 @@ fn load_tls(size: usize) {
       };
 }
 
-pub fn map(syst: &SystemTable<Boot>, data: &[u8]) -> (*mut u8, Option<usize>) {
+/// Map a ELF executable into the memory.
+///
+/// # Returns
+/// 
+/// This function returns a tuple with 2 elements where the first element is the entry point of the 
+/// ELF executable and the second element is the TLS size of it.
+pub fn map_elf(syst: &SystemTable<Boot>, data: &[u8]) -> (*mut u8, Option<usize>) {
       log::trace!(
             "file::map: syst = {:?}, data = {:?}",
             syst as *const _,
