@@ -11,3 +11,4 @@ path = "src/kmain.rs"
 crate-type = ["staticlib"]
 
 [dependencies]
+paging = { path = "../libs/paging" }

@@ -7,6 +7,9 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+elf_rs = "0.1"
 log = "0.4"
+paging = { path = "../libs/paging" }
+raw-cpuid = "9.0"
 tinybmp = "0.2"
-uefi = { version = "0.7", features = [ "logger", "alloc" ]}
+uefi = { version = "0.7", features = [ "logger", "alloc" ] }

@@ -4,15 +4,17 @@
 #![feature(alloc_error_handler)]
 #![feature(asm)]
 #![feature(maybe_uninit_ref)]
+#![feature(nonnull_slice_from_raw_parts)]
 #![feature(panic_info_message)]
 
 extern crate alloc;
 
+mod file;
 mod mem;
 mod outp;
 mod rxx;
 
-use core::mem::MaybeUninit;
+use core::mem::{MaybeUninit, ManuallyDrop};
 use log::*;
 use uefi::logger::Logger;
 use uefi::prelude::*;
@@ -27,7 +29,7 @@ unsafe fn init_log(syst: &SystemTable<Boot>, level: log::LevelFilter) {
       log::set_max_level(level);
 }
 
-unsafe fn init_services(syst: &SystemTable<Boot>) {
+unsafe fn init_services(img: Handle, syst: &SystemTable<Boot>) {
       fn exit_boot_services_callback(_: uefi::Event) {
             unsafe { LOGGER.assume_init_mut().disable() };
             uefi::alloc::exit_boot_services();
@@ -44,18 +46,25 @@ unsafe fn init_services(syst: &SystemTable<Boot>) {
             Some(exit_boot_services_callback),
       )
       .expect_success("Failed to subscribe exit_boot_services callback");
+
+      file::init(img, syst);
+      mem::init();
 }
 
 #[entry]
-fn efi_main(_img: Handle, syst: SystemTable<Boot>) -> Status {
-      unsafe { init_services(&syst) };
+fn efi_main(img: Handle, syst: SystemTable<Boot>) -> Status {
+      unsafe { init_services(img, &syst) };
       info!("H2O UEFI loader for Oceanic OS .v3");
 
       outp::choose_mode(&syst, (1024, 768));
       outp::draw_logo(&syst);
 
+      let h2o = ManuallyDrop::new(file::load("\\EFI\\Oceanic\\H2O.k"));
+      let (entry, size) = file::map(&h2o);
+
       let rsdp = mem::get_acpi_rsdp(&syst);
-      mem::get_mapping(&syst);
+      let mut buffer = alloc::vec![0; mem::PAGE_SIZE];
+      mem::get_mmap(&syst, &mut buffer);
 
       loop {
             unsafe { asm!("pause") }
