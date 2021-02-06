@@ -2,7 +2,7 @@ use core::num::NonZeroUsize;
 use core::ops::{Deref, DerefMut};
 use core::ptr::NonNull;
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct PAddr(usize);
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -33,6 +33,12 @@ impl Deref for PAddr {
 impl DerefMut for PAddr {
       fn deref_mut(&mut self) -> &mut Self::Target {
             &mut self.0
+      }
+}
+
+impl core::fmt::Debug for PAddr {
+      fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+            write!(f, "PAddr({:#x})", self.0)
       }
 }
 

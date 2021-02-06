@@ -36,6 +36,8 @@ impl<'a> paging::alloc::PageAlloc for BootAlloc<'a> {
 }
 
 pub fn init(syst: &SystemTable<Boot>) {
+      log::trace!("mem::init: syst = {:?}", syst as *const _);
+
       let rt_addr = alloc(syst)
             .alloc_zeroed(EFI_ID_OFFSET)
             .expect("Failed to allocate a page");
@@ -50,10 +52,16 @@ pub fn init(syst: &SystemTable<Boot>) {
       let phys = paging::PAddr::new(0);
       let virt = paging::LAddr::from(0)..paging::LAddr::from(0x1_0000_0000);
       let pg_attr = paging::Attr::KERNEL_RW;
+
+      log::trace!(
+            "mapping kernel's pages 0 ~ 4G: root_phys = {:?}",
+            rt.as_ptr()
+      );
       maps(syst, virt, phys, pg_attr).expect("Failed to map virtual memory");
 }
 
 pub fn alloc(syst: &SystemTable<Boot>) -> BootAlloc {
+      log::trace!("mem::alloc: syst = {:?}", syst as *const _);
       BootAlloc {
             bs: &syst.boot_services(),
       }
@@ -65,6 +73,14 @@ pub fn maps(
       phys: paging::PAddr,
       attr: paging::Attr,
 ) -> Result<(), paging::Error> {
+      log::trace!(
+            "mem::maps: syst = {:?}, virt = {:?}, phys = {:?}, attr = {:?}",
+            syst as *const _,
+            virt,
+            phys,
+            attr
+      );
+
       let map_info = paging::MapInfo {
             virt,
             phys,
@@ -82,6 +98,12 @@ pub fn maps(
 }
 
 pub fn unmaps(syst: &SystemTable<Boot>, virt: Range<paging::LAddr>) -> Result<(), paging::Error> {
+      log::trace!(
+            "mem::unmaps: syst = {:?}, virt = {:?}",
+            syst as *const _,
+            virt,
+      );
+      
       paging::unmaps(
             unsafe { ROOT_TABLE.assume_init() },
             virt,

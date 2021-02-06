@@ -40,7 +40,7 @@ pub enum Error {
       EntryExistent(bool),
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct MapInfo {
       pub virt: Range<LAddr>,
       pub phys: PAddr,
@@ -78,6 +78,14 @@ fn create_table<'a, 'b: 'a>(
       id_off: usize,
       allocator: &'a mut impl PageAlloc,
 ) -> Result<NonNull<[Entry]>, Error> {
+      log::trace!(
+            "paging::create_table: entry = {:?}(value = {:?}), level = {:?}, id_off = {:?}, allocator = {:?}",
+            entry as *mut _,
+            *entry,
+            level, id_off,
+            allocator as *mut _
+      );
+
       assert!(level != Level::Pt, "Too low level");
 
       match entry.get_table(id_off, level) {
@@ -90,7 +98,11 @@ fn create_table<'a, 'b: 'a>(
                               .alloc_zeroed(id_off)
                               .map_or(Err(Error::OutOfMemory), Ok)?;
                         let attr = Attr::INTERMEDIATE;
-                        *entry = Entry::new(phys, attr, level);
+                        *entry = Entry::new(phys, attr, Level::Pt);
+                        log::trace!(
+                              "paging::create_table: allocated new table at phys {:?}",
+                              phys
+                        );
                         Ok(entry
                               .get_table(id_off, level)
                               .expect("Failed to get the table of the entry"))
@@ -112,12 +124,25 @@ fn new_page(
       id_off: usize,
       allocator: &mut impl PageAlloc,
 ) -> Result<(), Error> {
+      log::trace!(
+            "paging::new_page: root table = {:?}, virt = {:?}, phys = {:?}, attr = {:?}, level = {:?}, id_off = {:?}, allocator = {:?}",
+            root_table,
+            virt,
+            phys,
+            attr,
+            level,
+            id_off,
+            allocator as *mut _
+      );
+
       let mut table = root_table;
-      for lvl in Level::P4..level {
+      let mut lvl = Level::P4;
+      while lvl != level {
             let idx = lvl.addr_idx(virt, false);
             let table_mut = unsafe { table.as_mut() };
             let item = &mut table_mut[idx];
             table = create_table(item, lvl, id_off, allocator)?;
+            lvl = lvl.decrease().expect("Too low level");
       }
 
       let idx = level.addr_idx(virt, false);
@@ -135,11 +160,14 @@ fn new_page(
 }
 
 fn check(virt: &Range<LAddr>, phys: Option<PAddr>) -> Result<(), Error> {
+      log::trace!("paging::check: virt = {:?}, phys = {:?}", virt, phys,);
+
       #[inline]
       fn misaligned<Origin>(addr: usize, o: Origin) -> Option<Origin> {
             if addr & (PAGE_SIZE - 1) == 0 {
                   None
             } else {
+                  log::warn!("paging::check: misaligned address: {:?}", addr);
                   Some(o)
             }
       }
@@ -155,6 +183,7 @@ fn check(virt: &Range<LAddr>, phys: Option<PAddr>) -> Result<(), Error> {
       }
 
       if vstart >= vend {
+            log::warn!("paging::check: linear address range is empty");
             return Err(Error::RangeEmpty);
       }
 
@@ -166,13 +195,21 @@ pub fn maps(
       info: &MapInfo,
       allocator: &mut impl PageAlloc,
 ) -> Result<(), Error> {
+      log::trace!(
+            "paging::maps: root table = {:?}, info = {:?}, allocator = {:?}",
+            root_table,
+            info,
+            allocator as *mut _
+      );
+
       check(&info.virt, Some(info.phys))?;
 
       let mut rem_info = info.clone();
-      while !info.virt.is_empty() {
+      log::trace!("paging::maps: Begin spliting pages");
+      while !rem_info.virt.is_empty() {
             let level = core::cmp::min(
-                  Level::fit(info.virt.start.val()).expect("Misaligned start address"),
-                  Level::fit(info.virt.end.val() - info.virt.start.val())
+                  Level::fit(rem_info.virt.start.val()).expect("Misaligned start address"),
+                  Level::fit(rem_info.virt.end.val() - rem_info.virt.start.val())
                         .expect("Misaligned start address"),
             );
 
@@ -187,14 +224,19 @@ pub fn maps(
             );
             if ret.is_err() {
                   let done_virt = info.distance(&rem_info);
-                  let _ = unmaps(root_table, done_virt, info.id_off, allocator);
+                  if !done_virt.is_empty() {
+                        let _ = unmaps(root_table, done_virt, info.id_off, allocator);
+                  }
                   return ret;
             }
 
             let ps = level.page_size();
             rem_info.advance(ps);
+
+            log::trace!("paging::maps: Done new_page. rem = {:?}", &rem_info);
       }
 
+      log::trace!("paging::maps: mapping succeeded");
       Ok(())
 }
 
@@ -204,7 +246,7 @@ fn split_table(
       id_off: usize,
       allocator: &mut impl PageAlloc,
 ) -> Result<(), Error> {
-      let (phys, mut attr) = entry.get(level);
+      let (phys, mut attr) = entry.get(Level::Pt);
       entry.reset();
       attr &= !Attr::LARGE_PAT;
 
@@ -252,11 +294,13 @@ fn drop_page(
       allocator: &mut impl PageAlloc,
 ) -> Result<(), Error> {
       let mut table = root_table;
-      for lvl in Level::P4..level {
+      let mut lvl = Level::P4;
+      while lvl != level {
             let idx = lvl.addr_idx(virt, false);
             let table_mut = unsafe { table.as_mut() };
             let item = &mut table_mut[idx];
             table = get_or_split_table(item, lvl, id_off, allocator)?;
+            lvl = lvl.decrease().expect("Too low level");
       }
 
       let idx = level.addr_idx(virt, false);
@@ -278,6 +322,14 @@ pub fn unmaps(
       id_off: usize,
       allocator: &mut impl PageAlloc,
 ) -> Result<(), Error> {
+      log::trace!(
+            "paging::unmaps: root table = {:?}, virt = {:?}, id_off = {:?}, allocator = {:?}",
+            root_table,
+            virt,
+            id_off,
+            allocator as *mut _
+      );
+
       check(&virt, None)?;
 
       while !virt.is_empty() {
@@ -293,4 +345,8 @@ pub fn unmaps(
       }
 
       Ok(())
+}
+
+pub fn set_logger(logger: &'static dyn log::Log) -> Result<(), log::SetLoggerError> {
+      log::set_logger(logger)
 }

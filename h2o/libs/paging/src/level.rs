@@ -5,20 +5,26 @@ use core::convert::TryFrom;
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(usize)]
 pub enum Level {
-      Pt = 0,
-      Pd = 1,
-      Pdp = 2,
       P4 = 3,
+      Pdp = 2,
+      Pd = 1,
+      Pt = 0,
       // P5,
 }
 
 impl Level {
-      pub fn fit(addr: usize) -> Option<Level> {
-            for level in Level::P4 {
-                  if (addr & (level.page_size() - 1)) == 0 {
-                        return Some(level);
-                  }
+      pub fn fit(val: usize) -> Option<Level> {
+            log::trace!("paging::Level::fit: val = {:#x}", val);
+            if (val & (Level::Pdp.page_size() - 1)) == 0 {
+                  return Some(Level::Pdp);
             }
+            if (val & (Level::Pd.page_size() - 1)) == 0 {
+                  return Some(Level::Pd);
+            }
+            if (val & (Level::Pt.page_size() - 1)) == 0 {
+                  return Some(Level::Pt);
+            }
+            log::warn!("paging::Level::fit: unknown level");
             None
       }
 
@@ -114,37 +120,5 @@ impl TryFrom<usize> for Level {
                   3 => Ok(Level::P4),
                   _ => Err(()),
             }
-      }
-}
-
-impl Iterator for Level {
-      type Item = Level;
-
-      fn next(&mut self) -> Option<Self::Item> {
-            self.decrease()
-      }
-}
-
-unsafe impl core::iter::Step for Level {
-      fn steps_between(start: &Self, end: &Self) -> Option<usize> {
-            if *start < *end {
-                  None
-            } else {
-                  Some((*start as usize) - (*end as usize))
-            }
-      }
-
-      fn forward_checked(start: Self, count: usize) -> Option<Self> {
-            let raw = start as usize;
-            if raw > count {
-                  Some(Self::try_from(raw - count).ok()?)
-            } else {
-                  None
-            }
-      }
-
-      fn backward_checked(start: Self, count: usize) -> Option<Self> {
-            let raw = start as usize;
-            Self::try_from(raw + count).ok()
       }
 }

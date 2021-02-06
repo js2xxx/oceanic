@@ -23,7 +23,9 @@ pub fn init(img: Handle, syst: &SystemTable<Boot>) {
       }
 }
 
-pub fn load(filename: &str) -> alloc::vec::Vec<u8> {
+pub fn load(syst: &SystemTable<Boot>, filename: &str) -> (paging::PAddr, usize) {
+      log::trace!("file::load: filename = {}", filename);
+
       let mut volume = unsafe {
             LOCAL_VOL
                   .take()
@@ -43,27 +45,38 @@ pub fn load(filename: &str) -> alloc::vec::Vec<u8> {
             finfo.file_size() as usize
       };
 
-      let mut kfile_data = alloc::vec![0; ksize];
+      let ksize_aligned = round_up_p2(ksize, paging::PAGE_SIZE);
+      let kfile_addr = crate::mem::alloc(syst)
+            .alloc_n(ksize_aligned >> paging::PAGE_SHIFT)
+            .expect("Failed to allocate memory");
+      let mut kfile_data =
+            unsafe { core::slice::from_raw_parts_mut(*kfile_addr as *mut u8, ksize) };
+
       match kfile
             .into_type()
             .expect_success("Failed to deduce kernel file type")
       {
-            file::FileType::Regular(mut kfile) => assert!(
-                  kfile.read(&mut kfile_data)
-                        .expect_success("Failed to read kernel file")
-                        == ksize,
-                  "Failed to read whole kernel file"
-            ),
+            file::FileType::Regular(mut kfile) => {
+                  let asize = kfile
+                        .read(&mut kfile_data)
+                        .expect_success("Failed to read kernel file");
+                  assert!(
+                        asize == ksize,
+                        "Failed to read whole kernel file: read {:#x}, required {:#x}",
+                        asize,
+                        ksize
+                  );
+            }
             _ => panic!("Kernel file should be a regular file"),
       }
 
       unsafe { LOCAL_VOL = Some(volume) };
-      kfile_data
+      (kfile_addr, ksize)
 }
 
 #[inline]
 fn round_up_p2(x: usize, u: usize) -> usize {
-      ((x - 1) | (u - 1)) + 1
+      (x.wrapping_sub(1) | (u - 1)).wrapping_add(1)
 }
 
 #[inline]
@@ -86,6 +99,12 @@ fn flags_to_pg_attr(flags: u32) -> paging::Attr {
 }
 
 pub fn map(syst: &SystemTable<Boot>, data: &[u8]) -> (*mut u8, Option<usize>) {
+      log::trace!(
+            "file::map: syst = {:?}, data = {:?}",
+            syst as *const _,
+            data.as_ptr()
+      );
+
       let elf = Elf::from_bytes(data).expect("Failed to map ELF file");
       let elf = match elf {
             Elf::Elf64(e) => e,
@@ -93,24 +112,33 @@ pub fn map(syst: &SystemTable<Boot>, data: &[u8]) -> (*mut u8, Option<usize>) {
       };
 
       let u = elf.program_headers();
-      log::info!("{:?}", u[0]);
 
       let mut tls_size = None;
       for phdr in elf.program_headers() {
             match phdr.ph_type() {
                   ProgramType::LOAD => {
-                        let pg_attr = flags_to_pg_attr(phdr.flags());
-
                         let fsize = round_up_p2(phdr.filesz() as usize, paging::PAGE_SIZE);
-                        let phys = paging::PAddr::new(unsafe {
-                              data.as_ptr().add(phdr.offset() as usize)
-                        } as usize);
-                        let (vstart, vend) = (phdr.vaddr() as usize, phdr.vaddr() as usize + fsize);
-                        let virt = paging::LAddr::from(vstart)..paging::LAddr::from(vend);
-                        crate::mem::maps(syst, virt, phys, pg_attr)
-                              .expect("Failed to map virtual memory");
-
                         let msize = round_up_p2(phdr.memsz() as usize, paging::PAGE_SIZE);
+                        log::trace!(
+                              "file::map: loading PHDR: flags = {:?}, fsize = {:?}, msize = {:?}",
+                              phdr.flags(),
+                              fsize,
+                              msize
+                        );
+
+                        let pg_attr = flags_to_pg_attr(phdr.flags());
+                        let (vstart, vend) = (phdr.vaddr() as usize, phdr.vaddr() as usize + fsize);
+
+                        if fsize > 0 {
+                              let phys = paging::PAddr::new(unsafe {
+                                    data.as_ptr().add(phdr.offset() as usize)
+                              }
+                                    as usize);
+                              let virt = paging::LAddr::from(vstart)..paging::LAddr::from(vend);
+                              crate::mem::maps(syst, virt, phys, pg_attr)
+                                    .expect("Failed to map virtual memory");
+                        }
+
                         if msize > fsize {
                               let extra = msize - fsize;
                               let phys = crate::mem::alloc(syst)
@@ -125,6 +153,12 @@ pub fn map(syst: &SystemTable<Boot>, data: &[u8]) -> (*mut u8, Option<usize>) {
                   ProgramType::Unknown(7) => {
                         let ts = phdr.memsz() as usize;
                         tls_size = Some(ts);
+
+                        log::trace!(
+                              "file::map: loading TLS: flags = {:?}, size = {:?}",
+                              phdr.flags(),
+                              ts,
+                        );
 
                         unsafe {
                               let tls_vec = alloc::vec::Vec::<u8>::with_capacity(

@@ -16,6 +16,12 @@ unsafe fn gop<'a>(syst: &SystemTable<Boot>) -> NonNull<GraphicsOutput<'a>> {
 }
 
 pub fn choose_mode(syst: &SystemTable<Boot>, preferred_res: (usize, usize)) -> (usize, usize) {
+      log::trace!(
+            "outp::choose_mode: syst = {:?}, preferred_res = {:?}",
+            syst as *const _,
+            preferred_res
+      );
+
       let mut gop = unsafe { self::gop(syst) };
       let mode = {
             let mut selected = None;
@@ -43,6 +49,8 @@ pub fn choose_mode(syst: &SystemTable<Boot>, preferred_res: (usize, usize)) -> (
 }
 
 fn get_logo_data() -> (Vec<BltPixel>, (usize, usize)) {
+      log::trace!("outp::get_logo_data");
+
       let bmp = tinybmp::Bmp::from_slice(LOGO_FILE).expect("Failed to load logo");
 
       let size = bmp.dimensions();
@@ -63,6 +71,11 @@ fn get_logo_data() -> (Vec<BltPixel>, (usize, usize)) {
 }
 
 pub fn draw_logo(syst: &SystemTable<Boot>) {
+      log::trace!(
+            "outp::draw_logo: syst = {:?}",
+            syst as *const _,
+      );
+
       let (blt_buffer, dims) = get_logo_data();
 
       let res = unsafe { RESOLUTION.expect("Unset resolution (should it be initialized?)") };

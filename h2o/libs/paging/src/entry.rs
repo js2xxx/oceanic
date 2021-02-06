@@ -26,7 +26,7 @@ bitflags! {
             const LARGE_PAT   = 1 << 12;
             const EXE_DISABLE = 1 << 63;
 
-            const KERNEL_R    = Self::empty().bits;
+            const KERNEL_R    = Self::PRESENT.bits;
             const KERNEL_RNE  = Self::KERNEL_R.bits    | Self::EXE_DISABLE.bits;
             const KERNEL_RW   = Self::KERNEL_R.bits    | Self::WRITABLE.bits;
             const KERNEL_RWNE = Self::KERNEL_RNE.bits  | Self::WRITABLE.bits;
@@ -39,7 +39,7 @@ bitflags! {
       }
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone)]
 pub struct Entry(u64);
 const_assert!(core::mem::size_of::<Entry>() == 1 << ENTRY_SIZE_SHIFT);
 
@@ -79,8 +79,9 @@ impl Entry {
       }
 
       pub(crate) fn get_table(&self, id_off: usize, level: Level) -> Option<NonNull<[Entry]>> {
-            let (phys, attr) = self.get(level);
+            let (phys, attr) = self.get(Level::Pt);
             if attr.contains(Attr::PRESENT) && attr.has_table(level) {
+                  log::trace!("paging::Entry::get_table: There is a table: {:?}", *self);
                   NonNull::new(phys.to_laddr(id_off).cast())
                         .map(|r| NonNull::slice_from_raw_parts(r, NR_ENTRIES))
             } else {
@@ -91,5 +92,11 @@ impl Entry {
       pub fn is_leaf(&self, level: Level) -> bool {
             let (_, attr) = self.get(level);
             attr.contains(level.leaf_attr(Attr::empty()))
+      }
+}
+
+impl core::fmt::Debug for Entry {
+      fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+            write!(f, "Entry({:#x})", self.0)
       }
 }
