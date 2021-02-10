@@ -3,14 +3,25 @@ use core::ops::Range;
 use core::ptr::NonNull;
 use paging::PageAlloc;
 use uefi::prelude::*;
-use uefi::table::boot::{AllocateType, MemoryType};
+use uefi::table::boot;
 
-pub const PAGE_SHIFT: usize = 12;
-pub const PAGE_SIZE: usize = 1 << PAGE_SHIFT;
-
-const EFI_ID_OFFSET: usize = 0;
-const KERNEL_ID_OFFSET: usize = 0xFFFF_8000_0000_0000;
+pub const EFI_ID_OFFSET: usize = 0;
+pub const KERNEL_ID_OFFSET: usize = 0xFFFF_8000_0000_0000;
+const SIZE_4G: usize = 0x1_0000_0000;
+const KERNEL_PHYS_BASE: usize = 0xFFFF_9000_0000_0000;
+const PF_SIZE: usize = 0x18;
 static mut ROOT_TABLE: MaybeUninit<NonNull<[paging::Entry]>> = MaybeUninit::uninit();
+
+// pub enum MemoryType {
+//       Free,
+//       Acpi,
+//       Mmio,
+// }
+
+// pub struct MemoryBlock {
+//       ty: MemoryType,
+//       range: Range<paging::PAddr>,
+// }
 
 pub struct BootAlloc<'a> {
       bs: &'a BootServices,
@@ -19,7 +30,11 @@ pub struct BootAlloc<'a> {
 impl<'a> BootAlloc<'a> {
       pub fn alloc_n(&mut self, n: usize) -> Option<paging::PAddr> {
             self.bs
-                  .allocate_pages(AllocateType::AnyPages, MemoryType::LOADER_DATA, n)
+                  .allocate_pages(
+                        boot::AllocateType::AnyPages,
+                        boot::MemoryType::LOADER_DATA,
+                        n,
+                  )
                   .ok()
                   .map(|c| paging::PAddr::new(c.log() as usize))
       }
@@ -50,14 +65,15 @@ pub fn init(syst: &SystemTable<Boot>) {
       };
 
       let phys = paging::PAddr::new(0);
-      let virt = paging::LAddr::from(0)..paging::LAddr::from(0x1_0000_0000);
+      let virt_efi =
+            paging::LAddr::from(EFI_ID_OFFSET)..paging::LAddr::from(SIZE_4G + EFI_ID_OFFSET);
       let pg_attr = paging::Attr::KERNEL_RW;
 
       log::trace!(
             "mapping kernel's pages 0 ~ 4G: root_phys = {:?}",
             rt.as_ptr()
       );
-      maps(syst, virt, phys, pg_attr).expect("Failed to map virtual memory");
+      maps(syst, virt_efi, phys, pg_attr).expect("Failed to map virtual memory for H2O boot");
 }
 
 pub fn alloc(syst: &SystemTable<Boot>) -> BootAlloc {
@@ -103,7 +119,7 @@ pub fn unmaps(syst: &SystemTable<Boot>, virt: Range<paging::LAddr>) -> Result<()
             syst as *const _,
             virt,
       );
-      
+
       paging::unmaps(
             unsafe { ROOT_TABLE.assume_init() },
             virt,
@@ -114,22 +130,50 @@ pub fn unmaps(syst: &SystemTable<Boot>, virt: Range<paging::LAddr>) -> Result<()
       )
 }
 
-pub fn get_mmap(syst: &SystemTable<Boot>, buffer: &mut [u8]) {
-      let (key, mmap) = syst
+pub fn init_pf(syst: &SystemTable<Boot>) -> usize {
+      let size = syst.boot_services().memory_map_size();
+      let mut buffer = alloc::vec![0; size];
+      let (_key, mmap) = syst
             .boot_services()
-            .memory_map(buffer)
-            .expect_success("Failed to get memory mappings");
+            .memory_map(&mut buffer)
+            .expect_success("Failed to get the memory map");
 
       let mut addr_max = 0;
 
       for block in mmap {
             addr_max = core::cmp::max(
                   addr_max,
-                  block.phys_start + (block.page_count << PAGE_SHIFT),
+                  block.phys_start + (block.page_count << paging::PAGE_SHIFT),
             );
       }
-
       assert!(addr_max > 0);
+
+      let pf_buffer_size = PF_SIZE
+            * (super::round_up_p2(addr_max as usize, paging::PAGE_SIZE) >> paging::PAGE_SHIFT);
+      let pf_buffer = alloc(syst)
+            .alloc_n(pf_buffer_size >> paging::PAGE_SHIFT)
+            .expect("Failed to allocate the page frame buffer");
+
+      let pf_virt = paging::LAddr::from(KERNEL_PHYS_BASE)
+            ..paging::LAddr::from(KERNEL_PHYS_BASE + pf_buffer_size);
+      maps(syst, pf_virt, pf_buffer, paging::Attr::KERNEL_RWNE).expect("Failed to map page frames");
+
+      {
+            let phys = paging::PAddr::new(0);
+            let virt = paging::LAddr::from(KERNEL_ID_OFFSET)
+                  ..paging::LAddr::from(KERNEL_ID_OFFSET + addr_max as usize);
+            maps(syst, virt, phys, paging::Attr::KERNEL_RWNE)
+                  .expect("Failed to map physical pages identically");
+      }
+
+      size
+}
+
+pub fn commit_mapping() {
+      unsafe {
+            let cr3 = ROOT_TABLE.assume_init();
+            asm!("mov cr3, {}", in(reg) cr3.as_mut_ptr());
+      }
 }
 
 pub fn get_acpi_rsdp(syst: &SystemTable<Boot>) -> *const core::ffi::c_void {

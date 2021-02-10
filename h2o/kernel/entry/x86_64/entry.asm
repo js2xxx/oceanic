@@ -4,7 +4,7 @@ global kentry
 
 [section .text]
 kentry:
-      call  kmain
+      ; call  kmain
 
 .lp:
       hlt

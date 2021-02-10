@@ -1,8 +1,8 @@
 //! The x86_64 UEFI boot loader for H2O kernel.
 //!
-//! The H2O's boot loader simply loads the kernel file and binary data for initialization, and then 
+//! The H2O's boot loader simply loads the kernel file and binary data for initialization, and then
 //! sets up some basic environment variables for it.
-//! 
+//!
 //! In order to properly boot H2O, a kernel file and its binary data - initial memory FS is needed.
 //!
 //! TODO: Add more explanation
@@ -16,6 +16,7 @@
 #![feature(maybe_uninit_ref)]
 #![feature(nonnull_slice_from_raw_parts)]
 #![feature(panic_info_message)]
+#![feature(slice_ptr_get)]
 #![feature(vec_into_raw_parts)]
 
 extern crate alloc;
@@ -30,6 +31,12 @@ use log::*;
 use uefi::logger::Logger;
 use uefi::prelude::*;
 use uefi::table::boot::{EventType, Tpl};
+
+type KernelCall = extern "C" fn(
+      rsdp: *const core::ffi::c_void,
+      efi_mmap_paddr: paging::PAddr,
+      tls_size: usize,
+) -> !;
 
 static mut LOGGER: MaybeUninit<Logger> = MaybeUninit::uninit();
 
@@ -53,7 +60,11 @@ unsafe fn init_services(img: Handle, syst: &SystemTable<Boot>) {
 
       uefi::alloc::init(bs);
 
-      init_log(&syst, log::LevelFilter::Info);
+      if cfg!(debug_assertions) {
+            init_log(&syst, log::LevelFilter::Debug);
+      } else {
+            init_log(&syst, log::LevelFilter::Info);
+      }
 
       bs.create_event(
             EventType::SIGNAL_EXIT_BOOT_SERVICES,
@@ -76,17 +87,44 @@ fn efi_main(img: Handle, syst: SystemTable<Boot>) -> Status {
       outp::draw_logo(&syst);
 
       let (h2o_addr, ksize) = file::load(&syst, "\\EFI\\Oceanic\\H2O.k");
-      log::info!("Kernel file loaded at {:?}, ksize = {:?}", h2o_addr, ksize);
+      log::debug!("Kernel file loaded at {:?}, ksize = {:?}", h2o_addr, ksize);
       let h2o = unsafe { core::slice::from_raw_parts(*h2o_addr as *mut u8, ksize) };
       let (entry, tls_size) = file::map_elf(&syst, &h2o);
 
+      let mmap_size = mem::init_pf(&syst);
       let rsdp = mem::get_acpi_rsdp(&syst);
-      let mut buffer = alloc::vec![0; mem::PAGE_SIZE];
-      mem::get_mmap(&syst, &mut buffer);
+      let buffer_paddr = mem::alloc(&syst)
+            .alloc_n(round_up_p2(mmap_size, paging::PAGE_SIZE) >> paging::PAGE_SHIFT)
+            .expect("Failed to allocate memory map buffer");
+      let mut buffer = unsafe {
+            core::slice::from_raw_parts_mut(
+                  *buffer_paddr.to_laddr(mem::EFI_ID_OFFSET),
+                  paging::PAGE_SIZE,
+            )
+      };
 
-      log::info!("Reaching end");
+      log::debug!("Reaching end");
+      let (_runtime, _mmap) = syst
+            .exit_boot_services(img, &mut buffer)
+            .expect_success("Failed to exit EFI boot services");
 
+      mem::commit_mapping();
+
+      unsafe {
+            asm!(
+                  "call {}", 
+                  in(reg) entry, 
+                  in("rdi") rsdp, 
+                  in("rsi") *buffer_paddr, 
+                  in("rdx") tls_size.unwrap_or(0));
+      }
+      
       loop {
             unsafe { asm!("pause") }
       }
+}
+
+#[inline]
+fn round_up_p2(x: usize, u: usize) -> usize {
+      (x.wrapping_sub(1) | (u - 1)).wrapping_add(1)
 }

@@ -55,7 +55,7 @@ pub fn load(syst: &SystemTable<Boot>, filename: &str) -> (paging::PAddr, usize) 
             .expect_success("Failed to open kernel file");
 
       let ksize = {
-            let mut finfo_buffer = alloc::vec![0; super::mem::PAGE_SIZE];
+            let mut finfo_buffer = alloc::vec![0; paging::PAGE_SIZE];
             let finfo: &mut file::FileInfo = kfile
                   .get_info(&mut finfo_buffer)
                   .expect_success("Failed to get kernel file information");
@@ -66,7 +66,7 @@ pub fn load(syst: &SystemTable<Boot>, filename: &str) -> (paging::PAddr, usize) 
       let kfile_addr = {
             // We need to manually allocate the memory for the kernel file instead of creating a new
             // `Vec<u8>` because we need to align the file properly and the latter is badly aligned.
-            let ksize_aligned = round_up_p2(ksize, paging::PAGE_SIZE);
+            let ksize_aligned = super::round_up_p2(ksize, paging::PAGE_SIZE);
             crate::mem::alloc(syst)
                   .alloc_n(ksize_aligned >> paging::PAGE_SHIFT)
                   .expect("Failed to allocate memory")
@@ -95,11 +95,6 @@ pub fn load(syst: &SystemTable<Boot>, filename: &str) -> (paging::PAddr, usize) 
       // Put back the local volume.
       unsafe { LOCAL_VOL = Some(volume) };
       (kfile_addr, ksize)
-}
-
-#[inline]
-fn round_up_p2(x: usize, u: usize) -> usize {
-      (x.wrapping_sub(1) | (u - 1)).wrapping_add(1)
 }
 
 /// Transform the flags of a ELF program header into the attribute of a paging entry.
@@ -207,8 +202,6 @@ pub fn map_elf(syst: &SystemTable<Boot>, data: &[u8]) -> (*mut u8, Option<usize>
             _ => panic!("ELF64 file accepted only"),
       };
 
-      let u = elf.program_headers();
-
       let mut tls_size = None;
       for phdr in elf.program_headers() {
             match phdr.ph_type() {
@@ -219,8 +212,8 @@ pub fn map_elf(syst: &SystemTable<Boot>, data: &[u8]) -> (*mut u8, Option<usize>
                         paging::PAddr::new(
                               unsafe { data.as_ptr().add(phdr.offset() as usize) } as usize
                         ),
-                        round_up_p2(phdr.filesz() as usize, paging::PAGE_SIZE),
-                        round_up_p2(phdr.memsz() as usize, paging::PAGE_SIZE),
+                        super::round_up_p2(phdr.filesz() as usize, paging::PAGE_SIZE),
+                        super::round_up_p2(phdr.memsz() as usize, paging::PAGE_SIZE),
                   ),
 
                   ProgramType::Unknown(7) => {
@@ -233,5 +226,6 @@ pub fn map_elf(syst: &SystemTable<Boot>, data: &[u8]) -> (*mut u8, Option<usize>
             }
       }
 
-      (elf.header().entry_point() as *mut u8, tls_size)
+      let entry = paging::LAddr::from(elf.header().entry_point() as usize);
+      (*entry, tls_size)
 }
