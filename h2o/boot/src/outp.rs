@@ -71,10 +71,7 @@ fn get_logo_data() -> (Vec<BltPixel>, (usize, usize)) {
 }
 
 pub fn draw_logo(syst: &SystemTable<Boot>) {
-      log::trace!(
-            "outp::draw_logo: syst = {:?}",
-            syst as *const _,
-      );
+      log::trace!("outp::draw_logo: syst = {:?}", syst as *const _);
 
       let (blt_buffer, dims) = get_logo_data();
 

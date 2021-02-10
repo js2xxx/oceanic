@@ -38,6 +38,18 @@ impl<'a> BootAlloc<'a> {
                   .ok()
                   .map(|c| paging::PAddr::new(c.log() as usize))
       }
+
+      pub fn alloc_into_slice(
+            &mut self,
+            size: usize,
+            id_off: usize,
+      ) -> Option<(paging::PAddr, *mut [u8])> {
+            let n = crate::round_up_p2(size, paging::PAGE_SIZE) >> paging::PAGE_SHIFT;
+            let paddr = self.alloc_n(n)?;
+            Some((paddr, unsafe {
+                  core::slice::from_raw_parts_mut(*paddr.to_laddr(id_off), size)
+            }))
+      }
 }
 
 impl<'a> paging::alloc::PageAlloc for BootAlloc<'a> {

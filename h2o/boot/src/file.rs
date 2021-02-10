@@ -40,7 +40,7 @@ pub fn init(img: Handle, syst: &SystemTable<Boot>) {
 /// This function returns a tuple with 2 elements where the former element is the physical address
 /// of the loaded file, and the latter is the file size. It can be used to construct a slice to read
 /// data.
-pub fn load(syst: &SystemTable<Boot>, filename: &str) -> (paging::PAddr, usize) {
+pub fn load(syst: &SystemTable<Boot>, filename: &str) -> *mut [u8] {
       log::trace!("file::load: filename = {}", filename);
 
       // Take the volume out of the local static variable to keep consistency.
@@ -63,16 +63,11 @@ pub fn load(syst: &SystemTable<Boot>, filename: &str) -> (paging::PAddr, usize) 
             finfo.file_size() as usize
       };
 
-      let kfile_addr = {
-            // We need to manually allocate the memory for the kernel file instead of creating a new
-            // `Vec<u8>` because we need to align the file properly and the latter is badly aligned.
-            let ksize_aligned = super::round_up_p2(ksize, paging::PAGE_SIZE);
-            crate::mem::alloc(syst)
-                  .alloc_n(ksize_aligned >> paging::PAGE_SHIFT)
-                  .expect("Failed to allocate memory")
-      };
-      let mut kfile_data =
-            unsafe { core::slice::from_raw_parts_mut(*kfile_addr as *mut u8, ksize) };
+      // We need to manually allocate the memory for the kernel file instead of creating a new
+      // `Vec<u8>` because we need to align the file properly and the latter is badly aligned.
+      let (kfile_addr, kfile_data) = crate::mem::alloc(syst)
+            .alloc_into_slice(ksize, crate::mem::EFI_ID_OFFSET)
+            .expect("Failed to allocate memory for the kernel file");
 
       match kfile
             .into_type()
@@ -80,7 +75,7 @@ pub fn load(syst: &SystemTable<Boot>, filename: &str) -> (paging::PAddr, usize) 
       {
             file::FileType::Regular(mut kfile) => {
                   let asize = kfile
-                        .read(&mut kfile_data)
+                        .read(unsafe { &mut *kfile_data })
                         .expect_success("Failed to read kernel file");
                   assert!(
                         asize == ksize,
@@ -94,7 +89,9 @@ pub fn load(syst: &SystemTable<Boot>, filename: &str) -> (paging::PAddr, usize) 
 
       // Put back the local volume.
       unsafe { LOCAL_VOL = Some(volume) };
-      (kfile_addr, ksize)
+
+      let ptr = *kfile_addr.to_laddr(crate::mem::EFI_ID_OFFSET);
+      unsafe { core::slice::from_raw_parts_mut(ptr, ksize) }
 }
 
 /// Transform the flags of a ELF program header into the attribute of a paging entry.
@@ -186,8 +183,8 @@ fn load_tls(size: usize) {
 /// Map a ELF executable into the memory.
 ///
 /// # Returns
-/// 
-/// This function returns a tuple with 2 elements where the first element is the entry point of the 
+///
+/// This function returns a tuple with 2 elements where the first element is the entry point of the
 /// ELF executable and the second element is the TLS size of it.
 pub fn map_elf(syst: &SystemTable<Boot>, data: &[u8]) -> (*mut u8, Option<usize>) {
       log::trace!(
