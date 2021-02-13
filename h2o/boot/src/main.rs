@@ -34,17 +34,19 @@ use uefi::logger::Logger;
 use uefi::prelude::*;
 use uefi::table::boot::{EventType, Tpl};
 
+static mut LOGGER: MaybeUninit<Logger> = MaybeUninit::uninit();
+
+/// The union for transforming common pointers into function pointers.
 union KMain {
       ptr: *mut u8,
-      func: extern "C" fn(
+      call: extern "C" fn(
             rsdp: *const core::ffi::c_void,
             efi_mmap_paddr: paging::PAddr,
+            efi_mmap_len: usize,
             tls_size: usize,
       ) -> !,
 }
 const_assert!(core::mem::size_of::<KMain>() == core::mem::size_of::<*mut u8>());
-
-static mut LOGGER: MaybeUninit<Logger> = MaybeUninit::uninit();
 
 /// Initialize `log` crate for logging messages.
 unsafe fn init_log(syst: &SystemTable<Boot>, level: log::LevelFilter) {
@@ -93,6 +95,8 @@ fn efi_main(img: Handle, syst: SystemTable<Boot>) -> Status {
       outp::choose_mode(&syst, (1024, 768));
       outp::draw_logo(&syst);
 
+      // Load and map the kernel file. Note: in the future, the file(s) needed to be loaded and
+      // mapped may get more and more.
       let h2o = file::load(&syst, "\\EFI\\Oceanic\\H2O.k");
       log::debug!(
             "Kernel file loaded at {:?}, ksize = {:?}",
@@ -101,27 +105,27 @@ fn efi_main(img: Handle, syst: SystemTable<Boot>) -> Status {
       );
       let (entry, tls_size) = file::map_elf(&syst, unsafe { &mut *h2o });
 
-      let mmap_size = mem::init_pf(&syst);
+      // Prepare the data needed for H2O.
+      let mmap_size_approx = mem::init_pf(&syst);
       let rsdp = mem::get_acpi_rsdp(&syst);
 
+      // Get the EFI memory map to be parsed in the kernel. So far we cannot parse it in the loader
+      // because if we make dynamic space after get the map, the map will be updated immediately
+      // and the key will become invalid.
       let (mmap_paddr, mmap_buf) = mem::alloc(&syst)
-            .alloc_into_slice(mmap_size * 2, mem::EFI_ID_OFFSET)
+            .alloc_into_slice(mmap_size_approx * 2, mem::EFI_ID_OFFSET)
             .expect("Failed to allocate memory map buffer");
-      syst.exit_boot_services(img, unsafe { &mut *mmap_buf })
+      let (_rt, mmap) = syst.exit_boot_services(img, unsafe { &mut *mmap_buf })
             .expect_success("Failed to exit EFI boot services");
+      let mmap_len = mmap.len();
 
       mem::commit_mapping();
 
-      let mut kmain = unsafe { core::mem::zeroed::<KMain>() };
-      kmain.ptr = entry;
-      unsafe { (kmain.func)(rsdp, mmap_paddr, tls_size.unwrap_or(0)) };
+      let mut kmain = KMain { ptr: entry };
+      unsafe { (kmain.call)(rsdp, mmap_paddr, mmap_len, tls_size.unwrap_or(0)) };
 
+      // This dummy code is for debugging.
       // loop {
       //       unsafe { asm!("pause") }
       // }
-}
-
-#[inline]
-fn round_up_p2(x: usize, u: usize) -> usize {
-      (x.wrapping_sub(1) | (u - 1)).wrapping_add(1)
 }

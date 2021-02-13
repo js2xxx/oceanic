@@ -1,5 +1,7 @@
 //! The FS module of H2O's boot loader.
 
+use bitop_ex::BitOpEx;
+
 use core::mem::size_of;
 use elf_rs::*;
 use uefi::prelude::*;
@@ -209,8 +211,8 @@ pub fn map_elf(syst: &SystemTable<Boot>, data: &[u8]) -> (*mut u8, Option<usize>
                         paging::PAddr::new(
                               unsafe { data.as_ptr().add(phdr.offset() as usize) } as usize
                         ),
-                        super::round_up_p2(phdr.filesz() as usize, paging::PAGE_SIZE),
-                        super::round_up_p2(phdr.memsz() as usize, paging::PAGE_SIZE),
+                        (phdr.filesz() as usize).round_up_bit(paging::PAGE_SHIFT),
+                        (phdr.memsz() as usize).round_up_bit(paging::PAGE_SHIFT),
                   ),
 
                   ProgramType::Unknown(7) => {

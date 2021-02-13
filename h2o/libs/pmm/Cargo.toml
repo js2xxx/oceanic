@@ -1,0 +1,12 @@
+[package]
+name = "pmm"
+version = "0.1.0"
+authors = ["徐启航 <akucxy@163.com>"]
+edition = "2018"
+
+[dependencies]
+bitop_ex = { path = "../bitop_ex" }
+intrusive-collections = { version = "0.9", default-features = false, features = ["nightly", "alloc"] }
+paging = { path = "../paging" }
+spin = "0.7"
+uefi = "0.7"

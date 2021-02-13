@@ -1,15 +1,14 @@
+use bitop_ex::BitOpEx;
+use minfo::{ID_OFFSET as KERNEL_ID_OFFSET, INITIAL_ID_SPACE, KMEM_PHYS_BASE, PF_SIZE};
+use paging::PageAlloc;
+
 use core::mem::MaybeUninit;
 use core::ops::Range;
 use core::ptr::NonNull;
-use paging::PageAlloc;
 use uefi::prelude::*;
 use uefi::table::boot;
 
 pub const EFI_ID_OFFSET: usize = 0;
-pub const KERNEL_ID_OFFSET: usize = 0xFFFF_8000_0000_0000;
-const SIZE_4G: usize = 0x1_0000_0000;
-const KERNEL_PHYS_BASE: usize = 0xFFFF_9000_0000_0000;
-const PF_SIZE: usize = 0x18;
 static mut ROOT_TABLE: MaybeUninit<NonNull<[paging::Entry]>> = MaybeUninit::uninit();
 
 // pub enum MemoryType {
@@ -44,7 +43,13 @@ impl<'a> BootAlloc<'a> {
             size: usize,
             id_off: usize,
       ) -> Option<(paging::PAddr, *mut [u8])> {
-            let n = crate::round_up_p2(size, paging::PAGE_SIZE) >> paging::PAGE_SHIFT;
+            let n = size.div_ceil_bit(paging::PAGE_SHIFT);
+            log::trace!(
+                  "mem::BootAlloc::alloc_into_slice: size = {:?}, n = {:?}",
+                  size,
+                  n
+            );
+
             let paddr = self.alloc_n(n)?;
             Some((paddr, unsafe {
                   core::slice::from_raw_parts_mut(*paddr.to_laddr(id_off), size)
@@ -77,8 +82,8 @@ pub fn init(syst: &SystemTable<Boot>) {
       };
 
       let phys = paging::PAddr::new(0);
-      let virt_efi =
-            paging::LAddr::from(EFI_ID_OFFSET)..paging::LAddr::from(SIZE_4G + EFI_ID_OFFSET);
+      let virt_efi = paging::LAddr::from(EFI_ID_OFFSET)
+            ..paging::LAddr::from(INITIAL_ID_SPACE + EFI_ID_OFFSET);
       let pg_attr = paging::Attr::KERNEL_RW;
 
       log::trace!(
@@ -160,14 +165,13 @@ pub fn init_pf(syst: &SystemTable<Boot>) -> usize {
       }
       assert!(addr_max > 0);
 
-      let pf_buffer_size = PF_SIZE
-            * (super::round_up_p2(addr_max as usize, paging::PAGE_SIZE) >> paging::PAGE_SHIFT);
+      let pf_buffer_size = PF_SIZE * (addr_max as usize).div_ceil_bit(paging::PAGE_SHIFT);
       let pf_buffer = alloc(syst)
             .alloc_n(pf_buffer_size >> paging::PAGE_SHIFT)
             .expect("Failed to allocate the page frame buffer");
 
-      let pf_virt = paging::LAddr::from(KERNEL_PHYS_BASE)
-            ..paging::LAddr::from(KERNEL_PHYS_BASE + pf_buffer_size);
+      let pf_virt = paging::LAddr::from(KMEM_PHYS_BASE)
+            ..paging::LAddr::from(KMEM_PHYS_BASE + pf_buffer_size);
       maps(syst, pf_virt, pf_buffer, paging::Attr::KERNEL_RWNE).expect("Failed to map page frames");
 
       {
