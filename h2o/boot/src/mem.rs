@@ -130,6 +130,7 @@ pub fn maps(
       )
 }
 
+#[allow(dead_code)]
 pub fn unmaps(syst: &SystemTable<Boot>, virt: Range<paging::LAddr>) -> Result<(), paging::Error> {
       log::trace!(
             "mem::unmaps: syst = {:?}, virt = {:?}",
@@ -187,6 +188,10 @@ pub fn init_pf(syst: &SystemTable<Boot>) -> usize {
 
 pub fn commit_mapping() {
       unsafe {
+            let mut efer = archop::msr::read(archop::msr::MSR::EFER);
+            efer |= 1 << 11;
+            archop::msr::write(archop::msr::MSR::EFER, efer);
+
             let cr3 = ROOT_TABLE.assume_init();
             asm!("mov cr3, {}", in(reg) cr3.as_mut_ptr());
       }
@@ -202,3 +207,12 @@ pub fn get_acpi_rsdp(syst: &SystemTable<Boot>) -> *const core::ffi::c_void {
       }
       panic!("Failed to get RSDP")
 }
+
+// pub fn config_efi_runtime<'a>(
+//       rt: &SystemTable<Runtime>,
+//       mmap: impl ExactSizeIterator<Item = &'a boot::MemoryDescriptor>,
+// ) {
+//       for block in mmap {
+            
+//       }
+// }

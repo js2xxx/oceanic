@@ -1,10 +1,12 @@
 extern kmain
+extern INIT_STACK
 
 global kentry
 
 [section .text]
 kentry:
-      ; call  kmain
+      mov   rsp, INIT_STACK
+      call  kmain
 
 .lp:
       hlt

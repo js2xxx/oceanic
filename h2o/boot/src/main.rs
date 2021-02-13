@@ -118,10 +118,11 @@ fn efi_main(img: Handle, syst: SystemTable<Boot>) -> Status {
       let (_rt, mmap) = syst.exit_boot_services(img, unsafe { &mut *mmap_buf })
             .expect_success("Failed to exit EFI boot services");
       let mmap_len = mmap.len();
+      // mem::config_efi_runtime(&rt, mmap);
 
       mem::commit_mapping();
 
-      let mut kmain = KMain { ptr: entry };
+      let kmain = KMain { ptr: entry };
       unsafe { (kmain.call)(rsdp, mmap_paddr, mmap_len, tls_size.unwrap_or(0)) };
 
       // This dummy code is for debugging.

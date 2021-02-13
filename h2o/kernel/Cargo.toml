@@ -10,4 +10,9 @@ path = "src/kmain.rs"
 crate-type = ["staticlib"]
 
 [dependencies]
+# Local crates
+archop = { path = "../libs/archop" }
 paging = { path = "../libs/paging" }
+# External crates
+log = "0.4"
+spin = "0.7"

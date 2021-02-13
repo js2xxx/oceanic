@@ -6,6 +6,7 @@ edition = "2018"
 
 [dependencies]
 # Local crates
+archop = { path = "../libs/archop" }
 bitop_ex = { path = "../libs/bitop_ex" }
 minfo = { path = "../libs/minfo" }
 paging = { path = "../libs/paging" }

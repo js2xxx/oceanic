@@ -9,11 +9,11 @@ pub struct PAddr(usize);
 pub struct LAddr(*mut u8);
 
 impl PAddr {
-      pub fn new(addr: usize) -> Self {
+      pub const fn new(addr: usize) -> Self {
             PAddr(addr)
       }
 
-      pub fn as_non_zero(&self) -> Option<NonZeroUsize> {
+      pub const fn as_non_zero(&self) -> Option<NonZeroUsize> {
             NonZeroUsize::new(self.0)
       }
 
@@ -43,7 +43,7 @@ impl core::fmt::Debug for PAddr {
 }
 
 impl LAddr {
-      pub fn new(ptr: *mut u8) -> Self {
+      pub const fn new(ptr: *mut u8) -> Self {
             LAddr(ptr)
       }
 
