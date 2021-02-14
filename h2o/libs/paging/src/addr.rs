@@ -3,9 +3,11 @@ use core::ops::{Deref, DerefMut};
 use core::ptr::NonNull;
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[repr(transparent)]
 pub struct PAddr(usize);
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[repr(transparent)]
 pub struct LAddr(*mut u8);
 
 impl PAddr {

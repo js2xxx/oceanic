@@ -1,21 +1,34 @@
 #![no_std]
 #![feature(asm)]
+#![feature(default_alloc_error_handler)]
 #![feature(lang_items)]
 
 mod log;
+mod mem;
+
 use ::log as l;
 
 #[no_mangle]
-pub extern "C" fn kmain() {
-      self::log::init();
+pub extern "C" fn kmain(
+      rsdp: *const core::ffi::c_void,
+      efi_mmap_paddr: paging::PAddr,
+      efi_mmap_len: usize,
+      efi_mmap_unit: usize,
+      tls_size: usize,
+) {
+      self::log::init(l::Level::Debug);
       l::info!("kmain: Starting initialization");
+
+      mem::init(efi_mmap_paddr, efi_mmap_len, efi_mmap_unit);
+      pmm::dump_data(pmm::PFType::Max);
       loop {
             unsafe { asm!("pause") }
       }
 }
 
 #[panic_handler]
-fn panic_handler(_info: &core::panic::PanicInfo) -> ! {
+fn panic_handler(info: &core::panic::PanicInfo) -> ! {
+      l::error!("Kernel {}", info);
       loop {
             unsafe { asm!("pause") };
       }

@@ -46,7 +46,7 @@ pub trait BitOpEx:
 
       #[inline]
       fn msb(&self) -> Self {
-            Self::from(Self::BIT_SIZE).unwrap() - ci::ctlz(*self) - Self::one()
+            ci::wrapping_sub(Self::from(Self::BIT_SIZE).unwrap(), ci::ctlz(*self) + Self::one())
       }
 
       #[inline]

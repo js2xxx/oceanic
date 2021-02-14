@@ -9,6 +9,18 @@ struct Logger {
       level: log::Level,
 }
 
+struct OptionU32Display(Option<u32>);
+
+impl core::fmt::Display for OptionU32Display {
+      fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+            if let Some(val) = self.0 {
+                  write!(f, "{}", val)
+            } else {
+                  write!(f, "<NULL>")
+            }
+      }
+}
+
 impl Logger {
       pub fn new(level: log::Level) -> Logger {
             Logger {
@@ -31,19 +43,21 @@ impl log::Log for Logger {
 
             let mut os = self.spout.lock();
 
-            let res = if record.level() < log::Level::Debug {
+            let res = if record.level() <= log::Level::Debug {
                   write(
                         &mut *os,
-                        format_args!("{}: {}", record.level(), record.args()),
+                        format_args!("{}: {}\n", record.level(), record.args()),
                   )
             } else {
+                  let file = record.file().unwrap_or("<NULL>");
+                  let line = OptionU32Display(record.line());
                   write(
                         &mut *os,
                         format_args!(
-                              "{}: {:?}: {:?}: {}",
+                              "{}: {}: {}: {}\n",
                               record.level(),
-                              record.file(),
-                              record.line(),
+                              file,
+                              line,
                               record.args()
                         ),
                   )
@@ -57,8 +71,7 @@ impl log::Log for Logger {
 
 static mut LOGGER: MaybeUninit<Logger> = MaybeUninit::uninit();
 
-pub fn init() {
-      let max_level = log::Level::Debug;
+pub fn init(max_level: log::Level) {
       unsafe {
             LOGGER.as_mut_ptr().write(Logger::new(max_level));
             log::set_logger(&*LOGGER.as_ptr()).expect("Failed to set the logger");

@@ -148,7 +148,7 @@ pub fn unmaps(syst: &SystemTable<Boot>, virt: Range<paging::LAddr>) -> Result<()
       )
 }
 
-pub fn init_pf(syst: &SystemTable<Boot>) -> usize {
+pub fn init_pf(syst: &SystemTable<Boot>) -> (usize, usize) {
       let size = syst.boot_services().memory_map_size();
       let mut buffer = alloc::vec![0; size];
       let (_key, mmap) = syst
@@ -158,13 +158,20 @@ pub fn init_pf(syst: &SystemTable<Boot>) -> usize {
 
       let mut addr_max = 0;
 
+      let mut b1 = None;
+      let mut b2 = None;
       for block in mmap {
             addr_max = core::cmp::max(
                   addr_max,
                   block.phys_start + (block.page_count << paging::PAGE_SHIFT),
             );
+            b2 = b1;
+            b1 = Some(block as *const boot::MemoryDescriptor);
       }
       assert!(addr_max > 0);
+      let entry_size = unsafe {
+            b1.unwrap().cast::<u8>().offset_from(b2.unwrap().cast::<u8>())
+      };
 
       let pf_buffer_size = PF_SIZE * (addr_max as usize).div_ceil_bit(paging::PAGE_SHIFT);
       let pf_buffer = alloc(syst)
@@ -183,7 +190,7 @@ pub fn init_pf(syst: &SystemTable<Boot>) -> usize {
                   .expect("Failed to map physical pages identically");
       }
 
-      size
+      (entry_size as usize, size)
 }
 
 pub fn commit_mapping() {
@@ -213,6 +220,5 @@ pub fn get_acpi_rsdp(syst: &SystemTable<Boot>) -> *const core::ffi::c_void {
 //       mmap: impl ExactSizeIterator<Item = &'a boot::MemoryDescriptor>,
 // ) {
 //       for block in mmap {
-            
 //       }
 // }

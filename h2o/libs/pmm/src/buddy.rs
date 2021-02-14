@@ -50,7 +50,6 @@ use core::cell::Cell;
 use core::cmp::min;
 use core::mem::size_of;
 use core::ops::Range;
-use core::ptr::NonNull;
 use intrusive_collections::intrusive_adapter;
 use intrusive_collections::{LinkedList, LinkedListLink};
 use spin::Mutex;
@@ -87,6 +86,7 @@ static PMM_LOCK: Mutex<()> = Mutex::new(());
 ///
 /// A page frame structure represents a physical page sized variedly, which can only
 /// be stored above [`KMEM_PHYS_BASE`] statically.
+#[derive(Debug)]
 #[repr(C)]
 struct PageFrame {
       /// The link to the free list.
@@ -342,6 +342,13 @@ fn pf_list_mut(pftype: PFType, order: usize) -> Option<&'static mut PFList> {
 ///
 /// It returns the page address that is requested to be split.
 fn split_page(page: &PageFrame, pftype: PFType, orders: Range<usize>) -> &PageFrame {
+      log::trace!(
+            "split_page: page = {:?}, pftype = {:?}, orders = {:?}",
+            page,
+            pftype,
+            orders
+      );
+
       assert_ne!(pftype, PFType::Max, "Invalid PFType");
       assert!(orders.end < ORDERS.end, "Invalid page order range");
 
@@ -376,6 +383,12 @@ fn split_page(page: &PageFrame, pftype: PFType, orders: Range<usize>) -> &PageFr
 /// If `order` is out of available range or `pftype` is [`PFType::Max`], it will
 /// panic.
 fn alloc_page_typed(order: usize, pftype: PFType) -> Option<PAddr> {
+      log::trace!(
+            "alloc_pages_typed: order = {:?}, pftype = {:?}",
+            order,
+            pftype
+      );
+
       assert_ne!(pftype, PFType::Max, "Invalid PFType");
       assert!(ORDERS.contains(&order), "Invalid page order");
 
@@ -467,6 +480,13 @@ unsafe fn get_combined(page: &PageFrame, order: usize, pftype: PFType) -> &'stat
 /// It'll always be safe **UNLESS** the requested page frame is invalid.
 #[allow(unused_unsafe)]
 unsafe fn dealloc_page_typed(page: &'static PageFrame, order: usize, pftype: PFType) {
+      log::trace!(
+            "dealloc_page_typed: page = {:?}, order = {:?}, pftype = {:?}",
+            *page,
+            order,
+            pftype,
+      );
+
       assert_ne!(pftype, PFType::Max, "Invalid PFType");
       assert!(ORDERS.contains(&order), "Invalid page order");
       let _lock = PMM_LOCK.lock();
@@ -510,6 +530,8 @@ unsafe fn dealloc_page_typed(page: &'static PageFrame, order: usize, pftype: PFT
 /// If the requested page order is out of range or the physical memory is exhausted,
 /// it'll return a `None` value.
 pub fn alloc_pages(order: usize, pftype: Option<PFType>) -> Option<PAddr> {
+      log::trace!("alloc_pages: order = {:?}, pftype = {:?}", order, pftype);
+
       if !ORDERS.contains(&order) {
             return None;
       }
@@ -536,6 +558,8 @@ pub fn alloc_pages(order: usize, pftype: Option<PFType>) -> Option<PAddr> {
 ///
 /// It'll always be safe **UNLESS** the requested physical address is invalid.
 pub unsafe fn dealloc_pages(order: usize, addr: PAddr) {
+      log::trace!("dealloc_pages: order = {:?}, addr = {:?}", order, addr);
+
       assert!(ORDERS.contains(&order), "Invalid page order");
 
       let pftype = PFType::from(addr);
@@ -558,6 +582,13 @@ pub unsafe fn dealloc_pages(order: usize, addr: PAddr) {
 ///
 /// It'll always be safe **UNLESS** the requested physical address is invalid.
 unsafe fn scale_back_pages(addr: PAddr, order: usize, n: usize) -> PAddr {
+      log::trace!(
+            "scale_back_pages: addr = {:?}, order = {:?}, n = {:?}",
+            addr,
+            order,
+            n
+      );
+
       assert!(ORDERS.contains(&order), "Invalid page order");
       assert!((1 << order) >= n, "Invalid page number");
 
@@ -584,6 +615,8 @@ unsafe fn scale_back_pages(addr: PAddr, order: usize, n: usize) -> PAddr {
 /// If the requested page size is out of range or the physical memory is exhausted,
 /// it'll return a `None` value.
 pub fn alloc_pages_exact(n: usize, pftype: Option<PFType>) -> Option<PAddr> {
+      log::trace!("alloc_pages_exact: n = {:?}, pftype = {:?}", n, pftype);
+
       let order = n.log2c();
 
       if !ORDERS.contains(&order) {
@@ -615,18 +648,27 @@ pub fn alloc_pages_exact(n: usize, pftype: Option<PFType>) -> Option<PAddr> {
 /// It will be always safe **UNLESS** the memory block is not inside of all the
 /// usable physical memory range.
 pub unsafe fn dealloc_pages_exact(n: usize, addr: PAddr) {
+      log::trace!("dealloc_pages_exact: n = {:?}, addr = {:?}", n, addr);
+
       let mut start = addr;
       let end = PAddr::new(*addr + (n << PAGE_SHIFT));
 
       while start < end {
+            log::trace!("New start at {:?}, end at {:?}", start, end);
+
             let pftype = PFType::from(start);
             let spage = page_frame(start);
             let epage = page_frame(end);
+            log::trace!("");
 
             let spfn = page_to_pfn(spage, pftype);
             let epfn = page_to_pfn(epage, pftype);
+            log::trace!("");
 
-            let order = min(min(spfn.lsb(), MAX_ORDER - 1), (epfn - spfn).log2f());
+            let order = min(spfn.lsb(), MAX_ORDER - 1);
+            log::trace!("order = {}, epfn = {:x}, spfn = {:x}", order, epfn, spfn);
+            let order = min(order, (epfn - spfn).log2f());
+            log::trace!("");
             dealloc_page_typed(spage, order, pftype);
             start = PAddr::new(*start + (PAGE_SIZE << order));
       }
@@ -642,16 +684,16 @@ pub unsafe fn dealloc_pages_exact(n: usize, addr: PAddr) {
 /// # Safety
 ///
 /// It'll always be safe **UNLESS** `mmap_ptr` is invalid.
-unsafe fn parse_mmap(mmap_ptr: NonNull<[uefi::table::boot::MemoryDescriptor]>) {
+unsafe fn parse_mmap(mmap_iter: iter_ex::PointerIterator<uefi::table::boot::MemoryDescriptor>) {
       use uefi::table::boot::MemoryType;
 
       fn is_available(ty: MemoryType) -> bool {
             matches!(ty, MemoryType::CONVENTIONAL | MemoryType::PERSISTENT_MEMORY)
       }
 
-      let mmap = mmap_ptr.as_ref();
-
-      for mdsc in mmap.iter() {
+      for mdsc_ptr in mmap_iter {
+            let mdsc = &*mdsc_ptr;
+            log::trace!("Block at {:?}: {:?}", mdsc_ptr, *mdsc);
             if is_available(mdsc.ty) && mdsc.phys_start != 0 {
                   let n = mdsc.page_count as usize;
                   dealloc_pages_exact(n, PAddr::new(mdsc.phys_start as usize));
@@ -659,41 +701,33 @@ unsafe fn parse_mmap(mmap_ptr: NonNull<[uefi::table::boot::MemoryDescriptor]>) {
       }
 }
 
-// /// Dump PMM data with specific [`PFType`] by module [`crate::outp::log`].
-// #[cfg(debug_assertions)]
-// pub fn dump_data(pftype: PFType) {
-//       match pftype {
-//             PFType::Max => {
-//                   dump_data(PFType::Low);
-//                   dump_data(PFType::High);
-//             }
-//             _ => {
-//                   crate::logln!("{:?}-------------------------------------------", pftype);
-//                   for i in ORDERS {
-//                         crate::logln!("ORDER #{}:", i);
-//                         let pflist = pf_list(pftype, i).unwrap();
-//                         let mut u = 0;
-//                         for j in pflist.iter() {
-//                               crate::log!("{:X}\t", unsafe { page_address(j) });
-//                               u += 1;
-//                               if u % 8 == 0 {
-//                                     crate::logln!("");
-//                               }
-//                         }
-//                         if u % 8 != 0 {
-//                               crate::logln!("");
-//                         }
-//                   }
-//             }
-//       }
-// }
+/// Dump PMM data with specific [`PFType`] by module [`crate::outp::log`].
+#[cfg(debug_assertions)]
+pub fn dump_data(pftype: PFType) {
+      match pftype {
+            PFType::Max => {
+                  dump_data(PFType::Low);
+                  dump_data(PFType::High);
+            }
+            ty => {
+                  log::debug!("{:?}-------------------------------------------", pftype);
+                  for i in ORDERS {
+                        log::debug!("ORDER #{}:", i);
+                        let pflist = pf_list(ty, i).unwrap();
+                        for j in pflist.iter() {
+                              log::debug!("\t{:?}\t", unsafe { page_address(j) });
+                        }
+                  }
+            }
+      }
+}
 
 /// Initialize PMM module.
 ///
 /// Unfortunately, we must initialize every free list manually, and it takes a long
 /// time.
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
-pub fn init(mmap: NonNull<[uefi::table::boot::MemoryDescriptor]>) {
+pub fn init(mmap: *mut uefi::table::boot::MemoryDescriptor, mmap_len: usize, mmap_unit: usize) {
       for i in ORDERS {
             *(pf_list_mut(PFType::Low, i).unwrap()) = PFList::new(PFAdapter::new());
             *(pf_list_mut(PFType::High, i).unwrap()) = PFList::new(PFAdapter::new());
@@ -701,6 +735,7 @@ pub fn init(mmap: NonNull<[uefi::table::boot::MemoryDescriptor]>) {
 
       // NOTE: There we trust the `mmap` is valid.
       unsafe {
-            parse_mmap(mmap);
+            let iter = iter_ex::PointerIterator::new(mmap, mmap_len, mmap_unit);
+            parse_mmap(iter);
       }
 }
