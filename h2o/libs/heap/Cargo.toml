@@ -1,0 +1,16 @@
+[package]
+name = "heap"
+version = "0.1.0"
+authors = ["徐启航 <akucxy@163.com>"]
+edition = "2018"
+
+[dependencies]
+# Local crates
+bitop_ex = { path = "../bitop_ex" }
+paging = { path = "../paging" }
+pmm = { path = "../pmm" }
+# External crates
+arr_macro = "0.1"
+intrusive-collections = { version = "0.9", default-features = false, features = ["nightly"] }
+spin = "0.7"
+static_assertions = "1.1"

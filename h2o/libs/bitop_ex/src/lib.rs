@@ -17,7 +17,7 @@ pub trait BitOpEx:
       + Shr<Output = Self>
       + Not<Output = Self>
 {
-      const BIT_SIZE: usize = core::mem::size_of::<Self>() / 8;
+      const BIT_SIZE: usize = core::mem::size_of::<Self>() * 8;
 
       #[inline]
       fn round_up_bit(&self, bit: Self) -> Self {
@@ -46,7 +46,10 @@ pub trait BitOpEx:
 
       #[inline]
       fn msb(&self) -> Self {
-            ci::wrapping_sub(Self::from(Self::BIT_SIZE).unwrap(), ci::ctlz(*self) + Self::one())
+            ci::wrapping_sub(
+                  Self::from(Self::BIT_SIZE).unwrap(),
+                  ci::ctlz(*self) + Self::one(),
+            )
       }
 
       #[inline]

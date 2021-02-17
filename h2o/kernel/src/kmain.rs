@@ -1,12 +1,18 @@
 #![no_std]
 #![feature(asm)]
+#![feature(box_syntax)]
 #![feature(default_alloc_error_handler)]
 #![feature(lang_items)]
+#![feature(nonnull_slice_from_raw_parts)]
+#![feature(slice_ptr_get)]
+#![feature(slice_ptr_len)]
 
 mod log;
 mod mem;
 
 use ::log as l;
+
+extern crate alloc;
 
 #[no_mangle]
 pub extern "C" fn kmain(
@@ -20,18 +26,17 @@ pub extern "C" fn kmain(
       l::info!("kmain: Starting initialization");
 
       mem::init(efi_mmap_paddr, efi_mmap_len, efi_mmap_unit);
-      pmm::dump_data(pmm::PFType::Max);
-      loop {
-            unsafe { asm!("pause") }
-      }
+
+      let b = box 1;
+      l::debug!("b = {}", b);
+
+      l::debug!("Reaching end of kernel");
 }
 
 #[panic_handler]
 fn panic_handler(info: &core::panic::PanicInfo) -> ! {
       l::error!("Kernel {}", info);
-      loop {
-            unsafe { asm!("pause") };
-      }
+      unsafe { archop::halt_loop(Some(true)) }
 }
 
 #[lang = "eh_personality"]
@@ -41,5 +46,14 @@ pub extern "C" fn rust_eh_personality() {}
 #[no_mangle]
 /// Required to handle panics.
 pub extern "C" fn _Unwind_Resume() -> ! {
-      unsafe { archop::halt_loop(None) }
+      unsafe { archop::halt_loop(Some(true)) }
+}
+
+/// The function indicating memory runs out.
+#[lang = "oom"]
+fn out_of_memory(layout: core::alloc::Layout) -> ! {
+      l::error!("!!!! ALLOCATION ERROR !!!!");
+      l::error!("Request: {:?}", layout);
+
+      unsafe { archop::halt_loop(None) };
 }

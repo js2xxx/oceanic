@@ -66,7 +66,7 @@ unsafe fn init_log(syst: &SystemTable<Boot>, level: log::LevelFilter) {
 unsafe fn init_services(img: Handle, syst: &SystemTable<Boot>) {
       /// A callback disabling logging service right before exiting UEFI boot services.
       fn exit_boot_services_callback(_: uefi::Event) {
-            log::debug!("Reaching end");
+            log::debug!("Reaching end of H2O boot loader");
             unsafe { LOGGER.assume_init_mut().disable() };
             uefi::alloc::exit_boot_services();
       }

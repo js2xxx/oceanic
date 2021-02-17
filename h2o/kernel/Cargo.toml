@@ -12,6 +12,8 @@ crate-type = ["staticlib"]
 [dependencies]
 # Local crates
 archop = { path = "../libs/archop" }
+heap = { path = "../libs/heap" }
+minfo = { path = "../libs/minfo" }
 paging = { path = "../libs/paging" }
 pmm = { path = "../libs/pmm" }
 # External crates
