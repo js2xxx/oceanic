@@ -27,8 +27,15 @@ pub extern "C" fn kmain(
 
       mem::init(efi_mmap_paddr, efi_mmap_len, efi_mmap_unit);
 
-      let b = box 1;
-      l::debug!("b = {}", b);
+      let _root = mem::range::Range::new(
+            paging::LAddr::from(0)..paging::LAddr::from(0x100000),
+            mem::range::RangeFlags::all(),
+      );
+      // let _sub = mem::range::Range::with_parent(
+      //       root.clone(),
+      //       paging::LAddr::from(0)..paging::LAddr::from(0x100000),
+      //       mem::range::RangeFlags::all(),
+      // );
 
       l::debug!("Reaching end of kernel");
 }

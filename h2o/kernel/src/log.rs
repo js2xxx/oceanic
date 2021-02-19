@@ -5,7 +5,7 @@ use core::mem::MaybeUninit;
 use spin::Mutex;
 
 struct Logger {
-      spout: Mutex<serial::SPOut>,
+      output: Mutex<serial::Output>,
       level: log::Level,
 }
 
@@ -24,7 +24,7 @@ impl core::fmt::Display for OptionU32Display {
 impl Logger {
       pub fn new(level: log::Level) -> Logger {
             Logger {
-                  spout: Mutex::new(serial::SPOut::new()),
+                  output: Mutex::new(serial::Output::new()),
                   level,
             }
       }
@@ -41,7 +41,7 @@ impl log::Log for Logger {
                   return;
             }
 
-            let mut os = self.spout.lock();
+            let mut os = self.output.lock();
 
             let res = if record.level() <= log::Level::Debug {
                   write(

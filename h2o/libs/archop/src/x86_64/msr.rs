@@ -1,7 +1,10 @@
+pub use Msr::*;
+
 #[repr(u32)]
 #[allow(non_camel_case_types)]
+#[allow(clippy::upper_case_acronyms)]
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub enum MSR {
+pub enum Msr {
       MC_ADDR = 0x00000000,
       MC_TYPE = 0x00000001,
       MONITOR_FILTER_SIZE = 0x00000006,
@@ -247,7 +250,7 @@ pub enum MSR {
 ///
 /// The caller must ensure the validity of `msr` and `val`.
 #[inline]
-pub unsafe fn write(msr: MSR, val: u64) {
+pub unsafe fn write(msr: Msr, val: u64) {
       let eax = (val & 0xFFFFFFFF) as u32;
       let edx = (val >> 32) as u32;
       asm!("wrmsr", in("eax")eax, in("edx")edx, in("ecx")msr as u32);
@@ -259,7 +262,7 @@ pub unsafe fn write(msr: MSR, val: u64) {
 ///
 /// The caller must ensure the validity of `msr`.
 #[inline]
-pub unsafe fn read(msr: MSR) -> u64 {
+pub unsafe fn read(msr: Msr) -> u64 {
       let (eax, edx): (u32, u32);
       asm!("rdmsr", out("eax")eax, out("edx")edx, in("ecx")msr as u32);
       ((edx as u64) << 32) | (eax as u64)

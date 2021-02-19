@@ -30,11 +30,11 @@ unsafe fn out_char(c: u8) {
 }
 
 /// The output struct interface.
-pub struct SPOut;
+pub struct Output;
 
-impl SPOut {
+impl Output {
       /// Initialize the serial port. Copied from Osdev Wiki.
-      pub fn new() -> SPOut {
+      pub fn new() -> Output {
             unsafe {
                   io::out8(COM_LOG + 1, 0x00); // Disable all interrupts
                   io::out8(COM_LOG + 3, 0x80); // Enable DLAB (set baud rate divisor)
@@ -44,11 +44,11 @@ impl SPOut {
                   io::out8(COM_LOG + 2, 0xC7); // Enable FIFO, clear them, with 14-byte threshold
                   io::out8(COM_LOG + 4, 0x0B); // IRQs enabled, RTS/DSR set
             }
-            SPOut
+            Output
       }
 }
 
-impl fmt::Write for SPOut {
+impl fmt::Write for Output {
       #[inline]
       fn write_str(&mut self, s: &str) -> Result<(), fmt::Error> {
             for b in s.bytes() {

@@ -1,3 +1,4 @@
+pub mod range;
 pub mod space;
 
 use paging::LAddr;

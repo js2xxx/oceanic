@@ -13,7 +13,7 @@ pub use buddy::MAX_ORDER;
 pub use buddy::NR_ORDERS;
 pub use buddy::ORDERS;
 
-pub use buddy::PFType;
+pub use buddy::PfType;
 
 pub use buddy::alloc_pages;
 pub use buddy::alloc_pages_exact;

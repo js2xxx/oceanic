@@ -56,10 +56,13 @@ unsafe impl GlobalAlloc for DefaultAlloc {
                         Err(e) => match e {
                               // Oops! The pool is full
                               AllocError::NeedExt => {
-                                    let mut pager = self.pager.lock();
+                                    let page = {
+                                          let mut pager = self.pager.lock();
+                                          // Allocate a new page
+                                          pager.alloc_pages(1)
+                                    };
 
-                                    // Allocate a new page
-                                    if let Some(page) = pager.alloc_pages(1) {
+                                    if let Some(page) = page {
                                           pool.extend(layout, page.as_non_null_ptr()).unwrap();
                                           // The second allocation
                                           pool.alloc(layout).map_or(null_mut(), |x| *x)
@@ -74,8 +77,8 @@ unsafe impl GlobalAlloc for DefaultAlloc {
                   }
             } else {
                   // The size is too big, call the pager directly
-                  let mut pager = self.pager.lock();
                   let n = size.div_ceil_bit(paging::PAGE_SHIFT);
+                  let mut pager = self.pager.lock();
                   pager.alloc_pages(n)
                         .map_or(null_mut(), |x| x.as_mut_ptr().cast())
             }
@@ -98,9 +101,9 @@ unsafe impl GlobalAlloc for DefaultAlloc {
                   }
             } else {
                   // The size is too big, call the pager directly
-                  let mut pager = self.pager.lock();
                   let n = size.div_ceil_bit(paging::PAGE_SHIFT);
                   let page = NonNull::new(ptr.cast::<page::Page>()).expect("Null pointer provided");
+                  let mut pager = self.pager.lock();
                   pager.dealloc_pages(NonNull::slice_from_raw_parts(page, n));
             }
       }

@@ -170,7 +170,9 @@ pub fn init_pf(syst: &SystemTable<Boot>) -> (usize, usize) {
       }
       assert!(addr_max > 0);
       let entry_size = unsafe {
-            b1.unwrap().cast::<u8>().offset_from(b2.unwrap().cast::<u8>())
+            b1.unwrap()
+                  .cast::<u8>()
+                  .offset_from(b2.unwrap().cast::<u8>())
       };
 
       let pf_buffer_size = PF_SIZE * (addr_max as usize).div_ceil_bit(paging::PAGE_SHIFT);
@@ -194,10 +196,11 @@ pub fn init_pf(syst: &SystemTable<Boot>) -> (usize, usize) {
 }
 
 pub fn commit_mapping() {
+      use archop::msr;
       unsafe {
-            let mut efer = archop::msr::read(archop::msr::MSR::EFER);
+            let mut efer = msr::read(msr::EFER);
             efer |= 1 << 11;
-            archop::msr::write(archop::msr::MSR::EFER, efer);
+            msr::write(msr::EFER, efer);
 
             let cr3 = ROOT_TABLE.assume_init();
             asm!("mov cr3, {}", in(reg) cr3.as_mut_ptr());
