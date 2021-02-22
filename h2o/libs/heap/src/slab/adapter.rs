@@ -4,11 +4,6 @@ use intrusive_collections::{Adapter, DefaultLinkOps, KeyAdapter, RBTreeLink};
 
 pub struct NonNullPointerOps<T>(PhantomData<T>);
 
-pub struct PageAdapter {
-      link_ops: <RBTreeLink as DefaultLinkOps>::Ops,
-      pointer_ops: NonNullPointerOps<super::Page>,
-}
-
 unsafe impl<T> intrusive_collections::PointerOps for NonNullPointerOps<T> {
       type Value = T;
 
@@ -21,6 +16,11 @@ unsafe impl<T> intrusive_collections::PointerOps for NonNullPointerOps<T> {
       fn into_raw(&self, ptr: Self::Pointer) -> *const Self::Value {
             ptr.as_ptr()
       }
+}
+
+pub struct PageAdapter {
+      link_ops: <RBTreeLink as DefaultLinkOps>::Ops,
+      pointer_ops: NonNullPointerOps<super::Page>,
 }
 
 impl PageAdapter {

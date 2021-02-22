@@ -5,30 +5,6 @@ use core::fmt;
 /// The COM port for logging.
 const COM_LOG: u16 = 0x3f8;
 
-// unsafe fn has_data() -> bool {
-//       (io::in8(COM_LOG + 5) & 1) != 0
-// }
-
-unsafe fn buf_full() -> bool {
-      (io::in8(COM_LOG + 5) & 0x20) == 0
-}
-
-// unsafe fn in_char() -> u8 {
-//       while has_data() {
-//             crate::rxx::pause();
-//       }
-//       io::in8(COM_LOG)
-// }
-
-/// Output a char to the serial port for logging.
-#[inline]
-unsafe fn out_char(c: u8) {
-      while buf_full() {
-            asm!("pause");
-      }
-      io::out8(COM_LOG, c);
-}
-
 /// The output struct interface.
 pub struct Output;
 
@@ -56,4 +32,28 @@ impl fmt::Write for Output {
             }
             Ok(())
       }
+}
+
+// unsafe fn has_data() -> bool {
+//       (io::in8(COM_LOG + 5) & 1) != 0
+// }
+
+unsafe fn buf_full() -> bool {
+      (io::in8(COM_LOG + 5) & 0x20) == 0
+}
+
+// unsafe fn in_char() -> u8 {
+//       while has_data() {
+//             crate::rxx::pause();
+//       }
+//       io::in8(COM_LOG)
+// }
+
+/// Output a char to the serial port for logging.
+#[inline]
+unsafe fn out_char(c: u8) {
+      while buf_full() {
+            asm!("pause");
+      }
+      io::out8(COM_LOG, c);
 }

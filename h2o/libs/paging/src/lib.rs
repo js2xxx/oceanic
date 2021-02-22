@@ -107,9 +107,8 @@ fn get_or_split_table(
 ) -> Result<NonNull<[Entry]>, Error> {
       assert!(level != Level::Pt, "Too low level");
 
-      match entry.get_table(id_off, level) {
-            Some(ptr) => Ok(ptr),
-            None => {
+      entry.get_table(id_off, level).map_or_else(
+            || {
                   if entry.is_leaf(level) {
                         split_table(entry, level, id_off, allocator)?;
 
@@ -119,8 +118,9 @@ fn get_or_split_table(
                   } else {
                         Err(Error::EntryExistent(false))
                   }
-            }
-      }
+            },
+            Ok,
+      )
 }
 
 unsafe fn invalidate_page(virt: LAddr) {
@@ -171,6 +171,25 @@ fn new_page(
       }
 }
 
+fn get_page(root_table: NonNull<[Entry]>, virt: LAddr, id_off: usize) -> Result<PAddr, Error> {
+      let mut table = root_table;
+      let mut lvl = Level::P4;
+      loop {
+            let idx = lvl.addr_idx(virt, false);
+            let table_ref = unsafe { table.as_ref() };
+            let item = &table_ref[idx];
+
+            if item.is_leaf(lvl) {
+                  break Ok(item.get(lvl).0);
+            }
+
+            table = item
+                  .get_table(id_off, lvl)
+                  .map_or(Err(Error::EntryExistent(false)), Ok)?;
+            lvl = lvl.decrease().map_or(Err(Error::EntryExistent(false)), Ok)?;
+      }
+}
+
 fn drop_page(
       root_table: NonNull<[Entry]>,
       virt: LAddr,
@@ -206,7 +225,7 @@ fn check(virt: &Range<LAddr>, phys: Option<PAddr>) -> Result<(), Error> {
 
       #[inline]
       fn misaligned<Origin>(addr: usize, o: Origin) -> Option<Origin> {
-            if addr & (PAGE_SIZE - 1) == 0 {
+            if addr & PAGE_MASK == 0 {
                   None
             } else {
                   log::warn!("paging::check: misaligned address: {:?}", addr);
@@ -280,6 +299,13 @@ pub fn maps(
 
       log::trace!("paging::maps: mapping succeeded");
       Ok(())
+}
+
+pub fn query(root_table: NonNull<[Entry]>, virt: LAddr, id_off: usize) -> Result<PAddr, Error> {
+      let offset = virt.val() & PAGE_MASK;
+      let virt = LAddr::from(virt.val() & !PAGE_MASK);
+
+      get_page(root_table, virt, id_off).map(|phys| PAddr::new(*phys + offset))
 }
 
 pub fn unmaps(

@@ -60,78 +60,6 @@ pub const MAX_OBJ_SIZE: usize = OBJ_SIZES[NR_OBJ_SIZES - 1];
 #[repr(C, packed)]
 struct BitField([u8; PAGE_SIZE / MIN_OBJ_SIZE], usize);
 
-/// The slab page type.
-///
-/// See [the module level doc](./index.html) for more.
-#[repr(C, align(4096))]
-pub struct Page {
-      /// The link to a slab list.
-      pub link: RBTreeLink,
-
-      /// The object size of this slab page.
-      objsize: usize,
-
-      /// The bitmap records.
-      used: BitField,
-
-      /// The remaining (free) data of the slab page.
-      data: [u8; PAGE_SIZE - Self::HEADER_SIZE],
-}
-
-// The size of a slab page must be [`PAGE_SIZE`].
-const_assert_eq!(size_of::<Page>(), PAGE_SIZE);
-
-// The alignment of a slab page must be [`PAGE_SIZE`].
-const_assert_eq!(align_of::<Page>(), PAGE_SIZE);
-
-pub struct Pager {
-      alloc_pages: AllocPages,
-      dealloc_pages: DeallocPages,
-}
-
-impl Pager {
-      pub const fn new(alloc_pages: AllocPages, dealloc_pages: DeallocPages) -> Self {
-            Pager {
-                  alloc_pages,
-                  dealloc_pages,
-            }
-      }
-
-      /// # Safety
-      ///
-      /// It'll always be safe **ONLY IF** it's called single-thread, and its components
-      /// won't fail.
-      pub unsafe fn alloc_pages(&mut self, n: usize) -> Option<NonNull<[Page]>> {
-            (self.alloc_pages)(n)
-      }
-
-      /// # Safety
-      ///
-      /// It'll always be safe **ONLY IF** it's called single-thread, and its components
-      /// won't fail.
-      pub unsafe fn dealloc_pages(&mut self, pages: NonNull<[Page]>) {
-            (self.dealloc_pages)(pages)
-      }
-}
-// /// Define a pager that can (de)allocate a number of valid and factual pages.
-// pub unsafe trait Pager {
-//       /// Allocate `n` valid and factual pages.
-//       ///
-//       /// # Safety
-//       ///
-//       /// It'll always be safe **ONLY IF** it's called single-thread, and its components
-//       /// won't fail.
-//       unsafe fn alloc_pages(&mut self, n: usize) -> Option<NonNull<[Page]>>;
-
-//       /// Deallocate `n` valid and fatual pages.
-//       ///
-//       /// # Safety
-//       ///
-//       /// It'll always be safe **ONLY IF** it's called single-thread, and its components
-//       /// won't fail.
-//       unsafe fn dealloc_pages(&mut self, pages: NonNull<[Page]>);
-// }
-
 impl BitField {
       /// Initialize a `BitField`.
       pub fn init(&mut self) {
@@ -168,6 +96,30 @@ impl BitField {
             self.1
       }
 }
+
+/// The slab page type.
+///
+/// See [the module level doc](./index.html) for more.
+#[repr(C, align(4096))]
+pub struct Page {
+      /// The link to a slab list.
+      pub link: RBTreeLink,
+
+      /// The object size of this slab page.
+      objsize: usize,
+
+      /// The bitmap records.
+      used: BitField,
+
+      /// The remaining (free) data of the slab page.
+      data: [u8; PAGE_SIZE - Self::HEADER_SIZE],
+}
+
+// The size of a slab page must be [`PAGE_SIZE`].
+const_assert_eq!(size_of::<Page>(), PAGE_SIZE);
+
+// The alignment of a slab page must be [`PAGE_SIZE`].
+const_assert_eq!(align_of::<Page>(), PAGE_SIZE);
 
 impl Page {
       /// The header size of a slab page.
@@ -258,5 +210,35 @@ impl Page {
                   self.used.set_bit(idx, false);
                   Ok(())
             }
+      }
+}
+
+pub struct Pager {
+      alloc_pages: AllocPages,
+      dealloc_pages: DeallocPages,
+}
+
+impl Pager {
+      pub const fn new(alloc_pages: AllocPages, dealloc_pages: DeallocPages) -> Self {
+            Pager {
+                  alloc_pages,
+                  dealloc_pages,
+            }
+      }
+
+      /// # Safety
+      ///
+      /// It'll always be safe **ONLY IF** it's called single-thread, and its components
+      /// won't fail.
+      pub unsafe fn alloc_pages(&mut self, n: usize) -> Option<NonNull<[Page]>> {
+            (self.alloc_pages)(n)
+      }
+
+      /// # Safety
+      ///
+      /// It'll always be safe **ONLY IF** it's called single-thread, and its components
+      /// won't fail.
+      pub unsafe fn dealloc_pages(&mut self, pages: NonNull<[Page]>) {
+            (self.dealloc_pages)(pages)
       }
 }

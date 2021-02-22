@@ -56,6 +56,12 @@ pub use page::{Page, AllocPages, DeallocPages};
 
 use core::ptr::NonNull;
 
+#[global_allocator]
+static GLOBAL_ALLOC: alloc::DefaultAlloc = alloc::DefaultAlloc {
+      pool: spin::Mutex::new(unsafe { core::mem::transmute(pool::Pool::new()) }),
+      pager: spin::Mutex::new(page::Pager::new(null_alloc_pages, null_dealloc_pages)),
+};
+
 #[inline(never)]
 fn null_alloc_pages(_n: usize) -> Option<NonNull<[page::Page]>> {
       None
@@ -63,12 +69,6 @@ fn null_alloc_pages(_n: usize) -> Option<NonNull<[page::Page]>> {
 
 #[inline(never)]
 fn null_dealloc_pages(_pages: NonNull<[page::Page]>) {}
-
-#[global_allocator]
-static GLOBAL_ALLOC: alloc::DefaultAlloc = alloc::DefaultAlloc {
-      pool: spin::Mutex::new(unsafe { core::mem::transmute(pool::Pool::new()) }),
-      pager: spin::Mutex::new(page::Pager::new(null_alloc_pages, null_dealloc_pages)),
-};
 
 /// Set the functions for allocating and deallocating pages.
 pub fn set_alloc(alloc_pages: AllocPages, dealloc_pages: DeallocPages) {

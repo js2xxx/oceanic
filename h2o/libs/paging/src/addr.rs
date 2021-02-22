@@ -6,10 +6,6 @@ use core::ptr::NonNull;
 #[repr(transparent)]
 pub struct PAddr(usize);
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-#[repr(transparent)]
-pub struct LAddr(*mut u8);
-
 impl PAddr {
       pub const fn new(addr: usize) -> Self {
             PAddr(addr)
@@ -43,6 +39,10 @@ impl core::fmt::Debug for PAddr {
             write!(f, "PAddr({:#x})", self.0)
       }
 }
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[repr(transparent)]
+pub struct LAddr(*mut u8);
 
 impl LAddr {
       pub const fn new(ptr: *mut u8) -> Self {

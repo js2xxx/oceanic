@@ -4,11 +4,6 @@ use core::fmt::*;
 use core::mem::MaybeUninit;
 use spin::Mutex;
 
-struct Logger {
-      output: Mutex<serial::Output>,
-      level: log::Level,
-}
-
 struct OptionU32Display(Option<u32>);
 
 impl core::fmt::Display for OptionU32Display {
@@ -19,6 +14,11 @@ impl core::fmt::Display for OptionU32Display {
                   write!(f, "<NULL>")
             }
       }
+}
+
+struct Logger {
+      output: Mutex<serial::Output>,
+      level: log::Level,
 }
 
 impl Logger {

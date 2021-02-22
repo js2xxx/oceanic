@@ -7,17 +7,6 @@ use core::alloc::{GlobalAlloc, Layout};
 use core::ptr::{null_mut, NonNull};
 use spin::Mutex;
 
-/// The the default global allocator type of Rust library.
-///
-/// All the members inside are encapsulated in [`Mutex`] because its functions are to be
-/// called globally (a.k.a. multi-CPU) so they must be locked to prevent data race.
-pub struct DefaultAlloc {
-      /// The main memory pool
-      pub(super) pool: Mutex<[u8; core::mem::size_of::<pool::Pool>()]>,
-      /// The default pager
-      pub(super) pager: Mutex<Pager>,
-}
-
 /// The kinds of allocation errors.
 #[derive(Debug)]
 pub enum AllocError {
@@ -36,6 +25,17 @@ pub enum AllocError {
       ///
       /// Indicates that the conditions of the requested `Layout` cannot be satisfied.
       InvLayout(Layout),
+}
+
+/// The the default global allocator type of Rust library.
+///
+/// All the members inside are encapsulated in [`Mutex`] because its functions are to be
+/// called globally (a.k.a. multi-CPU) so they must be locked to prevent data race.
+pub struct DefaultAlloc {
+      /// The main memory pool
+      pub(super) pool: Mutex<[u8; core::mem::size_of::<pool::Pool>()]>,
+      /// The default pager
+      pub(super) pager: Mutex<Pager>,
 }
 
 unsafe impl GlobalAlloc for DefaultAlloc {

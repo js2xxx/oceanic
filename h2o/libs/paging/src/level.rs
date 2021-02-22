@@ -84,10 +84,10 @@ impl Level {
       #[inline]
       pub fn leaf_attr(&self, attr: super::Attr) -> super::Attr {
             let pat = attr.contains(super::Attr::PAT);
-            let ret = attr
+            let ret = attr | super::Attr::PRESENT
                   | match self {
-                        Level::Pt => super::Attr::PRESENT,
-                        _ => super::Attr::LARGE_PAGE | super::Attr::PRESENT,
+                        Level::Pt => super::Attr::empty(),
+                        _ => super::Attr::LARGE_PAGE,
                   };
             if pat && *self != Level::Pt {
                   // `LARGE_PAGE` equals to `PAT`, so we cannot unset the latter.

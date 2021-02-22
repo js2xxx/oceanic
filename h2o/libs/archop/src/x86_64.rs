@@ -7,7 +7,7 @@ use paging::LAddr;
 use core::ops::Range;
 
 /// The address space that should never be valid due to hardware constraints.
-const INCANONICAL: Range<LAddr> =
+pub const INCANONICAL: Range<LAddr> =
       LAddr::new(0x8000_0000_0000 as *mut u8)..LAddr::new(0xFFFF_8000_0000_0000 as *mut u8);
 
 /// Check if the address is not permanently invalid.

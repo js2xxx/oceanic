@@ -77,10 +77,21 @@ const PF_LIST_SIZE: usize = size_of::<PfList>();
 /// The size of all the page frame lists.
 const PF_LISTS_SIZE: usize = PF_LIST_SIZE * (PfType::Max as usize) * NR_ORDERS;
 
+/// The size of structure [`PageFrame`].
+pub const PF_SIZE: usize = core::mem::size_of::<PageFrame>();
+
 /// The spinlock for the PMM.
 ///
 /// The PMM is single-cpued, so only one cpu / thread can access PMM at one time.
 static PMM_LOCK: Mutex<()> = Mutex::new(());
+
+/// The kernel data containing all the free lists.
+///
+/// We cannot declare free lists directly because [`Cell`] is used in the type
+/// declaration, which makes it unable to be declared as static variable for
+/// multi-threaded systems. So we do it indirectly and create a function for
+/// access.
+static mut PFL_DATA: [u8; PF_LISTS_SIZE] = [0; PF_LISTS_SIZE];
 
 /// The page frame structure.
 ///
@@ -98,7 +109,6 @@ struct PageFrame {
       /// create a field to store the info for easier access.
       order: Cell<usize>,
 }
-pub const PF_SIZE: usize = core::mem::size_of::<PageFrame>();
 
 intrusive_adapter!(PFAdapter = &'static PageFrame: PageFrame { link: LinkedListLink });
 
@@ -117,14 +127,6 @@ pub enum PfType {
       /// Representing both types above in functions, as well as the number of types.
       Max,
 }
-
-/// The kernel data containing all the free lists.
-///
-/// We cannot declare free lists directly because [`Cell`] is used in the type
-/// declaration, which makes it unable to be declared as static variable for
-/// multi-threaded systems. So we do it indirectly and create a function for
-/// access.
-static mut PFL_DATA: [u8; PF_LISTS_SIZE] = [0; PF_LISTS_SIZE];
 
 impl From<PAddr> for PfType {
       /// Get a page frame type of a physical address.
@@ -726,7 +728,6 @@ pub fn dump_data(pftype: PfType) {
 ///
 /// Unfortunately, we must initialize every free list manually, and it takes a long
 /// time.
-#[allow(clippy::not_unsafe_ptr_arg_deref)]
 pub fn init(mmap: *mut uefi::table::boot::MemoryDescriptor, mmap_len: usize, mmap_unit: usize) {
       for i in ORDERS {
             *(pf_list_mut(PfType::Low, i).unwrap()) = PfList::new(PFAdapter::new());

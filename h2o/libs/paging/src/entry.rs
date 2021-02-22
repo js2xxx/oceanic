@@ -39,10 +39,6 @@ bitflags! {
       }
 }
 
-#[derive(Copy, Clone)]
-pub struct Entry(u64);
-const_assert!(core::mem::size_of::<Entry>() == 1 << ENTRY_SIZE_SHIFT);
-
 impl Attr {
       pub fn merge(&mut self, other: &Attr) {
             *self |= *other & Self::USER_RW;
@@ -61,6 +57,10 @@ impl From<Entry> for Attr {
             Attr::from_bits_truncate(e.0)
       }
 }
+
+#[derive(Copy, Clone)]
+pub struct Entry(u64);
+const_assert!(core::mem::size_of::<Entry>() == 1 << ENTRY_SIZE_SHIFT);
 
 impl Entry {
       pub fn get(self, level: Level) -> (PAddr, Attr) {

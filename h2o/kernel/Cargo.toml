@@ -19,5 +19,6 @@ paging = { path = "../libs/paging" }
 pmm = { path = "../libs/pmm" }
 # External crates
 bitflags = "1.2"
+lazy_static = { version = "1.4", default-features = false }
 log = "0.4"
 spin = "0.7"
