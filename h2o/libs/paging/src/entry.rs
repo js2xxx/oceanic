@@ -2,6 +2,7 @@ use crate::{level::Level, NR_ENTRIES};
 use crate::{PAddr, ENTRY_SIZE_SHIFT};
 
 use bitflags::bitflags;
+use core::ops::{Deref, DerefMut};
 use core::ptr::NonNull;
 use static_assertions::*;
 
@@ -40,6 +41,10 @@ bitflags! {
 }
 
 impl Attr {
+      pub fn builder() -> AttrBuilder {
+            AttrBuilder::new()
+      }
+
       pub fn merge(&mut self, other: &Attr) {
             *self |= *other & Self::USER_RW;
             *self &= !Self::ACCESSED;
@@ -55,6 +60,59 @@ impl Attr {
 impl From<Entry> for Attr {
       fn from(e: Entry) -> Self {
             Attr::from_bits_truncate(e.0)
+      }
+}
+
+pub struct AttrBuilder {
+      attr: Attr,
+}
+
+impl AttrBuilder {
+      pub fn new() -> AttrBuilder {
+            AttrBuilder {
+                  attr: Attr::empty(),
+            }
+      }
+
+      pub fn writable(mut self, writable: bool) -> Self {
+            if writable {
+                  self.attr |= Attr::WRITABLE;
+            }
+            self
+      }
+
+      pub fn user_access(mut self, user_access: bool) -> Self {
+            if user_access {
+                  self.attr |= Attr::USER_ACCESS;
+            }
+            self
+      }
+
+      pub fn executable(mut self, executable: bool) -> Self {
+            if !executable {
+                  self.attr |= Attr::EXE_DISABLE;
+            }
+            self
+      }
+
+      pub fn cache(mut self, write_thru: bool, disable: bool) -> Self {
+            if write_thru {
+                  self.attr |= Attr::WRITE_THRU;
+            }
+            if disable {
+                  self.attr |= Attr::CACHE_DISABLE;
+            }
+            self
+      }
+
+      pub fn build(self) -> Attr {
+            self.attr
+      }
+}
+
+impl Default for AttrBuilder {
+      fn default() -> Self {
+            Self::new()
       }
 }
 
@@ -98,5 +156,30 @@ impl Entry {
 impl core::fmt::Debug for Entry {
       fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
             write!(f, "Entry({:#x})", self.0)
+      }
+}
+
+#[derive(Debug)]
+#[repr(align(4096))]
+pub struct Table([Entry; crate::NR_ENTRIES]);
+const_assert!(core::mem::size_of::<Table>() == crate::PAGE_SIZE);
+
+impl Table {
+      pub fn zeroed() -> Self {
+            unsafe { core::mem::zeroed() }
+      }
+}
+
+impl Deref for Table {
+      type Target = [Entry; crate::NR_ENTRIES];
+
+      fn deref(&self) -> &Self::Target {
+            &self.0
+      }
+}
+
+impl DerefMut for Table {
+      fn deref_mut(&mut self) -> &mut Self::Target {
+            &mut self.0
       }
 }

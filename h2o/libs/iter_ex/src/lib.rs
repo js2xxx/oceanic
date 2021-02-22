@@ -9,6 +9,17 @@ pub struct PointerIterator<T> {
       _t: PhantomData<T>,
 }
 
+impl<T> PointerIterator<T> {
+      pub fn new(ptr: *mut T, len: usize, step: usize) -> Self {
+            PointerIterator {
+                  ptr: ptr.cast(),
+                  len,
+                  step,
+                  _t: PhantomData,
+            }
+      }
+}
+
 impl<T> Iterator for PointerIterator<T> {
       type Item = *mut T;
 
@@ -30,13 +41,4 @@ impl<T> Iterator for PointerIterator<T> {
       }
 }
 
-impl<T> PointerIterator<T> {
-      pub fn new(ptr: *mut T, len: usize, step: usize) -> Self {
-            PointerIterator {
-                  ptr: ptr.cast(),
-                  len,
-                  step,
-                  _t: PhantomData,
-            }
-      }
-}
+impl<T> ExactSizeIterator for PointerIterator<T> {}

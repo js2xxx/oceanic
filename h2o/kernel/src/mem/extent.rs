@@ -18,7 +18,7 @@ bitflags! {
 }
 
 pub enum Type {
-      Region()
+      Region(),
 }
 
 #[inline]

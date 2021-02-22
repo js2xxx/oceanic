@@ -16,7 +16,7 @@ use core::ptr::NonNull;
 pub use addr::{LAddr, PAddr};
 pub use alloc::PageAlloc;
 pub use consts::*;
-pub use entry::{Attr, Entry};
+pub use entry::{Attr, Entry, Table};
 pub use level::Level;
 
 #[derive(Clone, Debug)]
@@ -38,11 +38,11 @@ impl MapInfo {
       }
 }
 
-fn create_table<'a, 'b: 'a>(
-      entry: &'b mut Entry,
+fn create_table(
+      entry: &mut Entry,
       level: Level,
       id_off: usize,
-      allocator: &'a mut impl PageAlloc,
+      allocator: &mut impl PageAlloc,
 ) -> Result<NonNull<[Entry]>, Error> {
       log::trace!(
             "paging::create_table: entry = {:?}(value = {:?}), level = {:?}, id_off = {:?}, allocator = {:?}",
@@ -60,8 +60,7 @@ fn create_table<'a, 'b: 'a>(
                   if entry.is_leaf(level) {
                         Err(Error::EntryExistent(true))
                   } else {
-                        let phys = allocator
-                              .alloc_zeroed(id_off)
+                        let phys = unsafe { allocator.alloc_zeroed(id_off) }
                               .map_or(Err(Error::OutOfMemory), Ok)?;
                         let attr = Attr::INTERMEDIATE;
                         *entry = Entry::new(phys, attr, Level::Pt);
@@ -128,7 +127,7 @@ unsafe fn invalidate_page(virt: LAddr) {
 }
 
 fn new_page(
-      root_table: NonNull<[Entry]>,
+      root_table: &mut Table,
       virt: LAddr,
       phys: PAddr,
       attr: Attr,
@@ -147,7 +146,7 @@ fn new_page(
             allocator as *mut _
       );
 
-      let mut table = root_table;
+      let mut table: NonNull<[Entry]> = NonNull::from(&mut **root_table);
       let mut lvl = Level::P4;
       while lvl != level {
             let idx = lvl.addr_idx(virt, false);
@@ -171,8 +170,8 @@ fn new_page(
       }
 }
 
-fn get_page(root_table: NonNull<[Entry]>, virt: LAddr, id_off: usize) -> Result<PAddr, Error> {
-      let mut table = root_table;
+fn get_page(root_table: &Table, virt: LAddr, id_off: usize) -> Result<PAddr, Error> {
+      let mut table: NonNull<[Entry]> = NonNull::from(&**root_table);
       let mut lvl = Level::P4;
       loop {
             let idx = lvl.addr_idx(virt, false);
@@ -186,18 +185,20 @@ fn get_page(root_table: NonNull<[Entry]>, virt: LAddr, id_off: usize) -> Result<
             table = item
                   .get_table(id_off, lvl)
                   .map_or(Err(Error::EntryExistent(false)), Ok)?;
-            lvl = lvl.decrease().map_or(Err(Error::EntryExistent(false)), Ok)?;
+            lvl = lvl
+                  .decrease()
+                  .map_or(Err(Error::EntryExistent(false)), Ok)?;
       }
 }
 
 fn drop_page(
-      root_table: NonNull<[Entry]>,
+      root_table: &mut Table,
       virt: LAddr,
       level: Level,
       id_off: usize,
       allocator: &mut impl PageAlloc,
 ) -> Result<(), Error> {
-      let mut table = root_table;
+      let mut table: NonNull<[Entry]> = NonNull::from(&mut **root_table);
       let mut lvl = Level::P4;
       while lvl != level {
             let idx = lvl.addr_idx(virt, false);
@@ -252,7 +253,7 @@ fn check(virt: &Range<LAddr>, phys: Option<PAddr>) -> Result<(), Error> {
 }
 
 pub fn maps(
-      root_table: NonNull<[Entry]>,
+      root_table: &mut Table,
       info: &MapInfo,
       allocator: &mut impl PageAlloc,
 ) -> Result<(), Error> {
@@ -265,6 +266,7 @@ pub fn maps(
 
       check(&info.virt, Some(info.phys))?;
 
+      let mut ret = Ok(());
       let mut rem_info = info.clone();
       log::trace!("paging::maps: Begin spliting pages");
       while !rem_info.virt.is_empty() {
@@ -274,7 +276,7 @@ pub fn maps(
                         .expect("Misaligned start address"),
             );
 
-            let ret = new_page(
+            ret = new_page(
                   root_table,
                   rem_info.virt.start,
                   rem_info.phys,
@@ -284,11 +286,7 @@ pub fn maps(
                   allocator,
             );
             if ret.is_err() {
-                  let done_virt = info.distance(&rem_info);
-                  if !done_virt.is_empty() {
-                        let _ = unmaps(root_table, done_virt, info.id_off, allocator);
-                  }
-                  return ret;
+                  break;
             }
 
             let ps = level.page_size();
@@ -297,11 +295,18 @@ pub fn maps(
             log::trace!("paging::maps: Done new_page. rem = {:?}", &rem_info);
       }
 
-      log::trace!("paging::maps: mapping succeeded");
-      Ok(())
+      if ret.is_ok() {
+            log::trace!("paging::maps: mapping succeeded");
+      } else {
+            let done_virt = info.distance(&rem_info);
+            if !done_virt.is_empty() {
+                  let _ = unmaps(root_table, done_virt, info.id_off, allocator);
+            }
+      }
+      ret
 }
 
-pub fn query(root_table: NonNull<[Entry]>, virt: LAddr, id_off: usize) -> Result<PAddr, Error> {
+pub fn query(root_table: &Table, virt: LAddr, id_off: usize) -> Result<PAddr, Error> {
       let offset = virt.val() & PAGE_MASK;
       let virt = LAddr::from(virt.val() & !PAGE_MASK);
 
@@ -309,7 +314,7 @@ pub fn query(root_table: NonNull<[Entry]>, virt: LAddr, id_off: usize) -> Result
 }
 
 pub fn unmaps(
-      root_table: NonNull<[Entry]>,
+      root_table: &mut Table,
       mut virt: Range<LAddr>,
       id_off: usize,
       allocator: &mut impl PageAlloc,
