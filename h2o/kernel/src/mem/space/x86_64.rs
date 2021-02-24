@@ -22,6 +22,7 @@ lazy_static! {
       };
 }
 
+#[derive(Debug)]
 pub struct Space {
       canary: Canary<Space>,
       root_table: Mutex<Box<Table>>,
@@ -38,10 +39,10 @@ impl Space {
                   // So far we only copy the higher half kernel mappings. In the future, we'll set ranges
                   // and customize the behavior.
                   let mut dst_rt = space.root_table.lock();
-                  let dst_kernel_half = dst_rt.split_at_mut(paging::NR_ENTRIES / 2).1;
+                  let dst_kernel_half = &mut dst_rt[(paging::NR_ENTRIES / 2)..];
 
-                  let mut src_rt = KERNEL_SPACE.root_table.lock();
-                  let src_kernel_half = src_rt.split_at(paging::NR_ENTRIES / 2).1;
+                  let src_rt = KERNEL_SPACE.root_table.lock();
+                  let src_kernel_half = &src_rt[(paging::NR_ENTRIES / 2)..];
 
                   dst_kernel_half.copy_from_slice(src_kernel_half);
             }

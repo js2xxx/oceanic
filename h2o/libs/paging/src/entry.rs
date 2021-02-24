@@ -74,6 +74,7 @@ impl AttrBuilder {
             }
       }
 
+      #[inline]
       pub fn writable(mut self, writable: bool) -> Self {
             if writable {
                   self.attr |= Attr::WRITABLE;
@@ -81,6 +82,7 @@ impl AttrBuilder {
             self
       }
 
+      #[inline]
       pub fn user_access(mut self, user_access: bool) -> Self {
             if user_access {
                   self.attr |= Attr::USER_ACCESS;
@@ -88,6 +90,7 @@ impl AttrBuilder {
             self
       }
 
+      #[inline]
       pub fn executable(mut self, executable: bool) -> Self {
             if !executable {
                   self.attr |= Attr::EXE_DISABLE;
@@ -95,6 +98,7 @@ impl AttrBuilder {
             self
       }
 
+      #[inline]
       pub fn cache(mut self, write_thru: bool, disable: bool) -> Self {
             if write_thru {
                   self.attr |= Attr::WRITE_THRU;
