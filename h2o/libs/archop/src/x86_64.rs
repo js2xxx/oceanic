@@ -71,11 +71,3 @@ pub unsafe fn halt_loop(intr_op: Option<bool>) -> ! {
             halt();
       }
 }
-
-/// # Safety
-///
-/// Invalid use of this function can cause CPU unrecoverable fault.
-#[inline]
-pub unsafe fn pause() {
-      asm!("pause");
-}

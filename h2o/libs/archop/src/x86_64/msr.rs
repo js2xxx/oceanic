@@ -251,7 +251,7 @@ pub enum Msr {
 /// The caller must ensure the validity of `msr` and `val`.
 #[inline]
 pub unsafe fn write(msr: Msr, val: u64) {
-      let eax = (val & 0xFFFFFFFF) as u32;
+      let eax = (val & 0xFFFF_FFFF) as u32;
       let edx = (val >> 32) as u32;
       asm!("wrmsr", in("eax")eax, in("edx")edx, in("ecx")msr as u32);
 }

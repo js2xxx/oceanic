@@ -1,6 +1,6 @@
 use archop::io;
 
-use core::fmt;
+use core::{fmt, hint};
 
 /// The COM port for logging.
 const COM_LOG: u16 = 0x3f8;
@@ -44,7 +44,7 @@ unsafe fn buf_full() -> bool {
 
 // unsafe fn in_char() -> u8 {
 //       while has_data() {
-//             crate::rxx::pause();
+//             core::hint::spin_loop();
 //       }
 //       io::in8(COM_LOG)
 // }
@@ -53,7 +53,7 @@ unsafe fn buf_full() -> bool {
 #[inline]
 unsafe fn out_char(c: u8) {
       while buf_full() {
-            asm!("pause");
+            hint::spin_loop();
       }
       io::out8(COM_LOG, c);
 }

@@ -70,9 +70,8 @@ unsafe impl<'a> paging::alloc::PageAlloc for BootAlloc<'a> {
 pub fn init(syst: &SystemTable<Boot>) {
       log::trace!("mem::init: syst = {:?}", syst as *const _);
 
-      let rt_addr = unsafe {alloc(syst)
-            .alloc_zeroed(EFI_ID_OFFSET)}
-            .expect("Failed to allocate a page");
+      let rt_addr =
+            unsafe { alloc(syst).alloc_zeroed(EFI_ID_OFFSET) }.expect("Failed to allocate a page");
       let rt = unsafe { NonNull::new_unchecked(*rt_addr as *mut paging::Entry) };
 
       unsafe { ROOT_TABLE.as_mut_ptr().write(rt.cast()) };

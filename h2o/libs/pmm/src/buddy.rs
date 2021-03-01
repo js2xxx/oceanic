@@ -625,11 +625,7 @@ pub fn alloc_pages_exact(n: usize, pftype: Option<PfType>) -> Option<PAddr> {
             return None;
       }
 
-      if let Some(addr) = alloc_pages(order, pftype) {
-            Some(unsafe { scale_back_pages(addr, order, n) })
-      } else {
-            None
-      }
+      alloc_pages(order, pftype).map(|addr| unsafe { scale_back_pages(addr, order, n) })
 }
 
 /// Exactly deallocate `n` pages.
@@ -656,21 +652,17 @@ pub unsafe fn dealloc_pages_exact(n: usize, addr: PAddr) {
       let end = PAddr::new(*addr + (n << PAGE_SHIFT));
 
       while start < end {
-            log::trace!("New start at {:?}, end at {:?}", start, end);
-
             let pftype = PfType::from(start);
             let spage = page_frame(start);
             let epage = page_frame(end);
-            log::trace!("");
 
             let spfn = page_to_pfn(spage, pftype);
             let epfn = page_to_pfn(epage, pftype);
-            log::trace!("");
 
             let order = min(spfn.lsb(), MAX_ORDER - 1);
             log::trace!("order = {}, epfn = {:x}, spfn = {:x}", order, epfn, spfn);
             let order = min(order, (epfn - spfn).log2f());
-            log::trace!("");
+            
             dealloc_page_typed(spage, order, pftype);
             start = PAddr::new(*start + (PAGE_SIZE << order));
       }

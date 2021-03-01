@@ -1,6 +1,6 @@
 pub mod extent;
-pub mod space;
 pub mod pobj;
+pub mod space;
 
 use paging::LAddr;
 

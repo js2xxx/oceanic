@@ -9,6 +9,7 @@
 
 mod log;
 mod mem;
+mod rxx;
 
 use ::log as l;
 
@@ -28,29 +29,4 @@ pub extern "C" fn kmain(
       mem::init(efi_mmap_paddr, efi_mmap_len, efi_mmap_unit);
 
       l::debug!("Reaching end of kernel");
-}
-
-#[panic_handler]
-fn panic_handler(info: &core::panic::PanicInfo) -> ! {
-      l::error!("Kernel {}", info);
-      unsafe { archop::halt_loop(Some(true)) }
-}
-
-#[lang = "eh_personality"]
-pub extern "C" fn rust_eh_personality() {}
-
-#[allow(non_snake_case)]
-#[no_mangle]
-/// Required to handle panics.
-pub extern "C" fn _Unwind_Resume() -> ! {
-      unsafe { archop::halt_loop(Some(true)) }
-}
-
-/// The function indicating memory runs out.
-#[lang = "oom"]
-fn out_of_memory(layout: core::alloc::Layout) -> ! {
-      l::error!("!!!! ALLOCATION ERROR !!!!");
-      l::error!("Request: {:?}", layout);
-
-      unsafe { archop::halt_loop(None) };
 }

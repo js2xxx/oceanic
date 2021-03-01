@@ -1,12 +1,12 @@
 use super::space::Space;
 use canary::Canary;
-use paging::{LAddr, PAddr};
+use paging::LAddr;
 
 use alloc::collections::BTreeMap;
-use alloc::sync::Arc;
+use alloc::sync::{Arc, Weak};
 use bitflags::bitflags;
 use core::fmt::Debug;
-use core::ops::{Bound, Range};
+use core::ops::Range;
 use spin::Mutex;
 
 bitflags! {
@@ -34,12 +34,12 @@ struct Parameters {
 pub struct Extent {
       canary: Canary<Extent>,
       range: Range<LAddr>,
-      space: Arc<Space>,
+      pub(super) space: Weak<Space>,
       parameters: Mutex<Parameters>,
 }
 
 impl Extent {
-      pub(super) fn new(space: Arc<Space>, range: Range<LAddr>, flags: Flags, ty: Type) -> Self {
+      pub(super) fn new(space: Weak<Space>, range: Range<LAddr>, flags: Flags, ty: Type) -> Self {
             Extent {
                   canary: Canary::new(),
                   range,
@@ -55,9 +55,11 @@ impl Extent {
             ty: Type,
       ) -> Result<Arc<Self>, ()> {
             let mut param = self.parameters.lock();
+            let flags = flags & param.flags;
+
             // Self must be a region.
-            let mut subregions = match param.ty {
-                  Type::Region(subr) => subr,
+            let subextents = match &mut param.ty {
+                  Type::Region(subextents) => subextents,
                   _ => return Err(()),
             };
 
@@ -68,21 +70,17 @@ impl Extent {
 
             // Subextents cannot overlap each other.
             let key = range.start;
-            for (key, item) in subregions.range((Bound::Unbounded, Bound::Included(key))) {
+            for (_, item) in subextents.range(..key) {
                   if range_intersect(&range, &item.range) {
                         return Err(());
                   }
             }
 
-            let flags = flags & param.flags;
-
             let ret = Arc::new(Extent::new(self.space.clone(), range, flags, ty));
-            subregions.insert(key, ret.clone());
+            subextents.insert(key, ret.clone());
 
             Ok(ret)
       }
-
-
 }
 
 #[inline]

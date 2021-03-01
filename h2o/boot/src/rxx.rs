@@ -13,7 +13,7 @@ fn panic_handler(info: &core::panic::PanicInfo) -> ! {
       }
 
       loop {
-            unsafe { asm!("pause") };
+            core::hint::spin_loop();
       }
 }
 

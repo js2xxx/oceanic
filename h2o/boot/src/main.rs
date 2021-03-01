@@ -142,6 +142,6 @@ fn efi_main(img: Handle, syst: SystemTable<Boot>) -> Status {
 
       // This dummy code is for debugging.
       loop {
-            unsafe { asm!("pause") }
+            core::hint::spin_loop();
       }
 }

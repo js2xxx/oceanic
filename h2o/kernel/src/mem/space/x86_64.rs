@@ -3,54 +3,86 @@ use canary::Canary;
 use paging::{LAddr, PAddr, Table};
 
 use alloc::boxed::Box;
+use alloc::collections::BTreeMap;
+use alloc::sync::{Arc, Weak};
 use core::ops::Range;
 use lazy_static::lazy_static;
 use spin::Mutex;
 
 lazy_static! {
-      static ref KERNEL_SPACE: Space = {
-            let space = Space {
-                  canary: Canary::new(),
-                  root_table: Mutex::new(box Table::zeroed()),
-            };
+      static ref KERNEL_ROOT: Box<Table> = {
+            let mut table = box Table::zeroed();
+
             let cr3_laddr = PAddr::new(unsafe { archop::reg::cr3::read() } as usize)
                   .to_laddr(minfo::ID_OFFSET);
             let init_table =
                   unsafe { core::slice::from_raw_parts(cr3_laddr.cast(), paging::NR_ENTRIES) };
-            space.root_table.lock().copy_from_slice(init_table);
-            space
+            table.copy_from_slice(init_table);
+
+            table
       };
+}
+
+#[derive(Debug)]
+pub enum CreateType {
+      Kernel,
+      User,
+}
+
+impl CreateType {
+      fn range(&self) -> Range<LAddr> {
+            match self {
+                  CreateType::Kernel => {
+                        LAddr::from(minfo::KERNEL_SPACE_START)..LAddr::from(minfo::KMEM_PHYS_BASE)
+                  }
+                  CreateType::User => LAddr::from(minfo::USER_BASE)..LAddr::from(minfo::USER_END),
+            }
+      }
 }
 
 #[derive(Debug)]
 pub struct Space {
       canary: Canary<Space>,
+      extent: Arc<extent::Extent>,
       root_table: Mutex<Box<Table>>,
 }
 
 impl Space {
-      pub fn new() -> Space {
-            let space = Space {
+      pub fn new(ty: CreateType, flags: extent::Flags) -> Arc<Space> {
+            let mut extent = Arc::new(extent::Extent::new(
+                  Weak::new(),
+                  ty.range(),
+                  flags,
+                  extent::Type::Region(BTreeMap::new()),
+            ));
+
+            let mut space = Arc::new(Space {
                   canary: Canary::new(),
+                  extent: extent.clone(),
                   root_table: Mutex::new(box Table::zeroed()),
-            };
+            });
+
+            extent.space = Arc::downgrade(&space);
 
             {
-                  // So far we only copy the higher half kernel mappings. In the future, we'll set ranges
-                  // and customize the behavior.
+                  // So far we only copy the higher half kernel mappings. In the future, we'll set
+                  // ranges and customize the behavior.
                   let mut dst_rt = space.root_table.lock();
                   let dst_kernel_half = &mut dst_rt[(paging::NR_ENTRIES / 2)..];
 
-                  let src_rt = KERNEL_SPACE.root_table.lock();
-                  let src_kernel_half = &src_rt[(paging::NR_ENTRIES / 2)..];
+                  let src_kernel_half = &KERNEL_ROOT[(paging::NR_ENTRIES / 2)..];
 
                   dst_kernel_half.copy_from_slice(src_kernel_half);
             }
-            
+
             space
       }
 
-      pub fn maps(
+      pub fn extent(&self) -> &Arc<extent::Extent> {
+            &self.extent
+      }
+
+      pub(super) fn maps(
             &self,
             virt: Range<LAddr>,
             phys: PAddr,
@@ -74,13 +106,13 @@ impl Space {
             paging::maps(&mut *self.root_table.lock(), &map_info, &mut PageAlloc)
       }
 
-      pub fn query(&self, virt: LAddr) -> Result<PAddr, paging::Error> {
+      pub(super) fn query(&self, virt: LAddr) -> Result<PAddr, paging::Error> {
             self.canary.assert();
 
             paging::query(&mut *self.root_table.lock(), virt, minfo::ID_OFFSET)
       }
 
-      pub fn unmaps(&self, virt: Range<LAddr>) -> Result<(), paging::Error> {
+      pub(super) fn unmaps(&self, virt: Range<LAddr>) -> Result<(), paging::Error> {
             self.canary.assert();
 
             paging::unmaps(
