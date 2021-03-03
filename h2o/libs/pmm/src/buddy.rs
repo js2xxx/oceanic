@@ -660,9 +660,15 @@ pub unsafe fn dealloc_pages_exact(n: usize, addr: PAddr) {
             let epfn = page_to_pfn(epage, pftype);
 
             let order = min(spfn.lsb(), MAX_ORDER - 1);
-            log::trace!("order = {}, epfn = {:x}, spfn = {:x}", order, epfn, spfn);
+            log::trace!(
+                  "spage = {:?}, order = {}, epfn = {:x}, spfn = {:x}",
+                  spage as *const _,
+                  order,
+                  epfn,
+                  spfn
+            );
             let order = min(order, (epfn - spfn).log2f());
-            
+
             dealloc_page_typed(spage, order, pftype);
             start = PAddr::new(*start + (PAGE_SIZE << order));
       }

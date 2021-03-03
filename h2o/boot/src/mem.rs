@@ -28,14 +28,19 @@ pub struct BootAlloc<'a> {
 
 impl<'a> BootAlloc<'a> {
       pub fn alloc_n(&mut self, n: usize) -> Option<paging::PAddr> {
-            self.bs
+            let ret = self
+                  .bs
                   .allocate_pages(
                         boot::AllocateType::AnyPages,
                         boot::MemoryType::LOADER_DATA,
                         n,
                   )
                   .ok()
-                  .map(|c| paging::PAddr::new(c.log() as usize))
+                  .map(|c| paging::PAddr::new(c.log() as usize));
+            if let Some(ret) = ret {
+                  log::trace!("allocated {:x} ~ {:x}", *ret, *ret + n * paging::PAGE_SIZE);
+            }
+            ret
       }
 
       pub fn alloc_into_slice(
@@ -170,7 +175,8 @@ pub fn init_pf(syst: &SystemTable<Boot>) -> (usize, usize) {
                   .offset_from(b2.unwrap().cast::<u8>())
       };
 
-      let pf_buffer_size = PF_SIZE * (addr_max as usize).div_ceil_bit(paging::PAGE_SHIFT);
+      let pf_buffer_size = (PF_SIZE * (addr_max as usize).div_ceil_bit(paging::PAGE_SHIFT))
+            .round_up_bit(paging::PAGE_SHIFT);
       let pf_buffer = alloc(syst)
             .alloc_n(pf_buffer_size >> paging::PAGE_SHIFT)
             .expect("Failed to allocate the page frame buffer");

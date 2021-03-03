@@ -103,7 +103,7 @@ impl BitField {
 #[repr(C, align(4096))]
 pub struct Page {
       /// The link to a slab list.
-      pub link: RBTreeLink,
+      pub(crate) link: RBTreeLink,
 
       /// The object size of this slab page.
       objsize: usize,
@@ -128,7 +128,7 @@ impl Page {
       /// > modified!
       const HEADER_SIZE: usize = size_of::<RBTreeLink>() // self.link
              + size_of::<usize>() // self.objsize
-              + size_of::<BitField>(); // self.used
+             + size_of::<BitField>(); // self.used
 
       /// Get the count of objects that the header takes up the space of.
       fn header_count(&self) -> usize {

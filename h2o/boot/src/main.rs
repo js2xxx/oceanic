@@ -105,7 +105,7 @@ fn efi_main(img: Handle, syst: SystemTable<Boot>) -> Status {
       // mapped may get more and more.
       let h2o = file::load(&syst, "\\EFI\\Oceanic\\H2O.k");
       log::debug!(
-            "Kernel file loaded at {:?}, ksize = {:?}",
+            "Kernel file loaded at {:?}, ksize = {:#x}",
             h2o.as_mut_ptr(),
             h2o.len()
       );

@@ -32,9 +32,7 @@ pub enum CreateType {
 impl CreateType {
       fn range(&self) -> Range<LAddr> {
             match self {
-                  CreateType::Kernel => {
-                        LAddr::from(minfo::KERNEL_SPACE_START)..LAddr::from(minfo::KMEM_PHYS_BASE)
-                  }
+                  CreateType::Kernel => minfo::KERNEL_ALLOCABLE_RANGE,
                   CreateType::User => LAddr::from(minfo::USER_BASE)..LAddr::from(minfo::USER_END),
             }
       }
@@ -62,7 +60,7 @@ impl Space {
                   root_table: Mutex::new(box Table::zeroed()),
             });
 
-            extent.space = Arc::downgrade(&space);
+            *extent.space.write() = Arc::downgrade(&space);
 
             {
                   // So far we only copy the higher half kernel mappings. In the future, we'll set
@@ -82,7 +80,7 @@ impl Space {
             &self.extent
       }
 
-      pub(super) fn maps(
+      pub(in crate::mem) fn maps(
             &self,
             virt: Range<LAddr>,
             phys: PAddr,
@@ -106,13 +104,13 @@ impl Space {
             paging::maps(&mut *self.root_table.lock(), &map_info, &mut PageAlloc)
       }
 
-      pub(super) fn query(&self, virt: LAddr) -> Result<PAddr, paging::Error> {
+      pub(in crate::mem) fn query(&self, virt: LAddr) -> Result<PAddr, paging::Error> {
             self.canary.assert();
 
             paging::query(&mut *self.root_table.lock(), virt, minfo::ID_OFFSET)
       }
 
-      pub(super) fn unmaps(&self, virt: Range<LAddr>) -> Result<(), paging::Error> {
+      pub(in crate::mem) fn unmaps(&self, virt: Range<LAddr>) -> Result<(), paging::Error> {
             self.canary.assert();
 
             paging::unmaps(

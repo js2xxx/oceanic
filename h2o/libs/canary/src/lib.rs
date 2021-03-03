@@ -25,7 +25,7 @@ impl<T: 'static> Canary<T> {
 
       #[track_caller]
       pub fn assert(&self) {
-            if unlikely(self.check()) {
+            if unlikely(!self.check()) {
                   panic!(
                         "Canary of type {} ({:?}) check failed, invalid value = {:?}, from function {}",
                         type_name::<T>(),

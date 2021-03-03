@@ -13,6 +13,7 @@ crate-type = ["staticlib"]
 # Local crates
 archop = { path = "../libs/archop" }
 canary = { path = "../libs/canary" }
+collection_ex = { path = "../libs/collection_ex" }
 heap = { path = "../libs/heap" }
 minfo = { path = "../libs/minfo" }
 paging = { path = "../libs/paging" }
