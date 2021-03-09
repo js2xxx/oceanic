@@ -1,12 +1,18 @@
 #![no_std]
 #![feature(asm)]
 #![feature(box_syntax)]
+#![feature(const_fn_transmute)]
 #![feature(default_alloc_error_handler)]
 #![feature(lang_items)]
 #![feature(nonnull_slice_from_raw_parts)]
 #![feature(slice_ptr_get)]
 #![feature(slice_ptr_len)]
+#![feature(thread_local)]
 
+#[macro_use]
+extern crate derive_builder;
+
+mod cpu;
 mod log;
 mod mem;
 mod rxx;
@@ -51,12 +57,20 @@ pub extern "C" fn kmain(
 
       l::debug!("Creating an object");
       let mut obj = mem::pobj::PObject::new(flags);
-      obj.add_range(PAddr::new(0)..PAddr::new(0x1000));
+      obj.add_range(PAddr::new(0)..PAddr::new(0x1000)).expect("Failed to add a range");
 
       l::debug!("Creating a mapping");
       let mapping = region
             .create_mapping(obj, true)
             .expect("Failed to create mapping");
+
+      debug_assert!(
+            krl_space
+                  .query(minfo::KERNEL_ALLOCABLE_RANGE.start)
+                  .expect("Failed to query the address")
+                  == PAddr::new(0),
+            "The address mismatch!"
+      );
 
       l::debug!("Unmapping");
       mapping
@@ -64,6 +78,6 @@ pub extern "C" fn kmain(
             .expect("Failed to decommit a mapping");
 
       // Test end
-      
+
       l::debug!("Reaching end of kernel");
 }

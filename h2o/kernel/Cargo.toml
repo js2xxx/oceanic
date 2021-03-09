@@ -19,8 +19,11 @@ minfo = { path = "../libs/minfo" }
 paging = { path = "../libs/paging" }
 pmm = { path = "../libs/pmm" }
 # External crates
+derive_builder = "0.9"
 bitflags = "1.2"
 cfg-if = "1.0"
 lazy_static = { version = "1.4", features = ["spin_no_std"] }
 log = "0.4"
+modular-bitfield = "0.11"
 spin = "0.7"
+static_assertions = "1.1"

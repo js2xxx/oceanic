@@ -1,0 +1,120 @@
+//! # Segmentation in x86_64.
+//!
+//! This module deals with segmentation, including so-called descriptors and descriptor
+//! tables. This module is placed in `cpu`, not `mem`, mainly in that segmentation nowadays
+//! is generally not a method to manage memory, but an aspect in configuring CPU and its
+//! surroundings.
+
+pub mod idt;
+pub mod ndt;
+
+use paging::LAddr;
+
+use core::mem::{size_of, transmute};
+use core::ops::Range;
+use modular_bitfield::prelude::*;
+use static_assertions::*;
+
+/// The all available rings - privilege levels.
+pub const PL: Range<u16> = 0..4;
+
+/// The all available limit ranges.
+pub const LIMIT: Range<u32> = 0..0x100000;
+
+/// The all available interrupt stack tables.
+pub const IST: Range<u8> = 1..8;
+
+/// The attributes for segment and gate descriptors.
+pub mod attrs {
+      pub const SEG_CODE: u16 = 0x1A;
+      pub const SEG_DATA: u16 = 0x12;
+      pub const SYS_TSS: u16 = 0x09;
+      pub const SYS_LDT: u16 = 0x02;
+      pub const INT_GATE: u16 = 0x0E;
+      pub const TRAP_GATE: u16 = 0x0F;
+      pub const PRESENT: u16 = 0x80;
+      pub const X86: u16 = 0x4000;
+      pub const X64: u16 = 0x2000;
+      pub const G4K: u16 = 0x8000;
+}
+
+/// The errors happening when setting a descriptor.
+#[derive(Debug)]
+pub enum SetError {
+      /// Indicate field is out of its available range.
+      OutOfRange,
+}
+
+/// The pointer used to load descriptor tables.
+#[repr(C, packed)]
+#[derive(Clone, Copy, Debug)]
+pub struct FatPointer {
+      /// The value of length - 1.
+      pub limit: u16,
+      pub base: LAddr,
+}
+
+/// The index of descriptor tables.
+///
+/// If `rpl` and `ti` is masked off, the structure as `u16` is the offset of the target
+/// descriptor in the table.
+#[bitfield]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SegSelector {
+      /// The Request Privilege Level.
+      rpl: B2,
+      /// The Table Index - 0 for GDT and 1 for LDT.
+      ti: bool,
+      /// The numeric index of the descriptor table.
+      index: B13,
+}
+const_assert_eq!(size_of::<SegSelector>(), size_of::<u16>());
+
+impl Default for SegSelector {
+      fn default() -> Self {
+            Self::from(0)
+      }
+}
+
+impl From<u16> for SegSelector {
+      fn from(data: u16) -> Self {
+            unsafe { transmute(data) }
+      }
+}
+
+impl Into<u16> for SegSelector {
+      fn into(self) -> u16 {
+            unsafe { transmute(self) }
+      }
+}
+
+/// Get the type of a segment or gate descriptor.
+///
+/// We can do this because the offset of the type attribute of 3 kinds of descriptors is
+/// the same.
+///
+/// # Safety
+///
+/// The caller must ensure the validity of `ptr` as a segment or gate descriptor.
+pub unsafe fn get_type_attr(ptr: *mut u8) -> u16 {
+      let ptr = ptr.add(size_of::<u32>() + size_of::<u8>());
+      (ptr as *mut u16).read()
+}
+
+// /// Initialize the module.
+// pub fn init<T: FnOnce()>(init_tls: T) {
+//       ndt::init_gdt();
+//       init_tls();
+//       ndt::init_ldt();
+//       ndt::init_tss();
+//       idt::init_idt();
+// }
+
+// /// Initialize the module for APs.
+// pub fn init_ap<T: FnOnce()>(init_tls: T) {
+//       ndt::init_gdt_ap();
+//       init_tls();
+//       ndt::init_ldt_ap();
+//       ndt::init_tss();
+//       idt::init_idt();
+// }

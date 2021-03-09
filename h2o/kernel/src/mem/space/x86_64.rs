@@ -47,14 +47,14 @@ pub struct Space {
 
 impl Space {
       pub fn new(ty: CreateType, flags: extent::Flags) -> Arc<Space> {
-            let mut extent = Arc::new(extent::Extent::new(
+            let extent = Arc::new(extent::Extent::new(
                   Weak::new(),
                   ty.range(),
                   flags,
                   extent::Type::Region(BTreeMap::new()),
             ));
 
-            let mut space = Arc::new(Space {
+            let space = Arc::new(Space {
                   canary: Canary::new(),
                   extent: extent.clone(),
                   root_table: Mutex::new(box Table::zeroed()),
@@ -104,7 +104,7 @@ impl Space {
             paging::maps(&mut *self.root_table.lock(), &map_info, &mut PageAlloc)
       }
 
-      pub(in crate::mem) fn query(&self, virt: LAddr) -> Result<PAddr, paging::Error> {
+      pub/* (in crate::mem) */ fn query(&self, virt: LAddr) -> Result<PAddr, paging::Error> {
             self.canary.assert();
 
             paging::query(&mut *self.root_table.lock(), virt, minfo::ID_OFFSET)
