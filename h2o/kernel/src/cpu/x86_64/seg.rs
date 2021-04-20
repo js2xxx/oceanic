@@ -59,16 +59,27 @@ pub struct FatPointer {
 /// If `rpl` and `ti` is masked off, the structure as `u16` is the offset of the target
 /// descriptor in the table.
 #[bitfield]
+#[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SegSelector {
       /// The Request Privilege Level.
-      rpl: B2,
+      pub rpl: B2,
       /// The Table Index - 0 for GDT and 1 for LDT.
-      ti: bool,
+      pub ti: bool,
       /// The numeric index of the descriptor table.
-      index: B13,
+      pub index: B13,
 }
 const_assert_eq!(size_of::<SegSelector>(), size_of::<u16>());
+
+impl SegSelector {
+      pub const fn from_const(data: u16) -> Self {
+            unsafe { transmute(data) }
+      }
+
+      pub fn into_val(self) -> u16 {
+            unsafe { transmute(self) }
+      }
+}
 
 impl Default for SegSelector {
       fn default() -> Self {
@@ -78,13 +89,7 @@ impl Default for SegSelector {
 
 impl From<u16> for SegSelector {
       fn from(data: u16) -> Self {
-            unsafe { transmute(data) }
-      }
-}
-
-impl Into<u16> for SegSelector {
-      fn into(self) -> u16 {
-            unsafe { transmute(self) }
+            Self::from_const(data)
       }
 }
 

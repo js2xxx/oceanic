@@ -1,15 +1,24 @@
-use crate::mem::extent;
+//! # Memory management of H2O in x86_64.
+//!
+//! This module is specific for x86_64 mode. It wraps the cr3's root page table and the methods
+//! of x86_64 paging.
+
+use super::Flags;
+use bitop_ex::BitOpEx;
 use canary::Canary;
 use paging::{LAddr, PAddr, Table};
 
 use alloc::boxed::Box;
-use alloc::collections::BTreeMap;
-use alloc::sync::{Arc, Weak};
+use alloc::sync::Arc;
+use core::alloc::Layout;
+use core::mem::{size_of, MaybeUninit};
 use core::ops::Range;
+use core::pin::Pin;
 use lazy_static::lazy_static;
 use spin::Mutex;
 
 lazy_static! {
+      /// The root page table at initialization time.
       static ref KERNEL_ROOT: Box<Table> = {
             let mut table = box Table::zeroed();
 
@@ -23,44 +32,27 @@ lazy_static! {
       };
 }
 
-#[derive(Debug)]
-pub enum CreateType {
-      Kernel,
-      User,
-}
-
-impl CreateType {
-      fn range(&self) -> Range<LAddr> {
-            match self {
-                  CreateType::Kernel => minfo::KERNEL_ALLOCABLE_RANGE,
-                  CreateType::User => LAddr::from(minfo::USER_BASE)..LAddr::from(minfo::USER_END),
-            }
-      }
-}
-
+/// The root page table.
 #[derive(Debug)]
 pub struct Space {
       canary: Canary<Space>,
-      extent: Arc<extent::Extent>,
       root_table: Mutex<Box<Table>>,
+      cr3: LAddr,
 }
 
 impl Space {
-      pub fn new(ty: CreateType, flags: extent::Flags) -> Arc<Space> {
-            let extent = Arc::new(extent::Extent::new(
-                  Weak::new(),
-                  ty.range(),
-                  flags,
-                  extent::Type::Region(BTreeMap::new()),
-            ));
-
+      /// Construct a new arch-specific space.
+      ///
+      /// The space's root page table must contains the page tables of the kernel half otherwise
+      /// if loaded the kernel will crash due to #PF.
+      pub fn new() -> Arc<Space> {
+            let rt = box Table::zeroed();
+            let cr3 = Box::into_raw(rt);
             let space = Arc::new(Space {
                   canary: Canary::new(),
-                  extent: extent.clone(),
-                  root_table: Mutex::new(box Table::zeroed()),
+                  root_table: Mutex::new(unsafe { Box::from_raw(cr3) }),
+                  cr3: LAddr::new(cr3.cast()),
             });
-
-            *extent.space.write() = Arc::downgrade(&space);
 
             {
                   // So far we only copy the higher half kernel mappings. In the future, we'll set
@@ -76,22 +68,18 @@ impl Space {
             space
       }
 
-      pub fn extent(&self) -> &Arc<extent::Extent> {
-            &self.extent
-      }
-
       pub(in crate::mem) fn maps(
             &self,
             virt: Range<LAddr>,
             phys: PAddr,
-            flags: extent::Flags,
+            flags: Flags,
       ) -> Result<(), paging::Error> {
             self.canary.assert();
 
             let attr = paging::Attr::builder()
-                  .writable(flags.contains(extent::Flags::WRTIEABLE))
-                  .user_access(flags.contains(extent::Flags::USER_ACCESS))
-                  .executable(flags.contains(extent::Flags::EXECUTABLE))
+                  .writable(flags.contains(Flags::WRITABLE))
+                  .user_access(flags.contains(Flags::USER_ACCESS))
+                  .executable(flags.contains(Flags::EXECUTABLE))
                   .build();
 
             let map_info = paging::MapInfo {
@@ -104,21 +92,65 @@ impl Space {
             paging::maps(&mut *self.root_table.lock(), &map_info, &mut PageAlloc)
       }
 
-      pub/* (in crate::mem) */ fn query(&self, virt: LAddr) -> Result<PAddr, paging::Error> {
+      pub fn query(&self, virt: LAddr) -> Result<PAddr, paging::Error> {
             self.canary.assert();
 
             paging::query(&mut *self.root_table.lock(), virt, minfo::ID_OFFSET)
       }
 
-      pub(in crate::mem) fn unmaps(&self, virt: Range<LAddr>) -> Result<(), paging::Error> {
+      pub(in crate::mem) fn unmaps(
+            &self,
+            virt: Range<LAddr>,
+      ) -> Result<Option<PAddr>, paging::Error> {
             self.canary.assert();
 
-            paging::unmaps(
-                  &mut *self.root_table.lock(),
-                  virt,
-                  minfo::ID_OFFSET,
-                  &mut PageAlloc,
-            )
+            let mut lck = self.root_table.lock();
+            let phys = paging::query(&mut lck, virt.start, minfo::ID_OFFSET).ok();
+            paging::unmaps(&mut lck, virt, minfo::ID_OFFSET, &mut PageAlloc).map(|_| phys)
+      }
+
+      /// # Safety
+      ///
+      /// The caller must ensure that loading the space is safe and not cause any #PF.
+      pub(in crate::mem) unsafe fn load(&self) {
+            let cr3 = self.cr3.to_paddr(minfo::ID_OFFSET);
+            asm!("mov cr3, {}", in(reg) *cr3);
+      }
+}
+
+/// The standard memory block representing a page in x86_64 mode.
+///
+/// This structure is only used for allocating unknown types and its data can only be accessed
+/// via type conversion.
+#[repr(align(4096))]
+pub struct MemBlock {
+      _data: [u8; 4096],
+}
+
+impl MemBlock {
+      pub fn into_typed<'a, T>(
+            blocks: Pin<&'a mut [Self]>,
+      ) -> Result<Pin<&'a mut MaybeUninit<T>>, &'static str> {
+            if blocks.len() * size_of::<MemBlock>() < size_of::<T>() {
+                  Err("The size is not satisfied")
+            } else {
+                  Ok(unsafe { blocks.map_unchecked_mut(|u| &mut *u.as_mut_ptr().cast()) })
+            }
+      }
+
+      /// # Safety
+      ///
+      /// The caller must ensure that the block is allocated by [`super::Space`].
+      pub unsafe fn from_typed<'a, T>(b: Pin<&'a mut MaybeUninit<T>>) -> Pin<&'a mut [Self]> {
+            b.map_unchecked_mut(|u| {
+                  core::slice::from_raw_parts_mut(
+                        (u as *mut MaybeUninit<T>).cast(),
+                        Layout::new::<T>()
+                              .pad_to_align()
+                              .size()
+                              .div_ceil_bit(paging::PAGE_SHIFT),
+                  )
+            })
       }
 }
 

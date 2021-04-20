@@ -676,9 +676,6 @@ pub unsafe fn dealloc_pages_exact(n: usize, addr: PAddr) {
 
 /// Parse the memory map acquired from H2O's boot loader.
 ///
-/// We choose to make use of [`MMapType::BootCode`] so that the chosen areas will be
-/// allocated as [`MMapType::Available`], because these areas are useless **BY FAR**.
-///
 /// **TODO**: To storage the info of other memory map types.
 ///
 /// # Safety
@@ -701,7 +698,7 @@ unsafe fn parse_mmap(mmap_iter: iter_ex::PointerIterator<uefi::table::boot::Memo
       }
 }
 
-/// Dump PMM data with specific [`PfType`] by module [`crate::outp::log`].
+/// Dump PMM data with specific [`PfType`].
 #[cfg(debug_assertions)]
 pub fn dump_data(pftype: PfType) {
       match pftype {

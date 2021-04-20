@@ -15,7 +15,7 @@ impl PAddr {
             NonZeroUsize::new(self.0)
       }
 
-      pub fn to_laddr(&self, id_off: usize) -> LAddr {
+      pub fn to_laddr(self, id_off: usize) -> LAddr {
             LAddr::from(self.0 + id_off)
       }
 }
@@ -57,7 +57,7 @@ impl LAddr {
             NonNull::new(self.0)
       }
 
-      pub fn to_paddr(&self, id_off: usize) -> PAddr {
+      pub fn to_paddr(self, id_off: usize) -> PAddr {
             PAddr(self.val() - id_off)
       }
 

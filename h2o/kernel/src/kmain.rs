@@ -1,4 +1,6 @@
 #![no_std]
+#![feature(alloc_layout_extra)]
+#![feature(allocator_api)]
 #![feature(asm)]
 #![feature(box_syntax)]
 #![feature(const_fn_transmute)]
@@ -9,15 +11,10 @@
 #![feature(slice_ptr_len)]
 #![feature(thread_local)]
 
-#[macro_use]
-extern crate derive_builder;
-
 mod cpu;
 mod log;
 mod mem;
 mod rxx;
-
-use paging::{LAddr, PAddr};
 
 use ::log as l;
 
@@ -37,47 +34,13 @@ pub extern "C" fn kmain(
       mem::init(efi_mmap_paddr, efi_mmap_len, efi_mmap_unit);
 
       // Tests
-      let _u = box 1;
-
-      let flags = mem::extent::Flags::READABLE | mem::extent::Flags::WRTIEABLE;
-
       l::debug!("Creating a space");
-      let krl_space =
-            mem::space::Space::new(mem::space::CreateType::Kernel, mem::extent::Flags::all());
+      let krl_space = mem::space::Space::new(mem::space::CreateType::Kernel);
+      unsafe { krl_space.load() };
 
-      l::debug!("Creating a region");
-      let region = krl_space
-            .extent()
-            .create_subregion(
-                  minfo::KERNEL_ALLOCABLE_RANGE.start
-                        ..LAddr::from(minfo::KERNEL_ALLOCABLE_RANGE.start.val() + 0x100000),
-                  mem::extent::Flags::READABLE | mem::extent::Flags::WRTIEABLE,
-            )
-            .expect("Failed to create region");
-
-      l::debug!("Creating an object");
-      let mut obj = mem::pobj::PObject::new(flags);
-      obj.add_range(PAddr::new(0)..PAddr::new(0x1000)).expect("Failed to add a range");
-
-      l::debug!("Creating a mapping");
-      let mapping = region
-            .create_mapping(obj, true)
-            .expect("Failed to create mapping");
-
-      debug_assert!(
-            krl_space
-                  .query(minfo::KERNEL_ALLOCABLE_RANGE.start)
-                  .expect("Failed to query the address")
-                  == PAddr::new(0),
-            "The address mismatch!"
-      );
-
-      l::debug!("Unmapping");
-      mapping
-            .decommit_mapping()
-            .expect("Failed to decommit a mapping");
+      l::debug!("Allocating GDT");
+      let _gdt = cpu::seg::ndt::init_gdt(&krl_space);
 
       // Test end
-
       l::debug!("Reaching end of kernel");
 }

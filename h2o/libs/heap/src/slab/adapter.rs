@@ -13,6 +13,7 @@ unsafe impl<T> intrusive_collections::PointerOps for NonNullPointerOps<T> {
             NonNull::new_unchecked(value as *mut _)
       }
 
+      #[allow(clippy::clippy::wrong_self_convention)]
       fn into_raw(&self, ptr: Self::Pointer) -> *const Self::Value {
             ptr.as_ptr()
       }

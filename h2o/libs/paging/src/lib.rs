@@ -19,6 +19,8 @@ pub use consts::*;
 pub use entry::{Attr, Entry, Table};
 pub use level::Level;
 
+pub const PAGE_LAYOUT: core::alloc::Layout = core::alloc::Layout::new::<Table>();
+
 #[derive(Clone, Debug)]
 pub struct MapInfo {
       pub virt: Range<LAddr>,
@@ -222,14 +224,14 @@ fn drop_page(
 }
 
 fn check(virt: &Range<LAddr>, phys: Option<PAddr>) -> Result<(), Error> {
-      log::trace!("paging::check: virt = {:?}, phys = {:?}", virt, phys,);
+      log::trace!("paging::check: virt = {:?}, phys = {:?}", virt, phys);
 
       #[inline]
       fn misaligned<Origin>(addr: usize, o: Origin) -> Option<Origin> {
             if addr & PAGE_MASK == 0 {
                   None
             } else {
-                  log::warn!("paging::check: misaligned address: {:?}", addr);
+                  log::warn!("paging::check: misaligned address: {:#x}", addr);
                   Some(o)
             }
       }

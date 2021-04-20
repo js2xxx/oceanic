@@ -1,6 +1,5 @@
 #![no_std]
 #![feature(asm)]
-#![feature(int_bits_const)]
 #![feature(nonnull_slice_from_raw_parts)]
 
 pub mod buddy;

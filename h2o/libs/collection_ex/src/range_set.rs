@@ -97,6 +97,22 @@ impl<T: Ord + Copy> RangeSet<T> {
                   range_end: range.end_bound().cloned(),
             }
       }
+
+      pub fn neighbors(&self, range: Range<T>) -> (Option<Range<T>>, Option<Range<T>>) {
+            (
+                  self.inner
+                        .range(..=range.start)
+                        .rev()
+                        .next()
+                        .map(|r| r.1.clone())
+                        .filter(|r| r.end == range.start),
+                  self.inner
+                        .range(range.end..)
+                        .next()
+                        .map(|r| r.1.clone())
+                        .filter(|r| r.start == range.end),
+            )
+      }
 }
 
 impl<T: Ord + Copy> Default for RangeSet<T> {

@@ -55,8 +55,7 @@ pub const MAX_OBJ_SIZE: usize = OBJ_SIZES[NR_OBJ_SIZES - 1];
 /// The bitmap of slab pages.
 ///
 /// The bitmap of the fixed size `[PAGE_SIZE] / [MIN_OBJ_SIZE]` is simply made of a `u8` array
-/// and an accumulator recording the number of bits set `true`. Both are wrapped in [`Cell`]s for
-/// mutability.
+/// and an accumulator recording the number of bits set `true`.
 #[repr(C, packed)]
 struct BitField([u8; PAGE_SIZE / MIN_OBJ_SIZE], usize);
 

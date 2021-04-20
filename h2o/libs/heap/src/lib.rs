@@ -11,7 +11,7 @@
 //!
 //! ### Slab pages
 //!
-//! Each slab page is a headered list sized [`PAGE_SIZE`], whose header contains a bitmap
+//! Each slab page is a headered list sized [`paging::PAGE_SIZE`], whose header contains a bitmap
 //! recording the uses of items of the list. When an item is allocated (popped), the
 //! corresponding bit will be set `true`.
 //!
@@ -28,9 +28,9 @@
 //!
 //! ### Memory pools
 //!
-//! A memory pool holds slab lists of different object sizes (see [`OBJ_SIZES`]). When requested,
-//! It looks for a correct index for the requested size and hands the task to the slab list of
-//! that idx.
+//! A memory pool holds slab lists of different object sizes (see [`page::OBJ_SIZES`]). When 
+//! requested, it looks for a correct index for the requested size and hands the task to the 
+//! slab list of that idx.
 //!
 //! See module [`pool`] for more.
 //!
@@ -39,7 +39,7 @@
 //! The global allocator links to the Rust [`alloc`] library for advanced use. It delegates its
 //! memory pool or directly page allocator on request.
 //!
-//! See [`DefaultAlloc`] for more.
+//! See [`alloc::DefaultAlloc`] for more.
 
 #![no_std]
 #![feature(const_fn_fn_ptr_basics)]

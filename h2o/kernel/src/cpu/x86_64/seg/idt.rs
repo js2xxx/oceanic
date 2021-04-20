@@ -2,7 +2,7 @@ use super::*;
 
 use paging::LAddr;
 
-use core::mem::{size_of, transmute};
+use core::mem::{align_of, size_of};
 use core::ops::{Index, IndexMut, Range};
 use core::slice::{Iter, IterMut};
 // use spin::Mutex;
@@ -22,80 +22,99 @@ const ALLOCABLE_INTRS: Range<usize> = 32..NR_INTRS;
 ///
 /// There's no gate descriptor that consumes only one quadword because Task Gates are invalid
 /// in long (x86_64) mode.
-#[repr(C, packed)]
-#[derive(Builder, Clone, Copy, Debug, PartialEq, Eq)]
-#[builder(no_std, build_fn(validate = "Self::validate"))]
+///
+/// ## Actual Fields of structure
+///
+/// Because a packed & aligned structure cannot be built in Rust, so we hide the actual fields
+/// in 2 quadwords.
+/// 
+///     size: |<-------u16------>|<-------u16------>|<--u8-->|<---u8-->|<-------u16------>|
+///     `q0`: |   offset_low     |     selector     |   IST  |  attr   |   offset_mid     |
+///     `q1`: |             offset_high             |             (reserved)              |
+#[repr(C, align(0x10))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Gate {
-      #[builder(private, default)]
-      offset_low: u16,
-      #[builder(default)]
-      selector: SegSelector,
-      #[builder(default)]
-      ist: u8,
-      #[builder(private, default)]
-      attr: u8,
-      #[builder(private, default)]
-      offset_mid: u16,
-      #[builder(private, default)]
-      offset_high: u32,
-      #[builder(setter(skip), default)]
-      _rsvd: u32,
+      q0: u64,
+      q1: u64,
 }
 const_assert_eq!(size_of::<Gate>(), size_of::<u128>());
 
-/// The IDT structure.
-#[repr(align(0x10))]
-pub struct IntDescTable([Gate; NR_INTRS]);
+pub struct GateBuilder {
+      offset_low: u16,
+      selector: SegSelector,
+      ist: u8,
+      attr: u8,
+      offset_mid: u16,
+      offset_high: u32,
+}
 
 impl GateBuilder {
       /// Set up the offset of a gate descriptor.
       pub fn offset(&mut self, offset: LAddr) -> &mut Self {
             let offset = offset.val();
-            self.offset_low((offset & 0xFFFF) as _)
-                  .offset_mid(((offset >> 16) & 0xFFFF) as _)
-                  .offset_high((offset >> 32) as _)
+            self.offset_low = (offset & 0xFFFF) as _;
+            self.offset_mid = ((offset >> 16) & 0xFFFF) as _;
+            self.offset_high = (offset >> 32) as _;
+            self
       }
 
       /// Set up the attributes - type and DPL of a gate descriptor.
       pub fn attribute(&mut self, attr: u16, dpl: u16) -> &mut Self {
-            self.attr((attr & 0xFF) as u8 | ((dpl & 3) << 5) as u8)
+            self.attr = (attr & 0xFF) as u8 | ((dpl & 3) << 5) as u8;
+            self
+      }
+
+      pub fn selector(&mut self, selector: SegSelector) -> &mut Self {
+            self.selector = selector;
+            self
+      }
+
+      pub fn ist(&mut self, ist: u8) -> &mut Self {
+            self.ist = ist;
+            self
       }
 
       /// Check if the init data is valid.
       fn validate(&self) -> Result<(), &'static str> {
-            if let Some(ist) = self.ist {
-                  if !IST.contains(&ist) {
-                        return Err("Invalid IST");
-                  }
+            if self.ist != 0 && !IST.contains(&self.ist) {
+                  return Err("Invalid IST");
             }
 
             Ok(())
+      }
+
+      pub fn build(&mut self) -> Result<Gate, &'static str> {
+            self.validate()?;
+            Ok(Gate {
+                  q0: (self.offset_low as u64)
+                        | ((self.selector.into_val() as u64) << 16)
+                        | ((self.ist as u64) << 32)
+                        | ((self.attr as u64) << 40)
+                        | ((self.offset_mid as u64) << 48),
+                  q1: self.offset_high as u64,
+            })
       }
 }
 
 impl Gate {
       /// Construct a zeroed gate descriptor.
-      #[allow(clippy::transmuting_null)]
       pub const fn zeroed() -> Gate {
-            Gate {
-                  offset_low: 0,
-                  selector: unsafe { transmute(0_u16) },
-                  ist: 0,
-                  attr: 0,
-                  offset_mid: 0,
-                  offset_high: 0,
-                  _rsvd: 0,
-            }
+            Gate { q0: 0, q1: 0 }
+      }
+
+      #[inline]
+      fn attr(&self) -> u16 {
+            ((self.q0 >> 40) & 0xFF) as u16
       }
 
       /// Check if the descriptor is a interrupt gate.
       pub fn is_int(&self) -> bool {
-            self.attr as u16 == attrs::PRESENT | attrs::INT_GATE
+            self.attr() == attrs::PRESENT | attrs::INT_GATE
       }
 
       /// Check if the descriptor is a trap gate.
       pub fn is_trap(&self) -> bool {
-            self.attr as u16 == attrs::PRESENT | attrs::TRAP_GATE
+            self.attr() == attrs::PRESENT | attrs::TRAP_GATE
       }
 
       /// Check if the descriptor is valid.
@@ -106,12 +125,16 @@ impl Gate {
       /// Get the offset of the descriptor.
       pub fn get_offset(&self) -> LAddr {
             LAddr::from(
-                  (self.offset_low as usize)
-                        | ((self.offset_mid as usize) << 16)
-                        | ((self.offset_high as usize) << 32),
+                  ((self.q0 & 0xFFFF) as usize)
+                        | (((self.q0 >> 32) & 0xFFFF0000) as usize)
+                        | ((self.q1 as usize) << 32),
             )
       }
 }
+
+/// The IDT structure.
+#[repr(align(0x10))]
+pub struct IntDescTable([Gate; NR_INTRS]);
 
 impl Index<usize> for IntDescTable {
       type Output = Gate;

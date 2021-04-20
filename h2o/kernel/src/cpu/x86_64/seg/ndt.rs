@@ -1,80 +1,55 @@
 use super::*;
+use crate::mem::space::{Flags, MemBlock, Space};
 use paging::LAddr;
 
+use alloc::sync::Arc;
 use core::mem::size_of;
-// use spin::Mutex;
+use core::pin::Pin;
+use spin::Mutex;
 use static_assertions::*;
 
 /// Indicate a struct is a segment or gate descriptor.
 pub trait Descriptor {}
 
-/// All the segment descriptor that consumes a quadword.
+/// The Task State Segment
 #[repr(C, packed)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Seg64 {
-      limit_low: u16,
-      base_low: u16,
-      base_mid: u8,
-      attr_low: u8,
-      attr_high_limit_high: u8,
-      base_high: u8,
+pub struct TssStruct {
+      _rsvd1: u32,
+      /// The legacy RSPs of different privilege levels
+      rsp: [u64; 3],
+      _rsvd2: u64,
+      /// The Interrupt Stack Tables
+      ist: [u64; 7],
+      _rsvd3: u64,
+      _rsvd4: u16,
+      /// The IO base mappings
+      iobase: u16,
 }
-const_assert_eq!(size_of::<Seg64>(), size_of::<u64>());
-
-/// All the segment descriptor that consumes 2 quadwords.
-#[repr(C, packed)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Seg128 {
-      low: Seg64,
-      base_higher: u32,
-      _rsvd: u32,
-}
-const_assert_eq!(size_of::<Seg128>(), size_of::<u128>());
-
-/// An entry in a descriptor table.
-pub enum DescEntry<'a> {
-      S64(&'a mut Seg64),
-      S128(&'a mut Seg128),
-}
-
-// /// The iterator of a descriptor table.
-// pub struct DescEntryIter {
-//       distance: usize,
-//       ptr: *mut u8,
-// }
 
 /// A descriptor table.
-pub struct DescTable {
+pub struct DescTable<'a> {
       /// The base linear address of the table.
       base: LAddr,
       /// The end address of all the used entries of the table.
       end: LAddr,
       /// The number of how much entries the table can hold.
-      capacity: u16,
+      capacity: usize,
+
+      memory: Pin<&'a mut [MemBlock]>,
 }
 
-/// The Task State Segment
-#[repr(C, packed)]
-pub struct TssStruct {
-      rsvd1: u32,
-      /// The legacy RSPs of different privilege levels
-      rsp: [u64; 3],
-      rsvd2: u64,
-      /// The Interrupt Stack Tables
-      ist: [u64; 7],
-      rsvd3: u64,
-      rsvd4: u16,
-      /// The IO base mappings
-      iobase: u16,
-}
-
-impl DescTable {
+impl<'a> DescTable<'a> {
       /// Construct a new descriptor table.
-      pub const fn new(base: LAddr, capacity: u16) -> DescTable {
+      pub fn new(mut memory: Pin<&'a mut [MemBlock]>) -> DescTable {
+            let base = LAddr::new(memory.as_mut_ptr().cast());
+            let end_bound = LAddr::new(memory.as_mut_ptr_range().end.cast());
+            let capacity = unsafe { end_bound.offset_from(*base) } as usize;
+
             DescTable {
                   base,
                   end: base,
                   capacity,
+                  memory,
             }
       }
 
@@ -148,14 +123,31 @@ impl DescTable {
       // }
 
       /// Export the fat pointer of the descriptor table.
+      ///
+      /// # Safety
+      ///
+      /// The caller must ensure that the capacity of the descriptor table must be within the
+      /// limit of `u16`.
       #[inline]
-      pub fn export_fp(&self) -> FatPointer {
+      pub unsafe fn export_fp(&self) -> FatPointer {
             FatPointer {
                   base: self.base,
-                  limit: self.capacity - 1,
+                  limit: self.capacity as u16 - 1,
             }
       }
 }
+
+// /// An entry in a descriptor table.
+// pub enum DescEntry<'a> {
+//       S64(&'a mut Seg64),
+//       S128(&'a mut Seg128),
+// }
+
+// /// The iterator of a descriptor table.
+// pub struct DescEntryIter {
+//       distance: usize,
+//       ptr: *mut u8,
+// }
 
 // impl Iterator for DescEntryIter {
 //       type Item = DescEntry;
@@ -187,9 +179,20 @@ impl DescTable {
 //       }
 // }
 
-impl Descriptor for Seg64 {}
+/// All the segment descriptor that consumes a quadword.
+#[repr(C, packed)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Seg64 {
+      limit_low: u16,
+      base_low: u16,
+      base_mid: u8,
+      attr_low: u8,
+      attr_high_limit_high: u8,
+      base_high: u8,
+}
+const_assert_eq!(size_of::<Seg64>(), size_of::<u64>());
 
-impl Descriptor for Seg128 {}
+impl Descriptor for Seg64 {}
 
 impl Seg64 {
       /// Create a new segment descriptor with check.
@@ -229,6 +232,18 @@ impl Seg64 {
       }
 }
 
+/// All the segment descriptor that consumes 2 quadwords.
+#[repr(C, packed)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Seg128 {
+      low: Seg64,
+      base_higher: u32,
+      _rsvd: u32,
+}
+const_assert_eq!(size_of::<Seg128>(), size_of::<u128>());
+
+impl Descriptor for Seg128 {}
+
 impl Seg128 {
       /// Create a new segment descriptor with check.
       ///
@@ -261,42 +276,51 @@ impl Seg128 {
       }
 }
 
-// /// Initialize the GDT.
-// ///
-// /// NOTE: This function sould only be called once from the BSP.
-// pub fn init_gdt() {
-//       extern "C" {
-//             fn reset_seg(code: SegSelector, data: SegSelector);
-//       }
-//       let (base, _, capacity) = Vec::<u8>::with_capacity(PAGE_SIZE).into_raw_parts();
+/// Initialize the GDT.
+///
+/// NOTE: This function sould only be called once from the BSP.
+pub fn init_gdt(space: &Arc<Space>) -> Mutex<DescTable<'_>> {
+      extern "C" {
+            fn reset_seg(code: SegSelector, data: SegSelector);
+      }
 
-//       let mut gdt = GDT.lock();
+      let (layout, k) = paging::PAGE_LAYOUT
+            .repeat(2)
+            .expect("Failed to get the allocation size");
+      assert!(k == paging::PAGE_SIZE);
+      let memory =
+            unsafe { space.alloc_manual(layout, None, true, Flags::READABLE | Flags::WRITABLE) }
+                  .expect("Failed to allocate memory for GDT");
 
-//       *gdt = DescTable::new(base as LAddr, capacity as u16);
+      let gdt = Mutex::new(DescTable::new(memory));
+      let mut gdt_data = gdt.lock();
 
-//       const LIM: u32 = 0xFFFFF;
-//       const ATTR: u16 = attrs::PRESENT | attrs::G4K;
+      const LIM: u32 = 0xFFFFF;
+      const ATTR: u16 = attrs::PRESENT | attrs::G4K;
 
-//       gdt.push_back_s64(0, 0, 0, None); // Null Desc
-//       let code = gdt.push_back_s64(0, LIM, attrs::SEG_CODE | attrs::X64 | ATTR, None);
-//       let data = gdt.push_back_s64(0, LIM, attrs::SEG_DATA | attrs::X64 | ATTR, None);
-//       gdt.push_back_s64(0, LIM, attrs::SEG_CODE | attrs::X86 | ATTR, None);
-//       gdt.push_back_s64(0, LIM, attrs::SEG_DATA | attrs::X86 | ATTR, None);
-//       gdt.push_back_s64(0, LIM, attrs::SEG_CODE | attrs::X64 | ATTR, Some(3));
-//       gdt.push_back_s64(0, LIM, attrs::SEG_DATA | attrs::X64 | ATTR, Some(3));
-//       gdt.push_back_s64(0, LIM, attrs::SEG_CODE | attrs::X86 | ATTR, Some(3));
-//       gdt.push_back_s64(0, LIM, attrs::SEG_DATA | attrs::X86 | ATTR, Some(3));
+      gdt_data.push_back_s64(0, 0, 0, None); // Null Desc
+      let code = gdt_data.push_back_s64(0, LIM, attrs::SEG_CODE | attrs::X64 | ATTR, None);
+      let data = gdt_data.push_back_s64(0, LIM, attrs::SEG_DATA | attrs::X64 | ATTR, None);
+      gdt_data.push_back_s64(0, LIM, attrs::SEG_CODE | attrs::X86 | ATTR, None);
+      gdt_data.push_back_s64(0, LIM, attrs::SEG_DATA | attrs::X86 | ATTR, None);
+      gdt_data.push_back_s64(0, LIM, attrs::SEG_CODE | attrs::X64 | ATTR, Some(3));
+      gdt_data.push_back_s64(0, LIM, attrs::SEG_DATA | attrs::X64 | ATTR, Some(3));
+      gdt_data.push_back_s64(0, LIM, attrs::SEG_CODE | attrs::X86 | ATTR, Some(3));
+      gdt_data.push_back_s64(0, LIM, attrs::SEG_DATA | attrs::X86 | ATTR, Some(3));
 
-//       unsafe {
-//             let gdtr = gdt.export_fp();
-//             asm!("lgdt [{}]", in(reg) &gdtr);
-//       }
+      unsafe {
+            let gdtr = gdt_data.export_fp();
+            asm!("lgdt [{}]", in(reg) &gdtr);
+      }
 
-//       unsafe {
-//             let (code, data) = (SegSelector::from(code), SegSelector::from(data));
-//             reset_seg(code, data);
-//       }
-// }
+      unsafe {
+            let (code, data) = (SegSelector::from(code), SegSelector::from(data));
+            reset_seg(code, data);
+      }
+
+      drop(gdt_data);
+      gdt
+}
 
 // /// Initialize the GDT for APs.
 // pub fn init_gdt_ap() {
