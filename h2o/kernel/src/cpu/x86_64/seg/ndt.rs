@@ -279,7 +279,7 @@ impl Seg128 {
 /// Initialize the GDT.
 ///
 /// NOTE: This function sould only be called once from the BSP.
-pub fn init_gdt(space: &Arc<Space>) -> Mutex<DescTable<'_>> {
+pub fn create_gdt(space: &Arc<Space>) -> Mutex<DescTable<'_>> {
       extern "C" {
             fn reset_seg(code: SegSelector, data: SegSelector);
       }

@@ -108,11 +108,11 @@ pub unsafe fn get_type_attr(ptr: *mut u8) -> u16 {
 
 // /// Initialize the module.
 // pub fn init<T: FnOnce()>(init_tls: T) {
-//       ndt::init_gdt();
+//       ndt::create_gdt();
 //       init_tls();
 //       ndt::init_ldt();
 //       ndt::init_tss();
-//       idt::init_idt();
+//       idt::create_idt();
 // }
 
 // /// Initialize the module for APs.
@@ -121,5 +121,5 @@ pub unsafe fn get_type_attr(ptr: *mut u8) -> u16 {
 //       init_tls();
 //       ndt::init_ldt_ap();
 //       ndt::init_tss();
-//       idt::init_idt();
+//       idt::create_idt();
 // }

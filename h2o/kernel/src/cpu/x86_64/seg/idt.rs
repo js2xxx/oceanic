@@ -1,11 +1,13 @@
 use super::*;
-
+use crate::mem::space::{Flags, Space};
 use paging::LAddr;
 
-use core::mem::{align_of, size_of};
+use alloc::sync::Arc;
+use core::mem::size_of;
 use core::ops::{Index, IndexMut, Range};
+use core::pin::Pin;
 use core::slice::{Iter, IterMut};
-// use spin::Mutex;
+use spin::Mutex;
 use static_assertions::*;
 
 /// The count of all the interrupts in one CPU.
@@ -27,7 +29,7 @@ const ALLOCABLE_INTRS: Range<usize> = 32..NR_INTRS;
 ///
 /// Because a packed & aligned structure cannot be built in Rust, so we hide the actual fields
 /// in 2 quadwords.
-/// 
+///
 ///     size: |<-------u16------>|<-------u16------>|<--u8-->|<---u8-->|<-------u16------>|
 ///     `q0`: |   offset_low     |     selector     |   IST  |  attr   |   offset_mid     |
 ///     `q1`: |             offset_high             |             (reserved)              |
@@ -132,33 +134,37 @@ impl Gate {
       }
 }
 
-/// The IDT structure.
-#[repr(align(0x10))]
-pub struct IntDescTable([Gate; NR_INTRS]);
+pub type IdtArray = [Gate; NR_INTRS];
 
-impl Index<usize> for IntDescTable {
+/// The IDT structure.
+#[repr(align(4096))]
+pub struct IntDescTable<'a> {
+      data: Pin<&'a mut IdtArray>,
+}
+
+impl<'a> Index<usize> for IntDescTable<'a> {
       type Output = Gate;
       fn index(&self, index: usize) -> &Self::Output {
-            &self.0[index]
+            &self.data[index]
       }
 }
 
-impl IndexMut<usize> for IntDescTable {
+impl<'a> IndexMut<usize> for IntDescTable<'a> {
       fn index_mut(&mut self, index: usize) -> &mut Self::Output {
-            &mut self.0[index]
+            &mut self.data[index]
       }
 }
 
-impl IntDescTable {
+impl<'a> IntDescTable<'a> {
       /// Construct a new (zeroed) IDT.
-      pub fn new() -> IntDescTable {
-            IntDescTable(unsafe { core::mem::zeroed() })
+      pub fn new(data: Pin<&'a mut IdtArray>) -> Self {
+            IntDescTable { data }
       }
 
       /// Export the fat pointer of the IDT.
       pub fn export_fp(&self) -> FatPointer {
-            let base = LAddr::new(self.0.as_ptr().cast::<u8>() as *mut _);
-            let size = self.0.len() * size_of::<Gate>();
+            let base = LAddr::new(self.data.as_ptr().cast::<u8>() as *mut _);
+            let size = self.data.len() * size_of::<Gate>();
             FatPointer {
                   base,
                   limit: (size - 1) as u16,
@@ -167,12 +173,12 @@ impl IntDescTable {
 
       /// Return the iterator of the IDT.
       pub fn iter(&self) -> Iter<Gate> {
-            self.0.iter()
+            self.data.iter()
       }
 
       /// Return the mutable iterator of the IDT.
       pub fn iter_mut(&mut self) -> IterMut<Gate> {
-            self.0.iter_mut()
+            self.data.iter_mut()
       }
 
       /// Allocate a free slot (position of gate descriptor) in the IDT.
@@ -193,16 +199,20 @@ impl IntDescTable {
       }
 }
 
-// /// The per-cpu IDT.
-// #[thread_local]
-// pub static IDT: Mutex<IntDescTable> = Mutex::new(IntDescTable::new());
+/// Initialize the per-cpu IDT.
+pub fn create_idt(space: &Arc<Space>) -> Mutex<IntDescTable<'_>> {
+      let idt_array = unsafe {
+            space.alloc_typed::<IdtArray>(None, true, Flags::READABLE | Flags::WRITABLE)
+                  .expect("Failed to allocate memory for IDT")
+                  .map_unchecked_mut(|u| u.assume_init_mut())
+      };
 
-// /// Initialize the per-cpu IDT.
-// pub fn init_idt() {
-//       let idt = IDT.lock();
+      let idt = Mutex::new(IntDescTable::new(idt_array));
 
-//       unsafe {
-//             let ptr = idt.export_fp();
-//             asm!("cli; lidt [{}]", in(reg) &ptr);
-//       }
-// }
+      unsafe {
+            let idtr = idt.lock().export_fp();
+            asm!("cli; lidt [{}]", in(reg) &idtr);
+      }
+
+      idt
+}

@@ -48,6 +48,7 @@ impl Space {
       pub fn new() -> Arc<Space> {
             let rt = box Table::zeroed();
             let cr3 = Box::into_raw(rt);
+
             let space = Arc::new(Space {
                   canary: Canary::new(),
                   root_table: Mutex::new(unsafe { Box::from_raw(cr3) }),

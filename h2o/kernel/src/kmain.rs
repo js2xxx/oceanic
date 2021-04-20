@@ -6,6 +6,7 @@
 #![feature(const_fn_transmute)]
 #![feature(default_alloc_error_handler)]
 #![feature(lang_items)]
+#![feature(maybe_uninit_ref)]
 #![feature(nonnull_slice_from_raw_parts)]
 #![feature(slice_ptr_get)]
 #![feature(slice_ptr_len)]
@@ -39,7 +40,10 @@ pub extern "C" fn kmain(
       unsafe { krl_space.load() };
 
       l::debug!("Allocating GDT");
-      let _gdt = cpu::seg::ndt::init_gdt(&krl_space);
+      let _gdt = cpu::seg::ndt::create_gdt(&krl_space);
+
+      l::debug!("Allocating IDT");
+      let _idt = cpu::seg::idt::create_idt(&krl_space);
 
       // Test end
       l::debug!("Reaching end of kernel");

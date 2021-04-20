@@ -30,7 +30,8 @@ SECTIONS
       .bss ALIGN (4K) :
       {
             *(.bss*)
-            . += 24K;
+            . = ALIGN (4K);
+            . += 128K;
             . = ALIGN (0x10);
             INIT_STACK = .;
       }
