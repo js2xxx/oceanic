@@ -1,3 +1,10 @@
+cfg_if::cfg_if! {
+      if #[cfg(target_arch = "x86_64")] {
+            pub mod x86_64;
+            pub use self::x86_64::*;
+      }
+}
+
 #[panic_handler]
 fn panic_handler(info: &core::panic::PanicInfo) -> ! {
       log::error!("Kernel {}", info);
