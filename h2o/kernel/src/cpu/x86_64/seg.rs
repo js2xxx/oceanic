@@ -8,7 +8,7 @@
 pub mod idt;
 pub mod ndt;
 
-use paging::LAddr;
+use paging::{LAddr, PAddr};
 
 use core::mem::{size_of, transmute};
 use core::ops::Range;
@@ -106,13 +106,29 @@ pub unsafe fn get_type_attr(ptr: *mut u8) -> u16 {
       (ptr as *mut u16).read()
 }
 
+/// # Safety
+///
+/// The caller must ensure the value stored in [`crate::rxx::msr::MSR::FS_BASE`] is valid.
+pub(super) unsafe fn reload_pls() {
+      use crate::rxx::msr;
+
+      let val = msr::read(msr::MSR::FS_BASE) as usize;
+      if val != 0 {
+            let ptr = PAddr::new(val).to_laddr(minfo::ID_OFFSET).cast::<usize>();
+
+            ptr.write(ptr as usize);
+
+            msr::write(msr::MSR::FS_BASE, ptr as u64);
+      }
+}
+
 // /// Initialize the module.
 // pub fn init<T: FnOnce()>(init_tls: T) {
-//       ndt::create_gdt();
+//       ndt::init_gdt();
 //       init_tls();
 //       ndt::init_ldt();
 //       ndt::init_tss();
-//       idt::create_idt();
+//       idt::init_idt();
 // }
 
 // /// Initialize the module for APs.
@@ -121,5 +137,5 @@ pub unsafe fn get_type_attr(ptr: *mut u8) -> u16 {
 //       init_tls();
 //       ndt::init_ldt_ap();
 //       ndt::init_tss();
-//       idt::create_idt();
+//       idt::init_idt();
 // }

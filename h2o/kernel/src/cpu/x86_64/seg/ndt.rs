@@ -58,7 +58,7 @@ impl<'a> DescTable<'a> {
       /// # Errors
       ///
       /// If the table cannot hold one more requested descriptor, it'll return an error.
-      pub fn push_back_checked<T: Descriptor>(&mut self, data: T) -> Result<u16, &'static str> {
+      pub fn push_checked<T: Descriptor>(&mut self, data: T) -> Result<u16, &'static str> {
             if self.end.val() + size_of::<T>() > self.base.val() + (self.capacity as usize) {
                   Err("Table full")
             } else {
@@ -79,8 +79,8 @@ impl<'a> DescTable<'a> {
       ///
       /// If the table cannot hold one more requested descriptor, it'll panic.
       #[inline]
-      pub fn push_back<T: Descriptor>(&mut self, data: T) -> u16 {
-            self.push_back_checked(data).unwrap()
+      pub fn push<T: Descriptor>(&mut self, data: T) -> u16 {
+            self.push_checked(data).unwrap()
       }
 
       /// Push back a [`Seg64`] without check.
@@ -91,8 +91,8 @@ impl<'a> DescTable<'a> {
       ///
       /// If the table cannot hold one more requested descriptor, it'll panic.
       #[inline]
-      pub fn push_back_s64(&mut self, base: u32, limit: u32, attr: u16, dpl: Option<u16>) -> u16 {
-            self.push_back(Seg64::new(base, limit, attr, dpl))
+      pub fn push_s64(&mut self, base: u32, limit: u32, attr: u16, dpl: Option<u16>) -> u16 {
+            self.push(Seg64::new(base, limit, attr, dpl))
       }
 
       /// Push back a [`Seg128`] without check.
@@ -103,14 +103,8 @@ impl<'a> DescTable<'a> {
       ///
       /// If the table cannot hold one more requested descriptor, it'll panic.
       #[inline]
-      pub fn push_back_s128(
-            &mut self,
-            base: LAddr,
-            limit: u32,
-            attr: u16,
-            dpl: Option<u16>,
-      ) -> u16 {
-            self.push_back(Seg128::new(base, limit, attr, dpl))
+      pub fn push_s128(&mut self, base: LAddr, limit: u32, attr: u16, dpl: Option<u16>) -> u16 {
+            self.push(Seg128::new(base, limit, attr, dpl))
       }
 
       // /// Return the iterator of the descriptor table.
@@ -279,7 +273,7 @@ impl Seg128 {
 /// Initialize the GDT.
 ///
 /// NOTE: This function sould only be called once from the BSP.
-pub fn create_gdt(space: &Arc<Space>) -> Mutex<DescTable<'_>> {
+pub fn init_gdt(space: &Arc<Space>) -> Mutex<DescTable<'_>> {
       extern "C" {
             fn reset_seg(code: SegSelector, data: SegSelector);
       }
@@ -292,21 +286,21 @@ pub fn create_gdt(space: &Arc<Space>) -> Mutex<DescTable<'_>> {
             unsafe { space.alloc_manual(layout, None, true, Flags::READABLE | Flags::WRITABLE) }
                   .expect("Failed to allocate memory for GDT");
 
-      let gdt = Mutex::new(DescTable::new(memory));
-      let mut gdt_data = gdt.lock();
+      let mut gdt = Mutex::new(DescTable::new(memory));
+      let gdt_data = gdt.get_mut();
 
       const LIM: u32 = 0xFFFFF;
       const ATTR: u16 = attrs::PRESENT | attrs::G4K;
 
-      gdt_data.push_back_s64(0, 0, 0, None); // Null Desc
-      let code = gdt_data.push_back_s64(0, LIM, attrs::SEG_CODE | attrs::X64 | ATTR, None);
-      let data = gdt_data.push_back_s64(0, LIM, attrs::SEG_DATA | attrs::X64 | ATTR, None);
-      gdt_data.push_back_s64(0, LIM, attrs::SEG_CODE | attrs::X86 | ATTR, None);
-      gdt_data.push_back_s64(0, LIM, attrs::SEG_DATA | attrs::X86 | ATTR, None);
-      gdt_data.push_back_s64(0, LIM, attrs::SEG_CODE | attrs::X64 | ATTR, Some(3));
-      gdt_data.push_back_s64(0, LIM, attrs::SEG_DATA | attrs::X64 | ATTR, Some(3));
-      gdt_data.push_back_s64(0, LIM, attrs::SEG_CODE | attrs::X86 | ATTR, Some(3));
-      gdt_data.push_back_s64(0, LIM, attrs::SEG_DATA | attrs::X86 | ATTR, Some(3));
+      gdt_data.push_s64(0, 0, 0, None); // Null Desc
+      let code = gdt_data.push_s64(0, LIM, attrs::SEG_CODE | attrs::X64 | ATTR, None);
+      let data = gdt_data.push_s64(0, LIM, attrs::SEG_DATA | attrs::X64 | ATTR, None);
+      gdt_data.push_s64(0, LIM, attrs::SEG_CODE | attrs::X86 | ATTR, None);
+      gdt_data.push_s64(0, LIM, attrs::SEG_DATA | attrs::X86 | ATTR, None);
+      gdt_data.push_s64(0, LIM, attrs::SEG_CODE | attrs::X64 | ATTR, Some(3));
+      gdt_data.push_s64(0, LIM, attrs::SEG_DATA | attrs::X64 | ATTR, Some(3));
+      gdt_data.push_s64(0, LIM, attrs::SEG_CODE | attrs::X86 | ATTR, Some(3));
+      gdt_data.push_s64(0, LIM, attrs::SEG_DATA | attrs::X86 | ATTR, Some(3));
 
       unsafe {
             let gdtr = gdt_data.export_fp();
@@ -329,36 +323,61 @@ pub fn create_gdt(space: &Arc<Space>) -> Mutex<DescTable<'_>> {
 //       unsafe { asm!("lgdt [{}]", in(reg) &gdtr) };
 // }
 
-// /// Initialize the LDT.
-// ///
-// /// NOTE: This function should only be called once from the BSP.
-// pub fn init_ldt() {
-//       let (base, _, capacity) = Vec::<Seg64>::with_capacity(3).into_raw_parts();
-//       let (base, capacity) = (base as LAddr, (capacity * size_of::<Seg64>()) as u16);
+/// Initialize the LDT.
+///
+/// The Local Descriptor Table is used to indicate whether the code is inside a interrupt
+/// routine. In the assembly code, we can check the `TI` bit in `cs`.
+///
+/// NOTE: This function should only be called once from the BSP.
+pub fn init_ldt<'a, 'b>( 
+      space: &'a Arc<Space>,
+      gdt: Mutex<DescTable<'b>>,
+) -> (Mutex<DescTable<'b>>, Mutex<DescTable<'b>>, u16)
+where
+      'a: 'b,
+{
+      let mut memory = unsafe {
+            space.alloc_manual(
+                  paging::PAGE_LAYOUT,
+                  None,
+                  false,
+                  Flags::READABLE | Flags::WRITABLE,
+            )
+      }
+      .expect("Failed to allocate memory for LDT");
 
-//       let mut ldt = LDT.lock();
-//       ldt.0 = DescTable::new(base, capacity);
+      let (base, size) = (
+            LAddr::new(memory.as_mut_ptr().cast()),
+            size_of::<Seg64>() * 3,
+      );
 
-//       const LIM: u32 = 0xFFFFF;
-//       const ATTR: u16 = attrs::PRESENT | attrs::G4K;
+      let mut ldt = Mutex::new(DescTable::new(memory));
+      let ldt_data = ldt.get_mut();
 
-//       ldt.0.push_back_s64(0, 0, 0, None); // Null Desc
-//       ldt.0.push_back_s64(0, LIM, attrs::SEG_CODE | attrs::X64 | ATTR, None);
-//       ldt.0.push_back_s64(0, LIM, attrs::SEG_DATA | attrs::X64 | ATTR, None);
+      const LIM: u32 = 0xFFFFF;
+      const ATTR: u16 = attrs::PRESENT | attrs::G4K;
 
-//       unsafe {
-//             ldt.1 = {
-//                   let mut gdt = GDT.lock();
-//                   gdt.push_back_s128(
-//                         base,
-//                         (capacity - 1) as u32,
-//                         attrs::SYS_LDT | attrs::PRESENT,
-//                         None,
-//                   )
-//             };
-//             asm!("lldt [{}]", in(reg) &ldt.1);
-//       }
-// }
+      ldt_data.push_s64(0, 0, 0, None); // Null Desc
+      ldt_data.push_s64(0, LIM, attrs::SEG_CODE | attrs::X64 | ATTR, None);
+      ldt_data.push_s64(0, LIM, attrs::SEG_DATA | attrs::X64 | ATTR, None);
+
+      let ldtr = {
+            let mut gdt_data = gdt.lock();
+            gdt_data.push_s128(
+                  base,
+                  (size - 1) as u32,
+                  attrs::SYS_LDT | attrs::PRESENT,
+                  None,
+            )
+      };
+      unsafe {
+            asm!("lldt [{}]", in(reg) &ldtr);
+      }
+
+      drop(ldt_data);
+
+      (gdt, ldt, ldtr)
+}
 
 // /// Initialize the LDT for APs.
 // pub fn init_ldt_ap() {
@@ -379,7 +398,7 @@ pub fn create_gdt(space: &Arc<Space>) -> Mutex<DescTable<'_>> {
 //             let base = &TSS as *const TssStruct as LAddr;
 //             let tr = {
 //                   let mut gdt = GDT.lock();
-//                   gdt.push_back_s128(
+//                   gdt.push_s128(
 //                         base,
 //                         (size_of_val(&TSS) - 1) as u32,
 //                         attrs::SYS_TSS | attrs::PRESENT,

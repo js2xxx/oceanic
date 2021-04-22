@@ -200,7 +200,7 @@ impl<'a> IntDescTable<'a> {
 }
 
 /// Initialize the per-cpu IDT.
-pub fn create_idt(space: &Arc<Space>) -> Mutex<IntDescTable<'_>> {
+pub fn init_idt(space: &Arc<Space>) -> Mutex<IntDescTable<'_>> {
       let idt_array = unsafe {
             space.alloc_typed::<IdtArray>(None, true, Flags::READABLE | Flags::WRITABLE)
                   .expect("Failed to allocate memory for IDT")

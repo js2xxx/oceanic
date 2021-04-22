@@ -11,6 +11,7 @@
 #![feature(slice_ptr_get)]
 #![feature(slice_ptr_len)]
 #![feature(thread_local)]
+#![feature(vec_into_raw_parts)]
 
 mod cpu;
 mod log;
@@ -39,11 +40,8 @@ pub extern "C" fn kmain(
       let krl_space = mem::space::Space::new(mem::space::CreateType::Kernel);
       unsafe { krl_space.load() };
 
-      l::debug!("Allocating GDT");
-      let _gdt = cpu::seg::ndt::create_gdt(&krl_space);
-
-      l::debug!("Allocating IDT");
-      let _idt = cpu::seg::idt::create_idt(&krl_space);
+      l::debug!("Creating the CPU core");
+      let _core = cpu::Core::new(&krl_space);
 
       // Test end
       l::debug!("Reaching end of kernel");
