@@ -108,7 +108,8 @@ pub unsafe fn get_type_attr(ptr: *mut u8) -> u16 {
 
 /// # Safety
 ///
-/// The caller must ensure the value stored in [`crate::rxx::msr::MSR::FS_BASE`] is valid.
+/// The caller must ensure the value stored in [`crate::rxx::msr::MSR::FS_BASE`] is a 
+/// valid physical address.
 pub(super) unsafe fn reload_pls() {
       use crate::rxx::msr;
 

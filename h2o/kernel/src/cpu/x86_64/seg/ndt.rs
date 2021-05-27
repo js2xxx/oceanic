@@ -11,18 +11,18 @@ use static_assertions::*;
 /// Indicate a struct is a segment or gate descriptor.
 pub trait Descriptor {}
 
-/// The Task State Segment
+/// The Task State Segment.
 #[repr(C, packed)]
 pub struct TssStruct {
       _rsvd1: u32,
-      /// The legacy RSPs of different privilege levels
+      /// The legacy RSPs of different privilege levels.
       rsp: [u64; 3],
       _rsvd2: u64,
-      /// The Interrupt Stack Tables
+      /// The Interrupt Stack Tables.
       ist: [u64; 7],
       _rsvd3: u64,
       _rsvd4: u16,
-      /// The IO base mappings
+      /// The IO base mappings.
       iobase: u16,
 }
 
@@ -34,7 +34,7 @@ pub struct DescTable<'a> {
       end: LAddr,
       /// The number of how much entries the table can hold.
       capacity: usize,
-
+      /// The memory block where the table is stored.
       memory: Pin<&'a mut [MemBlock]>,
 }
 
@@ -272,7 +272,10 @@ impl Seg128 {
 
 /// Initialize the GDT.
 ///
-/// NOTE: This function sould only be called once from the BSP.
+/// This function does 2 things: construct a standard GDT object; load it into the
+/// current CPU - the BSP.
+///
+/// NOTE: This function could only be called once from the BSP.
 pub fn init_gdt(space: &Arc<Space>) -> Mutex<DescTable<'_>> {
       extern "C" {
             fn reset_seg(code: SegSelector, data: SegSelector);
@@ -316,20 +319,15 @@ pub fn init_gdt(space: &Arc<Space>) -> Mutex<DescTable<'_>> {
       gdt
 }
 
-// /// Initialize the GDT for APs.
-// pub fn init_gdt_ap() {
-//       let gdt = GDT.lock();
-//       let gdtr = gdt.export_fp();
-//       unsafe { asm!("lgdt [{}]", in(reg) &gdtr) };
-// }
-
 /// Initialize the LDT.
 ///
 /// The Local Descriptor Table is used to indicate whether the code is inside a interrupt
 /// routine. In the assembly code, we can check the `TI` bit in `cs`.
 ///
+/// This function returns the original GDT, the LDT and its pointer to the GDT.
+///
 /// NOTE: This function should only be called once from the BSP.
-pub fn init_ldt<'a, 'b>( 
+pub fn init_ldt<'a, 'b>(
       space: &'a Arc<Space>,
       gdt: Mutex<DescTable<'b>>,
 ) -> (Mutex<DescTable<'b>>, Mutex<DescTable<'b>>, u16)
@@ -379,41 +377,58 @@ where
       (gdt, ldt, ldtr)
 }
 
-// /// Initialize the LDT for APs.
-// pub fn init_ldt_ap() {
-//       let ldt = LDT.lock();
-//       let ldtr = ldt.1;
-//       unsafe { asm!("lldt [{}]", in(reg) &ldtr) };
-// }
+pub fn init_tss<'a, 'b>(
+      space: &'a Arc<Space>,
+      gdt: Mutex<DescTable<'b>>,
+) -> (Mutex<DescTable<'b>>, Mutex<Pin<&'a mut TssStruct>>) {
+      let alloc_stack = || unsafe {
+            let (layout, k) = paging::PAGE_LAYOUT
+                  .repeat(4)
+                  .expect("Failed to calculate the layout");
+            assert!(k == paging::PAGE_SIZE);
+            space.alloc_manual(layout, None, false, Flags::READABLE | Flags::WRITABLE)
+                  .expect("Failed to allocate stack")
+      };
 
-// /// Initialize the TSS of the current CPU.
-// pub fn init_tss() {
-//       let (rsp0, _, _) = Vec::<u8>::with_capacity(PAGE_SIZE * 4).into_raw_parts();
-//       let (ist1, _, _) = Vec::<u8>::with_capacity(PAGE_SIZE * 4).into_raw_parts();
+      let rsp0 = alloc_stack();
+      let ist1 = alloc_stack();
 
-//       unsafe {
-//             TSS.rsp[0] = rsp0 as u64;
-//             TSS.ist[0] = ist1 as u64;
+      let (tss, base) = unsafe {
+            let mut data = space
+                  .alloc_typed::<TssStruct>(None, true, Flags::READABLE | Flags::WRITABLE)
+                  .expect("Failed to allocate TSS");
 
-//             let base = &TSS as *const TssStruct as LAddr;
-//             let tr = {
-//                   let mut gdt = GDT.lock();
-//                   gdt.push_s128(
-//                         base,
-//                         (size_of_val(&TSS) - 1) as u32,
-//                         attrs::SYS_TSS | attrs::PRESENT,
-//                         Some(3),
-//                   )
-//             };
+            let ptr = data.as_mut_ptr();
+            ptr.write(TssStruct {
+                  _rsvd1: 0,
+                  // The legacy RSPs of different privilege levels.
+                  rsp: [rsp0.as_ptr() as u64, 0, 0],
+                  _rsvd2: 0,
+                  // The Interrupt Stack Tables.
+                  ist: [ist1.as_ptr() as u64, 0, 0, 0, 0, 0, 0],
+                  _rsvd3: 0,
+                  _rsvd4: 0,
+                  // The IO base mappings.
+                  iobase: 0,
+            });
 
-//             asm!("ltr [{}]", in(reg) &tr);
-//       }
-// }
+            (
+                  data.map_unchecked_mut(|u| u.assume_init_mut()),
+                  ptr,
+            )
+      };
 
-// pub fn get_tss_rsp0() -> u64 {
-//       unsafe { TSS.rsp[0] }
-// }
+      let tr = {
+            let mut gdt_data = gdt.lock();
+            gdt_data.push_s128(
+                  LAddr::new(base.cast()),
+                  (size_of::<TssStruct>() - 1) as u32,
+                  attrs::SYS_TSS | attrs::PRESENT,
+                  Some(3),
+            )
+      };
 
-// pub fn get_tss_iobase() -> u16 {
-//       unsafe { TSS.iobase }
-// }
+      unsafe { asm!("ltr [{}]", in(reg) &tr) };
+
+      (gdt, Mutex::new(tss))
+}
