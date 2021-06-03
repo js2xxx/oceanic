@@ -41,7 +41,7 @@ pub extern "C" fn kmain(
       unsafe { krl_space.load() };
 
       l::debug!("Creating the CPU core");
-      let _core = cpu::ArchCore::new(&krl_space);
+      let _core = cpu::Core::new(&krl_space);
 
       // Test end
       l::debug!("Reaching end of kernel");

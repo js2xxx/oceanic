@@ -23,7 +23,17 @@ pub struct TssStruct {
       _rsvd3: u64,
       _rsvd4: u16,
       /// The IO base mappings.
-      iobase: u16,
+      io_base: u16,
+}
+
+impl TssStruct {
+      pub fn rsp0(&self) -> LAddr {
+            LAddr::from(self.rsp[0] as usize)
+      }
+
+      pub fn io_base(&self) -> u16 {
+            self.io_base
+      }
 }
 
 /// A descriptor table.
@@ -409,7 +419,7 @@ pub fn init_tss<'a, 'b>(
                   _rsvd3: 0,
                   _rsvd4: 0,
                   // The IO base mappings.
-                  iobase: 0,
+                  io_base: 0,
             });
 
             (

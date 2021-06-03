@@ -51,7 +51,7 @@ pub struct GateBuilder {
 }
 
 impl GateBuilder {
-      /// Set up the offset of a gate descriptor.
+      /// Set up the offset of the gate descriptor.
       pub fn offset(&mut self, offset: LAddr) -> &mut Self {
             let offset = offset.val();
             self.offset_low = (offset & 0xFFFF) as _;
@@ -60,17 +60,19 @@ impl GateBuilder {
             self
       }
 
-      /// Set up the attributes - type and DPL of a gate descriptor.
+      /// Set up the attributes - type and DPL of the gate descriptor.
       pub fn attribute(&mut self, attr: u16, dpl: u16) -> &mut Self {
             self.attr = (attr & 0xFF) as u8 | ((dpl & 3) << 5) as u8;
             self
       }
 
+      /// Set up the selector of the gate descriptor.
       pub fn selector(&mut self, selector: SegSelector) -> &mut Self {
             self.selector = selector;
             self
       }
 
+      /// Set up the IST index of the gate descriptor.
       pub fn ist(&mut self, ist: u8) -> &mut Self {
             self.ist = ist;
             self
@@ -85,6 +87,7 @@ impl GateBuilder {
             Ok(())
       }
 
+      /// Build the descriptor.
       pub fn build(&mut self) -> Result<Gate, &'static str> {
             self.validate()?;
             Ok(Gate {

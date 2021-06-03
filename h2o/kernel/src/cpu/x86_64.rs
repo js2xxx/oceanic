@@ -8,15 +8,15 @@ use core::pin::Pin;
 use spin::Mutex;
 
 /// The arch-specific part of a core of a CPU. (x86_64)
-pub struct ArchCore<'a> {
+pub struct Core<'a> {
       gdt: Mutex<seg::ndt::DescTable<'a>>,
       ldt: (Mutex<seg::ndt::DescTable<'a>>, u16),
       tss: Mutex<Pin<&'a mut seg::ndt::TssStruct>>,
       idt: Mutex<seg::idt::IntDescTable<'a>>,
 }
 
-impl<'a> ArchCore<'a> {
-      /// Construct a new arch-specific `ArchCore` object.
+impl<'a> Core<'a> {
+      /// Construct a new arch-specific `Core` object.
       ///
       /// NOTE: This function should only be called once from BSP.
       pub fn new(space: &'a Arc<Space>) -> Self {
@@ -25,7 +25,7 @@ impl<'a> ArchCore<'a> {
             let (gdt, ldt, ldtr) = seg::ndt::init_ldt(space, gdt);
             let (gdt, tss) = seg::ndt::init_tss(space, gdt);
             let idt = seg::idt::init_idt(space);
-            ArchCore {
+            Core {
                   gdt,
                   ldt: (ldt, ldtr),
                   tss,
@@ -39,8 +39,18 @@ impl<'a> ArchCore<'a> {
       }
 
       #[inline]
-      pub fn ldt(&self) -> (&Mutex<seg::ndt::DescTable<'a>>, u16) {
-            (&self.ldt.0, self.ldt.1)
+      pub fn ldt(&self) -> &Mutex<seg::ndt::DescTable<'a>> {
+            &self.ldt.0
+      }
+
+      #[inline]
+      pub fn ldtr(&self) -> u16 {
+            self.ldt.1
+      }
+
+      #[inline]
+      pub fn tss(&self) -> &Mutex<Pin<&'a mut seg::ndt::TssStruct>> {
+            &self.tss
       }
 
       #[inline]
