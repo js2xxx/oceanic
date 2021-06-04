@@ -11,6 +11,6 @@ macro_rules! define_intr {
       }
 }
 
-define_intr! {1, rout_dummy, hdl_dummy, {
-      let a = 1;
-}}
+// define_intr! {1, rout_dummy, hdl_dummy, {
+//       let a = 1;
+// }}

@@ -3,9 +3,35 @@ pub mod seg;
 
 use crate::mem::space::Space;
 
+use alloc::boxed::Box;
 use alloc::sync::Arc;
 use core::pin::Pin;
 use spin::Mutex;
+
+#[repr(C)]
+struct KernelGs {
+      save_regs: *mut u8,
+      tss_rsp0: *mut u8,
+}
+
+fn init_kernel_gs(tss_rsp0: *mut u8) -> Mutex<Box<KernelGs>> {
+      let gs_data = {
+            let ptr = Box::into_raw(box KernelGs {
+                  save_regs: intr::ctx::test::save_regs as *mut u8,
+                  tss_rsp0,
+            });
+            unsafe {
+                  // TODO: removing [`test`] in the future.
+                  intr::ctx::test::init_stack_top(alloc::alloc::alloc(paging::PAGE_LAYOUT));
+
+                  use crate::rxx::msr;
+                  msr::write(msr::MSR::KERNEL_GS_BASE, ptr as u64);
+                  Box::from_raw(ptr)
+            }
+      };
+
+      Mutex::new(gs_data)
+}
 
 /// The arch-specific part of a core of a CPU. (x86_64)
 pub struct Core<'a> {
@@ -13,6 +39,7 @@ pub struct Core<'a> {
       ldt: (Mutex<seg::ndt::DescTable<'a>>, u16),
       tss: Mutex<Pin<&'a mut seg::ndt::TssStruct>>,
       idt: Mutex<seg::idt::IntDescTable<'a>>,
+      kernel_gs: Mutex<Box<KernelGs>>,
 }
 
 impl<'a> Core<'a> {
@@ -25,11 +52,15 @@ impl<'a> Core<'a> {
             let (gdt, ldt, ldtr) = seg::ndt::init_ldt(space, gdt);
             let (gdt, tss) = seg::ndt::init_tss(space, gdt);
             let idt = seg::idt::init_idt(space);
+
+            let tss_rsp0 = *tss.lock().rsp0();
+            let kernel_gs = init_kernel_gs(tss_rsp0);
             Core {
                   gdt,
                   ldt: (ldt, ldtr),
                   tss,
                   idt,
+                  kernel_gs,
             }
       }
 

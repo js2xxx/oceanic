@@ -25,8 +25,7 @@ struc Frame
 endstruc
 
 struc KernelGs
-      .save_regs        resq 1
-      .restore_regs     resq 1
+      .save_regs        resq 1 ; Save the GPRs from the current stack and *return the thread stack*
       .tss_rsp0         resq 1
 endstruc
 
