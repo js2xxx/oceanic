@@ -134,7 +134,7 @@ fn load_prog(
       msize: usize,
 ) {
       log::trace!(
-            "file::load_prog: flags = {:?}, virt = {:?}, phys = {:?}, fsize = {:?}, msize = {:?}",
+            "file::load_prog: flags = {:?}, virt = {:?}, phys = {:?}, fsize = {:x}, msize = {:x}",
             flags,
             virt,
             phys,

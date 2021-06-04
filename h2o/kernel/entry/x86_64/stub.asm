@@ -110,6 +110,7 @@ extern %3
 [section .text]
 
 ; define_intr 1, rout_dummy, hdl_dummy, 0
+define_intr 0, rout_div_0, hdl_div_0, 0
 
 intr_entry:
       cld

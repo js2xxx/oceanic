@@ -68,6 +68,7 @@ unsafe impl<'a> paging::alloc::PageAlloc for BootAlloc<'a> {
       }
 
       unsafe fn dealloc(&mut self, addr: paging::PAddr) {
+            log::trace!("deallocated {:x}", *addr);
             let _ = self.bs.free_pages(*addr as u64, 1).log_warning();
       }
 }

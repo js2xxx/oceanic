@@ -273,9 +273,12 @@ pub fn maps(
       log::trace!("paging::maps: Begin spliting pages");
       while !rem_info.virt.is_empty() {
             let level = core::cmp::min(
-                  Level::fit(rem_info.virt.start.val()).expect("Misaligned start address"),
-                  Level::fit(rem_info.virt.end.val() - rem_info.virt.start.val())
-                        .expect("Misaligned start address"),
+                  core::cmp::min(
+                        Level::fit(rem_info.virt.start.val()).expect("Misaligned start address"),
+                        Level::fit(rem_info.virt.end.val() - rem_info.virt.start.val())
+                              .expect("Misaligned start address"),
+                  ),
+                  Level::fit(*rem_info.phys).expect("Misaligned start address"),
             );
 
             ret = new_page(
@@ -332,9 +335,14 @@ pub fn unmaps(
       check(&virt, None)?;
 
       while !virt.is_empty() {
+            let phys = query(root_table, virt.start, id_off).unwrap_or_else(|_| PAddr::new(0));
             let level = core::cmp::min(
-                  Level::fit(virt.start.val()).expect("Misaligned start address"),
-                  Level::fit(virt.end.val() - virt.start.val()).expect("Misaligned start address"),
+                  core::cmp::min(
+                        Level::fit(virt.start.val()).expect("Misaligned start address"),
+                        Level::fit(virt.end.val() - virt.start.val())
+                              .expect("Misaligned start address"),
+                  ),
+                  Level::fit(*phys).expect("Misaligned start address"),
             );
 
             let _ = drop_page(root_table, virt.start, level, id_off, allocator);

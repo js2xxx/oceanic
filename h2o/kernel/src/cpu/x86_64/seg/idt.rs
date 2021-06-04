@@ -1,4 +1,5 @@
 use super::*;
+use crate::cpu::x86_64::intr::def::IDT_INIT;
 use crate::mem::space::{Flags, Space};
 use paging::LAddr;
 
@@ -51,6 +52,9 @@ pub struct GateBuilder {
 }
 
 impl GateBuilder {
+      pub fn new() -> Self {
+            unsafe { core::mem::zeroed() }
+      }
       /// Set up the offset of the gate descriptor.
       pub fn offset(&mut self, offset: LAddr) -> &mut Self {
             let offset = offset.val();
@@ -210,12 +214,23 @@ pub fn init_idt(space: &Arc<Space>) -> Mutex<IntDescTable<'_>> {
                   .map_unchecked_mut(|u| u.assume_init_mut())
       };
 
-      let idt = Mutex::new(IntDescTable::new(idt_array));
+      let mut idt_data = IntDescTable::new(idt_array);
+      for init in IDT_INIT {
+            let desc = GateBuilder::new()
+                  .offset(LAddr::new(init.entry as *mut u8))
+                  .selector(super::SegSelector::from_const(0xC))
+                  .attribute(super::attrs::INT_GATE | super::attrs::PRESENT, init.dpl)
+                  .ist(init.ist)
+                  .build()
+                  .expect("Failed to build a gate descriptor");
+
+            idt_data[init.vec as u16 as usize] = desc;
+      }
 
       unsafe {
-            let idtr = idt.lock().export_fp();
+            let idtr = idt_data.export_fp();
             asm!("cli; lidt [{}]", in(reg) &idtr);
       }
 
-      idt
+      Mutex::new(idt_data)
 }
