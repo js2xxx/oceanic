@@ -1,4 +1,3 @@
-//! TODO: Write a macro to define interrupt entries and to define the initial IDT.
 use super::ctx::Frame;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -49,25 +48,28 @@ impl IdtInit {
       }
 }
 
-pub static IDT_INIT: &[IdtInit] = &[IdtInit::new(ExVector::DivideBy0, rout_div_0, 0, 0)];
+pub static IDT_INIT: &[IdtInit] = &[
+      IdtInit::new(ExVector::DivideBy0, intr_gen::rout!(div_0), 0, 0),
+      IdtInit::new(ExVector::Overflow, intr_gen::rout!(overflow), 0, 0),
+];
 
-macro_rules! define_intr {
-      {$vec:expr, $asm_name:ident, $name:ident, $body:block} => {
-            extern "C" {
-                  pub fn $asm_name();
-            }
+#[intr_gen::hdl]
+fn div_0(frame: *mut Frame) {
+      log::error!("Divide by zero");
+      let frame = unsafe { &*frame };
+      frame.dump(Frame::ERRC);
 
-            #[no_mangle]
-            pub extern "C" fn $name(frame: *mut Frame) $body
+      loop {
+            unsafe { asm!("pause") };
       }
 }
 
-// define_intr! {1, rout_dummy, hdl_dummy, {
-//       let a = 1;
-// }}
-define_intr! {0, rout_div_0, hdl_div_0, {
-      log::error!("Divide by zero");
+#[intr_gen::hdl]
+fn overflow(frame: *mut Frame) {
+      log::error!("Overflow error");
+      let frame = unsafe { &*frame };
+      frame.dump(Frame::ERRC);
       loop {
-            unsafe { asm!("pause")};
+            unsafe { asm!("pause") };
       }
-}}
+}

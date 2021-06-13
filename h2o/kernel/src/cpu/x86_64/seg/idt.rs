@@ -218,8 +218,8 @@ pub fn init_idt(space: &Arc<Space>) -> Mutex<IntDescTable<'_>> {
       for init in IDT_INIT {
             let desc = GateBuilder::new()
                   .offset(LAddr::new(init.entry as *mut u8))
-                  .selector(super::SegSelector::from_const(0xC))
-                  .attribute(super::attrs::INT_GATE | super::attrs::PRESENT, init.dpl)
+                  .selector(SegSelector::from_const(0xC))
+                  .attribute(attrs::INT_GATE | attrs::PRESENT, init.dpl)
                   .ist(init.ist)
                   .build()
                   .expect("Failed to build a gate descriptor");

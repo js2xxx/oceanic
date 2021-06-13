@@ -16,6 +16,7 @@ bitop_ex = { path = "../libs/bitop_ex" }
 canary = { path = "../libs/canary" }
 collection_ex = { path = "../libs/collection_ex" }
 heap = { path = "../libs/heap" }
+intr_gen = { path = "../libs/intr_gen" }
 minfo = { path = "../libs/minfo" }
 paging = { path = "../libs/paging" }
 pmm = { path = "../libs/pmm" }

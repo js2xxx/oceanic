@@ -1,4 +1,5 @@
 mod serial;
+pub mod flags;
 
 use core::fmt::*;
 use core::mem::MaybeUninit;

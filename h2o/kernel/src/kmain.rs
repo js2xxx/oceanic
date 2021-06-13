@@ -3,6 +3,7 @@
 #![feature(allocator_api)]
 #![feature(asm)]
 #![feature(box_syntax)]
+#![feature(concat_idents)]
 #![feature(const_fn_fn_ptr_basics)]
 #![feature(const_fn_transmute)]
 #![feature(const_raw_ptr_to_usize_cast)]
@@ -13,6 +14,7 @@
 #![feature(slice_ptr_get)]
 #![feature(slice_ptr_len)]
 #![feature(thread_local)]
+#![feature(trace_macros)]
 #![feature(vec_into_raw_parts)]
 
 mod cpu;
@@ -44,6 +46,10 @@ pub extern "C" fn kmain(
 
       l::debug!("Creating the CPU core");
       let _core = cpu::Core::new(&krl_space);
+
+      // unsafe {
+      //       asm!("mov rax, 0; mov rdx, 0; mov rcx, 0; div rcx");
+      // }
 
       // Test end
       l::debug!("Reaching end of kernel");

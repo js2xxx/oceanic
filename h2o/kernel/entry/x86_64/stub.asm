@@ -1,3 +1,27 @@
+ExVector_DivideBy0      equ   0
+ExVector_Debug          equ   1
+ExVector_Nmi            equ   2
+ExVector_Breakpoint     equ   3
+ExVector_Overflow       equ   4
+ExVector_Bound          equ   5
+ExVector_InvalidOp      equ   6
+ExVector_DeviceNa       equ   7
+ExVector_DoubleFault    equ   8
+ExVector_CoprocOverrun  equ   9
+ExVector_InvalidTss     equ   10
+ExVector_SegmentNa      equ   11
+ExVector_StackFault     equ   12
+ExVector_GeneralProt    equ   13
+ExVector_PageFault      equ   14
+ExVector_Spurious       equ   15
+ExVector_FloatPoint     equ   16
+ExVector_Alignment      equ   17
+ExVector_MachineCheck   equ   18
+ExVector_SimdExcep      equ   19
+ExVector_Virtual        equ   20
+ExVector_ControlProt    equ   21
+ExVector_VmmComm        equ   29
+
 struc Frame
       .r15  resq 1
       .r14  resq 1
@@ -94,7 +118,7 @@ endstruc
 global %2
 extern %3
 %2:
-%if %4 == 1
+%if %4 == 0
       push  -1
 %endif
 
@@ -109,8 +133,9 @@ extern %3
 
 [section .text]
 
-; define_intr 1, rout_dummy, hdl_dummy, 0
-define_intr 0, rout_div_0, hdl_div_0, 0
+; define_intr(vec, asm_name, name, has_code)
+define_intr ExVector_DivideBy0,    rout_div_0,       hdl_div_0,        0
+define_intr ExVector_Overflow,     rout_overflow,    hdl_overflow,     0
 
 intr_entry:
       cld
@@ -153,6 +178,7 @@ intr_exit:
       push  qword [rdi + 8 * 2]     ; rip
       mov   rdi, [rdi]
 
+      swapgs
       jmp   .return
 .reent:
       ; TODO: Handle some errors inside this routine.
