@@ -4,6 +4,10 @@ use proc_macro::TokenStream;
 use quote::{format_ident, quote, ToTokens};
 use syn::*;
 
+/// Generate a interrupt handler and a declaration of its routine 
+/// (defined in `stubs.asm`) for H2O.
+///
+/// NOTE: This macro must be used in pairs with [`rout`].
 #[proc_macro_attribute]
 pub fn hdl(args: TokenStream, func: TokenStream) -> TokenStream {
       assert!(
@@ -54,6 +58,9 @@ pub fn hdl(args: TokenStream, func: TokenStream) -> TokenStream {
       .into()
 }
 
+/// Generate the name of the interrupt routine. Used for initialization.
+///
+/// NOTE: This macro must be used in pairs with [`hdl`].
 #[proc_macro]
 pub fn rout(input: TokenStream) -> TokenStream {
       let ident = parse_macro_input!(input as Ident);

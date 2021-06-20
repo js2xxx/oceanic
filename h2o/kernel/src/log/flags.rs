@@ -30,17 +30,18 @@ impl Display for Flags {
       fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
             unsafe {
                   for (i, word) in self.format.split_whitespace().enumerate() {
-                        let k = &mut STR_BUF[0..word.len()];
-                        k.copy_from_slice(word.as_bytes());
-                        let k = str::from_utf8_mut(k).unwrap();
+                        let buf = &mut STR_BUF[0..word.len()];
+
+                        buf.copy_from_slice(word.as_bytes());
+                        let out = str::from_utf8_unchecked_mut(buf);
 
                         let b = (self.value >> i) & 1;
                         if b != 0 {
-                              k.make_ascii_uppercase();
+                              out.make_ascii_uppercase();
                         } else {
-                              k.make_ascii_lowercase();
+                              out.make_ascii_lowercase();
                         }
-                        write!(f, "{} ", k)?;
+                        write!(f, "{} ", out)?;
                   }
                   Ok(())
             }

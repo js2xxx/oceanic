@@ -134,8 +134,12 @@ extern %3
 [section .text]
 
 ; define_intr(vec, asm_name, name, has_code)
-define_intr ExVector_DivideBy0,    rout_div_0,       hdl_div_0,        0
-define_intr ExVector_Overflow,     rout_overflow,    hdl_overflow,     0
+define_intr ExVector_DivideBy0,     rout_div_0,             hdl_div_0,              0
+define_intr ExVector_Overflow,      rout_overflow,          hdl_overflow,           0
+define_intr ExVector_CoprocOverrun, rout_coproc_overrun,    hdl_coproc_overrun,     0
+define_intr ExVector_InvalidTss,    rout_invalid_tss,       hdl_invalid_tss,        1
+define_intr ExVector_SegmentNa,     rout_segment_na,        hdl_segment_na,         1
+define_intr ExVector_StackFault,    rout_stack_fault,       hdl_stack_fault,        1
 
 intr_entry:
       cld
