@@ -2,43 +2,43 @@ use super::ctx::Frame;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u16)]
-pub enum ExVector {
-      DivideBy0,
-      Debug,
-      Nmi,
-      Breakpoint,
-      Overflow,
-      Bound,
-      InvalidOp,
-      DeviceNa,
-      DoubleFault,
-      CoprocOverrun,
-      InvalidTss,
-      SegmentNa,
-      StackFault,
-      GeneralProt,
-      PageFault,
-      Spurious,
-      FloatPoint,
-      Alignment,
-      MachineCheck,
-      SimdExcep,
-      Virtual,
-      ControlProt,
+pub enum ExVec {
+      DivideBy0 = 0,
+      Debug = 1,
+      Nmi = 2,
+      Breakpoint = 3,
+      Overflow = 4,
+      Bound = 5,
+      InvalidOp = 6,
+      DeviceNa = 7,
+      DoubleFault = 8,
+      CoprocOverrun = 9,
+      InvalidTss = 10,
+      SegmentNa = 11,
+      StackFault = 12,
+      GeneralProt = 13,
+      PageFault = 14,
+      Spurious = 15,
+      FloatPoint = 16,
+      Alignment = 17,
+      MachineCheck = 18,
+      SimdExcep = 19,
+      Virtual = 20,
+      ControlProt = 21,
       VmmComm = 29,
 }
 
 type IdtRoute = unsafe extern "C" fn();
 
 pub struct IdtInit {
-      pub vec: ExVector,
+      pub vec: ExVec,
       pub entry: IdtRoute,
       pub ist: u8,
       pub dpl: u16,
 }
 
 impl IdtInit {
-      pub const fn new(vec: ExVector, entry: IdtRoute, ist: u8, dpl: u16) -> Self {
+      pub const fn new(vec: ExVec, entry: IdtRoute, ist: u8, dpl: u16) -> Self {
             IdtInit {
                   vec,
                   entry,
@@ -49,12 +49,12 @@ impl IdtInit {
 }
 
 pub static IDT_INIT: &[IdtInit] = &[
-      IdtInit::new(ExVector::DivideBy0, intr_gen::rout!(div_0), 0, 0),
-      IdtInit::new(ExVector::Overflow, intr_gen::rout!(overflow), 0, 0),
-      IdtInit::new(ExVector::CoprocOverrun, intr_gen::rout!(coproc_overrun), 0, 0),
-      IdtInit::new(ExVector::InvalidTss, intr_gen::rout!(invalid_tss), 0, 0),
-      IdtInit::new(ExVector::SegmentNa, intr_gen::rout!(segment_na), 0, 0),
-      IdtInit::new(ExVector::StackFault, intr_gen::rout!(stack_fault), 0, 0),
+      IdtInit::new(ExVec::DivideBy0, intr_gen::rout!(div_0), 0, 0),
+      IdtInit::new(ExVec::Overflow, intr_gen::rout!(overflow), 0, 0),
+      IdtInit::new(ExVec::CoprocOverrun, intr_gen::rout!(coproc_overrun), 0, 0),
+      IdtInit::new(ExVec::InvalidTss, intr_gen::rout!(invalid_tss), 0, 0),
+      IdtInit::new(ExVec::SegmentNa, intr_gen::rout!(segment_na), 0, 0),
+      IdtInit::new(ExVec::StackFault, intr_gen::rout!(stack_fault), 0, 0),
 ];
 
 #[intr_gen::hdl]
@@ -86,7 +86,7 @@ unsafe fn coproc_overrun(frame: *mut Frame) {
 
 #[intr_gen::hdl]
 unsafe fn invalid_tss(frame: *mut Frame) {
-      log::error!("EXCEPTION: Coprocessor overrun");
+      log::error!("EXCEPTION: Invalid TSS");
       let frame = unsafe { &*frame };
       frame.dump(Frame::ERRC);
 

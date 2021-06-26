@@ -17,16 +17,14 @@
 use super::alloc::AllocError;
 use paging::{LAddr, PAGE_SIZE};
 
-use core::mem::{align_of, size_of, size_of_val};
-use core::ptr::{write_bytes, NonNull};
+use bitvec::prelude::*;
+use core::mem::{align_of, size_of};
+use core::ptr::NonNull;
 use intrusive_collections::RBTreeLink;
 use static_assertions::*;
 
 pub type AllocPages = unsafe fn(n: usize) -> Option<NonNull<[Page]>>;
 pub type DeallocPages = unsafe fn(pages: NonNull<[Page]>);
-
-/// Bits per byte.
-const BITS_PER_BYTE: usize = 8;
 
 /// Defines the sizes of objects.
 ///
@@ -52,50 +50,6 @@ pub const MIN_OBJ_SIZE: usize = OBJ_SIZES[0];
 /// The maximum object size.
 pub const MAX_OBJ_SIZE: usize = OBJ_SIZES[NR_OBJ_SIZES - 1];
 
-/// The bitmap of slab pages.
-///
-/// The bitmap of the fixed size `[PAGE_SIZE] / [MIN_OBJ_SIZE]` is simply made of a `u8` array
-/// and an accumulator recording the number of bits set `true`.
-#[repr(C, packed)]
-struct BitField([u8; PAGE_SIZE / MIN_OBJ_SIZE], usize);
-
-impl BitField {
-      /// Initialize a `BitField`.
-      pub fn init(&mut self) {
-            unsafe { write_bytes(self.0.as_ptr() as *mut u8, 0, size_of_val(&self.0)) };
-            self.1 = 0;
-      }
-
-      /// Set a specific bit to a boolean value.
-      pub fn set_bit(&mut self, idx: usize, val: bool) {
-            let byi = idx / BITS_PER_BYTE;
-            let bii = idx % BITS_PER_BYTE;
-            let mask = 1 << bii;
-            let v0 = self.0[byi];
-
-            if val {
-                  self.0[byi] = v0 | mask;
-                  self.1 += 1;
-            } else {
-                  self.0[byi] = v0 & !mask;
-                  self.1 -= 1;
-            }
-      }
-
-      /// Get a specific bit value.
-      pub fn get_bit(&self, idx: usize) -> bool {
-            let byi = idx / BITS_PER_BYTE;
-            let bii = idx % BITS_PER_BYTE;
-            let mask = 1 << bii;
-            (self.0[byi] & mask) != 0
-      }
-
-      /// Get the count of bits set `true`.
-      pub fn count(&self) -> usize {
-            self.1
-      }
-}
-
 /// The slab page type.
 ///
 /// See [the module level doc](./index.html) for more.
@@ -108,7 +62,8 @@ pub struct Page {
       objsize: usize,
 
       /// The bitmap records.
-      used: BitField,
+      used: BitArr!(for PAGE_SIZE / MIN_OBJ_SIZE),
+      used_count: usize,
 
       /// The remaining (free) data of the slab page.
       data: [u8; PAGE_SIZE - Self::HEADER_SIZE],
@@ -127,7 +82,8 @@ impl Page {
       /// > modified!
       const HEADER_SIZE: usize = size_of::<RBTreeLink>() // self.link
              + size_of::<usize>() // self.objsize
-             + size_of::<BitField>(); // self.used
+             + size_of::<BitArr!(for PAGE_SIZE / MIN_OBJ_SIZE)>() // self.used
+             + size_of::<usize>(); // self.used_count
 
       /// Get the count of objects that the header takes up the space of.
       fn header_count(&self) -> usize {
@@ -141,7 +97,7 @@ impl Page {
 
       /// Get the count of occupied objects.
       pub fn used_count(&self) -> usize {
-            self.used.count()
+            self.used_count
       }
 
       /// Get the count of available objects.
@@ -157,11 +113,12 @@ impl Page {
       pub fn init(&mut self, sz: usize) {
             self.link = RBTreeLink::new();
             self.objsize = sz;
-            self.used.init();
+            self.used = BitArray::zeroed();
 
             let hdrcnt = self.header_count();
             for i in 0..hdrcnt {
-                  self.used.set_bit(i, true);
+                  self.used.set(i, true);
+                  self.used_count += 1;
             }
       }
 
@@ -178,8 +135,9 @@ impl Page {
             let cnt = self.max_count();
             let hdrcnt = self.header_count();
             for i in hdrcnt..cnt {
-                  if !self.used.get_bit(i) {
-                        self.used.set_bit(i, true);
+                  if !self.used[i] {
+                        self.used.set(i, true);
+                        self.used_count += 1;
 
                         let base = LAddr::new(self as *const Page as *mut u8);
                         return Ok(LAddr::new(unsafe { base.add(self.objsize * i) }));
@@ -203,10 +161,11 @@ impl Page {
             let idx = (addr.val() - base.val()) / self.objsize;
             if !(0..self.max_count()).contains(&idx) {
                   Err(AllocError::Internal("Address out of range"))
-            } else if !self.used.get_bit(idx) {
+            } else if !self.used[idx] {
                   Err(AllocError::Internal("Address already deallocated"))
             } else {
-                  self.used.set_bit(idx, false);
+                  self.used.set(idx, false);
+                  self.used_count -= 1;
                   Ok(())
             }
       }

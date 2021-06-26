@@ -17,7 +17,7 @@ pub struct Frame {
       rcx: u64,
       rax: u64,
 
-      pub errc: u64,
+      pub errc_vec: u64,
 
       pub rip: u64,
       pub cs: u64,
@@ -39,8 +39,8 @@ impl Frame {
 
             info!("Frame dump");
 
-            if self.errc != 0u64.wrapping_sub(1) {
-                  info!("> Error Code = {}", Flags::new(self.errc, errc_format));
+            if self.errc_vec != 0u64.wrapping_sub(1) && errc_format != "" {
+                  info!("> Error Code = {}", Flags::new(self.errc_vec, errc_format));
             }
             info!("> Address = {:#018X}", self.rip);
             info!("> RFlags  = {}", Flags::new(self.rflags, Self::RFLAGS));
@@ -61,7 +61,7 @@ impl Frame {
 }
 
 /// A temporary module for storing the thread stack.
-/// Must be removed after thread module creation.
+/// TODO: Must be removed after thread module creation.
 pub mod test {
       use super::Frame;
       static mut THREAD_STACK_TOP: *mut u8 = core::ptr::null_mut();

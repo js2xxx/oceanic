@@ -28,8 +28,8 @@
 //!
 //! ### Memory pools
 //!
-//! A memory pool holds slab lists of different object sizes (see [`page::OBJ_SIZES`]). When 
-//! requested, it looks for a correct index for the requested size and hands the task to the 
+//! A memory pool holds slab lists of different object sizes (see [`page::OBJ_SIZES`]). When
+//! requested, it looks for a correct index for the requested size and hands the task to the
 //! slab list of that idx.
 //!
 //! See module [`pool`] for more.
@@ -52,7 +52,7 @@ pub mod page;
 pub mod pool;
 pub mod slab;
 
-pub use page::{Page, AllocPages, DeallocPages};
+pub use page::{AllocPages, DeallocPages, Page};
 
 use core::ptr::NonNull;
 
@@ -80,4 +80,48 @@ pub fn set_alloc(alloc_pages: AllocPages, dealloc_pages: DeallocPages) {
 pub fn reset_alloc() {
       let mut pager = GLOBAL_ALLOC.pager.lock();
       *pager = page::Pager::new(null_alloc_pages, null_dealloc_pages);
+}
+
+/// The test function for the module.
+pub fn test() {
+      if !cfg!(debug_assertions) {
+            return;
+      }
+
+      use core::alloc::Layout;
+      fn random(seed: usize) -> usize {
+            (2357 * seed + 7631) >> paging::PAGE_SHIFT
+      }
+
+      let mut seed = 324;
+      let mut k = [(core::ptr::null_mut(), Layout::for_value(&0)); 100];
+      let allocator = &GLOBAL_ALLOC as &dyn core::alloc::GlobalAlloc;
+
+      let n1 = 36;
+      let n2 = 78;
+
+      // Safety: All the allocations are paired and thus legal.
+      unsafe {
+            for u in k.iter_mut().take(n2) {
+                  let layout = core::alloc::Layout::from_size_align(seed, seed.next_power_of_two())
+                        .expect("Invalid layout");
+                  *u = (allocator.alloc(layout), layout);
+                  seed = random(seed);
+            }
+
+            for v in k.iter_mut().take(n1) {
+                  allocator.dealloc(v.0, v.1);
+            }
+
+            for w in k.iter_mut().skip(n2) {
+                  let layout = core::alloc::Layout::from_size_align(seed, seed.next_power_of_two())
+                        .expect("Invalid layout");
+                  *w = (allocator.alloc(layout), layout);
+                  seed = random(seed);
+            }
+
+            for a in k.iter_mut().skip(n1) {
+                  allocator.dealloc(a.0, a.1);
+            }
+      }
 }
