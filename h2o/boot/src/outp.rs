@@ -30,7 +30,7 @@ pub fn choose_mode(syst: &SystemTable<Boot>, preferred_res: (usize, usize)) -> (
                   let mode = mode.unwrap();
 
                   let minfo = mode.info();
-                  if minfo.resolution() == preferred_res && minfo.pixel_format() == PixelFormat::BGR
+                  if minfo.resolution() == preferred_res && minfo.pixel_format() == PixelFormat::Bgr
                   {
                         selected = Some(mode);
                   }

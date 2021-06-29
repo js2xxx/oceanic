@@ -13,7 +13,6 @@
 #![feature(alloc_error_handler)]
 #![feature(asm)]
 #![feature(box_syntax)]
-#![feature(maybe_uninit_ref)]
 #![feature(nonnull_slice_from_raw_parts)]
 #![feature(panic_info_message)]
 #![feature(slice_ptr_get)]

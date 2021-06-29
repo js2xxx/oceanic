@@ -24,8 +24,8 @@ fn init_kernel_gs(tss_rsp0: *mut u8) -> Mutex<Box<KernelGs>> {
                   // TODO: removing [`test`] in the future.
                   intr::ctx::test::init_stack_top(alloc::alloc::alloc(paging::PAGE_LAYOUT));
 
-                  use crate::rxx::msr;
-                  msr::write(msr::MSR::KERNEL_GS_BASE, ptr as u64);
+                  use archop::msr;
+                  msr::write(msr::KERNEL_GS_BASE, ptr as u64);
                   Box::from_raw(ptr)
             }
       };

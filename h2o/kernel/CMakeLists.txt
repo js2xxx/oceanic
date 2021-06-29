@@ -10,6 +10,7 @@ add_custom_target(
     H2O ALL 
     CARGO_TARGET_DIR=${CMAKE_CURRENT_BINARY_DIR} ${CARGO_CMD} --manifest-path ${CMAKE_CURRENT_SOURCE_DIR}/Cargo.toml
 )
+add_dependencies(H2O acpica)
 
 file(GLOB RS_LIB ${GLOB_PATH}/libh2o.a)
 file(GLOB_RECURSE ASM_SRC entry/x86_64/*.asm)

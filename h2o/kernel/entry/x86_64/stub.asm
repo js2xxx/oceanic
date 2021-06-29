@@ -1,26 +1,26 @@
-ExVector_DivideBy0      equ   0
-ExVector_Debug          equ   1
-ExVector_Nmi            equ   2
-ExVector_Breakpoint     equ   3
-ExVector_Overflow       equ   4
-ExVector_Bound          equ   5
-ExVector_InvalidOp      equ   6
-ExVector_DeviceNa       equ   7
-ExVector_DoubleFault    equ   8
-ExVector_CoprocOverrun  equ   9
-ExVector_InvalidTss     equ   10
-ExVector_SegmentNa      equ   11
-ExVector_StackFault     equ   12
-ExVector_GeneralProt    equ   13
-ExVector_PageFault      equ   14
-ExVector_Spurious       equ   15
-ExVector_FloatPoint     equ   16
-ExVector_Alignment      equ   17
-ExVector_MachineCheck   equ   18
-ExVector_SimdExcep      equ   19
-ExVector_Virtual        equ   20
-ExVector_ControlProt    equ   21
-ExVector_VmmComm        equ   29
+ExVec_DivideBy0      equ   0
+ExVec_Debug          equ   1
+ExVec_Nmi            equ   2
+ExVec_Breakpoint     equ   3
+ExVec_Overflow       equ   4
+ExVec_Bound          equ   5
+ExVec_InvalidOp      equ   6
+ExVec_DeviceNa       equ   7
+ExVec_DoubleFault    equ   8
+ExVec_CoprocOverrun  equ   9
+ExVec_InvalidTss     equ   10
+ExVec_SegmentNa      equ   11
+ExVec_StackFault     equ   12
+ExVec_GeneralProt    equ   13
+ExVec_PageFault      equ   14
+ExVec_Spurious       equ   15
+ExVec_FloatPoint     equ   16
+ExVec_Alignment      equ   17
+ExVec_MachineCheck   equ   18
+ExVec_SimdExcep      equ   19
+ExVec_Virtual        equ   20
+ExVec_ControlProt    equ   21
+ExVec_VmmComm        equ   29
 
 struc Frame
       .r15  resq 1
@@ -112,14 +112,14 @@ endstruc
       pop   rax
 %endmacro
 
-; define_intr(vec, asm_name, name, has_code)
+; define_intr(vec, asm_name, name, err_vec)
 %macro define_intr 4
 
 global %2
 extern %3
 %2:
-%if %4 == 0
-      push  -1
+%if %4 != 0
+      push  %4
 %endif
 
       call  intr_entry
@@ -134,12 +134,12 @@ extern %3
 [section .text]
 
 ; define_intr(vec, asm_name, name, has_code)
-define_intr ExVector_DivideBy0,     rout_div_0,             hdl_div_0,              0
-define_intr ExVector_Overflow,      rout_overflow,          hdl_overflow,           0
-define_intr ExVector_CoprocOverrun, rout_coproc_overrun,    hdl_coproc_overrun,     0
-define_intr ExVector_InvalidTss,    rout_invalid_tss,       hdl_invalid_tss,        1
-define_intr ExVector_SegmentNa,     rout_segment_na,        hdl_segment_na,         1
-define_intr ExVector_StackFault,    rout_stack_fault,       hdl_stack_fault,        1
+define_intr ExVec_DivideBy0,     rout_div_0,             hdl_div_0,              -1
+define_intr ExVec_Overflow,      rout_overflow,          hdl_overflow,           -1
+define_intr ExVec_CoprocOverrun, rout_coproc_overrun,    hdl_coproc_overrun,     -1
+define_intr ExVec_InvalidTss,    rout_invalid_tss,       hdl_invalid_tss,        0
+define_intr ExVec_SegmentNa,     rout_segment_na,        hdl_segment_na,         0
+define_intr ExVec_StackFault,    rout_stack_fault,       hdl_stack_fault,        0
 
 intr_entry:
       cld

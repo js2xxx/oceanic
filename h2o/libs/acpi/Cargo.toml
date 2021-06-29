@@ -1,0 +1,12 @@
+[package]
+edition = "2018"
+name = "acpi"
+version = "0.1.0"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+
+[build-dependencies]
+bindgen = {version = "0.58", default-features = false, features = ["clap", "runtime", "which-rustfmt"]}
+# cc = { version = "1.0", features = ["parallel"] }

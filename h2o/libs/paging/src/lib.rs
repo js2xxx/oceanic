@@ -2,7 +2,6 @@
 #![feature(asm)]
 #![feature(nonnull_slice_from_raw_parts)]
 #![feature(step_trait)]
-#![feature(step_trait_ext)]
 
 pub mod addr;
 pub mod alloc;

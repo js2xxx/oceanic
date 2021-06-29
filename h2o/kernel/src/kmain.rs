@@ -9,7 +9,6 @@
 #![feature(const_raw_ptr_to_usize_cast)]
 #![feature(default_alloc_error_handler)]
 #![feature(lang_items)]
-#![feature(maybe_uninit_ref)]
 #![feature(nonnull_slice_from_raw_parts)]
 #![feature(slice_ptr_get)]
 #![feature(slice_ptr_len)]

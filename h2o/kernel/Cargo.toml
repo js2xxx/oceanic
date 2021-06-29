@@ -11,6 +11,7 @@ crate-type = ["staticlib"]
 
 [dependencies]
 # Local crates
+acpi = { path = "../libs/acpi" }
 archop = { path = "../libs/archop" }
 bitop_ex = { path = "../libs/bitop_ex" }
 canary = { path = "../libs/canary" }

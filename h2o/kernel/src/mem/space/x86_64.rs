@@ -115,7 +115,7 @@ impl Space {
       /// The caller must ensure that loading the space is safe and not cause any #PF.
       pub(in crate::mem) unsafe fn load(&self) {
             let cr3 = self.cr3.to_paddr(minfo::ID_OFFSET);
-            asm!("mov cr3, {}", in(reg) *cr3);
+            archop::reg::cr3::write(*cr3 as u64);
       }
 }
 

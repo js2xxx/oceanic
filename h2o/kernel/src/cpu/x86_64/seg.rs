@@ -108,35 +108,17 @@ pub unsafe fn get_type_attr(ptr: *mut u8) -> u16 {
 
 /// # Safety
 ///
-/// The caller must ensure the value stored in [`crate::rxx::msr::MSR::FS_BASE`] is a 
+/// The caller must ensure the value stored in [`archop::msr::FS_BASE`] is a
 /// valid physical address.
 pub(super) unsafe fn reload_pls() {
-      use crate::rxx::msr;
+      use archop::msr;
 
-      let val = msr::read(msr::MSR::FS_BASE) as usize;
+      let val = msr::read(msr::FS_BASE) as usize;
       if val != 0 {
             let ptr = PAddr::new(val).to_laddr(minfo::ID_OFFSET).cast::<usize>();
 
             ptr.write(ptr as usize);
 
-            msr::write(msr::MSR::FS_BASE, ptr as u64);
+            msr::write(msr::FS_BASE, ptr as u64);
       }
 }
-
-// /// Initialize the module.
-// pub fn init<T: FnOnce()>(init_tls: T) {
-//       ndt::init_gdt();
-//       init_tls();
-//       ndt::init_ldt();
-//       ndt::init_tss();
-//       idt::init_idt();
-// }
-
-// /// Initialize the module for APs.
-// pub fn init_ap<T: FnOnce()>(init_tls: T) {
-//       ndt::init_gdt_ap();
-//       init_tls();
-//       ndt::init_ldt_ap();
-//       ndt::init_tss();
-//       idt::init_idt();
-// }

@@ -15,4 +15,4 @@ elf_rs = "0.1"
 log = "0.4"
 raw-cpuid = "9.0"
 tinybmp = "0.2"
-uefi = { version = "0.7", features = [ "logger", "alloc" ] }
+uefi = { version = "0.11", features = [ "logger", "alloc" ] }
