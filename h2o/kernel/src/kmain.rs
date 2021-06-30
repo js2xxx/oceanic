@@ -34,7 +34,7 @@ pub extern "C" fn kmain(
       tls_size: usize,
 ) {
       self::log::init(l::Level::Debug);
-      l::info!("kmain: Starting initialization");
+      l::info!("Starting initialization");
 
       mem::init(efi_mmap_paddr, efi_mmap_len, efi_mmap_unit);
 
@@ -46,6 +46,7 @@ pub extern "C" fn kmain(
       l::debug!("Creating the CPU core");
       let _core = cpu::Core::new(&krl_space);
 
+      unsafe { acpi::init_tables(rsdp) };
       // unsafe {
       //       asm!("mov rax, 0; mov rdx, 0; mov rcx, 0; div rcx");
       // }

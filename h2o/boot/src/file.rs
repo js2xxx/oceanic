@@ -155,6 +155,9 @@ fn load_prog(
             let phys = crate::mem::alloc(syst)
                   .alloc_n(extra >> paging::PAGE_SHIFT)
                   .expect("Failed to allocate extra memory");
+            // Must clear the memory, otherwise some static variables will be uninitialized.
+            unsafe { core::ptr::write_bytes(*phys as *mut u8, 0, extra) };
+
             let virt = paging::LAddr::from(vend)..paging::LAddr::from(vend + extra);
             crate::mem::maps(syst, virt, phys, pg_attr).expect("Failed to map virtual memory");
       }

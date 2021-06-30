@@ -38,7 +38,8 @@
 #define ACPI_MACHINE_WIDTH 64
 #define ACPI_FLUSH_CPU_CACHE() asm("wbinvd")
 
-#define ACPI_USE_SYSTEM_CLIBRARY
+// TODO: use self's implementation in the future.
+// #define ACPI_USE_SYSTEM_CLIBRARY
 
 #define ACPI_OS_NAME "Microsoft Windows NT"
 

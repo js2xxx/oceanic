@@ -1,13 +1,16 @@
 #![no_std]
+#![feature(const_btree_new)]
 
-#![allow(non_upper_case_globals)]
-#![allow(non_camel_case_types)]
-#![allow(non_snake_case)]
-#![allow(unused)]
-#![allow(clippy::redundant_static_lifetimes)]
+mod raw;
 
-// include!(concat!(env!("OUT_DIR"), "/acpica.rs"));
+extern crate alloc;
 
-pub fn init_tables() {
+const NR_INIT_TABLES: usize = 128;
+static mut INIT_TABLES: [core::mem::MaybeUninit<raw::ACPI_TABLE_DESC>; NR_INIT_TABLES] =
+      [core::mem::MaybeUninit::uninit(); NR_INIT_TABLES];
 
+pub unsafe fn init_tables(rsdp: *const core::ffi::c_void) {
+      raw::RSDP = rsdp;
+      let _status =
+            raw::AcpiInitializeTables(INIT_TABLES.as_mut_ptr().cast(), NR_INIT_TABLES as u32, 0);
 }
