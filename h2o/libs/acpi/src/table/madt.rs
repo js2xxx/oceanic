@@ -8,13 +8,13 @@ use core::ptr::null_mut;
 
 const INIT_BASE_ADDR: PAddr = PAddr::new(0xFEE00000);
 
-#[derive(Clone, Debug)]
+#[derive(Copy, Clone, Debug)]
 pub struct LapicNode {
       pub id: u32,
       pub acpi_id: u32,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Copy, Clone, Debug)]
 pub enum LapicType {
       X2,
       X1(PAddr),

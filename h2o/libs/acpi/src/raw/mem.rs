@@ -22,7 +22,7 @@ unsafe extern "C" fn AcpiOsMapMemory(paddr: ACPI_PHYSICAL_ADDRESS, len: ACPI_SIZ
 }
 
 #[no_mangle]
-unsafe extern "C" fn AcpiOsUnmapMemory(laddr: *mut u8, len: ACPI_SIZE) {}
+unsafe extern "C" fn AcpiOsUnmapMemory(_laddr: *mut u8, _len: ACPI_SIZE) {}
 
 #[no_mangle]
 unsafe extern "C" fn AcpiOsGetPhysicalAddress(

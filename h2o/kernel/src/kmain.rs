@@ -34,7 +34,8 @@ pub extern "C" fn kmain(
       efi_mmap_unit: usize,
       tls_size: usize,
 ) {
-      self::log::init(l::Level::Debug);
+      // SAFE: Everything is uninitialized.
+      unsafe { self::log::init(l::Level::Debug) };
       l::info!("Starting initialization");
 
       mem::init(efi_mmap_paddr, efi_mmap_len, efi_mmap_unit);
@@ -44,13 +45,14 @@ pub extern "C" fn kmain(
       let krl_space = mem::space::Space::new(mem::space::CreateType::Kernel);
       unsafe { krl_space.load() };
 
-      l::debug!("Creating the CPU core");
-      let arch_data = unsafe { cpu::arch::init(&krl_space) };
-
+      l::debug!("Initializing ACPI tables");
       unsafe { acpi::init_tables(rsdp) };
+      let lapic_data = unsafe { acpi::table::get_lapic_data() }.expect("Failed to get LAPIC data");
 
-      let data = unsafe { acpi::table::get_lapic_data() };
-      l::debug!("{:x?}", data);
+      l::debug!("Creating the CPU core");
+      let arch_data = unsafe { cpu::arch::init(&krl_space, lapic_data) };
+
+
       // unsafe {
       //       asm!("mov rax, 0; mov rdx, 0; mov rcx, 0; div rcx");
       // }

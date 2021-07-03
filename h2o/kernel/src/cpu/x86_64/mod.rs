@@ -1,10 +1,12 @@
 pub mod intr;
 pub mod seg;
+pub mod apic;
 
 use crate::mem::space::Space;
 
 use alloc::boxed::Box;
 use alloc::sync::Arc;
+use core::mem::ManuallyDrop;
 use core::pin::Pin;
 use spin::Mutex;
 
@@ -39,6 +41,7 @@ fn init_kernel_gs(tss_rsp0: *mut u8) -> Box<KernelGs> {
 /// CPU.
 pub unsafe fn init(
       space: &Arc<Space>,
+      lapic_data: acpi::table::madt::LapicData,
 ) -> (
       Mutex<seg::ndt::DescTable<'_>>,
       Pin<&mut seg::ndt::TssStruct>,
@@ -47,6 +50,12 @@ pub unsafe fn init(
       let (gdt, tss) = seg::init(space);
 
       let kernel_gs = init_kernel_gs(*tss.rsp0());
+
+      let acpi::table::madt::LapicData { ty: lapic_ty, lapics } = lapic_data;
+      let lapic = apic::Lapic::new(lapic_ty, space);
+      log::debug!("LAPIC ID = {:?}", lapic.id());
+
+      let _ = ManuallyDrop::new(lapic);
 
       (gdt, tss, kernel_gs)
 }

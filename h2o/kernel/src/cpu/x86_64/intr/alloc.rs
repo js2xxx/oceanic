@@ -1,12 +1,13 @@
 use super::def::NR_VECTORS;
 use crate::cpu::CpuMask;
+use super::ArchReg;
 
 use alloc::vec::Vec;
 use bitvec::prelude::*;
 use core::ops::Range;
 
 #[derive(Debug, Clone)]
-pub struct CpuChunk {
+struct CpuChunk {
       bitmap: BitArr!(for NR_VECTORS),
       free_cnt: usize,
 }
@@ -57,8 +58,8 @@ impl Allocator {
             Ok((pos as u16, cpu))
       }
 
-      pub fn alloc(&mut self, alloc_cpu: CpuMask) -> Result<super::Interrupt, AllocError> {
-            self.alloc_idx(alloc_cpu).map(|(vec, cpu)| super::Interrupt { vec, cpu })
+      pub fn alloc(&mut self, alloc_cpu: CpuMask) -> Result<ArchReg, AllocError> {
+            self.alloc_idx(alloc_cpu).map(|(vec, cpu)| ArchReg { vec, cpu })
       }
 
       fn dealloc_idx(&mut self, vec: u16, cpu: usize) -> Result<(), AllocError> {
@@ -80,7 +81,7 @@ impl Allocator {
             }
       }
 
-      pub fn dealloc(&mut self, intr: super::Interrupt) -> Result<(), AllocError> {
+      pub fn dealloc(&mut self, intr: ArchReg) -> Result<(), AllocError> {
             self.dealloc_idx(intr.vec, intr.cpu)
       }
 }
