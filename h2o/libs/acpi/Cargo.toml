@@ -13,6 +13,7 @@ paging = { path = "../paging" }
 cty = "0.2"
 log = "0.4"
 spin = "0.7"
+raw-cpuid = "9.0"
 va_list = { version = "0.1", default-features = false, features = ["no_std"] }
 
 [build-dependencies]

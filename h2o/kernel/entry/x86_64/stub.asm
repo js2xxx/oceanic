@@ -134,12 +134,21 @@ extern %3
 [section .text]
 
 ; define_intr(vec, asm_name, name, has_code)
-define_intr ExVec_DivideBy0,     rout_div_0,             hdl_div_0,              -1
-define_intr ExVec_Overflow,      rout_overflow,          hdl_overflow,           -1
-define_intr ExVec_CoprocOverrun, rout_coproc_overrun,    hdl_coproc_overrun,     -1
-define_intr ExVec_InvalidTss,    rout_invalid_tss,       hdl_invalid_tss,        0
-define_intr ExVec_SegmentNa,     rout_segment_na,        hdl_segment_na,         0
-define_intr ExVec_StackFault,    rout_stack_fault,       hdl_stack_fault,        0
+define_intr ExVec_DivideBy0,        rout_div_0,             hdl_div_0,              -1
+define_intr ExVec_Debug,            rout_debug,             hdl_debug,              -1
+define_intr ExVec_Nmi,              rout_nmi,               hdl_nmi,                -1
+define_intr ExVec_Breakpoint,       rout_breakpoint,        hdl_breakpoint,         -1
+define_intr ExVec_Overflow,         rout_overflow,          hdl_overflow,           -1
+define_intr ExVec_Bound,            rout_bound,             hdl_bound,              -1
+define_intr ExVec_InvalidOp,        rout_invalid_op,        hdl_invalid_op,         -1
+define_intr ExVec_DeviceNa,         rout_device_na,         hdl_device_na,          -1
+define_intr ExVec_DoubleFault,      rout_double_fault,      hdl_double_fault,       0
+define_intr ExVec_CoprocOverrun,    rout_coproc_overrun,    hdl_coproc_overrun,     -1
+define_intr ExVec_InvalidTss,       rout_invalid_tss,       hdl_invalid_tss,        0
+define_intr ExVec_SegmentNa,        rout_segment_na,        hdl_segment_na,         0
+define_intr ExVec_StackFault,       rout_stack_fault,       hdl_stack_fault,        0
+define_intr ExVec_GeneralProt,      rout_general_prot,      hdl_general_prot,       0
+define_intr ExVec_PageFault,        rout_page_fault,        hdl_page_fault,         0
 
 %define rout_name(x) rout_ %+ x
 %assign i 0x40

@@ -23,10 +23,12 @@ pmm = { path = "../libs/pmm" }
 repeat = { path = "../libs/repeat" }
 # External crates
 bitflags = "1.2"
+bitvec = { version = "0.22", default-features = false, features = ["atomic"] }
 cfg-if = "1.0"
 lazy_static = { version = "1.4", features = ["spin_no_std"] }
 log = "0.4"
 modular-bitfield = "0.11"
 paste = "1.0"
+raw-cpuid = "9.0"
 spin = "0.7"
 static_assertions = "1.1"

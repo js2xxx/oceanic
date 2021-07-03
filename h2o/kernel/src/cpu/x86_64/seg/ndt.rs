@@ -44,7 +44,7 @@ pub struct DescTable<'a> {
       /// The number of how much entries the table can hold.
       capacity: usize,
       /// The memory block where the table is stored.
-      memory: Pin<&'a mut [MemBlock]>,
+      _memory: Pin<&'a mut [MemBlock]>,
 }
 
 impl<'a> DescTable<'a> {
@@ -58,7 +58,7 @@ impl<'a> DescTable<'a> {
                   base,
                   end: base,
                   capacity,
-                  memory,
+                  _memory: memory,
             }
       }
 

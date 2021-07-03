@@ -6,3 +6,7 @@ cfg_if::cfg_if! {
             pub mod arch;
       }
 }
+
+pub use arch::MAX_CPU;
+
+pub type CpuMask = bitvec::BitArr!(for MAX_CPU);

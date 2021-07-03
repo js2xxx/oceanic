@@ -8,6 +8,8 @@ use alloc::sync::Arc;
 use core::pin::Pin;
 use spin::Mutex;
 
+pub const MAX_CPU: usize = 256;
+
 #[repr(C)]
 pub struct KernelGs {
       save_regs: *mut u8,

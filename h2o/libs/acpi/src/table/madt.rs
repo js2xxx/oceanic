@@ -48,7 +48,9 @@ pub unsafe fn get_lapic_data() -> Result<LapicData, raw::ACPI_STATUS> {
             tbl.cast()
       };
 
-      IS_X2 = false;
+      IS_X2 = raw_cpuid::CpuId::new()
+            .get_feature_info()
+            .map_or(false, |info| info.has_x2apic());
       BASE_ADDR = INIT_BASE_ADDR;
       LAPICS = Vec::new();
 
@@ -84,11 +86,7 @@ pub unsafe fn get_lapic_data() -> Result<LapicData, raw::ACPI_STATUS> {
       parse_madt(madt, parser);
 
       let lapic_data = LapicData {
-            ty: if IS_X2 {
-                  LapicType::X2
-            } else {
-                  LapicType::X1(BASE_ADDR)
-            },
+            ty: if IS_X2 { LapicType::X2 } else { LapicType::X1(BASE_ADDR) },
             lapics: LAPICS.clone(),
       };
       Ok(lapic_data)
