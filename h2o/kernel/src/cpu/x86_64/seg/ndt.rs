@@ -5,7 +5,6 @@ use paging::LAddr;
 use alloc::sync::Arc;
 use core::mem::size_of;
 use core::pin::Pin;
-use spin::Mutex;
 use static_assertions::*;
 
 /// Indicate a struct is a segment or gate descriptor.
@@ -280,70 +279,79 @@ impl Seg128 {
       }
 }
 
-/// Initialize the GDT.
+/// Create a standard GDT for the kernel.
 ///
-/// This function does 2 things: construct a standard GDT object; load it into the
-/// current CPU - the BSP.
+/// Construct a GDT object with the allocation provided by `space`. Return the GDT and its
+/// kernel code & data selector.
 ///
 /// NOTE: This function could only be called once from the BSP.
-pub fn init_gdt(space: &Arc<Space>) -> Mutex<DescTable<'_>> {
-      extern "C" {
-            fn reset_seg(code: SegSelector, data: SegSelector);
-      }
-
+pub fn create_gdt(space: &Arc<Space>) -> (DescTable<'_>, (SegSelector, SegSelector)) {
       let (layout, k) = paging::PAGE_LAYOUT
             .repeat(2)
             .expect("Failed to get the allocation size");
       assert!(k == paging::PAGE_SIZE);
+      // SAFE: No physical address specified.
       let memory =
             unsafe { space.alloc_manual(layout, None, true, Flags::READABLE | Flags::WRITABLE) }
                   .expect("Failed to allocate memory for GDT");
 
-      let mut gdt = Mutex::new(DescTable::new(memory));
-      let gdt_data = gdt.get_mut();
+      let mut gdt = DescTable::new(memory);
 
       const LIM: u32 = 0xFFFFF;
       const ATTR: u16 = attrs::PRESENT | attrs::G4K;
 
-      gdt_data.push_s64(0, 0, 0, None); // Null Desc
-      let code = gdt_data.push_s64(0, LIM, attrs::SEG_CODE | attrs::X64 | ATTR, None);
-      let data = gdt_data.push_s64(0, LIM, attrs::SEG_DATA | attrs::X64 | ATTR, None);
-      gdt_data.push_s64(0, LIM, attrs::SEG_CODE | attrs::X86 | ATTR, None);
-      gdt_data.push_s64(0, LIM, attrs::SEG_DATA | attrs::X86 | ATTR, None);
-      gdt_data.push_s64(0, LIM, attrs::SEG_CODE | attrs::X64 | ATTR, Some(3));
-      gdt_data.push_s64(0, LIM, attrs::SEG_DATA | attrs::X64 | ATTR, Some(3));
-      gdt_data.push_s64(0, LIM, attrs::SEG_CODE | attrs::X86 | ATTR, Some(3));
-      gdt_data.push_s64(0, LIM, attrs::SEG_DATA | attrs::X86 | ATTR, Some(3));
+      gdt.push_s64(0, 0, 0, None); // Null Desc
+      let code = gdt.push_s64(0, LIM, attrs::SEG_CODE | attrs::X64 | ATTR, None);
+      let data = gdt.push_s64(0, LIM, attrs::SEG_DATA | attrs::X64 | ATTR, None);
+      gdt.push_s64(0, LIM, attrs::SEG_CODE | attrs::X86 | ATTR, None);
+      gdt.push_s64(0, LIM, attrs::SEG_DATA | attrs::X86 | ATTR, None);
+      gdt.push_s64(0, LIM, attrs::SEG_CODE | attrs::X64 | ATTR, Some(3));
+      gdt.push_s64(0, LIM, attrs::SEG_DATA | attrs::X64 | ATTR, Some(3));
+      gdt.push_s64(0, LIM, attrs::SEG_CODE | attrs::X86 | ATTR, Some(3));
+      gdt.push_s64(0, LIM, attrs::SEG_DATA | attrs::X86 | ATTR, Some(3));
 
-      unsafe {
-            let gdtr = gdt_data.export_fp();
-            asm!("lgdt [{}]", in(reg) &gdtr);
-      }
-
-      unsafe {
-            let (code, data) = (SegSelector::from(code), SegSelector::from(data));
-            reset_seg(code, data);
-      }
-
-      drop(gdt_data);
-      gdt
+      (gdt, (SegSelector::from(code), SegSelector::from(data)))
 }
 
-/// Initialize the LDT.
+/// Load a GDT into x86 architecture's `gdtr` and reset all the segment registers according
+/// to it.
+///
+/// # Safety
+///
+/// WARNING: This function modifies the architecture's basic registers. Be sure to make
+/// preparations.
+///
+/// The caller must ensure that `gdt` is a valid GDT object and `krl_sel` consists of the
+/// kernel's code & data selector in `gdt`.
+pub unsafe fn load_gdt(gdt: &DescTable, krl_sel: (SegSelector, SegSelector)) {
+      extern "C" {
+            fn reset_seg(code: SegSelector, data: SegSelector);
+      }
+
+      let gdtr = gdt.export_fp();
+      asm!("lgdt [{}]", in(reg) &gdtr);
+
+      let (code, data) = krl_sel;
+      reset_seg(code, data);
+}
+
+/// Create a standard LDT.
+///
+/// Construct an LDT object with the allocation provided by `space`.
 ///
 /// The Local Descriptor Table is used to indicate whether the code is inside a interrupt
 /// routine. In the assembly code, we can check the `TI` bit in `cs`.
 ///
-/// This function returns the original GDT, the LDT and its pointer to the GDT.
+/// This function returns the LDT, its address & size, and its code selector.
 ///
 /// NOTE: This function should only be called once from the BSP.
-pub fn init_ldt<'a, 'b>(
+pub fn create_ldt<'a, 'b>(
       space: &'a Arc<Space>,
-      gdt: Mutex<DescTable<'b>>,
-) -> (Mutex<DescTable<'b>>, Mutex<DescTable<'b>>, u16)
+) -> (DescTable<'b>, (LAddr, usize), (SegSelector, SegSelector))
 where
       'a: 'b,
 {
+      // SAFE: No physical address specified.
       let mut memory = unsafe {
             space.alloc_manual(
                   paging::PAGE_LAYOUT,
@@ -354,43 +362,68 @@ where
       }
       .expect("Failed to allocate memory for LDT");
 
-      let (base, size) = (
+      let ldt_ptr = (
             LAddr::new(memory.as_mut_ptr().cast()),
             size_of::<Seg64>() * 3,
       );
 
-      let mut ldt = Mutex::new(DescTable::new(memory));
-      let ldt_data = ldt.get_mut();
+      let mut ldt = DescTable::new(memory);
 
       const LIM: u32 = 0xFFFFF;
       const ATTR: u16 = attrs::PRESENT | attrs::G4K;
 
-      ldt_data.push_s64(0, 0, 0, None); // Null Desc
-      ldt_data.push_s64(0, LIM, attrs::SEG_CODE | attrs::X64 | ATTR, None);
-      ldt_data.push_s64(0, LIM, attrs::SEG_DATA | attrs::X64 | ATTR, None);
+      ldt.push_s64(0, 0, 0, None); // Null Desc
+      let code = ldt.push_s64(0, LIM, attrs::SEG_CODE | attrs::X64 | ATTR, None);
+      let data = ldt.push_s64(0, LIM, attrs::SEG_DATA | attrs::X64 | ATTR, None);
 
-      let ldtr = {
-            let mut gdt_data = gdt.lock();
-            gdt_data.push_s128(
-                  base,
-                  (size - 1) as u32,
-                  attrs::SYS_LDT | attrs::PRESENT,
-                  None,
-            )
-      };
-      unsafe {
-            asm!("lldt [{}]", in(reg) &ldtr);
-      }
-
-      drop(ldt_data);
-
-      (gdt, ldt, ldtr)
+      // In LDT: bitfield ti = 1
+      let ti = 1 << 2;
+      (
+            ldt,
+            ldt_ptr,
+            (SegSelector::from(code | ti), SegSelector::from(data | ti)),
+      )
 }
 
-pub fn init_tss<'a, 'b>(
-      space: &'a Arc<Space>,
-      gdt: Mutex<DescTable<'b>>,
-) -> (Mutex<DescTable<'b>>, Mutex<Pin<&'a mut TssStruct>>) {
+/// Push an LDT into a GDT.
+///
+/// # Safety
+///
+/// WARNING: This function modifies the architecture's basic registers. Be sure to make
+/// preparations.
+///
+/// The caller must ensure that `gdt` is a valid GDT, `ldt_ptr` consists of valid
+/// LDT's address & size, and the GDT does not contain the specified LDT.
+pub unsafe fn push_ldt(gdt: &mut DescTable, ldt_ptr: (LAddr, usize)) -> SegSelector {
+      let (base, size) = ldt_ptr;
+
+      let ldtr = gdt.push_s128(
+            base,
+            (size - 1) as u32,
+            attrs::SYS_LDT | attrs::PRESENT,
+            None,
+      );
+
+      SegSelector::from(ldtr)
+}
+
+/// Load an LDT into x86 architecture's `ldtr`.
+///
+/// # Safety
+///
+/// WARNING: This function modifies the architecture's basic registers. Be sure to make
+/// preparations.
+///
+/// The caller must ensure that `ldtr` points to a valid LDT and its GDT is loaded.
+pub unsafe fn load_ldt(ldtr: SegSelector) {
+      asm!("lldt [{}]", in(reg) &ldtr);
+}
+
+/// Create a new TSS structure.
+///
+/// This function returns the new structure and its base address.
+pub fn create_tss<'a, 'b>(space: &'a Arc<Space>) -> (Pin<&'a mut TssStruct>, LAddr) {
+      // SAFE: No physical address specified.
       let alloc_stack = || unsafe {
             let (layout, k) = paging::PAGE_LAYOUT
                   .repeat(4)
@@ -403,13 +436,17 @@ pub fn init_tss<'a, 'b>(
       let rsp0 = alloc_stack();
       let ist1 = alloc_stack();
 
-      let (tss, base) = unsafe {
-            let mut data = space
-                  .alloc_typed::<TssStruct>(None, true, Flags::READABLE | Flags::WRITABLE)
-                  .expect("Failed to allocate TSS");
+      // SAFE: No physical address specified.
+      let mut memory = unsafe {
+            space.alloc_typed::<TssStruct>(None, true, Flags::READABLE | Flags::WRITABLE)
+                  .expect("Failed to allocate TSS")
+      };
 
-            let ptr = data.as_mut_ptr();
-            ptr.write(TssStruct {
+      let base = memory.as_mut_ptr();
+
+      // SAFE: `base` points to a valid address.
+      unsafe {
+            base.write(TssStruct {
                   _rsvd1: 0,
                   // The legacy RSPs of different privilege levels.
                   rsp: [rsp0.as_ptr() as u64, 0, 0],
@@ -421,24 +458,44 @@ pub fn init_tss<'a, 'b>(
                   // The IO base mappings.
                   io_base: 0,
             });
+      }
 
-            (
-                  data.map_unchecked_mut(|u| u.assume_init_mut()),
-                  ptr,
-            )
-      };
+      // SAFE: A valid TSS structure is constructed in the memory block.
+      let tss = unsafe { memory.map_unchecked_mut(|u| u.assume_init_mut()) };
 
-      let tr = {
-            let mut gdt_data = gdt.lock();
-            gdt_data.push_s128(
-                  LAddr::new(base.cast()),
-                  (size_of::<TssStruct>() - 1) as u32,
-                  attrs::SYS_TSS | attrs::PRESENT,
-                  Some(3),
-            )
-      };
+      (tss, LAddr::new(base.cast()))
+}
 
+/// Push a TSS structure to the GDT.
+///
+/// This function returns the selector to the TSS structure.
+///
+/// # Safety
+///
+/// WARNING: This function modifies the architecture's basic registers. Be sure to make
+/// preparations.
+///
+/// The caller must ensure that `gdt` is a valid GDT and `tss_base` points to a valid
+/// TSS structure.
+pub unsafe fn push_tss(gdt: &mut DescTable, tss_base: LAddr) -> SegSelector {
+      let tr = gdt.push_s128(
+            LAddr::new(tss_base.cast()),
+            (size_of::<TssStruct>() - 1) as u32,
+            attrs::SYS_TSS | attrs::PRESENT,
+            Some(3),
+      );
+
+      SegSelector::from(tr)
+}
+
+/// Load an TSS into x86 architecture's `tr`.
+///
+/// # Safety
+///
+/// WARNING: This function modifies the architecture's basic registers. Be sure to make
+/// preparations.
+///
+/// The caller must ensure that `tr` points to a valid TSS and its GDT is loaded.
+pub unsafe fn load_tss(tr: SegSelector) {
       unsafe { asm!("ltr [{}]", in(reg) &tr) };
-
-      (gdt, Mutex::new(tss))
 }

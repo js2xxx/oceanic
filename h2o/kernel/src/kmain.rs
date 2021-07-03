@@ -1,4 +1,5 @@
 #![no_std]
+#![allow(unused_unsafe)]
 #![feature(alloc_layout_extra)]
 #![feature(allocator_api)]
 #![feature(asm)]
@@ -16,10 +17,10 @@
 #![feature(trace_macros)]
 #![feature(vec_into_raw_parts)]
 
-mod cpu;
-mod log;
-mod mem;
-mod rxx;
+pub mod cpu;
+pub mod log;
+pub mod mem;
+pub mod rxx;
 
 use ::log as l;
 
@@ -44,9 +45,12 @@ pub extern "C" fn kmain(
       unsafe { krl_space.load() };
 
       l::debug!("Creating the CPU core");
-      let _core = cpu::Core::new(&krl_space);
+      let arch_data = unsafe { cpu::arch::init(&krl_space) };
 
       unsafe { acpi::init_tables(rsdp) };
+
+      let data = unsafe { acpi::table::get_lapic_data() };
+      l::debug!("{:x?}", data);
       // unsafe {
       //       asm!("mov rax, 0; mov rdx, 0; mov rcx, 0; div rcx");
       // }

@@ -1,5 +1,5 @@
 use super::*;
-use crate::cpu::x86_64::intr::def::IDT_INIT;
+use crate::cpu::arch::intr::def::{IdtEntry, IdtInit, IDT_INIT};
 use crate::mem::space::{Flags, Space};
 use paging::LAddr;
 
@@ -8,7 +8,6 @@ use core::mem::size_of;
 use core::ops::{Index, IndexMut, Range};
 use core::pin::Pin;
 use core::slice::{Iter, IterMut};
-use spin::Mutex;
 use static_assertions::*;
 
 /// The count of all the interrupts in one CPU.
@@ -206,31 +205,52 @@ impl<'a> IntDescTable<'a> {
       }
 }
 
-/// Initialize the per-cpu IDT.
-pub fn init_idt(space: &Arc<Space>) -> Mutex<IntDescTable<'_>> {
+/// Create an IDT.
+///
+/// Construct a standard IDT object with entries from [`IDT_INIT`] and `intr_sel`.
+pub fn create_idt(space: &Arc<Space>, intr_sel: (SegSelector, SegSelector)) -> IntDescTable<'_> {
+      // SAFE: No physical address specified.
       let idt_array = unsafe {
             space.alloc_typed::<IdtArray>(None, true, Flags::READABLE | Flags::WRITABLE)
                   .expect("Failed to allocate memory for IDT")
                   .map_unchecked_mut(|u| u.assume_init_mut())
       };
 
-      let mut idt_data = IntDescTable::new(idt_array);
-      for init in IDT_INIT {
+      let mut idt = IntDescTable::new(idt_array);
+      let mut set_ent = |entry: &IdtEntry| {
             let desc = GateBuilder::new()
-                  .offset(LAddr::new(init.entry as *mut u8))
-                  .selector(SegSelector::from_const(0xC))
-                  .attribute(attrs::INT_GATE | attrs::PRESENT, init.dpl)
-                  .ist(init.ist)
+                  .offset(LAddr::new(entry.entry as *mut u8))
+                  .selector(intr_sel.0)
+                  .attribute(attrs::INT_GATE | attrs::PRESENT, entry.dpl)
+                  .ist(entry.ist)
                   .build()
                   .expect("Failed to build a gate descriptor");
 
-            idt_data[init.vec as u16 as usize] = desc;
+            idt[entry.vec as u16 as usize] = desc;
+      };
+      for init in IDT_INIT {
+            match init {
+                  IdtInit::S(ent) => set_ent(ent),
+                  IdtInit::M(entries) => {
+                        for ent in entries.iter() {
+                              set_ent(ent);
+                        }
+                  }
+            }
       }
 
-      unsafe {
-            let idtr = idt_data.export_fp();
-            asm!("cli; lidt [{}]", in(reg) &idtr);
-      }
+      idt
+}
 
-      Mutex::new(idt_data)
+/// Load an IDT into x86 architecture's `idtr`.
+///
+/// # Safety
+///
+/// WARNING: This function modifies the architecture's basic registers. Be sure to make
+/// preparations.
+///
+/// The caller must ensure that `idt` is a valid LDT.
+pub unsafe fn load_idt(idt: &IntDescTable) {
+      let idtr = idt.export_fp();
+      asm!("cli; lidt [{}]", in(reg) &idtr);
 }

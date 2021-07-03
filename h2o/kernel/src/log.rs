@@ -47,7 +47,7 @@ impl log::Log for Logger {
             let res = if record.level() <= log::Level::Debug {
                   write(
                         &mut *os,
-                        format_args!("{}: {}\n", record.level(), record.args()),
+                        format_args!("[{}] {}\n", record.level(), record.args()),
                   )
             } else {
                   let file = record.file().unwrap_or("<NULL>");
@@ -55,7 +55,7 @@ impl log::Log for Logger {
                   write(
                         &mut *os,
                         format_args!(
-                              "{}: {}: {}: {}\n",
+                              "[{} {}: {}] {}\n",
                               record.level(),
                               file,
                               line,

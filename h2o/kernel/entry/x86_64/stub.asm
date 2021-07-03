@@ -141,6 +141,16 @@ define_intr ExVec_InvalidTss,    rout_invalid_tss,       hdl_invalid_tss,       
 define_intr ExVec_SegmentNa,     rout_segment_na,        hdl_segment_na,         0
 define_intr ExVec_StackFault,    rout_stack_fault,       hdl_stack_fault,        0
 
+%define rout_name(x) rout_ %+ x
+%assign i 0x40
+%rep (0xFF - 0x40)
+
+define_intr i, rout_name(i), common_interrupt, i
+
+%assign i (i + 1)
+%endrep
+%undef rout_name(x)
+
 intr_entry:
       cld
       push_regs   1; The routine has a return address, so we must preseve it.

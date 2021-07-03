@@ -8,8 +8,12 @@
 pub mod idt;
 pub mod ndt;
 
+use crate::mem::space::Space;
 use paging::{LAddr, PAddr};
 
+use core::mem::ManuallyDrop;
+use core::pin::Pin;
+use alloc::sync::Arc;
 use core::mem::{size_of, transmute};
 use core::ops::Range;
 use modular_bitfield::prelude::*;
@@ -121,4 +125,34 @@ pub(super) unsafe fn reload_pls() {
 
             msr::write(msr::FS_BASE, ptr as u64);
       }
+}
+
+/// Initialize segmentation structures
+///
+/// # Safety
+///
+/// The caller must ensure that this function is called only once from the bootstrap
+/// CPU.
+pub(super) unsafe fn init(space: &Arc<Space>) -> (spin::Mutex<ndt::DescTable<'_>>, Pin<&mut ndt::TssStruct>) {
+      let (mut gdt, krl_sel) = ndt::create_gdt(space);
+      unsafe { ndt::load_gdt(&gdt, krl_sel) };
+      unsafe { reload_pls() };
+
+      let (ldt, ldt_ptr, intr_sel) = ndt::create_ldt(space);
+      let ldtr = unsafe { ndt::push_ldt(&mut gdt, ldt_ptr) };
+      unsafe { ndt::load_ldt(ldtr) };
+
+      let (tss, tss_base) = ndt::create_tss(space);
+      let tr = unsafe { ndt::push_tss(&mut gdt, tss_base) };
+      unsafe { ndt::load_tss(tr) };
+
+      let idt = idt::create_idt(space, intr_sel);
+      unsafe { idt::load_idt(&idt) };
+
+      // Manually drop the reference to LDT and IDT without dropping the data
+      // because those structures are no longer needed to be referenced.
+      let _ = ManuallyDrop::new(ldt);
+      let _ = ManuallyDrop::new(idt);
+
+      (spin::Mutex::new(gdt), tss)
 }
