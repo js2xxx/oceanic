@@ -92,8 +92,8 @@ pub unsafe fn init(
             ty: lapic_ty,
             lapics,
       } = lapic_data;
-      let lapic = apic::Lapic::new(lapic_ty, space);
-
+      let mut lapic = apic::Lapic::new(lapic_ty, space);
+      lapic.enable();
       let lapic = lapic.activate_timer(apic::timer::TimerMode::Periodic, 7, 256);
 
       let kernel_gs = KernelGs::new(*tss.rsp0(), lapic);

@@ -28,9 +28,9 @@ pub enum ExVec {
       Alignment = 0x11,
       MachineCheck = 0x12,
       SimdExcep = 0x13,
-      Virtual = 0x14,
-      ControlProt = 0x15,
-      VmmComm = 0x1D,
+      // Virtual = 0x14,
+      // ControlProt = 0x15,
+      // VmmComm = 0x1D,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -48,7 +48,7 @@ type IdtRoute = unsafe extern "C" fn();
 
 macro_rules! single_ent {
       ($vec:expr, $name:ident, $ist:expr, $dpl:expr) => {
-            S(IdtEntry::new(
+            Single(IdtEntry::new(
                   $vec as u16,
                   paste::paste! {[<rout_ $name>]},
                   $ist,
@@ -69,8 +69,8 @@ macro_rules! hdl {
 }
 
 pub enum IdtInit {
-      S(IdtEntry),
-      M(&'static [IdtEntry]),
+      Single(IdtEntry),
+      Multiple(&'static [IdtEntry]),
 }
 use IdtInit::*;
 
@@ -109,10 +109,16 @@ pub static IDT_INIT: &[IdtInit] = &[
       single_ent!(ExVec::StackFault as u16, stack_fault, 0, 0),
       single_ent!(ExVec::GeneralProt as u16, general_prot, 0, 0),
       single_ent!(ExVec::PageFault as u16, page_fault, 0, 0),
+      single_ent!(ExVec::FloatPoint as u16, fp_excep, 0, 0),
+      single_ent!(ExVec::Alignment as u16, alignment, 0, 0),
+      // single_ent!(ExVec::MachineCheck as u16, mach_check, 0, 0),
+      single_ent!(ExVec::SimdExcep as u16, simd, 0, 0),
       // Local APIC interrupts
       single_ent!(ApicVec::Timer as u16, lapic_timer, 0, 0),
+      single_ent!(ApicVec::Spurious as u16, lapic_spurious, 0, 0),
+      single_ent!(ApicVec::Error as u16, lapic_error, 0, 0),
       // All other allocable interrupts
-      M(repeat::repeat! {"&[" for i in 0x40..0xFF {
+      Multiple(repeat::repeat! {"&[" for i in 0x40..0xFF {
             IdtEntry::new(#i as u16, [<rout_ #i>], 0, 0)
       }"," "]"}),
 ];
@@ -239,10 +245,50 @@ hdl!(page_fault, |frame| {
       archop::halt_loop(Some(false));
 });
 
+hdl!(fp_excep, |frame| {
+      log::error!("EXCEPTION: Floating-point exception");
+      let frame = unsafe { &*frame };
+      frame.dump(Frame::ERRC);
+
+      archop::halt_loop(Some(false));
+});
+
+hdl!(alignment, |frame| {
+      log::error!("EXCEPTION: Alignment check");
+      let frame = unsafe { &*frame };
+      frame.dump(Frame::ERRC);
+
+      archop::halt_loop(Some(false));
+});
+
+// hdl!(mach_check, |frame| {
+//       log::error!("EXCEPTION: Machine check");
+//       let frame = unsafe { &*frame };
+//       frame.dump(Frame::ERRC);
+
+//       archop::halt_loop(Some(false));
+// });
+
+hdl!(simd, |frame| {
+      log::error!("EXCEPTION: SIMD exception");
+      let frame = unsafe { &*frame };
+      frame.dump(Frame::ERRC);
+
+      archop::halt_loop(Some(false));
+});
+
 // Local APIC interrupts
 
 hdl!(lapic_timer, |frame| {
       crate::cpu::arch::apic::timer::timer_handler(frame);
+});
+
+hdl!(lapic_spurious, |_frame| {
+      crate::cpu::arch::apic::spurious_handler();
+});
+
+hdl!(lapic_error, |_frame| {
+      crate::cpu::arch::apic::error_handler();
 });
 
 // All other allocable interrupts

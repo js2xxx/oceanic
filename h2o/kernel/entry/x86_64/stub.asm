@@ -13,7 +13,6 @@ ExVec_SegmentNa         equ   11
 ExVec_StackFault        equ   12
 ExVec_GeneralProt       equ   13
 ExVec_PageFault         equ   14
-ExVec_Spurious          equ   15
 ExVec_FloatPoint        equ   16
 ExVec_Alignment         equ   17
 ExVec_MachineCheck      equ   18
@@ -156,9 +155,15 @@ define_intr ExVec_SegmentNa,        rout_segment_na,        hdl_segment_na,     
 define_intr ExVec_StackFault,       rout_stack_fault,       hdl_stack_fault,        0
 define_intr ExVec_GeneralProt,      rout_general_prot,      hdl_general_prot,       0
 define_intr ExVec_PageFault,        rout_page_fault,        hdl_page_fault,         0
+define_intr ExVec_FloatPoint,       rout_fp_excep,          hdl_fp_excep,           -1
+define_intr ExVec_Alignment,        rout_alignment,         hdl_alignment,          -1
+; define_intr ExVec_MachineCheck,     rout_mach_check,        hdl_mach_check,         0
+define_intr ExVec_SimdExcep,        rout_simd,              hdl_simd,               0
 
 ; Local APIC interrupts
 define_intr ApicVec_Timer,          rout_lapic_timer,       hdl_lapic_timer,        -1
+define_intr ApicVec_Spurious,       rout_lapic_spurious,    hdl_lapic_spurious,     -1
+define_intr ApicVec_Error,          rout_lapic_error,       hdl_lapic_error,        -1
 
 ; All other interrupts
 %define rout_name(x) rout_ %+ x
@@ -169,7 +174,7 @@ define_intr i, rout_name(i), common_interrupt, i
 
 %assign i (i + 1)
 %endrep
-%undef rout_name(x)
+%undef rout_name
 
 intr_entry:
       cld

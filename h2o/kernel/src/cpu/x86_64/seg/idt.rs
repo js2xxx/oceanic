@@ -230,8 +230,8 @@ pub fn create_idt(space: &Arc<Space>, intr_sel: (SegSelector, SegSelector)) -> I
       };
       for init in IDT_INIT {
             match init {
-                  IdtInit::S(ent) => set_ent(ent),
-                  IdtInit::M(entries) => {
+                  IdtInit::Single(ent) => set_ent(ent),
+                  IdtInit::Multiple(entries) => {
                         for ent in entries.iter() {
                               set_ent(ent);
                         }

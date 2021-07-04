@@ -1,4 +1,5 @@
 pub mod timer;
+pub mod ipi;
 
 use crate::mem::space;
 use archop::msr;
@@ -140,8 +141,60 @@ impl<'a> Lapic<'a> {
             Self::write_reg_32(&mut self.ty, msr::X2APIC_EOI, 0)
       }
 
+      /// # Safety
+      ///
+      /// WARNING: This function modifies the architecture's basic registers. Be sure to make
+      /// preparations.
       pub unsafe fn activate_timer(self, mode: timer::TimerMode, div: u8, init_value: u64) -> Self {
             let (ret, _, _) = timer::Timer::new(mode, div, self).activate(init_value);
             ret
       }
+
+      /// # Safety
+      ///
+      /// The caller must ensure that this function is only called by [`error_handler`].
+      pub(self) unsafe fn handle_error(&mut self) {
+            let esr = Self::read_reg_32(&mut self.ty, msr::X2APIC_ESR);
+            self.eoi();
+
+            const MAX_ERROR: usize = 8;
+            const ERROR_MSG: [&str; MAX_ERROR] = [
+                  "Send CS error",            /* APIC Error Bit 0 */
+                  "Receive CS error",         /* APIC Error Bit 1 */
+                  "Send accept error",        /* APIC Error Bit 2 */
+                  "Receive accept error",     /* APIC Error Bit 3 */
+                  "Redirectable IPI",         /* APIC Error Bit 4 */
+                  "Send illegal vector",      /* APIC Error Bit 5 */
+                  "Received illegal vector",  /* APIC Error Bit 6 */
+                  "Illegal register address", /* APIC Error Bit 7 */
+            ];
+
+            log::error!("Local APIC ERROR:");
+
+            let mut it = esr;
+            for error_msg in ERROR_MSG.iter() {
+                  if (it & 1) != 0 {
+                        log::error!("> {}", error_msg);
+                  }
+                  it >>= 1;
+            }
+      }
+}
+
+/// # Safety
+///
+/// The caller must ensure that this function is only called by the spurious handler.
+pub unsafe fn spurious_handler() {
+      asm!("nop");
+}
+
+/// # Safety
+///
+/// The caller must ensure that this function is only called by the error handler.
+pub unsafe fn error_handler() {
+      // SAFE: Inside the timer interrupt handler.
+      let kernel_gs = unsafe { crate::cpu::arch::KernelGs::access_in_intr() };
+      let lapic = &mut kernel_gs.lapic;
+
+      lapic.handle_error();
 }

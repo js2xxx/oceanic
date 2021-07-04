@@ -51,9 +51,12 @@ pub fn choose_mode(syst: &SystemTable<Boot>, preferred_res: (usize, usize)) -> (
 fn get_logo_data() -> (Vec<BltPixel>, (usize, usize)) {
       log::trace!("outp::get_logo_data");
 
-      let bmp = tinybmp::Bmp::from_slice(LOGO_FILE).expect("Failed to load logo");
+      let bmp = tinybmp::RawBmp::from_slice(LOGO_FILE).expect("Failed to load logo");
 
-      let size = bmp.dimensions();
+      let (w, h) = {
+            let size = bmp.header().image_size;
+            (size.width, size.height)
+      };
 
       let blt_data = unsafe {
             let data = bmp.image_data();
@@ -63,11 +66,12 @@ fn get_logo_data() -> (Vec<BltPixel>, (usize, usize)) {
             )
       };
 
-      let mut blt_buffer = alloc::vec::Vec::with_capacity((size.0 + size.0 * size.1) as usize);
+      let mut blt_buffer =
+            alloc::vec::Vec::with_capacity((w + w * h) as usize);
       blt_buffer.extend_from_slice(blt_data);
-      blt_buffer.resize(blt_buffer.len() + size.0 as usize, BltPixel::from(0));
+      blt_buffer.resize(blt_buffer.len() + w as usize, BltPixel::from(0));
 
-      (blt_buffer, (size.0 as usize, size.1 as usize))
+      (blt_buffer, (w as usize, h as usize))
 }
 
 pub fn draw_logo(syst: &SystemTable<Boot>) {
