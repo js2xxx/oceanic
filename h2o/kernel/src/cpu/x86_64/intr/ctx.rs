@@ -41,9 +41,14 @@ impl Frame {
 
             if self.errc_vec != 0u64.wrapping_sub(1) && errc_format != "" {
                   info!("> Error Code = {}", Flags::new(self.errc_vec, errc_format));
+                  if errc_format == Self::ERRC_PF {
+                        info!("> cr2 (PF addr) = {:#018X}", unsafe {
+                              archop::reg::cr2::read()
+                        });
+                  }
             }
-            info!("> Address = {:#018X}", self.rip);
-            info!("> RFlags  = {}", Flags::new(self.rflags, Self::RFLAGS));
+            info!("> Code addr  = {:#018X}", self.rip);
+            info!("> RFlags     = {}", Flags::new(self.rflags, Self::RFLAGS));
 
             info!("> GPRs: ");
             info!("  rax = {:#018X}, rcx = {:#018X}", self.rax, self.rcx);

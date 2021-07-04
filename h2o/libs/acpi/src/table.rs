@@ -4,18 +4,21 @@ pub use madt::get_lapic_data;
 
 use crate::raw;
 
-use alloc::vec::Vec;
 use alloc::boxed::Box;
+use alloc::vec::Vec;
 
 struct SubtableParser {
       ty_idx: u32,
       handler: Box<dyn FnMut(*mut raw::ACPI_SUBTABLE_HEADER)>,
 }
 
-
-unsafe fn parse_subtable(table: *mut raw::ACPI_TABLE_HEADER, header_size: usize, mut parser: Vec<SubtableParser>) {
+unsafe fn parse_subtable(
+      table: *mut raw::ACPI_TABLE_HEADER,
+      header_size: usize,
+      mut parser: Vec<SubtableParser>,
+) {
       let len = (*table).Length as usize;
-      
+
       let mut ptr = table.cast::<u8>().add(header_size);
       while ptr < table.cast::<u8>().add(len) {
             let subt = ptr.cast::<raw::ACPI_SUBTABLE_HEADER>();
@@ -38,5 +41,5 @@ macro_rules! subt_parser {
                   ty_idx: $ty_idx,
                   handler: $handler,
             }
-      }
+      };
 }

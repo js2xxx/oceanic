@@ -3,6 +3,8 @@ pub use super::arch::intr as arch;
 use alloc::sync::Arc;
 use spin::Mutex;
 
+pub type Handler = fn(Arc<Interrupt>);
+
 pub trait IntrChip {
       /// # Safety
       ///
@@ -32,10 +34,15 @@ pub trait IntrChip {
 pub struct Interrupt {
       hw_irq: u32,
       arch_reg: Mutex<arch::ArchReg>,
+      hdl: Handler,
 }
 
 impl Interrupt {
       pub fn hw_irq(&self) -> u32 {
             self.hw_irq
+      }
+
+      pub fn handle(self: &Arc<Interrupt>) {
+            (self.hdl)(self.clone())
       }
 }

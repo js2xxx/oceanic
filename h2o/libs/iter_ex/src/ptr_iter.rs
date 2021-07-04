@@ -1,5 +1,3 @@
-
-
 use core::marker::PhantomData;
 
 pub struct PointerIterator<T> {

@@ -52,11 +52,6 @@ pub extern "C" fn kmain(
       l::debug!("Creating the CPU core");
       let arch_data = unsafe { cpu::arch::init(&krl_space, lapic_data) };
 
-
-      // unsafe {
-      //       asm!("mov rax, 0; mov rdx, 0; mov rcx, 0; div rcx");
-      // }
-
       // Test end
       l::debug!("Reaching end of kernel");
 }

@@ -11,10 +11,7 @@ fn acpica_build() {
             "cargo:rerun-if-changed={}/localdep/acpica/libacpica.a",
             path
       );
-      println!(
-            "cargo:rustc-link-search=native={}/localdep/acpica",
-            path
-      );
+      println!("cargo:rustc-link-search=native={}/localdep/acpica", path);
       println!("cargo:rustc-link-lib=static=acpica");
 }
 

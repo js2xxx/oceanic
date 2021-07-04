@@ -1,6 +1,6 @@
 use super::def::NR_VECTORS;
-use crate::cpu::CpuMask;
 use super::ArchReg;
+use crate::cpu::CpuMask;
 
 use alloc::vec::Vec;
 use bitvec::prelude::*;
@@ -38,10 +38,11 @@ impl Allocator {
             self.range.clone()
       }
 
-      fn alloc_idx(&mut self, alloc_cpu: CpuMask) -> Result<(u16, usize), AllocError> {
+      fn alloc_idx(&mut self, alloc_cpu: &CpuMask) -> Result<(u16, usize), AllocError> {
             let range = self.allocable_range();
 
-            let cpu = alloc_cpu.iter_ones()
+            let cpu = alloc_cpu
+                  .iter_ones()
                   .find(|&cpu| self.cpus[cpu].free_cnt > 0)
                   .map_or(Err(AllocError::Available(false)), Ok)?;
 
@@ -58,8 +59,9 @@ impl Allocator {
             Ok((pos as u16, cpu))
       }
 
-      pub fn alloc(&mut self, alloc_cpu: CpuMask) -> Result<ArchReg, AllocError> {
-            self.alloc_idx(alloc_cpu).map(|(vec, cpu)| ArchReg { vec, cpu })
+      pub fn alloc(&mut self, alloc_cpu: &CpuMask) -> Result<ArchReg, AllocError> {
+            self.alloc_idx(alloc_cpu)
+                  .map(|(vec, cpu)| ArchReg { vec, cpu })
       }
 
       fn dealloc_idx(&mut self, vec: u16, cpu: usize) -> Result<(), AllocError> {

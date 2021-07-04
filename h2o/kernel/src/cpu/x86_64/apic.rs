@@ -1,4 +1,5 @@
-use crate::cpu::intr::{Interrupt, IntrChip};
+pub mod timer;
+
 use crate::mem::space;
 use archop::msr;
 
@@ -130,22 +131,17 @@ impl<'a> Lapic<'a> {
       pub fn id(&self) -> u32 {
             self.id
       }
-}
 
-impl<'a> IntrChip for Lapic<'a> {
-      unsafe fn mask(&mut self, intr: Arc<Interrupt>) {
-            todo!()
-      }
-
-      unsafe fn unmask(&mut self, intr: Arc<Interrupt>) {
-            todo!()
-      }
-
-      unsafe fn ack(&mut self, intr: Arc<Interrupt>) {
-            todo!()
-      }
-
-      unsafe fn eoi(&mut self, intr: Arc<Interrupt>) {
+      /// # Safety
+      ///
+      /// WARNING: This function modifies the architecture's basic registers. Be sure to make
+      /// preparations.
+      pub unsafe fn eoi(&mut self) {
             Self::write_reg_32(&mut self.ty, msr::X2APIC_EOI, 0)
+      }
+
+      pub unsafe fn activate_timer(self, mode: timer::TimerMode, div: u8, init_value: u64) -> Self {
+            let (ret, _, _) = timer::Timer::new(mode, div, self).activate(init_value);
+            ret
       }
 }

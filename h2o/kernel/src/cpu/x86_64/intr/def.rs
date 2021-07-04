@@ -46,9 +46,14 @@ pub const ALLOC_VEC: Range<u16> = 0x40..0xFF;
 
 type IdtRoute = unsafe extern "C" fn();
 
-macro_rules! rout {
-      ($name:ident) => {
-            paste::paste! { [<rout_ $name>] }
+macro_rules! single_ent {
+      ($vec:expr, $name:ident, $ist:expr, $dpl:expr) => {
+            S(IdtEntry::new(
+                  $vec as u16,
+                  paste::paste! {[<rout_ $name>]},
+                  $ist,
+                  $dpl,
+            ))
       };
 }
 
@@ -78,30 +83,41 @@ pub struct IdtEntry {
 
 impl IdtEntry {
       pub const fn new(vec: u16, entry: IdtRoute, ist: u8, dpl: u16) -> Self {
-            IdtEntry { vec, entry, ist, dpl }
+            IdtEntry {
+                  vec,
+                  entry,
+                  ist,
+                  dpl,
+            }
       }
 }
 
 pub static IDT_INIT: &[IdtInit] = &[
-      S(IdtEntry::new(ExVec::DivideBy0 as u16, rout!(div_0), 0, 0)),
-      S(IdtEntry::new(ExVec::Debug as u16, rout!(debug), 0, 0)),
-      S(IdtEntry::new(ExVec::Nmi as u16, rout!(nmi), 0, 0)),
-      S(IdtEntry::new(ExVec::Breakpoint as u16, rout!(breakpoint), 0, 0)),
-      S(IdtEntry::new(ExVec::Overflow as u16, rout!(overflow), 0, 3)),
-      S(IdtEntry::new(ExVec::Bound as u16, rout!(bound), 0, 0)),
-      S(IdtEntry::new(ExVec::InvalidOp as u16, rout!(invalid_op), 0, 0)),
-      S(IdtEntry::new(ExVec::DeviceNa as u16, rout!(device_na), 0, 0)),
-      S(IdtEntry::new(ExVec::DoubleFault as u16, rout!(double_fault), 0, 0)),
-      S(IdtEntry::new(ExVec::CoprocOverrun as u16, rout!(coproc_overrun), 0, 0)),
-      S(IdtEntry::new(ExVec::InvalidTss as u16, rout!(invalid_tss), 0, 0)),
-      S(IdtEntry::new(ExVec::SegmentNa as u16, rout!(segment_na), 0, 0)),
-      S(IdtEntry::new(ExVec::StackFault as u16, rout!(stack_fault), 0, 0)),
-      S(IdtEntry::new(ExVec::GeneralProt as u16, rout!(general_prot), 0, 0)),
-      S(IdtEntry::new(ExVec::PageFault as u16, rout!(page_fault), 0, 0)),
+      // x86 exceptions
+      single_ent!(ExVec::DivideBy0, div_0, 0, 0),
+      single_ent!(ExVec::Debug as u16, debug, 0, 0),
+      single_ent!(ExVec::Nmi as u16, nmi, 0, 0),
+      single_ent!(ExVec::Breakpoint as u16, breakpoint, 0, 0),
+      single_ent!(ExVec::Overflow as u16, overflow, 0, 3),
+      single_ent!(ExVec::Bound as u16, bound, 0, 0),
+      single_ent!(ExVec::InvalidOp as u16, invalid_op, 0, 0),
+      single_ent!(ExVec::DeviceNa as u16, device_na, 0, 0),
+      single_ent!(ExVec::DoubleFault as u16, double_fault, 0, 0),
+      single_ent!(ExVec::CoprocOverrun as u16, coproc_overrun, 0, 0),
+      single_ent!(ExVec::InvalidTss as u16, invalid_tss, 0, 0),
+      single_ent!(ExVec::SegmentNa as u16, segment_na, 0, 0),
+      single_ent!(ExVec::StackFault as u16, stack_fault, 0, 0),
+      single_ent!(ExVec::GeneralProt as u16, general_prot, 0, 0),
+      single_ent!(ExVec::PageFault as u16, page_fault, 0, 0),
+      // Local APIC interrupts
+      single_ent!(ApicVec::Timer as u16, lapic_timer, 0, 0),
+      // All other allocable interrupts
       M(repeat::repeat! {"&[" for i in 0x40..0xFF {
             IdtEntry::new(#i as u16, [<rout_ #i>], 0, 0)
       }"," "]"}),
 ];
+
+// x86 exceptions
 
 hdl!(div_0, |frame| {
       log::error!("EXCEPTION: Divide by zero");
@@ -223,6 +239,14 @@ hdl!(page_fault, |frame| {
       archop::halt_loop(Some(false));
 });
 
+// Local APIC interrupts
+
+hdl!(lapic_timer, |frame| {
+      crate::cpu::arch::apic::timer::timer_handler(frame);
+});
+
+// All other allocable interrupts
+
 extern "C" {
       repeat::repeat! {
             for i in 0x40..0xFF { fn [<rout_ #i>](); }
@@ -230,6 +254,6 @@ extern "C" {
 }
 
 #[no_mangle]
-unsafe extern "C" fn common_interrupt(frame: *mut Frame) {
+unsafe extern "C" fn common_interrupt(_frame: *mut Frame) {
       archop::halt_loop(Some(false));
 }

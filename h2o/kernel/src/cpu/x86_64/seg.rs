@@ -11,11 +11,11 @@ pub mod ndt;
 use crate::mem::space::Space;
 use paging::{LAddr, PAddr};
 
-use core::mem::ManuallyDrop;
-use core::pin::Pin;
 use alloc::sync::Arc;
+use core::mem::ManuallyDrop;
 use core::mem::{size_of, transmute};
 use core::ops::Range;
+use core::pin::Pin;
 use modular_bitfield::prelude::*;
 use static_assertions::*;
 
@@ -133,7 +133,9 @@ pub(super) unsafe fn reload_pls() {
 ///
 /// The caller must ensure that this function is called only once from the bootstrap
 /// CPU.
-pub(super) unsafe fn init(space: &Arc<Space>) -> (spin::Mutex<ndt::DescTable<'_>>, Pin<&mut ndt::TssStruct>) {
+pub(super) unsafe fn init(
+      space: &Arc<Space>,
+) -> (spin::Mutex<ndt::DescTable<'_>>, Pin<&mut ndt::TssStruct>) {
       let (mut gdt, krl_sel) = ndt::create_gdt(space);
       unsafe { ndt::load_gdt(&gdt, krl_sel) };
       unsafe { reload_pls() };

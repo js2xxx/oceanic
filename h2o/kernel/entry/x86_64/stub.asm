@@ -1,26 +1,31 @@
-ExVec_DivideBy0      equ   0
-ExVec_Debug          equ   1
-ExVec_Nmi            equ   2
-ExVec_Breakpoint     equ   3
-ExVec_Overflow       equ   4
-ExVec_Bound          equ   5
-ExVec_InvalidOp      equ   6
-ExVec_DeviceNa       equ   7
-ExVec_DoubleFault    equ   8
-ExVec_CoprocOverrun  equ   9
-ExVec_InvalidTss     equ   10
-ExVec_SegmentNa      equ   11
-ExVec_StackFault     equ   12
-ExVec_GeneralProt    equ   13
-ExVec_PageFault      equ   14
-ExVec_Spurious       equ   15
-ExVec_FloatPoint     equ   16
-ExVec_Alignment      equ   17
-ExVec_MachineCheck   equ   18
-ExVec_SimdExcep      equ   19
-ExVec_Virtual        equ   20
-ExVec_ControlProt    equ   21
-ExVec_VmmComm        equ   29
+ExVec_DivideBy0         equ   0
+ExVec_Debug             equ   1
+ExVec_Nmi               equ   2
+ExVec_Breakpoint        equ   3
+ExVec_Overflow          equ   4
+ExVec_Bound             equ   5
+ExVec_InvalidOp         equ   6
+ExVec_DeviceNa          equ   7
+ExVec_DoubleFault       equ   8
+ExVec_CoprocOverrun     equ   9
+ExVec_InvalidTss        equ   10
+ExVec_SegmentNa         equ   11
+ExVec_StackFault        equ   12
+ExVec_GeneralProt       equ   13
+ExVec_PageFault         equ   14
+ExVec_Spurious          equ   15
+ExVec_FloatPoint        equ   16
+ExVec_Alignment         equ   17
+ExVec_MachineCheck      equ   18
+ExVec_SimdExcep         equ   19
+ExVec_Virtual           equ   20
+ExVec_ControlProt       equ   21
+ExVec_VmmComm           equ   29
+
+ApicVec_Timer     equ   0x20
+ApicVec_Ipi       equ   0x21
+ApicVec_Error     equ   0x22
+ApicVec_Spurious  equ   0xFF
 
 struc Frame
       .r15  resq 1
@@ -134,6 +139,8 @@ extern %3
 [section .text]
 
 ; define_intr(vec, asm_name, name, has_code)
+
+; x86 exceptions
 define_intr ExVec_DivideBy0,        rout_div_0,             hdl_div_0,              -1
 define_intr ExVec_Debug,            rout_debug,             hdl_debug,              -1
 define_intr ExVec_Nmi,              rout_nmi,               hdl_nmi,                -1
@@ -150,6 +157,10 @@ define_intr ExVec_StackFault,       rout_stack_fault,       hdl_stack_fault,    
 define_intr ExVec_GeneralProt,      rout_general_prot,      hdl_general_prot,       0
 define_intr ExVec_PageFault,        rout_page_fault,        hdl_page_fault,         0
 
+; Local APIC interrupts
+define_intr ApicVec_Timer,          rout_lapic_timer,       hdl_lapic_timer,        -1
+
+; All other interrupts
 %define rout_name(x) rout_ %+ x
 %assign i 0x40
 %rep (0xFF - 0x40)

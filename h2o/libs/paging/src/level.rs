@@ -84,7 +84,8 @@ impl Level {
       #[inline]
       pub fn leaf_attr(&self, attr: super::Attr) -> super::Attr {
             let pat = attr.contains(super::Attr::PAT);
-            let ret = attr | super::Attr::PRESENT
+            let ret = attr
+                  | super::Attr::PRESENT
                   | match self {
                         Level::Pt => super::Attr::empty(),
                         _ => super::Attr::LARGE_PAGE,

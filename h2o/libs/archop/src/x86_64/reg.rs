@@ -1,6 +1,6 @@
 macro_rules! rw_simple {
       ($name:ident {$($cons:ident = $bit:expr),*}) => {
-            /// The operations of $name.
+            #[doc = concat!("The operations of", stringify!($name), ".")]
             pub mod $name {
                   /// # Safety
                   ///

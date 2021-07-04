@@ -1,7 +1,7 @@
 #![no_std]
 
-pub mod ptr_iter;
 pub mod comb;
+pub mod ptr_iter;
 
-pub use ptr_iter::PointerIterator;
 pub use comb::{Combine, CombineIter};
+pub use ptr_iter::PointerIterator;

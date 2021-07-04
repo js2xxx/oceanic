@@ -12,16 +12,17 @@ impl<'a, K: Ord + Copy, V> Iterator for RangeIter<'a, K, V> {
       type Item = (Range<K>, &'a V);
 
       fn next(&mut self) -> Option<Self::Item> {
-            self.inner.next().map(|(&_, (range, v))| (range.clone(), v)).filter(|(r, _v)| {
-                  match (self.range_end, r.end_bound().cloned()) {
+            self.inner
+                  .next()
+                  .map(|(&_, (range, v))| (range.clone(), v))
+                  .filter(|(r, _v)| match (self.range_end, r.end_bound().cloned()) {
                         (Bound::Unbounded, _) => true,
                         (_, Bound::Unbounded) => false,
                         (Bound::Included(inc), Bound::Included(r_inc)) => r_inc <= inc,
                         (Bound::Included(inc), Bound::Excluded(r_exc)) => r_exc <= inc,
                         (Bound::Excluded(exc), Bound::Included(r_inc)) => r_inc < exc,
                         (Bound::Excluded(exc), Bound::Excluded(r_exc)) => r_exc <= exc,
-                  }
-            })
+                  })
       }
 
       fn size_hint(&self) -> (usize, Option<usize>) {
@@ -38,7 +39,7 @@ impl<'a, K: Ord + Copy, V> Iterator for GapIter<'a, K, V> {
       type Item = (Range<K>, &'a V);
 
       fn next(&mut self) -> Option<Self::Item> {
-            let last_end = self.last_end.get_or_insert(self.inner.next()?.1.0.end);
+            let last_end = self.last_end.get_or_insert(self.inner.next()?.1 .0.end);
             let (_, (range, v)) = self.inner.next()?;
 
             let ret = *last_end..range.start;
@@ -104,12 +105,12 @@ impl<K: Ord + Copy, V> RangeMap<K, V> {
                         .range(..=range.start)
                         .rev()
                         .next()
-                        .map(|r| r.1.0.clone())
+                        .map(|r| r.1 .0.clone())
                         .filter(|r| r.end == range.start),
                   self.inner
                         .range(range.end..)
                         .next()
-                        .map(|r| r.1.0.clone())
+                        .map(|r| r.1 .0.clone())
                         .filter(|r| r.start == range.end),
             )
       }

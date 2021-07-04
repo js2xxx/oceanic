@@ -429,8 +429,10 @@ pub fn create_tss<'a, 'b>(space: &'a Arc<Space>) -> (Pin<&'a mut TssStruct>, LAd
                   .repeat(4)
                   .expect("Failed to calculate the layout");
             assert!(k == paging::PAGE_SIZE);
-            space.alloc_manual(layout, None, false, Flags::READABLE | Flags::WRITABLE)
-                  .expect("Failed to allocate stack")
+            let memory = space
+                  .alloc_manual(layout, None, false, Flags::READABLE | Flags::WRITABLE)
+                  .expect("Failed to allocate stack");
+            memory.as_ptr().cast::<u8>().add(layout.size())
       };
 
       let rsp0 = alloc_stack();
@@ -449,10 +451,10 @@ pub fn create_tss<'a, 'b>(space: &'a Arc<Space>) -> (Pin<&'a mut TssStruct>, LAd
             base.write(TssStruct {
                   _rsvd1: 0,
                   // The legacy RSPs of different privilege levels.
-                  rsp: [rsp0.as_ptr() as u64, 0, 0],
+                  rsp: [rsp0 as u64, 0, 0],
                   _rsvd2: 0,
                   // The Interrupt Stack Tables.
-                  ist: [ist1.as_ptr() as u64, 0, 0, 0, 0, 0, 0],
+                  ist: [ist1 as u64, 0, 0, 0, 0, 0, 0],
                   _rsvd3: 0,
                   _rsvd4: 0,
                   // The IO base mappings.
