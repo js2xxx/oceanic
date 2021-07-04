@@ -24,7 +24,8 @@ pub enum AllocError {
 }
 
 impl Allocator {
-      pub fn new(cpu_num: usize, range: Range<u16>) -> Self {
+      pub fn new(cpu_num: usize) -> Self {
+            let range = super::def::ALLOC_VEC;
             Allocator {
                   cpus: alloc::vec![CpuChunk {
                         bitmap: bitarr![0; NR_VECTORS],

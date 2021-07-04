@@ -7,6 +7,6 @@ cfg_if::cfg_if! {
       }
 }
 
-pub use arch::MAX_CPU;
+pub use arch::{id, set_id, CPU_INDEX, MAX_CPU};
 
 pub type CpuMask = bitvec::BitArr!(for MAX_CPU);

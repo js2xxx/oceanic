@@ -49,7 +49,8 @@ pub extern "C" fn kmain(
       unsafe { acpi::init_tables(rsdp) };
       let lapic_data = unsafe { acpi::table::get_lapic_data() }.expect("Failed to get LAPIC data");
 
-      l::debug!("Creating the CPU core");
+      l::debug!("Set up CPU architecture");
+      unsafe { cpu::set_id() };
       let arch_data = unsafe { cpu::arch::init(&krl_space, lapic_data) };
 
       // Test end

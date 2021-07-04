@@ -1,6 +1,8 @@
+pub mod alloc;
+
 pub use super::arch::intr as arch;
 
-use alloc::sync::Arc;
+use ::alloc::sync::Arc;
 use spin::Mutex;
 
 pub type Handler = fn(Arc<Interrupt>);
@@ -34,7 +36,8 @@ pub trait IntrChip {
 pub struct Interrupt {
       hw_irq: u32,
       arch_reg: Mutex<arch::ArchReg>,
-      hdl: Handler,
+      handler: Handler,
+      affinity: super::CpuMask,
 }
 
 impl Interrupt {
@@ -42,7 +45,16 @@ impl Interrupt {
             self.hw_irq
       }
 
+      pub fn arch_reg(&self) -> &Mutex<arch::ArchReg> {
+            &self.arch_reg
+      }
+
       pub fn handle(self: &Arc<Interrupt>) {
-            (self.hdl)(self.clone())
+            (self.handler)(self.clone())
+      }
+
+      pub fn affinity(&self) -> &super::CpuMask {
+            &self.affinity
       }
 }
+

@@ -10,6 +10,27 @@ use core::pin::Pin;
 use spin::Mutex;
 
 pub const MAX_CPU: usize = 256;
+pub static CPU_INDEX: Mutex<usize> = Mutex::new(0);
+
+/// # Safety
+///
+/// This function is only called before architecture initialization.
+pub unsafe fn set_id() -> usize {
+      use archop::msr;
+      let mut id = CPU_INDEX.lock();
+      msr::write(msr::TSC_AUX, *id as u64);
+      let ret = *id;
+      *id += 1;
+      ret
+}
+
+/// # Safety
+///
+/// This function is only called after [`set_id`].
+pub unsafe fn id() -> usize {
+      use archop::msr;
+      msr::read(msr::TSC_AUX) as usize
+}
 
 #[repr(C)]
 pub struct KernelGs<'a> {

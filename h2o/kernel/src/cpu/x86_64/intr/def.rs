@@ -298,8 +298,3 @@ extern "C" {
             for i in 0x40..0xFF { fn [<rout_ #i>](); }
       }
 }
-
-#[no_mangle]
-unsafe extern "C" fn common_interrupt(_frame: *mut Frame) {
-      archop::halt_loop(Some(false));
-}
