@@ -681,17 +681,26 @@ pub unsafe fn dealloc_pages_exact(n: usize, addr: PAddr) {
 /// # Safety
 ///
 /// It'll always be safe **UNLESS** `mmap_ptr` is invalid.
-unsafe fn parse_mmap(mmap_iter: iter_ex::PointerIterator<uefi::table::boot::MemoryDescriptor>) {
+unsafe fn parse_mmap(
+      mmap_iter: iter_ex::PointerIterator<uefi::table::boot::MemoryDescriptor>,
+      reserved_range: Range<usize>,
+) {
       use uefi::table::boot::MemoryType;
 
-      fn is_available(ty: MemoryType) -> bool {
-            matches!(ty, MemoryType::CONVENTIONAL | MemoryType::PERSISTENT_MEMORY)
-      }
+      let available = |ty| matches!(ty, MemoryType::CONVENTIONAL | MemoryType::PERSISTENT_MEMORY);
+      let not_reserved = |start, len| {
+            !reserved_range.contains(&start) && !reserved_range.contains(&(start + len))
+      };
 
       for mdsc_ptr in mmap_iter {
             let mdsc = &*mdsc_ptr;
             log::trace!("Block at {:?}: {:?}", mdsc_ptr, *mdsc);
-            if is_available(mdsc.ty) && mdsc.phys_start != 0 {
+            if available(mdsc.ty)
+                  && not_reserved(
+                        mdsc.phys_start as usize,
+                        mdsc.page_count as usize * PAGE_SIZE,
+                  )
+            {
                   let n = mdsc.page_count as usize;
                   dealloc_pages_exact(n, PAddr::new(mdsc.phys_start as usize));
             }
@@ -723,7 +732,12 @@ pub fn dump_data(pftype: PfType) {
 ///
 /// Unfortunately, we must initialize every free list manually, and it takes a long
 /// time.
-pub fn init(mmap: *mut uefi::table::boot::MemoryDescriptor, mmap_len: usize, mmap_unit: usize) {
+pub fn init(
+      mmap: *mut uefi::table::boot::MemoryDescriptor,
+      mmap_len: usize,
+      mmap_unit: usize,
+      reserved_range: Range<usize>,
+) {
       for i in ORDERS {
             *(pf_list_mut(PfType::Low, i).unwrap()) = PfList::new(PFAdapter::new());
             *(pf_list_mut(PfType::High, i).unwrap()) = PfList::new(PFAdapter::new());
@@ -732,6 +746,6 @@ pub fn init(mmap: *mut uefi::table::boot::MemoryDescriptor, mmap_len: usize, mma
       // NOTE: There we trust the `mmap` is valid.
       unsafe {
             let iter = iter_ex::PointerIterator::new(mmap, mmap_len, mmap_unit);
-            parse_mmap(iter);
+            parse_mmap(iter, reserved_range);
       }
 }

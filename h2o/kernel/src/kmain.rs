@@ -7,7 +7,6 @@
 #![feature(concat_idents)]
 #![feature(const_fn_fn_ptr_basics)]
 #![feature(const_fn_transmute)]
-#![feature(const_raw_ptr_to_usize_cast)]
 #![feature(default_alloc_error_handler)]
 #![feature(lang_items)]
 #![feature(nonnull_slice_from_raw_parts)]

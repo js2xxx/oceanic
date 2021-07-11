@@ -24,7 +24,12 @@ pub use buddy::dump_data;
 pub const KMEM_PHYS_BASE: usize = 0xFFFF_9000_0000_0000;
 
 #[inline]
-pub fn init(efi_mmap_paddr: paging::PAddr, efi_mmap_len: usize, efi_mmap_unit: usize) {
+pub fn init(
+      efi_mmap_paddr: paging::PAddr,
+      efi_mmap_len: usize,
+      efi_mmap_unit: usize,
+      reserved_range: core::ops::Range<usize>,
+) {
       let efi_mmap_ptr = *efi_mmap_paddr as *mut uefi::table::boot::MemoryDescriptor;
-      buddy::init(efi_mmap_ptr, efi_mmap_len, efi_mmap_unit);
+      buddy::init(efi_mmap_ptr, efi_mmap_len, efi_mmap_unit, reserved_range);
 }
