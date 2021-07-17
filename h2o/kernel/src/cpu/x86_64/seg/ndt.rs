@@ -7,6 +7,15 @@ use core::mem::size_of;
 use core::pin::Pin;
 use static_assertions::*;
 
+pub const KRL_CODE_X64: SegSelector = SegSelector::from_const(0x08); // SegSelector::new().with_index(1)
+pub const KRL_DATA_X64: SegSelector = SegSelector::from_const(0x10); // SegSelector::new().with_index(2)
+pub const USR_CODE_X86: SegSelector = SegSelector::from_const(0x18); // SegSelector::new().with_index(3)
+pub const USR_DATA_X64: SegSelector = SegSelector::from_const(0x20 + 3); // SegSelector::new().with_index(4).with_rpl(3)
+pub const USR_CODE_X64: SegSelector = SegSelector::from_const(0x28 + 3); // SegSelector::new().with_index(5).with_rpl(3)
+
+pub const INTR_CODE: SegSelector = SegSelector::from_const(0x08 + 4); // SegSelector::new().with_index(1).with_ti(true)
+pub const INTR_DATA: SegSelector = SegSelector::from_const(0x10 + 4); // SegSelector::new().with_index(2).with_ti(true)
+
 /// Indicate a struct is a segment or gate descriptor.
 pub trait Descriptor {}
 
@@ -285,7 +294,7 @@ impl Seg128 {
 /// kernel code & data selector.
 ///
 /// NOTE: This function could only be called once from the BSP.
-pub fn create_gdt(space: &Arc<Space>) -> (DescTable<'_>, (SegSelector, SegSelector)) {
+pub fn create_gdt(space: &Arc<Space>) -> DescTable<'_> {
       let (layout, k) = paging::PAGE_LAYOUT
             .repeat(2)
             .expect("Failed to get the allocation size");
@@ -301,16 +310,19 @@ pub fn create_gdt(space: &Arc<Space>) -> (DescTable<'_>, (SegSelector, SegSelect
       const ATTR: u16 = attrs::PRESENT | attrs::G4K;
 
       gdt.push_s64(0, 0, 0, None); // Null Desc
-      let code = gdt.push_s64(0, LIM, attrs::SEG_CODE | attrs::X64 | ATTR, None);
-      let data = gdt.push_s64(0, LIM, attrs::SEG_DATA | attrs::X64 | ATTR, None);
-      gdt.push_s64(0, LIM, attrs::SEG_CODE | attrs::X86 | ATTR, None);
-      gdt.push_s64(0, LIM, attrs::SEG_DATA | attrs::X86 | ATTR, None);
-      gdt.push_s64(0, LIM, attrs::SEG_CODE | attrs::X64 | ATTR, Some(3));
-      gdt.push_s64(0, LIM, attrs::SEG_DATA | attrs::X64 | ATTR, Some(3));
-      gdt.push_s64(0, LIM, attrs::SEG_CODE | attrs::X86 | ATTR, Some(3));
-      gdt.push_s64(0, LIM, attrs::SEG_DATA | attrs::X86 | ATTR, Some(3));
+      let c64 = gdt.push_s64(0, LIM, attrs::SEG_CODE | attrs::X64 | ATTR, None);
+      let d64 = gdt.push_s64(0, LIM, attrs::SEG_DATA | attrs::X64 | ATTR, None);
+      let uc86 = gdt.push_s64(0, LIM, attrs::SEG_CODE | attrs::X86 | ATTR, None);
+      let ud64 = gdt.push_s64(0, LIM, attrs::SEG_DATA | attrs::X64 | ATTR, Some(3));
+      let uc64 = gdt.push_s64(0, LIM, attrs::SEG_CODE | attrs::X64 | ATTR, Some(3));
 
-      (gdt, (SegSelector::from(code), SegSelector::from(data)))
+      assert!(c64 >> 3 == KRL_CODE_X64.index());
+      assert!(d64 >> 3 == KRL_DATA_X64.index());
+      assert!(uc86 >> 3 == USR_CODE_X86.index());
+      assert!(ud64 >> 3 == USR_DATA_X64.index());
+      assert!(uc64 >> 3 == USR_CODE_X64.index());
+
+      gdt
 }
 
 /// Load a GDT into x86 architecture's `gdtr` and reset all the segment registers according
@@ -323,7 +335,7 @@ pub fn create_gdt(space: &Arc<Space>) -> (DescTable<'_>, (SegSelector, SegSelect
 ///
 /// The caller must ensure that `gdt` is a valid GDT object and `krl_sel` consists of the
 /// kernel's code & data selector in `gdt`.
-pub unsafe fn load_gdt(gdt: &DescTable, krl_sel: (SegSelector, SegSelector)) {
+pub unsafe fn load_gdt(gdt: &DescTable) {
       extern "C" {
             fn reset_seg(code: SegSelector, data: SegSelector);
       }
@@ -331,8 +343,7 @@ pub unsafe fn load_gdt(gdt: &DescTable, krl_sel: (SegSelector, SegSelector)) {
       let gdtr = gdt.export_fp();
       asm!("lgdt [{}]", in(reg) &gdtr);
 
-      let (code, data) = krl_sel;
-      reset_seg(code, data);
+      reset_seg(KRL_CODE_X64, KRL_DATA_X64);
 }
 
 /// Create a standard LDT.

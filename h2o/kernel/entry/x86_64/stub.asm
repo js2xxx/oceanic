@@ -1,30 +1,8 @@
-ExVec_DivideBy0         equ   0
-ExVec_Debug             equ   1
-ExVec_Nmi               equ   2
-ExVec_Breakpoint        equ   3
-ExVec_Overflow          equ   4
-ExVec_Bound             equ   5
-ExVec_InvalidOp         equ   6
-ExVec_DeviceNa          equ   7
-ExVec_DoubleFault       equ   8
-ExVec_CoprocOverrun     equ   9
-ExVec_InvalidTss        equ   10
-ExVec_SegmentNa         equ   11
-ExVec_StackFault        equ   12
-ExVec_GeneralProt       equ   13
-ExVec_PageFault         equ   14
-ExVec_FloatPoint        equ   16
-ExVec_Alignment         equ   17
-ExVec_MachineCheck      equ   18
-ExVec_SimdExcep         equ   19
-ExVec_Virtual           equ   20
-ExVec_ControlProt       equ   21
-ExVec_VmmComm           equ   29
-
-ApicVec_Timer     equ   0x20
-ApicVec_Ipi       equ   0x21
-ApicVec_Error     equ   0x22
-ApicVec_Spurious  equ   0xFF
+KRL_CODE_X64 equ 0x08
+KRL_DATA_X64 equ 0x10
+USR_CODE_X86 equ 0x18
+USR_DATA_X64 equ 0x20
+USR_CODE_X64 equ 0x28 + 3
 
 struc Frame
       .r15  resq 1
@@ -55,6 +33,8 @@ endstruc
 struc KernelGs
       .save_regs        resq 1 ; Save the GPRs from the current stack and *return the thread stack*
       .tss_rsp0         resq 1
+      .syscall_user_stack     resq 1
+      .syscall_stack          resq 1
 endstruc
 
 ; push_regs(bool save_ret_addr)
@@ -115,6 +95,37 @@ endstruc
       pop   rcx
       pop   rax
 %endmacro
+
+; ---------------------------------------------------------------------------------------
+; Interrupts
+
+ExVec_DivideBy0         equ   0
+ExVec_Debug             equ   1
+ExVec_Nmi               equ   2
+ExVec_Breakpoint        equ   3
+ExVec_Overflow          equ   4
+ExVec_Bound             equ   5
+ExVec_InvalidOp         equ   6
+ExVec_DeviceNa          equ   7
+ExVec_DoubleFault       equ   8
+ExVec_CoprocOverrun     equ   9
+ExVec_InvalidTss        equ   10
+ExVec_SegmentNa         equ   11
+ExVec_StackFault        equ   12
+ExVec_GeneralProt       equ   13
+ExVec_PageFault         equ   14
+ExVec_FloatPoint        equ   16
+ExVec_Alignment         equ   17
+ExVec_MachineCheck      equ   18
+ExVec_SimdExcep         equ   19
+ExVec_Virtual           equ   20
+ExVec_ControlProt       equ   21
+ExVec_VmmComm           equ   29
+
+ApicVec_Timer     equ   0x20
+ApicVec_Ipi       equ   0x21
+ApicVec_Error     equ   0x22
+ApicVec_Spurious  equ   0xFF
 
 ; define_intr(vec, asm_name, name, err_vec)
 %macro define_intr 4
@@ -178,7 +189,7 @@ define_intr i, rout_name(i), common_interrupt, i
 
 intr_entry:
       cld
-      push_regs   1; The routine has a return address, so we must preseve it.
+      push_regs   1; The routine has a return address, so we must preserve it.
       lea   rbp, [rsp + 8 + 1]
 
       bt    qword [rsp + (8 + Frame.cs)], 2; Test if it's a reentrancy.
@@ -222,4 +233,61 @@ intr_exit:
 .reent:
       ; TODO: Handle some errors inside this routine.
 .return:
+      iretq
+
+; ---------------------------------------------------------------------------------------
+; Syscalls
+
+global      rout_syscall
+extern      hdl_syscall
+rout_syscall:
+      swapgs
+
+      mov   [gs:(KernelGs.syscall_user_stack)], rsp
+      mov   rsp, [gs:(KernelGs.syscall_stack)]
+
+      push  qword USR_DATA_X64                        ; ss
+      push  qword [gs:(KernelGs.syscall_user_stack)]  ; rsp
+      push  r11                                       ; rflags
+      push  qword USR_CODE_X64                        ; cs
+      push  rcx                                       ; rip
+      push  -1                                        ; errc_vec
+
+      push_regs   0
+      lea   rbp, [rsp + 8 + 1]
+
+      mov   rdi, rsp
+      mov   rax, [gs:(KernelGs.save_regs)]
+      call  rax
+      mov   rsp, rax
+      lea   rbp, [rsp + 1]
+
+      mov   rdi, rsp
+      call  hdl_syscall
+
+      pop_regs
+      add   rsp, 8            ; errc_vec
+
+      ; Here we must test the return address because Intel's mistake of `sysret`
+      ; machanism. Normally, only codes on the lower half can execute `syscall`.
+      ; See https://xenproject.org/2012/06/13/the-intel-sysret-privilege-escalation/
+      test  dword [rsp + 4], 0xFFFF8000 ; test if the return address is on the higher half
+      jnz   .fault_iret
+
+      pop   rcx                                       ; rip
+      add   rsp, 8                                    ; cs
+      pop   r11                                       ; rflags
+      ; pop  qword [gs:(KernelGs.syscall_user_stack)] ; rsp
+      ; ;add rsp, 8                                   ; ss
+      ; mov  rsp, [gs:(KernelGs.syscall_user_stack)]
+      pop   rsp   ; simplify 3 instructions above
+
+      swapgs
+o64   sysret
+
+.fault_iret:
+      xor   rcx, rcx
+      xor   r11, r11
+
+      swapgs
       iretq

@@ -11,3 +11,4 @@ edition = "2018"
 paging = { path = "../paging" }
 # External crates
 cfg-if = "1.0"
+num-traits = { version = "0.2", default-features = false }

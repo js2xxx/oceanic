@@ -39,7 +39,6 @@ pub extern "C" fn kmain(
 
       mem::init(efi_mmap_paddr, efi_mmap_len, efi_mmap_unit);
 
-      // Tests
       l::debug!("Creating a space");
       let krl_space = mem::space::Space::new(mem::space::CreateType::Kernel);
       unsafe { krl_space.load() };
@@ -47,10 +46,14 @@ pub extern "C" fn kmain(
       l::debug!("Initializing ACPI tables");
       unsafe { acpi::init_tables(rsdp) };
       let lapic_data = unsafe { acpi::table::get_lapic_data() }.expect("Failed to get LAPIC data");
+      let ioapic_data =
+            unsafe { acpi::table::get_ioapic_data() }.expect("Failed to get IOAPIC data");
 
       l::debug!("Set up CPU architecture");
       unsafe { cpu::set_id() };
-      let arch_data = unsafe { cpu::arch::init(&krl_space, lapic_data) };
+      let arch_data = unsafe { cpu::arch::init(&krl_space, lapic_data, ioapic_data) };
+
+      // Tests
 
       // Test end
       l::debug!("Reaching end of kernel");

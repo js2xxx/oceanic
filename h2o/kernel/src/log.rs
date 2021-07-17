@@ -1,6 +1,8 @@
 pub mod flags;
 mod serial;
 
+use serial::COM_LOG;
+
 use core::fmt::*;
 use core::mem::MaybeUninit;
 use spin::Mutex;
@@ -25,7 +27,7 @@ struct Logger {
 impl Logger {
       pub fn new(level: log::Level) -> Logger {
             Logger {
-                  output: Mutex::new(serial::Output::new()),
+                  output: Mutex::new(unsafe { serial::Output::new(COM_LOG) }),
                   level,
             }
       }
@@ -77,6 +79,6 @@ static mut LOGGER: MaybeUninit<Logger> = MaybeUninit::uninit();
 /// This function should only be called once before everything else is to be started up.
 pub unsafe fn init(max_level: log::Level) {
       LOGGER.as_mut_ptr().write(Logger::new(max_level));
-      log::set_logger(&*LOGGER.as_ptr()).expect("Failed to set the logger");
+      log::set_logger(LOGGER.assume_init_ref()).expect("Failed to set the logger");
       log::set_max_level(max_level.to_level_filter());
 }

@@ -136,8 +136,8 @@ pub(super) unsafe fn reload_pls() {
 pub(super) unsafe fn init(
       space: &Arc<Space>,
 ) -> (spin::Mutex<ndt::DescTable<'_>>, Pin<&mut ndt::TssStruct>) {
-      let (mut gdt, krl_sel) = ndt::create_gdt(space);
-      unsafe { ndt::load_gdt(&gdt, krl_sel) };
+      let mut gdt = ndt::create_gdt(space);
+      unsafe { ndt::load_gdt(&gdt) };
       unsafe { reload_pls() };
 
       let (ldt, ldt_ptr, intr_sel) = ndt::create_ldt(space);
@@ -151,8 +151,8 @@ pub(super) unsafe fn init(
       let idt = idt::create_idt(space, intr_sel);
       unsafe { idt::load_idt(&idt) };
 
-      // Manually drop the reference to LDT and IDT without dropping the data
-      // because those structures are no longer needed to be referenced.
+      // Manually drop the reference to LDT and IDT without dropping the data because those
+      // structures are no longer needed to be referenced by the code.
       let _ = ManuallyDrop::new(ldt);
       let _ = ManuallyDrop::new(idt);
 

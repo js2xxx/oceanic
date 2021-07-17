@@ -1,6 +1,7 @@
 pub mod madt;
 
 pub use madt::get_lapic_data;
+pub use madt::get_ioapic_data;
 
 use crate::raw;
 
