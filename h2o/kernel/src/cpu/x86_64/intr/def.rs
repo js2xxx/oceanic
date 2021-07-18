@@ -1,5 +1,3 @@
-//! TODO: Define Local APIC's interrupt vectors.
-
 use super::ctx::Frame;
 
 use core::ops::Range;

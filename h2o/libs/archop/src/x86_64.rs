@@ -35,6 +35,13 @@ pub unsafe fn halt() {
       asm!("hlt");
 }
 
+#[inline]
+pub fn delay_loop(mut loops: usize) {
+      while loops > 0 {
+            loops -= 1;
+      }
+}
+
 /// # Safety
 ///
 /// Invalid use of this function can cause CPU unrecoverable fault.

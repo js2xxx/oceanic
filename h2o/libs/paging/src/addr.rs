@@ -18,6 +18,10 @@ impl PAddr {
       pub fn to_laddr(self, id_off: usize) -> LAddr {
             LAddr::from(self.0 + id_off)
       }
+
+      pub fn in_page_offset(self) -> usize {
+            self.0 & crate::PAGE_MASK
+      }
 }
 
 impl Deref for PAddr {
@@ -59,6 +63,10 @@ impl LAddr {
 
       pub fn to_paddr(self, id_off: usize) -> PAddr {
             PAddr(self.val() - id_off)
+      }
+
+      pub fn in_page_offset(self) -> usize {
+            self.val() & crate::PAGE_MASK
       }
 
       pub(crate) fn advance(&mut self, offset: usize) {

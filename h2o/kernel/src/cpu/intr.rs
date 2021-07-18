@@ -3,29 +3,47 @@ pub mod alloc;
 pub use super::arch::intr as arch;
 
 use ::alloc::sync::Arc;
+use ::alloc::vec::Vec;
 use spin::Mutex;
 
-pub type Handler = fn(Arc<Interrupt>);
+bitflags::bitflags! {
+      pub struct IrqReturn: u8 {
+            const SUCCESS = 0b0001;
+            const WAKE_TASK = 0b0010;
+      }
+}
+
+pub type Handler = fn(Arc<Interrupt>) -> IrqReturn;
 
 pub trait IntrChip {
+      //! TODO: Add declaration of `setup` and `remove` for interrupts.
+
+      /// Mask a interrupt so as to forbid it from triggering.
+      ///
       /// # Safety
       ///
       /// WARNING: This function modifies the architecture's basic registers. Be sure to make
       /// preparations.
       unsafe fn mask(&mut self, intr: Arc<Interrupt>);
 
+      /// Unmask a interrupt so that it can trigger.
+      ///
       /// # Safety
       ///
       /// WARNING: This function modifies the architecture's basic registers. Be sure to make
       /// preparations.
       unsafe fn unmask(&mut self, intr: Arc<Interrupt>);
 
+      /// Acknowledge a interrupt in the beginning of its handler.
+      ///
       /// # Safety
       ///
       /// WARNING: This function modifies the architecture's basic registers. Be sure to make
       /// preparations.
       unsafe fn ack(&mut self, intr: Arc<Interrupt>);
 
+      /// Mark the end of the interrupt's handler.
+      ///
       /// # Safety
       ///
       /// WARNING: This function modifies the architecture's basic registers. Be sure to make
@@ -34,14 +52,19 @@ pub trait IntrChip {
 }
 
 pub struct Interrupt {
-      hw_irq: u32,
+      gsi: u32,
+      hw_irq: u8,
       arch_reg: Mutex<arch::ArchReg>,
-      handler: Handler,
+      handler: Vec<Handler>,
       affinity: super::CpuMask,
 }
 
 impl Interrupt {
-      pub fn hw_irq(&self) -> u32 {
+      pub fn gsi(&self) -> u32 {
+            self.gsi
+      }
+
+      pub fn hw_irq(&self) -> u8 {
             self.hw_irq
       }
 
@@ -49,8 +72,14 @@ impl Interrupt {
             &self.arch_reg
       }
 
-      pub fn handle(self: &Arc<Interrupt>) {
-            (self.handler)(self.clone())
+      pub fn handle(self: &Arc<Interrupt>) -> IrqReturn {
+            let ret = IrqReturn::empty();
+            for hdl in self.handler.iter() {
+                  let r = (hdl)(self.clone());
+                  // TODO: wake up tasks if specified.
+                  ret |= r;
+            }
+            ret
       }
 
       pub fn affinity(&self) -> &super::CpuMask {
@@ -58,3 +87,5 @@ impl Interrupt {
       }
 }
 
+// TODO: Write different types of interrupt handling routines, such as EDGE, LEVEL, 
+// FASTEOI, etc.

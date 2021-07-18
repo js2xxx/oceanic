@@ -9,6 +9,7 @@
 #![feature(const_fn_transmute)]
 #![feature(default_alloc_error_handler)]
 #![feature(lang_items)]
+#![feature(macro_attributes_in_derive_output)]
 #![feature(nonnull_slice_from_raw_parts)]
 #![feature(slice_ptr_get)]
 #![feature(slice_ptr_len)]
@@ -17,6 +18,7 @@
 #![feature(vec_into_raw_parts)]
 
 pub mod cpu;
+pub mod dev;
 pub mod log;
 pub mod mem;
 pub mod rxx;

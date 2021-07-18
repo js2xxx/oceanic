@@ -2,6 +2,7 @@ use super::{Handler, Interrupt};
 use crate::cpu::CpuMask;
 
 use alloc::sync::Arc;
+use alloc::vec::Vec;
 use spin::Mutex;
 
 #[derive(Debug)]
@@ -22,13 +23,15 @@ impl Allocator {
 
       pub fn alloc(
             &mut self,
-            hw_irq: u32,
+            gsi: u32,
+            hw_irq: u8,
             affinity: CpuMask,
-            handler: Handler,
+            handler: Vec<Handler>,
       ) -> Result<Arc<Interrupt>, AllocError> {
             let arch_reg = self.arch.alloc(&affinity).map_err(AllocError::ArchReg)?;
 
             let intr = Arc::new(Interrupt {
+                  gsi,
                   hw_irq,
                   arch_reg: Mutex::new(arch_reg.clone()),
                   handler,
