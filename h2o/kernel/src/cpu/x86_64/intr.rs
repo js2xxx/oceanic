@@ -3,6 +3,7 @@ pub mod ctx;
 pub(super) mod def;
 
 use self::def::NR_VECTORS;
+use crate::cpu::arch::apic::lapic;
 use crate::cpu::intr::Interrupt;
 
 use ::alloc::sync::{Arc, Weak};
@@ -70,9 +71,7 @@ unsafe extern "C" fn common_interrupt(frame: *mut ctx::Frame) {
                   // TODO: Add another level to claasify different types of handlers.
                   // intr.handle();
             } else {
-                  let kernel_gs = unsafe { crate::cpu::arch::KernelGs::access_in_intr() };
-                  let lapic = &mut kernel_gs.lapic;
-                  lapic.eoi();
+                  lapic(|lapic| lapic.eoi());
 
                   log::warn!("No interrupt for vector {:X}", vec);
             }

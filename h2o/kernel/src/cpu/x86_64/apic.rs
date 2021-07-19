@@ -5,11 +5,21 @@ use super::intr::def::ApicVec;
 use crate::mem::space;
 use archop::msr;
 
-use alloc::sync::Arc;
 use core::pin::Pin;
 use modular_bitfield::prelude::*;
 
 const LAPIC_LAYOUT: core::alloc::Layout = paging::PAGE_LAYOUT;
+
+#[thread_local]
+static mut LAPIC: Option<Lapic<'static>> = None;
+
+/// Get the per-CPU instance of Local APIC.
+pub unsafe fn lapic<F, R>(f: F) -> Option<R>
+where
+      F: FnOnce(&'static mut Lapic<'static>) -> R,
+{
+      LAPIC.as_mut().map(|lapic| f(lapic))
+}
 
 pub enum LapicType<'a> {
       X1(Pin<&'a mut [space::MemBlock]>),
@@ -157,7 +167,7 @@ impl<'a> Lapic<'a> {
             }
       }
 
-      pub fn new(ty: acpi::table::madt::LapicType, space: &'a Arc<space::Space>) -> Self {
+      pub fn new(ty: acpi::table::madt::LapicType) -> Self {
             let mut ty = match ty {
                   acpi::table::madt::LapicType::X2 => {
                         // SAFE: Enabling Local X2 APIC if possible.
@@ -170,14 +180,17 @@ impl<'a> Lapic<'a> {
                   acpi::table::madt::LapicType::X1(paddr) => {
                         // SAFE: The physical address is valid and aligned.
                         let memory = unsafe {
-                              space.alloc_manual(
-                                    LAPIC_LAYOUT,
-                                    Some(paddr),
-                                    false,
-                                    space::Flags::READABLE | space::Flags::WRITABLE,
-                              )
+                              space::krl(|space| {
+                                    space.alloc_manual(
+                                          LAPIC_LAYOUT,
+                                          Some(paddr),
+                                          false,
+                                          space::Flags::READABLE | space::Flags::WRITABLE,
+                                    )
+                                    .expect("Failed to allocate space")
+                              })
                         }
-                        .expect("Failed to allocate space");
+                        .expect("Kernel space uninitialized");
                         LapicType::X1(memory)
                   }
             };
@@ -292,8 +305,13 @@ pub unsafe fn spurious_handler() {
 /// The caller must ensure that this function is only called by the error handler.
 pub unsafe fn error_handler() {
       // SAFE: Inside the timer interrupt handler.
-      let kernel_gs = unsafe { crate::cpu::arch::KernelGs::access_in_intr() };
-      let lapic = &mut kernel_gs.lapic;
+      lapic(|lapic| lapic.handle_error());
+}
 
-      lapic.handle_error();
+pub unsafe fn init(lapic_ty: acpi::table::madt::LapicType) {
+      let mut lapic = Lapic::new(lapic_ty);
+      lapic.enable();
+      let lapic = lapic.activate_timer(timer::TimerMode::Periodic, 7, 256);
+
+      LAPIC.insert(lapic);
 }

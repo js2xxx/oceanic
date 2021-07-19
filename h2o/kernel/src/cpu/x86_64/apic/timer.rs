@@ -96,7 +96,5 @@ impl<'a> Timer<'a> {
 /// everything about interrupts is set up.
 pub unsafe fn timer_handler(_frame: *mut crate::cpu::intr::arch::ctx::Frame) {
       // SAFE: Inside the timer interrupt handler.
-      let kernel_gs = unsafe { crate::cpu::arch::KernelGs::access_in_intr() };
-      let lapic = &mut kernel_gs.lapic;
-      lapic.eoi();
+      super::lapic(|lapic| lapic.eoi());
 }

@@ -33,17 +33,18 @@ pub extern "C" fn kmain(
       efi_mmap_paddr: paging::PAddr,
       efi_mmap_len: usize,
       efi_mmap_unit: usize,
-      tls_size: usize,
+      _tls_size: usize,
 ) {
+      unsafe { cpu::set_id() };
+
       // SAFE: Everything is uninitialized.
       unsafe { self::log::init(l::Level::Debug) };
       l::info!("Starting initialization");
 
       mem::init(efi_mmap_paddr, efi_mmap_len, efi_mmap_unit);
 
-      l::debug!("Creating a space");
-      let krl_space = mem::space::Space::new(mem::space::CreateType::Kernel);
-      unsafe { krl_space.load() };
+      l::debug!("Creating the kernel space");
+      unsafe { mem::space::init_kernel() };
 
       l::debug!("Initializing ACPI tables");
       unsafe { acpi::init_tables(rsdp) };
@@ -52,8 +53,7 @@ pub extern "C" fn kmain(
             unsafe { acpi::table::get_ioapic_data() }.expect("Failed to get IOAPIC data");
 
       l::debug!("Set up CPU architecture");
-      unsafe { cpu::set_id() };
-      let arch_data = unsafe { cpu::arch::init(&krl_space, lapic_data, ioapic_data) };
+      unsafe { cpu::arch::init(lapic_data, ioapic_data) };
 
       // Tests
 

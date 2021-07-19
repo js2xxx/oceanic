@@ -22,6 +22,10 @@ cfg_if::cfg_if! {
       }
 }
 
+static mut KRL_SPACE: Option<Space> = None;
+#[thread_local]
+static mut AP_SPACE: Option<Space> = None;
+
 bitflags::bitflags! {
       /// Flags to describe a block of memory.
       pub struct Flags: u32 {
@@ -71,15 +75,15 @@ pub struct Space {
 
 impl Space {
       /// Create a new address space.
-      pub fn new(ty: CreateType) -> Arc<Space> {
+      pub fn new(ty: CreateType) -> Self {
             let mut free_range = RangeSet::new();
             let _ = free_range.insert(ty.range());
 
-            Arc::new(Space {
+            Space {
                   canary: Canary::new(),
                   arch: ArchSpace::new(),
                   free_range: Mutex::new(free_range),
-            })
+            }
       }
 
       /// Allocate an address range in the space without a specific type.
@@ -266,4 +270,32 @@ impl Space {
       pub unsafe fn load(&self) {
             self.arch.load()
       }
+}
+
+/// Initialize the kernel space for the bootstrap CPU.
+///
+/// # Safety
+///
+/// The function must be called only once from the bootstrap CPU.
+pub unsafe fn init_kernel() {
+      let krl_space = Space::new(CreateType::Kernel);
+      krl_space.load();
+      KRL_SPACE.insert(krl_space);
+}
+
+/// Get the reference of the per-CPU kernel space.
+///
+/// # Safety
+///
+/// The function must be called only after the CPU's kernel space is initialized and loaded.
+pub unsafe fn krl<F, R>(f: F) -> Option<R>
+where
+      F: FnOnce(&'static Space) -> R,
+{
+      let k = if crate::cpu::id() == 0 {
+            KRL_SPACE.as_ref()
+      } else {
+            AP_SPACE.as_ref()
+      };
+      k.map(|krl| f(krl))
 }

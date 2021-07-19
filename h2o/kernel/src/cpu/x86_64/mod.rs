@@ -3,11 +3,7 @@ pub mod intr;
 pub mod seg;
 pub mod syscall;
 
-use crate::mem::space::Space;
-
 use alloc::boxed::Box;
-use alloc::sync::Arc;
-use core::pin::Pin;
 use core::ptr::null_mut;
 use core::sync::atomic::{AtomicUsize, Ordering};
 
@@ -19,7 +15,7 @@ pub static CPU_INDEX: AtomicUsize = AtomicUsize::new(0);
 /// This function is only called before architecture initialization.
 pub unsafe fn set_id() -> usize {
       use archop::msr;
-      let id = CPU_INDEX.fetch_add(1, Ordering::AcqRel);
+      let id = CPU_INDEX.fetch_add(1, Ordering::SeqCst);
       msr::write(msr::TSC_AUX, id as u64);
       id
 }
@@ -33,24 +29,20 @@ pub unsafe fn id() -> usize {
 }
 
 #[repr(C)]
-pub struct KernelGs<'a> {
+pub struct KernelGs {
       save_regs: *mut u8,
       tss_rsp0: *mut u8,
       syscall_user_stack: *mut u8,
       syscall_stack: *mut u8,
-
-      lapic: apic::Lapic<'a>,
 }
 
-impl<'a> KernelGs<'a> {
-      pub fn new(tss_rsp0: *mut u8, syscall_stack: *mut u8, lapic: apic::Lapic<'a>) -> Self {
+impl KernelGs {
+      pub fn new(tss_rsp0: *mut u8, syscall_stack: *mut u8) -> Self {
             KernelGs {
                   save_regs: intr::ctx::test::save_regs as *mut u8,
                   tss_rsp0,
                   syscall_user_stack: null_mut(),
                   syscall_stack,
-
-                  lapic,
             }
       }
 
@@ -82,9 +74,9 @@ impl<'a> KernelGs<'a> {
       ///
       /// The caller must ensure that this function is called out of any interrupt handler
       /// and there's an `KernelGs` object stored in [`archop::msr::KERNEL_GS_BASE`].
-      pub unsafe fn access<'b>() -> &'b KernelGs<'b> {
+      pub unsafe fn access<'b>() -> &'b KernelGs {
             use archop::msr;
-            let ptr = msr::read(msr::KERNEL_GS_BASE) as *const KernelGs<'_>;
+            let ptr = msr::read(msr::KERNEL_GS_BASE) as *const KernelGs;
             &*ptr
       }
 
@@ -92,9 +84,9 @@ impl<'a> KernelGs<'a> {
       ///
       /// The caller must ensure that this function is called inside an interrupt handler and
       /// there's an `KernelGs` object stored in [`archop::msr::GS_BASE`].
-      pub unsafe fn access_in_intr<'b>() -> &'b mut KernelGs<'b> {
+      pub unsafe fn access_in_intr<'b>() -> &'b mut KernelGs {
             use archop::msr;
-            let ptr = msr::read(msr::GS_BASE) as *mut KernelGs<'_>;
+            let ptr = msr::read(msr::GS_BASE) as *mut KernelGs;
             &mut *ptr
       }
 }
@@ -106,28 +98,20 @@ impl<'a> KernelGs<'a> {
 /// The caller must ensure that this function should only be called once from bootstrap
 /// CPU.
 pub unsafe fn init(
-      space: &Arc<Space>,
       lapic_data: acpi::table::madt::LapicData,
       ioapic_data: acpi::table::madt::IoapicData,
-) -> (
-      spin::Mutex<seg::ndt::DescTable<'_>>,
-      Pin<&mut seg::ndt::TssStruct>,
 ) {
-      let (gdt, tss) = seg::init(space);
+      let tss_rsp0 = seg::init();
 
       let acpi::table::madt::LapicData {
             ty: lapic_ty,
             lapics,
       } = lapic_data;
-      let mut lapic = apic::Lapic::new(lapic_ty, space);
-      lapic.enable();
-      let lapic = lapic.activate_timer(apic::timer::TimerMode::Periodic, 7, 256);
+      apic::init(lapic_ty);
 
       let syscall_stack = syscall::init();
 
-      let kernel_gs = KernelGs::new(*tss.rsp0(), syscall_stack, lapic);
+      let kernel_gs = KernelGs::new(*tss_rsp0, syscall_stack);
       // SAFE: During bootstrap initialization.
       unsafe { kernel_gs.load() };
-
-      (gdt, tss)
 }

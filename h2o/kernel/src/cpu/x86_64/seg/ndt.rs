@@ -1,10 +1,10 @@
 use super::*;
-use crate::mem::space::{Flags, MemBlock, Space};
+use crate::mem::space::{krl, Flags, MemBlock};
 use paging::LAddr;
 
-use alloc::sync::Arc;
 use core::mem::size_of;
 use core::pin::Pin;
+use spin::Mutex;
 use static_assertions::*;
 
 pub const KRL_CODE_X64: SegSelector = SegSelector::from_const(0x08); // SegSelector::new().with_index(1)
@@ -15,6 +15,11 @@ pub const USR_CODE_X64: SegSelector = SegSelector::from_const(0x28 + 3); // SegS
 
 pub const INTR_CODE: SegSelector = SegSelector::from_const(0x08 + 4); // SegSelector::new().with_index(1).with_ti(true)
 pub const INTR_DATA: SegSelector = SegSelector::from_const(0x10 + 4); // SegSelector::new().with_index(2).with_ti(true)
+
+static mut GDT: Option<Mutex<DescTable<'static>>> = None;
+
+#[thread_local]
+static mut TSS: Option<Pin<&'static mut TssStruct>> = None;
 
 /// Indicate a struct is a segment or gate descriptor.
 pub trait Descriptor {}
@@ -294,15 +299,19 @@ impl Seg128 {
 /// kernel code & data selector.
 ///
 /// NOTE: This function could only be called once from the BSP.
-pub fn create_gdt(space: &Arc<Space>) -> DescTable<'_> {
+fn create_gdt() -> DescTable<'static> {
       let (layout, k) = paging::PAGE_LAYOUT
             .repeat(2)
             .expect("Failed to get the allocation size");
       assert!(k == paging::PAGE_SIZE);
       // SAFE: No physical address specified.
-      let memory =
-            unsafe { space.alloc_manual(layout, None, true, Flags::READABLE | Flags::WRITABLE) }
-                  .expect("Failed to allocate memory for GDT");
+      let memory = unsafe {
+            krl(|space| {
+                  space.alloc_manual(layout, None, true, Flags::READABLE | Flags::WRITABLE)
+                        .expect("Failed to allocate memory for GDT")
+            })
+      }
+      .expect("Kernel space uninitialized");
 
       let mut gdt = DescTable::new(memory);
 
@@ -335,7 +344,7 @@ pub fn create_gdt(space: &Arc<Space>) -> DescTable<'_> {
 ///
 /// The caller must ensure that `gdt` is a valid GDT object and `krl_sel` consists of the
 /// kernel's code & data selector in `gdt`.
-pub unsafe fn load_gdt(gdt: &DescTable) {
+unsafe fn load_gdt(gdt: &DescTable) {
       extern "C" {
             fn reset_seg(code: SegSelector, data: SegSelector);
       }
@@ -356,22 +365,20 @@ pub unsafe fn load_gdt(gdt: &DescTable) {
 /// This function returns the LDT, its address & size, and its code selector.
 ///
 /// NOTE: This function should only be called once from the BSP.
-pub fn create_ldt<'a, 'b>(
-      space: &'a Arc<Space>,
-) -> (DescTable<'b>, (LAddr, usize), (SegSelector, SegSelector))
-where
-      'a: 'b,
-{
+fn create_ldt() -> (DescTable<'static>, (LAddr, usize)) {
       // SAFE: No physical address specified.
       let mut memory = unsafe {
-            space.alloc_manual(
-                  paging::PAGE_LAYOUT,
-                  None,
-                  false,
-                  Flags::READABLE | Flags::WRITABLE,
-            )
+            krl(|space| {
+                  space.alloc_manual(
+                        paging::PAGE_LAYOUT,
+                        None,
+                        false,
+                        Flags::READABLE | Flags::WRITABLE,
+                  )
+                  .expect("Failed to allocate memory for LDT")
+            })
       }
-      .expect("Failed to allocate memory for LDT");
+      .expect("Kernel space uninitialized");
 
       let ldt_ptr = (
             LAddr::new(memory.as_mut_ptr().cast()),
@@ -386,14 +393,12 @@ where
       ldt.push_s64(0, 0, 0, None); // Null Desc
       let code = ldt.push_s64(0, LIM, attrs::SEG_CODE | attrs::X64 | ATTR, None);
       let data = ldt.push_s64(0, LIM, attrs::SEG_DATA | attrs::X64 | ATTR, None);
+      assert!(code >> 3 == INTR_CODE.index());
+      assert!(data >> 3 == INTR_DATA.index());
 
       // In LDT: bitfield ti = 1
       let ti = 1 << 2;
-      (
-            ldt,
-            ldt_ptr,
-            (SegSelector::from(code | ti), SegSelector::from(data | ti)),
-      )
+      (ldt, ldt_ptr)
 }
 
 /// Push an LDT into a GDT.
@@ -405,7 +410,7 @@ where
 ///
 /// The caller must ensure that `gdt` is a valid GDT, `ldt_ptr` consists of valid
 /// LDT's address & size, and the GDT does not contain the specified LDT.
-pub unsafe fn push_ldt(gdt: &mut DescTable, ldt_ptr: (LAddr, usize)) -> SegSelector {
+unsafe fn push_ldt(gdt: &mut DescTable, ldt_ptr: (LAddr, usize)) -> SegSelector {
       let (base, size) = ldt_ptr;
 
       let ldtr = gdt.push_s128(
@@ -426,23 +431,26 @@ pub unsafe fn push_ldt(gdt: &mut DescTable, ldt_ptr: (LAddr, usize)) -> SegSelec
 /// preparations.
 ///
 /// The caller must ensure that `ldtr` points to a valid LDT and its GDT is loaded.
-pub unsafe fn load_ldt(ldtr: SegSelector) {
+unsafe fn load_ldt(ldtr: SegSelector) {
       asm!("lldt [{}]", in(reg) &ldtr);
 }
 
 /// Create a new TSS structure.
 ///
 /// This function returns the new structure and its base address.
-pub fn create_tss<'a, 'b>(space: &'a Arc<Space>) -> (Pin<&'a mut TssStruct>, LAddr) {
+fn create_tss() -> (Pin<&'static mut TssStruct>, LAddr) {
       // SAFE: No physical address specified.
       let alloc_stack = || unsafe {
             let (layout, k) = paging::PAGE_LAYOUT
                   .repeat(4)
                   .expect("Failed to calculate the layout");
             assert!(k == paging::PAGE_SIZE);
-            let memory = space
-                  .alloc_manual(layout, None, false, Flags::READABLE | Flags::WRITABLE)
-                  .expect("Failed to allocate stack");
+            let memory = krl(|space| {
+                  space.alloc_manual(layout, None, false, Flags::READABLE | Flags::WRITABLE)
+                        .expect("Failed to allocate stack")
+            })
+            .expect("Kernel space uninitialized");
+
             memory.as_ptr().cast::<u8>().add(layout.size())
       };
 
@@ -451,9 +459,12 @@ pub fn create_tss<'a, 'b>(space: &'a Arc<Space>) -> (Pin<&'a mut TssStruct>, LAd
 
       // SAFE: No physical address specified.
       let mut memory = unsafe {
-            space.alloc_typed::<TssStruct>(None, true, Flags::READABLE | Flags::WRITABLE)
-                  .expect("Failed to allocate TSS")
-      };
+            krl(|space| {
+                  space.alloc_typed::<TssStruct>(None, true, Flags::READABLE | Flags::WRITABLE)
+                        .expect("Failed to allocate TSS")
+            })
+      }
+      .expect("Kernel space uninitialized");
 
       let base = memory.as_mut_ptr();
 
@@ -490,7 +501,7 @@ pub fn create_tss<'a, 'b>(space: &'a Arc<Space>) -> (Pin<&'a mut TssStruct>, LAd
 ///
 /// The caller must ensure that `gdt` is a valid GDT and `tss_base` points to a valid
 /// TSS structure.
-pub unsafe fn push_tss(gdt: &mut DescTable, tss_base: LAddr) -> SegSelector {
+unsafe fn push_tss(gdt: &mut DescTable, tss_base: LAddr) -> SegSelector {
       let tr = gdt.push_s128(
             LAddr::new(tss_base.cast()),
             (size_of::<TssStruct>() - 1) as u32,
@@ -509,6 +520,38 @@ pub unsafe fn push_tss(gdt: &mut DescTable, tss_base: LAddr) -> SegSelector {
 /// preparations.
 ///
 /// The caller must ensure that `tr` points to a valid TSS and its GDT is loaded.
-pub unsafe fn load_tss(tr: SegSelector) {
+unsafe fn load_tss(tr: SegSelector) {
       unsafe { asm!("ltr [{}]", in(reg) &tr) };
+}
+
+/// Initialize NDT (GDT & LDT & TSS) in x86 architecture by the bootstrap CPU.
+///
+/// # Safety
+///
+/// WARNING: This function modifies the architecture's basic registers. Be sure to make
+/// preparations.
+///
+/// The caller must ensure that this function is called only once from the bootstrap CPU.
+pub unsafe fn init() -> LAddr {
+      let mut gdt = ndt::create_gdt();
+      unsafe { ndt::load_gdt(&gdt) };
+      unsafe { reload_pls() };
+
+      let (ldt, ldt_ptr) = ndt::create_ldt();
+      let ldtr = unsafe { ndt::push_ldt(&mut gdt, ldt_ptr) };
+      unsafe { ndt::load_ldt(ldtr) };
+
+      let (tss, tss_base) = ndt::create_tss();
+      let tr = unsafe { ndt::push_tss(&mut gdt, tss_base) };
+      unsafe { ndt::load_tss(tr) };
+
+      GDT.insert(Mutex::new(gdt));
+      let tss_rsp0 = tss.rsp0();
+      TSS.insert(tss);
+
+      // Manually drop the reference to LDT without dropping the data because those structures are
+      // no longer needed to be referenced by the code.
+      let _ = ManuallyDrop::new(ldt);
+
+      tss_rsp0
 }

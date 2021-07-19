@@ -1,9 +1,9 @@
+use super::ndt::INTR_CODE;
 use super::*;
 use crate::cpu::arch::intr::def::{IdtEntry, IdtInit, IDT_INIT};
-use crate::mem::space::{Flags, Space};
+use crate::mem::space::{krl, Flags};
 use paging::LAddr;
 
-use alloc::sync::Arc;
 use core::mem::size_of;
 use core::ops::{Index, IndexMut, Range};
 use core::pin::Pin;
@@ -19,6 +19,9 @@ const NR_INTRS: usize = 256;
 ///
 /// NOTE: `0..32` is reserved for exceptions.
 const ALLOCABLE_INTRS: Range<usize> = 32..NR_INTRS;
+
+#[thread_local]
+static mut IDT: Option<IntDescTable<'static>> = None;
 
 /// The gate descriptor.
 ///
@@ -208,19 +211,22 @@ impl<'a> IntDescTable<'a> {
 /// Create an IDT.
 ///
 /// Construct a standard IDT object with entries from [`IDT_INIT`] and `intr_sel`.
-pub fn create_idt(space: &Arc<Space>, intr_sel: (SegSelector, SegSelector)) -> IntDescTable<'_> {
+fn create_idt() -> IntDescTable<'static> {
       // SAFE: No physical address specified.
       let idt_array = unsafe {
-            space.alloc_typed::<IdtArray>(None, true, Flags::READABLE | Flags::WRITABLE)
-                  .expect("Failed to allocate memory for IDT")
-                  .map_unchecked_mut(|u| u.assume_init_mut())
-      };
+            krl(|space| {
+                  space.alloc_typed::<IdtArray>(None, true, Flags::READABLE | Flags::WRITABLE)
+                        .expect("Failed to allocate memory for IDT")
+                        .map_unchecked_mut(|u| u.assume_init_mut())
+            })
+      }
+      .expect("Kernel space uninitialized");
 
       let mut idt = IntDescTable::new(idt_array);
       let mut set_ent = |entry: &IdtEntry| {
             let desc = GateBuilder::new()
                   .offset(LAddr::new(entry.entry as *mut u8))
-                  .selector(intr_sel.0)
+                  .selector(INTR_CODE)
                   .attribute(attrs::INT_GATE | attrs::PRESENT, entry.dpl)
                   .ist(entry.ist)
                   .build()
@@ -250,7 +256,19 @@ pub fn create_idt(space: &Arc<Space>, intr_sel: (SegSelector, SegSelector)) -> I
 /// preparations.
 ///
 /// The caller must ensure that `idt` is a valid LDT.
-pub unsafe fn load_idt(idt: &IntDescTable) {
+unsafe fn load_idt(idt: &IntDescTable) {
       let idtr = idt.export_fp();
       asm!("cli; lidt [{}]", in(reg) &idtr);
+}
+
+/// Initialize IDT in x86 architecture by the bootstrap CPU.
+///
+/// # Safety
+///
+/// WARNING: This function modifies the architecture's basic registers. Be sure to make
+/// preparations.
+pub unsafe fn init() {
+      let idt = idt::create_idt();
+      unsafe { idt::load_idt(&idt) };
+      IDT.insert(idt);
 }
