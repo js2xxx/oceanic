@@ -5,7 +5,7 @@ use core::ops::Range;
 pub const NR_VECTORS: usize = 256;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(u16)]
+#[repr(u8)]
 pub enum ExVec {
       DivideBy0 = 0,
       Debug = 1,
@@ -32,7 +32,7 @@ pub enum ExVec {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(u16)]
+#[repr(u8)]
 pub enum ApicVec {
       Timer = 0x20,
       Ipi = 0x21,
@@ -40,7 +40,7 @@ pub enum ApicVec {
       Spurious = 0xFF,
 }
 
-pub const ALLOC_VEC: Range<u16> = 0x40..0xFF;
+pub const ALLOC_VEC: Range<u8> = 0x40..0xFF;
 
 type IdtRoute = unsafe extern "C" fn();
 

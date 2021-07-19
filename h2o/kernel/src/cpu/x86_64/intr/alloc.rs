@@ -14,13 +14,13 @@ struct CpuChunk {
 
 pub struct Allocator {
       cpus: Vec<CpuChunk>,
-      range: Range<u16>,
+      range: Range<u8>,
 }
 
 #[derive(Debug)]
 pub enum AllocError {
       Available(bool),
-      Range(u16, Range<u16>),
+      Range(u8, Range<u8>),
 }
 
 impl Allocator {
@@ -35,11 +35,11 @@ impl Allocator {
             }
       }
 
-      pub fn allocable_range(&self) -> Range<u16> {
+      pub fn allocable_range(&self) -> Range<u8> {
             self.range.clone()
       }
 
-      fn alloc_idx(&mut self, alloc_cpu: &CpuMask) -> Result<(u16, usize), AllocError> {
+      fn alloc_idx(&mut self, alloc_cpu: &CpuMask) -> Result<(u8, usize), AllocError> {
             let range = self.allocable_range();
 
             let cpu = alloc_cpu
@@ -51,13 +51,13 @@ impl Allocator {
             let pos = cpu_chunk
                   .bitmap
                   .iter_zeros()
-                  .find(|&pos| range.contains(&(pos as u16)))
+                  .find(|&pos| range.contains(&(pos as u8)))
                   .expect("CPU's `free_cnt` is not corresponding to its bitmap.");
 
             cpu_chunk.bitmap.set(pos, true);
             cpu_chunk.free_cnt -= 1;
 
-            Ok((pos as u16, cpu))
+            Ok((pos as u8, cpu))
       }
 
       pub fn alloc(&mut self, alloc_cpu: &CpuMask) -> Result<ArchReg, AllocError> {
@@ -65,7 +65,7 @@ impl Allocator {
                   .map(|(vec, cpu)| ArchReg { vec, cpu })
       }
 
-      fn dealloc_idx(&mut self, vec: u16, cpu: usize) -> Result<(), AllocError> {
+      fn dealloc_idx(&mut self, vec: u8, cpu: usize) -> Result<(), AllocError> {
             let range = self.allocable_range();
             if !range.contains(&vec) {
                   return Err(AllocError::Range(vec, range));

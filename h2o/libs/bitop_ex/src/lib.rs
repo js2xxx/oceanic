@@ -62,6 +62,11 @@ pub trait BitOpEx:
             let msb = self.msb();
             msb + Self::from((msb != self.lsb()) as usize).unwrap()
       }
+
+      #[inline]
+      fn contains_bit(&self, bit: Self) -> bool {
+            (*self & bit) != Self::zero()
+      }
 }
 
 impl<T> BitOpEx for T where

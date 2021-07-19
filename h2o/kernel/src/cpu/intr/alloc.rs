@@ -1,8 +1,9 @@
-use super::{Handler, Interrupt};
+use super::{Handler, Interrupt, IntrChip};
 use crate::cpu::CpuMask;
 
 use alloc::sync::Arc;
 use alloc::vec::Vec;
+use core::sync::atomic::AtomicU16;
 use spin::Mutex;
 
 #[derive(Debug)]
@@ -25,14 +26,17 @@ impl Allocator {
             &mut self,
             gsi: u32,
             hw_irq: u8,
+            chip: Arc<Mutex<dyn IntrChip>>,
             affinity: CpuMask,
             handler: Vec<Handler>,
       ) -> Result<Arc<Interrupt>, AllocError> {
             let arch_reg = self.arch.alloc(&affinity).map_err(AllocError::ArchReg)?;
 
             let intr = Arc::new(Interrupt {
+                  state: AtomicU16::new(0),
                   gsi,
                   hw_irq,
+                  chip,
                   arch_reg: Mutex::new(arch_reg.clone()),
                   handler,
                   affinity,

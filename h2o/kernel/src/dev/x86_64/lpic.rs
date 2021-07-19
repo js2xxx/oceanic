@@ -80,4 +80,12 @@ impl IntrChip for LegacyPic {
                   write_cmd(&mut self.master, 0x20);
             }
       }
+
+      unsafe fn setup(&mut self, intr: Arc<Interrupt>) -> Result<(), &'static str> {
+            todo!()
+      }
+
+      unsafe fn remove(&mut self, intr: Arc<Interrupt>) -> Result<(), &'static str> {
+            todo!()
+      }
 }

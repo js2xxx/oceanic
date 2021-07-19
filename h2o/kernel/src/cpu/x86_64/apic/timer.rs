@@ -1,7 +1,11 @@
-use core::ops::Range;
+use super::LocalEntry;
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+use core::ops::Range;
+use modular_bitfield::prelude::*;
+
+#[derive(Clone, Copy, PartialEq, Eq, BitfieldSpecifier)]
 #[repr(u32)]
+#[bits = 2]
 pub enum TimerMode {
       OneShot = 0,
       Periodic = 1,
@@ -63,18 +67,18 @@ impl<'a> Timer<'a> {
                   div,
                   mut lapic,
             } = self;
-            let vec = crate::cpu::intr::arch::def::ApicVec::Timer as u16;
+            let vec = crate::cpu::intr::arch::def::ApicVec::Timer as u8;
 
             // SAFE: `div` is valid.
             let encdiv = unsafe { Self::encode_div(div) };
-            let timer_val = ((mode as u32) << 17) | (vec as u32);
+            let timer_val = LocalEntry::new().with_timer_mode(mode).with_vec(vec);
 
             // SAFE: Those MSRs are per-cpu and only 1 timer object is available in the context.
             unsafe {
                   use super::Lapic;
                   use archop::msr;
                   Lapic::write_reg_32(&mut lapic.ty, msr::X2APIC_DIV_CONF, encdiv.into());
-                  Lapic::write_reg_32(&mut lapic.ty, msr::X2APIC_LVT_TIMER, timer_val);
+                  Lapic::write_reg_32(&mut lapic.ty, msr::X2APIC_LVT_TIMER, timer_val.into());
                   if let TimerMode::TscDeadline = mode {
                         msr::write(msr::TSC_DEADLINE, init_value);
                   } else {

@@ -1,3 +1,4 @@
+use crate::cpu::arch::apic::{DelivMode, Polarity, TriggerMode};
 use crate::cpu::intr::{Interrupt, IntrChip};
 use crate::mem::space::{Flags, MemBlock, Space};
 use acpi::table::madt::ioapic::{IntrOvrPolarity, IntrOvrTrig};
@@ -29,32 +30,6 @@ impl From<IoapicReg> for u32 {
                   IoapicReg::IoRedirTable(pin) => 0x10 + pin as u32 * 2,
             }
       }
-}
-
-#[derive(Debug, Clone, Copy, BitfieldSpecifier)]
-#[repr(u64)]
-#[bits = 3]
-pub enum DelivMode {
-      Fixed = 0b000,
-      LowestPriority = 0b001,
-      Smi = 0b010,
-      Nmi = 0b100,
-      Init = 0b101,
-      ExtInt = 0b111,
-}
-
-#[derive(Debug, Clone, Copy, BitfieldSpecifier)]
-#[repr(u64)]
-pub enum Polarity {
-      High = 0,
-      Low = 1,
-}
-
-#[derive(Debug, Clone, Copy, BitfieldSpecifier)]
-#[repr(u64)]
-pub enum TriggerMode {
-      Edge = 0,
-      Level = 1,
 }
 
 #[derive(Clone, Copy)]
@@ -268,7 +243,8 @@ impl<'a> Ioapics<'a> {
       pub fn chip_mut_pin(&mut self, gsi: u32) -> Option<(&mut Ioapic<'a>, u8)> {
             for chip in self.ioapic_data.iter_mut() {
                   if chip.gsi.contains(&gsi) {
-                        return Some((chip, (gsi - chip.gsi.start) as u8));
+                        let start = chip.gsi.start;
+                        return Some((chip, (gsi - start) as u8));
                   }
             }
             None
@@ -276,6 +252,19 @@ impl<'a> Ioapics<'a> {
 }
 
 impl<'a> IntrChip for Ioapics<'a> {
+      unsafe fn setup(&mut self, intr: Arc<Interrupt>) -> Result<(), &'static str> {
+            let (vec, cpu) = {
+                  let arch_reg = intr.arch_reg().lock();
+                  (arch_reg.vector(), arch_reg.cpu())
+            };
+
+            todo!()
+      }
+
+      unsafe fn remove(&mut self, intr: Arc<Interrupt>) -> Result<(), &'static str> {
+            todo!()
+      }
+
       unsafe fn mask(&mut self, intr: Arc<Interrupt>) {
             let gsi = intr.gsi();
             let (chip, pin) = match self.chip_mut_pin(gsi) {
@@ -283,7 +272,7 @@ impl<'a> IntrChip for Ioapics<'a> {
                   None => return,
             };
 
-            let entry = IoapicEntry::from(chip.read_ioredtbl(pin));
+            let mut entry = IoapicEntry::from(chip.read_ioredtbl(pin));
             entry.set_mask(true);
             chip.write_ioredtbl(pin, entry.into());
 
@@ -297,7 +286,7 @@ impl<'a> IntrChip for Ioapics<'a> {
                   None => return,
             };
 
-            let entry = IoapicEntry::from(chip.read_ioredtbl(pin));
+            let mut entry = IoapicEntry::from(chip.read_ioredtbl(pin));
             entry.set_mask(false);
             chip.write_ioredtbl(pin, entry.into());
       }

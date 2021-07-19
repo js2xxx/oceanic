@@ -1,17 +1,77 @@
-pub mod timer;
 pub mod ipi;
+pub mod timer;
 
+use super::intr::def::ApicVec;
 use crate::mem::space;
 use archop::msr;
 
 use alloc::sync::Arc;
 use core::pin::Pin;
+use modular_bitfield::prelude::*;
 
 const LAPIC_LAYOUT: core::alloc::Layout = paging::PAGE_LAYOUT;
 
 pub enum LapicType<'a> {
       X1(Pin<&'a mut [space::MemBlock]>),
       X2,
+}
+
+#[derive(Debug, Clone, Copy, BitfieldSpecifier)]
+#[repr(u64)]
+#[bits = 3]
+pub enum DelivMode {
+      Fixed = 0b000,
+      LowestPriority = 0b001,
+      Smi = 0b010,
+      Nmi = 0b100,
+      Init = 0b101,
+      ExtInt = 0b111,
+}
+
+#[derive(Debug, Clone, Copy, BitfieldSpecifier)]
+#[repr(u64)]
+pub enum Polarity {
+      High = 0,
+      Low = 1,
+}
+
+#[derive(Debug, Clone, Copy, BitfieldSpecifier)]
+#[repr(u64)]
+pub enum TriggerMode {
+      Edge = 0,
+      Level = 1,
+}
+
+#[derive(Clone, Copy)]
+#[bitfield]
+pub struct LocalEntry {
+      vec: u8,
+      #[bits = 3]
+      deliv_mode: DelivMode,
+      #[skip]
+      __: B1,
+      pending: bool,
+      #[bits = 1]
+      polarity: Polarity,
+      remote_irr: bool,
+      #[bits = 1]
+      trigger_mode: TriggerMode,
+      mask: bool,
+      timer_mode: timer::TimerMode,
+      #[skip]
+      __: B13,
+}
+
+impl From<u32> for LocalEntry {
+      fn from(x: u32) -> Self {
+            Self::from_bytes(x.to_ne_bytes())
+      }
+}
+
+impl From<LocalEntry> for u32 {
+      fn from(x: LocalEntry) -> Self {
+            Self::from_ne_bytes(x.into_bytes())
+      }
 }
 
 pub struct Lapic<'a> {
@@ -84,6 +144,19 @@ impl<'a> Lapic<'a> {
             }
       }
 
+      unsafe fn clear_ixr(&mut self) {
+            let cnt = (0..8).fold(0, |acc, i| {
+                  acc + Self::read_reg_32(
+                        &mut self.ty,
+                        core::mem::transmute(msr::X2APIC_ISR0 as u32 + i),
+                  )
+                  .count_ones()
+            });
+            for _ in 0..cnt {
+                  self.eoi();
+            }
+      }
+
       pub fn new(ty: acpi::table::madt::LapicType, space: &'a Arc<space::Space>) -> Self {
             let mut ty = match ty {
                   acpi::table::madt::LapicType::X2 => {
@@ -109,12 +182,38 @@ impl<'a> Lapic<'a> {
                   }
             };
 
+            // Get the LAPIC ID.
             let mut id = unsafe { Self::read_reg_32(&mut ty, msr::X2APICID) };
             if let LapicType::X2 = &ty {
                   id >>= 24;
             }
 
-            Lapic { ty, id }
+            let mut lapic = Lapic { ty, id };
+
+            unsafe {
+                  lapic.clear_ixr();
+
+                  // Accept all the interrupt vectors but `0..32` since they are reserved by
+                  // exceptions.
+                  unsafe { Self::write_reg_32(&mut lapic.ty, msr::X2APIC_TPR, 0x20) };
+
+                  let lint0 = LocalEntry::new()
+                        .with_deliv_mode(DelivMode::ExtInt)
+                        .with_mask(true);
+                  Self::write_reg_32(&mut lapic.ty, msr::X2APIC_LVT_LINT0, lint0.into());
+
+                  // The NMI interrupt is on LINT1 and only BSP accepts NMI.
+                  let lint1 = LocalEntry::new()
+                        .with_deliv_mode(DelivMode::Nmi)
+                        .with_mask(crate::cpu::id() != 0)
+                        .with_trigger_mode(TriggerMode::Level);
+                  Self::write_reg_32(&mut lapic.ty, msr::X2APIC_LVT_LINT1, lint1.into());
+
+                  let lerr = LocalEntry::new().with_vec(ApicVec::Error as u8);
+                  Self::write_reg_32(&mut lapic.ty, msr::X2APIC_LVT_ERROR, lerr.into());
+            }
+
+            lapic
       }
 
       /// # Safety

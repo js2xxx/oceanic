@@ -14,8 +14,18 @@ static VEC_INTR: [Mutex<Option<Weak<Interrupt>>>; NR_VECTORS] = [VEC_INTR_INIT; 
 
 #[derive(Debug, Clone)]
 pub struct ArchReg {
-      vec: u16,
+      vec: u8,
       cpu: usize,
+}
+
+impl ArchReg {
+      pub fn vector(&self) -> u8 {
+            self.vec
+      }
+
+      pub fn cpu(&self) -> usize {
+            self.cpu
+      }
 }
 
 #[derive(Debug)]
@@ -57,7 +67,8 @@ unsafe extern "C" fn common_interrupt(frame: *mut ctx::Frame) {
                         None
                   })
             }) {
-                  intr.handle();
+                  // TODO: Add another level to claasify different types of handlers.
+                  // intr.handle();
             } else {
                   let kernel_gs = unsafe { crate::cpu::arch::KernelGs::access_in_intr() };
                   let lapic = &mut kernel_gs.lapic;
