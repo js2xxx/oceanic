@@ -2,10 +2,10 @@ pub mod alloc;
 
 pub use super::arch::intr as arch;
 
+use self::arch::ArchReg;
 use bitop_ex::BitOpEx;
 
 use ::alloc::sync::Arc;
-use ::alloc::vec::Vec;
 use core::sync::atomic::{AtomicU16, Ordering};
 use spin::Mutex;
 
@@ -18,7 +18,7 @@ bitflags::bitflags! {
       }
 }
 
-pub type Handler = fn(Arc<Interrupt>) -> IrqReturn;
+pub type TypeHandler = unsafe fn(Arc<Interrupt>);
 
 pub trait IntrChip {
       //! TODO: Add declaration of `setup` and `remove` for interrupts.
@@ -29,7 +29,7 @@ pub trait IntrChip {
       ///
       /// WARNING: This function modifies the architecture's basic registers. Be sure to make
       /// preparations.
-      unsafe fn setup(&mut self, intr: Arc<Interrupt>) -> Result<(), &'static str>;
+      unsafe fn setup(&mut self,  arch_reg: ArchReg, gsi: u32) -> Result<TypeHandler, &'static str>;
 
       /// Remove a interrupt from the chip.
       ///
@@ -97,7 +97,7 @@ pub struct Interrupt {
       hw_irq: u8,
       chip: Arc<Mutex<dyn IntrChip>>,
       arch_reg: Mutex<arch::ArchReg>,
-      handler: Vec<Handler>,
+      handler: TypeHandler,
       affinity: super::CpuMask,
 }
 
@@ -114,29 +114,8 @@ impl Interrupt {
             &self.arch_reg
       }
 
-      pub fn handle(self: &Arc<Interrupt>) -> IrqReturn {
-            let state = self.state.load(Ordering::SeqCst);
-            if state.contains_bit(IntrState::ENABLED) {
-                  let mut ret = IrqReturn::empty();
-                  for hdl in self.handler.iter() {
-                        let r = (hdl)(self.clone());
-                        // TODO: wake up tasks if specified.
-                        ret |= r;
-                  }
-                  if self
-                        .state
-                        .load(Ordering::SeqCst)
-                        .contains_bit(IntrState::ONESHOT)
-                  {
-                        ret
-                  } else {
-                        ret | IrqReturn::UNMASK
-                  }
-            } else {
-                  self.state
-                        .store(state | IntrState::PENDING, Ordering::SeqCst);
-                  IrqReturn::DISABLED
-            }
+      pub(super) unsafe fn handle(self: &Arc<Interrupt>) {
+            (self.handler)(self.clone())
       }
 
       pub fn affinity(&self) -> &super::CpuMask {
@@ -147,6 +126,32 @@ impl Interrupt {
 // TODO: Write different types of interrupt handling routines, such as EDGE, LEVEL,
 // FASTEOI, etc.
 
+fn handle_event(intr: Arc<Interrupt>) -> IrqReturn {
+      todo!()
+      // let state = self.state.load(Ordering::SeqCst);
+      // if state.contains_bit(IntrState::ENABLED) {
+      //       let mut ret = IrqReturn::empty();
+      //       // for hdl in self.handler.iter() {
+      //       //       let r = (hdl)(self.clone());
+      //       //       // TODO: wake up tasks if specified.
+      //       //       ret |= r;
+      //       // }
+      //       if self
+      //             .state
+      //             .load(Ordering::SeqCst)
+      //             .contains_bit(IntrState::ONESHOT)
+      //       {
+      //             ret
+      //       } else {
+      //             ret | IrqReturn::UNMASK
+      //       }
+      // } else {
+      //       self.state
+      //             .store(state | IntrState::PENDING, Ordering::SeqCst);
+      //       IrqReturn::DISABLED
+      // }
+}
+
 /// Handle a EDGE-triggered interrupt from the current interrupt handler.
 ///
 /// # Safety
@@ -154,7 +159,7 @@ impl Interrupt {
 /// This function must be called only from the interrupt handler.
 pub unsafe fn level_handler(intr: Arc<Interrupt>) {
       intr.chip.lock().mask_ack(intr.clone());
-      let ret = intr.handle();
+      let ret = handle_event(intr.clone());
       if !ret.contains(IrqReturn::DISABLED) && ret.contains(IrqReturn::UNMASK) {
             intr.chip.lock().unmask(intr.clone());
       }
@@ -166,7 +171,7 @@ pub unsafe fn level_handler(intr: Arc<Interrupt>) {
 ///
 /// This function must be called only from the interrupt handler.
 pub unsafe fn fasteoi_handler(intr: Arc<Interrupt>) {
-      let ret = intr.handle();
+      let ret = handle_event(intr.clone());
       if !ret.contains(IrqReturn::DISABLED) {
             let mut chip = intr.chip.lock();
             chip.eoi(intr.clone());
@@ -198,7 +203,7 @@ pub unsafe fn edge_handler(intr: Arc<Interrupt>) {
             intr.chip.lock().unmask(intr.clone());
 
             intr.state.fetch_and(!IntrState::PENDING, Ordering::SeqCst);
-            let ret = intr.handle();
+            let ret = handle_event(intr.clone());
             if ret.contains(IrqReturn::DISABLED) {
                   break;
             }

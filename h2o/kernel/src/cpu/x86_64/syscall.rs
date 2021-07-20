@@ -2,6 +2,7 @@ use super::intr::ctx::Frame;
 use super::seg::ndt::{INTR_CODE, USR_CODE_X86};
 use super::seg::SegSelector;
 use archop::{msr, reg};
+use paging::LAddr;
 
 extern "C" {
       fn rout_syscall();
@@ -10,7 +11,7 @@ extern "C" {
 /// # Safety
 ///
 /// This function should only be called once per CPU.
-pub unsafe fn init() -> *mut u8 {
+pub unsafe fn init() -> Option<LAddr> {
       let stack = {
             let (layout, k) = paging::PAGE_LAYOUT
                   .repeat(2)
@@ -18,7 +19,7 @@ pub unsafe fn init() -> *mut u8 {
             assert!(k == paging::PAGE_SIZE);
             let base = alloc::alloc::alloc(layout);
             if base.is_null() {
-                  return base;
+                  return None;
             }
             base.add(layout.size())
       };
@@ -38,10 +39,10 @@ pub unsafe fn init() -> *mut u8 {
       let efer = msr::read(msr::EFER);
       msr::write(msr::EFER, efer | 1);
 
-      stack
+      Some(LAddr::new(stack))
 }
 
 #[no_mangle]
-unsafe extern "C" fn hdl_syscall(frame: *mut Frame) {
+unsafe extern "C" fn hdl_syscall(_frame: *mut Frame) {
       asm!("pause")
 }

@@ -3,6 +3,8 @@ pub mod intr;
 pub mod seg;
 pub mod syscall;
 
+use paging::LAddr;
+
 use alloc::boxed::Box;
 use core::ptr::null_mut;
 use core::sync::atomic::{AtomicUsize, Ordering};
@@ -31,13 +33,13 @@ pub unsafe fn id() -> usize {
 #[repr(C)]
 pub struct KernelGs {
       save_regs: *mut u8,
-      tss_rsp0: *mut u8,
+      tss_rsp0: LAddr,
       syscall_user_stack: *mut u8,
-      syscall_stack: *mut u8,
+      syscall_stack: LAddr,
 }
 
 impl KernelGs {
-      pub fn new(tss_rsp0: *mut u8, syscall_stack: *mut u8) -> Self {
+      pub fn new(tss_rsp0: LAddr, syscall_stack: LAddr) -> Self {
             KernelGs {
                   save_regs: intr::ctx::test::save_regs as *mut u8,
                   tss_rsp0,
@@ -97,10 +99,7 @@ impl KernelGs {
 ///
 /// The caller must ensure that this function should only be called once from bootstrap
 /// CPU.
-pub unsafe fn init(
-      lapic_data: acpi::table::madt::LapicData,
-      ioapic_data: acpi::table::madt::IoapicData,
-) {
+pub unsafe fn init(lapic_data: acpi::table::madt::LapicData) {
       let tss_rsp0 = seg::init();
 
       let acpi::table::madt::LapicData {
@@ -109,9 +108,9 @@ pub unsafe fn init(
       } = lapic_data;
       apic::init(lapic_ty);
 
-      let syscall_stack = syscall::init();
+      let syscall_stack = syscall::init().expect("Memory allocation failed");
 
-      let kernel_gs = KernelGs::new(*tss_rsp0, syscall_stack);
+      let kernel_gs = KernelGs::new(tss_rsp0, syscall_stack);
       // SAFE: During bootstrap initialization.
       unsafe { kernel_gs.load() };
 }

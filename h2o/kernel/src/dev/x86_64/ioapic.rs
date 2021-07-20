@@ -1,6 +1,7 @@
-use crate::cpu::arch::apic::{DelivMode, Polarity, TriggerMode};
-use crate::cpu::intr::{Interrupt, IntrChip};
-use crate::mem::space::{Flags, MemBlock, Space};
+use crate::cpu::arch::apic::{lapic, DelivMode, Polarity, TriggerMode, LAPIC_ID};
+use crate::cpu::arch::intr::ArchReg;
+use crate::cpu::intr::{edge_handler, fasteoi_handler, Interrupt, IntrChip, TypeHandler};
+use crate::mem::space::{krl, Flags, MemBlock};
 use acpi::table::madt::ioapic::{IntrOvrPolarity, IntrOvrTrig};
 use acpi::table::madt::{IoapicData, IoapicNode};
 use paging::{PAddr, PAGE_LAYOUT, PAGE_MASK};
@@ -10,8 +11,18 @@ use alloc::vec::Vec;
 use core::ops::Range;
 use core::pin::Pin;
 use modular_bitfield::prelude::*;
+use spin::Mutex;
 
 const LEGACY_IRQ: Range<u32> = 0..16;
+
+static mut IOAPIC_CHIP: Option<Arc<Mutex<dyn IntrChip>>> = None;
+
+/// # Safety
+///
+/// This function must be called only after I/O APIC is initialized.
+pub unsafe fn chip() -> Arc<Mutex<dyn IntrChip>> {
+      IOAPIC_CHIP.clone().expect("I/O APIC uninitialized")
+}
 
 #[derive(Debug, Copy, Clone)]
 enum IoapicReg {
@@ -114,7 +125,7 @@ impl<'a> Ioapic<'a> {
       /// # Safety
       ///
       /// The caller must ensure that this function is called only once per I/O APIC ID.
-      pub unsafe fn new(space: &'a Arc<Space>, node: IoapicNode) -> Result<Self, &'static str> {
+      pub unsafe fn new(node: IoapicNode) -> Result<Self, &'static str> {
             let IoapicNode {
                   id,
                   paddr,
@@ -126,14 +137,17 @@ impl<'a> Ioapic<'a> {
                   (PAddr::new(*paddr & !PAGE_MASK), paddr.in_page_offset())
             };
             let mut memory = unsafe {
-                  space.alloc_manual(
-                        PAGE_LAYOUT,
-                        Some(base),
-                        false,
-                        Flags::READABLE | Flags::WRITABLE,
-                  )
-                  .map_err(|_| "Memory allocation failed")?
-            };
+                  krl(|space| {
+                        space.alloc_manual(
+                              PAGE_LAYOUT,
+                              Some(base),
+                              false,
+                              Flags::READABLE | Flags::WRITABLE,
+                        )
+                        .map_err(|_| "Memory allocation failed")
+                  })
+            }
+            .expect("Kernel space uninitialized")?;
             let base_ptr = unsafe { memory.as_mut_ptr().cast::<u8>().add(offset) }.cast::<u32>();
 
             let mut ioapic = Ioapic {
@@ -171,7 +185,7 @@ pub struct Ioapics<'a> {
 }
 
 impl<'a> Ioapics<'a> {
-      pub unsafe fn new(space: &'a Arc<Space>, ioapic_data: IoapicData) -> Self {
+      pub unsafe fn new(ioapic_data: IoapicData) -> Self {
             let IoapicData {
                   ioapic: acpi_ioapics,
                   intr_ovr: acpi_intr_ovr,
@@ -179,7 +193,7 @@ impl<'a> Ioapics<'a> {
 
             let mut ioapic_data = Vec::new();
             for acpi_ioapic in acpi_ioapics {
-                  if let Ok(ioapic) = Ioapic::new(space, acpi_ioapic) {
+                  if let Ok(ioapic) = Ioapic::new(acpi_ioapic) {
                         ioapic_data.push(ioapic);
                   }
             }
@@ -252,17 +266,55 @@ impl<'a> Ioapics<'a> {
 }
 
 impl<'a> IntrChip for Ioapics<'a> {
-      unsafe fn setup(&mut self, intr: Arc<Interrupt>) -> Result<(), &'static str> {
-            let (vec, cpu) = {
-                  let arch_reg = intr.arch_reg().lock();
-                  (arch_reg.vector(), arch_reg.cpu())
+      unsafe fn setup(&mut self, arch_reg: ArchReg, gsi: u32) -> Result<TypeHandler, &'static str> {
+            let (vec, apic_id) = {
+                  (
+                        arch_reg.vector(),
+                        *LAPIC_ID
+                              .read()
+                              .get(&arch_reg.cpu())
+                              .ok_or("Failed to get LAPIC ID")?,
+                  )
             };
+            let (trigger_mode, polarity) =
+                  if let Some(intr_ovr) = self.intr_ovr.iter().find(|i| i.gsi == gsi) {
+                        (intr_ovr.trigger_mode, intr_ovr.polarity)
+                  } else if LEGACY_IRQ.contains(&gsi) {
+                        (TriggerMode::Edge, Polarity::High)
+                  } else {
+                        (TriggerMode::Level, Polarity::Low)
+                  };
 
-            todo!()
+            let (chip, pin) = self
+                  .chip_mut_pin(gsi)
+                  .ok_or("Failed to find a chip for the GSI")?;
+
+            let entry = IoapicEntry::new()
+                  .with_vec(vec)
+                  .with_deliv_mode(DelivMode::Fixed)
+                  .with_trigger_mode(trigger_mode)
+                  .with_polarity(polarity)
+                  .with_dest((apic_id & 0xFF) as u8)
+                  .with_dest_hi(((apic_id >> 8) & 0xFF) as u8);
+
+            chip.write_ioredtbl(pin, entry.into());
+
+            Ok(match trigger_mode {
+                  TriggerMode::Edge => edge_handler,
+                  TriggerMode::Level => fasteoi_handler,
+            })
       }
 
       unsafe fn remove(&mut self, intr: Arc<Interrupt>) -> Result<(), &'static str> {
-            todo!()
+            let gsi = intr.gsi();
+            let (chip, pin) = self
+                  .chip_mut_pin(gsi)
+                  .ok_or("Failed to find a chip for the GSI")?;
+
+            let entry = IoapicEntry::new().with_mask(true);
+            chip.write_ioredtbl(pin, entry.into());
+
+            Ok(())
       }
 
       unsafe fn mask(&mut self, intr: Arc<Interrupt>) {
@@ -275,8 +327,6 @@ impl<'a> IntrChip for Ioapics<'a> {
             let mut entry = IoapicEntry::from(chip.read_ioredtbl(pin));
             entry.set_mask(true);
             chip.write_ioredtbl(pin, entry.into());
-
-            // todo!("Add chip data trait (downcasting to `IoapicEntry`) for interrupts")
       }
 
       unsafe fn unmask(&mut self, intr: Arc<Interrupt>) {
@@ -291,9 +341,13 @@ impl<'a> IntrChip for Ioapics<'a> {
             chip.write_ioredtbl(pin, entry.into());
       }
 
-      unsafe fn ack(&mut self, _intr: Arc<Interrupt>) {}
+      unsafe fn ack(&mut self, _intr: Arc<Interrupt>) {
+            lapic(|lapic| lapic.eoi());
+      }
 
       unsafe fn eoi(&mut self, intr: Arc<Interrupt>) {
+            lapic(|lapic| lapic.eoi());
+
             let gsi = intr.gsi();
             let (chip, pin) = match self.chip_mut_pin(gsi) {
                   Some(res) => res,
@@ -311,4 +365,9 @@ impl<'a> IntrChip for Ioapics<'a> {
                   chip.write_ioredtbl(pin, entry.into());
             }
       }
+}
+
+pub unsafe fn init(ioapic_data: IoapicData) {
+      let ioapics = Ioapics::new(ioapic_data);
+      IOAPIC_CHIP.insert(Arc::new(Mutex::new(ioapics)));
 }

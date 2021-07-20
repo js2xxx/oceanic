@@ -3,6 +3,7 @@ pub mod timer;
 
 use super::intr::def::ApicVec;
 use crate::mem::space;
+use alloc::collections::BTreeMap;
 use archop::msr;
 
 use core::pin::Pin;
@@ -10,6 +11,7 @@ use modular_bitfield::prelude::*;
 
 const LAPIC_LAYOUT: core::alloc::Layout = paging::PAGE_LAYOUT;
 
+pub static LAPIC_ID: spin::RwLock<BTreeMap<usize, u32>> = spin::RwLock::new(BTreeMap::new());
 #[thread_local]
 static mut LAPIC: Option<Lapic<'static>> = None;
 
@@ -200,6 +202,7 @@ impl<'a> Lapic<'a> {
             if let LapicType::X2 = &ty {
                   id >>= 24;
             }
+            LAPIC_ID.write().insert(unsafe { crate::cpu::id() }, id);
 
             let mut lapic = Lapic { ty, id };
 

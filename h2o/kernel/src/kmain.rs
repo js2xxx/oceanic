@@ -5,6 +5,7 @@
 #![feature(asm)]
 #![feature(box_syntax)]
 #![feature(concat_idents)]
+#![feature(const_btree_new)]
 #![feature(const_fn_fn_ptr_basics)]
 #![feature(const_fn_transmute)]
 #![feature(default_alloc_error_handler)]
@@ -53,7 +54,10 @@ pub extern "C" fn kmain(
             unsafe { acpi::table::get_ioapic_data() }.expect("Failed to get IOAPIC data");
 
       l::debug!("Set up CPU architecture");
-      unsafe { cpu::arch::init(lapic_data, ioapic_data) };
+      unsafe { cpu::arch::init(lapic_data) };
+
+      l::debug!("Set up Interrupt system");
+      unsafe { dev::init_intr_chip(ioapic_data) };
 
       // Tests
 

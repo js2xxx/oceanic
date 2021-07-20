@@ -56,6 +56,24 @@ pub unsafe fn try_register(
 
 /// # Safety
 ///
+/// WARNING: This function modifies the architecture's basic registers. Be sure to make
+/// preparations.
+pub unsafe fn try_unregister(intr: &Arc<Interrupt>) -> Result<(), RegisterError> {
+      let ArchReg { vec, cpu } = intr.arch_reg().lock().clone();
+      if cpu != crate::cpu::id() {
+            return Err(RegisterError::NotCurCpu);
+      }
+
+      if let Some(mut intr_slot) = VEC_INTR[vec as usize].try_lock() {
+            intr_slot.replace(Weak::new());
+            Ok(())
+      } else {
+            Err(RegisterError::Pending)
+      }
+}
+
+/// # Safety
+///
 /// This function must only be called from its assembly routine `rout_XX`.
 #[no_mangle]
 unsafe extern "C" fn common_interrupt(frame: *mut ctx::Frame) {
@@ -68,8 +86,7 @@ unsafe extern "C" fn common_interrupt(frame: *mut ctx::Frame) {
                         None
                   })
             }) {
-                  // TODO: Add another level to claasify different types of handlers.
-                  // intr.handle();
+                  intr.handle();
             } else {
                   lapic(|lapic| lapic.eoi());
 

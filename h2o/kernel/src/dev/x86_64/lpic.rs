@@ -1,10 +1,21 @@
-use crate::cpu::intr::{Interrupt, IntrChip};
+use crate::cpu::arch::intr::ArchReg;
+use crate::cpu::intr::{Interrupt, IntrChip, TypeHandler};
 use archop::io::{Io, Port};
 
 use alloc::sync::Arc;
+use spin::Mutex;
 
 const MASTER_PORT: u16 = 0x20;
 const SLAVE_PORT: u16 = 0xA0;
+
+static mut LPIC_CHIP: Option<Arc<Mutex<dyn IntrChip>>> = None;
+
+/// # Safety
+///
+/// This function must be called only after legacy PIC is initialized.
+pub unsafe fn chip() -> Arc<Mutex<dyn IntrChip>> {
+      LPIC_CHIP.clone().expect("Legacy PIC uninitialized")
+}
 
 unsafe fn read_cmd(chip: &Port<u8>) -> u8 {
       chip.read()
@@ -47,6 +58,15 @@ impl LegacyPic {
             write_data(&mut self.master, 0xFF);
             write_data(&mut self.slave, 0xFF);
       }
+
+      /// Initialize the Legacy PIC in case of lack of other interrupt methods.
+      ///
+      /// # Safety
+      ///
+      /// The caller must ensure that its called only once.
+      pub unsafe fn init(&mut self) {
+            todo!()
+      }
 }
 
 impl IntrChip for LegacyPic {
@@ -81,11 +101,30 @@ impl IntrChip for LegacyPic {
             }
       }
 
-      unsafe fn setup(&mut self, intr: Arc<Interrupt>) -> Result<(), &'static str> {
+      unsafe fn setup(
+            &mut self,
+            _arch_reg: ArchReg,
+            _gsi: u32,
+      ) -> Result<TypeHandler, &'static str> {
             todo!()
       }
 
-      unsafe fn remove(&mut self, intr: Arc<Interrupt>) -> Result<(), &'static str> {
+      unsafe fn remove(&mut self, _intr: Arc<Interrupt>) -> Result<(), &'static str> {
             todo!()
       }
+}
+
+/// Initialize Legacy PIC (8259A).
+///
+/// # Safety
+///
+/// This function must be called only once from the bootstrap CPU.
+pub unsafe fn init(masked: bool) {
+      let mut lpic = LegacyPic::new();
+      if masked {
+            lpic.init_masked();
+      } else {
+            lpic.init();
+      }
+      LPIC_CHIP.insert(Arc::new(Mutex::new(lpic)));
 }

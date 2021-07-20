@@ -397,7 +397,6 @@ fn create_ldt() -> (DescTable<'static>, (LAddr, usize)) {
       assert!(data >> 3 == INTR_DATA.index());
 
       // In LDT: bitfield ti = 1
-      let ti = 1 << 2;
       (ldt, ldt_ptr)
 }
 
