@@ -1,4 +1,5 @@
 pub mod madt;
+pub mod hpet;
 
 pub use madt::get_lapic_data;
 pub use madt::get_ioapic_data;

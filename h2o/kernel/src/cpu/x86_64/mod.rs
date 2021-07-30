@@ -2,6 +2,7 @@ pub mod apic;
 pub mod intr;
 pub mod seg;
 pub mod syscall;
+pub mod tsc;
 
 use paging::LAddr;
 
@@ -113,4 +114,6 @@ pub unsafe fn init(lapic_data: acpi::table::madt::LapicData) {
       let kernel_gs = KernelGs::new(tss_rsp0, syscall_stack);
       // SAFE: During bootstrap initialization.
       unsafe { kernel_gs.load() };
+
+      unsafe { tsc::init() };
 }

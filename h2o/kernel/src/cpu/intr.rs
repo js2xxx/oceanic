@@ -21,8 +21,6 @@ bitflags::bitflags! {
 pub type TypeHandler = unsafe fn(Arc<Interrupt>);
 
 pub trait IntrChip {
-      //! TODO: Add declaration of `setup` and `remove` for interrupts.
-
       /// Set up a interrupt in the chip.
       ///
       /// # Safety

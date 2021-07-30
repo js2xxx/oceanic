@@ -1,5 +1,6 @@
 pub mod ioapic;
 pub mod lpic;
+pub mod hpet;
 
 /// Initialize interrupt chips.
 ///
