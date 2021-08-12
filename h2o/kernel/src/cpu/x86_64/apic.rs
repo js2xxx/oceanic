@@ -186,7 +186,6 @@ impl<'a> Lapic<'a> {
                                     space.alloc_manual(
                                           LAPIC_LAYOUT,
                                           Some(paddr),
-                                          false,
                                           space::Flags::READABLE | space::Flags::WRITABLE,
                                     )
                                     .expect("Failed to allocate space")

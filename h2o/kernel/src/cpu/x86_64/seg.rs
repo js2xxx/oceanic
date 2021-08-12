@@ -12,6 +12,7 @@ use paging::{LAddr, PAddr};
 
 use core::mem::ManuallyDrop;
 use core::mem::{size_of, transmute};
+use core::ptr::null_mut;
 use core::ops::Range;
 use modular_bitfield::prelude::*;
 use static_assertions::*;
@@ -111,16 +112,18 @@ pub unsafe fn get_type_attr(ptr: *mut u8) -> u16 {
 ///
 /// The caller must ensure the value stored in [`archop::msr::FS_BASE`] is a
 /// valid physical address.
-pub(super) unsafe fn reload_pls() {
+pub(super) unsafe fn reload_pls() -> LAddr {
       use archop::msr;
 
       let val = msr::read(msr::FS_BASE) as usize;
       if val != 0 {
             let ptr = PAddr::new(val).to_laddr(minfo::ID_OFFSET).cast::<usize>();
-
             ptr.write(ptr as usize);
 
             msr::write(msr::FS_BASE, ptr as u64);
+            LAddr::new(ptr.cast())
+      } else {
+            LAddr::new(null_mut())
       }
 }
 
@@ -130,9 +133,9 @@ pub(super) unsafe fn reload_pls() {
 ///
 /// The caller must ensure that this function is called only once from the bootstrap
 /// CPU.
-pub(super) unsafe fn init() -> LAddr {
-      let tss_rsp0 = ndt::init();
+pub(super) unsafe fn init() -> (LAddr, LAddr) {
+      let ret = ndt::init();
       idt::init();
 
-      tss_rsp0
+      ret
 }

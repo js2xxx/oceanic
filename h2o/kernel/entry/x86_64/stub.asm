@@ -35,6 +35,7 @@ struc KernelGs
       .tss_rsp0         resq 1
       .syscall_user_stack     resq 1
       .syscall_stack          resq 1
+      .kernel_fs        resq 1
 endstruc
 
 ; push_regs(bool save_ret_addr)
@@ -187,6 +188,8 @@ define_intr i, rout_name(i), common_interrupt, i
 %endrep
 %undef rout_name
 
+FS_BASE     equ 0xc0000100
+
 intr_entry:
       cld
       push_regs   1; The routine has a return address, so we must preserve it.
@@ -197,6 +200,12 @@ intr_entry:
 
       swapgs
       lfence
+
+      mov   rcx, FS_BASE
+      mov   rax, [gs:(KernelGs.kernel_fs)]
+      mov   rdx, rax
+      shl   rdx, 32
+      wrmsr
 
       pop   r12
       mov   rdi, rsp
@@ -255,6 +264,12 @@ rout_syscall:
 
       push_regs   0
       lea   rbp, [rsp + 8 + 1]
+
+      mov   rcx, FS_BASE
+      mov   rax, [gs:(KernelGs.kernel_fs)]
+      mov   rdx, rax
+      shl   rdx, 32
+      wrmsr
 
       mov   rdi, rsp
       mov   rax, [gs:(KernelGs.save_regs)]

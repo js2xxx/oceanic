@@ -215,9 +215,12 @@ fn create_idt() -> IntDescTable<'static> {
       // SAFE: No physical address specified.
       let idt_array = unsafe {
             krl(|space| {
-                  space.alloc_typed::<IdtArray>(None, true, Flags::READABLE | Flags::WRITABLE)
-                        .expect("Failed to allocate memory for IDT")
-                        .map_unchecked_mut(|u| u.assume_init_mut())
+                  space.alloc_typed::<IdtArray>(
+                        None,
+                        Flags::READABLE | Flags::WRITABLE | Flags::ZEROED,
+                  )
+                  .expect("Failed to allocate memory for IDT")
+                  .map_unchecked_mut(|u| u.assume_init_mut())
             })
       }
       .expect("Kernel space uninitialized");

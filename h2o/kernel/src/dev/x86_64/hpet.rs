@@ -1,18 +1,10 @@
 //! TODO: Add HPET device support.
 #![allow(dead_code)]
 
-use crate::mem::space::MemBlock;
+use crate::mem::space::{krl, Flags, MemBlock};
+use acpi::table::hpet::HpetData;
 
 use core::pin::Pin;
-
-const HPET_ID: usize = 0x000;
-const HPET_PERIOD: usize = 0x004;
-const HPET_CFG: usize = 0x010;
-const HPET_STATUS: usize = 0x020;
-const HPET_COUNTER: usize = 0x0f0;
-const HPET_TN_CFG: [usize; 3] = [0x100, 0x120, 0x140];
-const HPET_TN_CMP: [usize; 3] = [0x108, 0x128, 0x148];
-const HPET_TN_ROUTE: [usize; 3] = [0x110, 0x120, 0x140];
 
 #[repr(usize)]
 enum HpetReg {
@@ -62,14 +54,46 @@ impl HpetReg {
 pub struct Hpet<'a> {
       base_ptr: *mut u32,
       memory: Pin<&'a mut [MemBlock]>,
+
+      block_id: u8,
+      period_fs: u64,
 }
 
 impl<'a> Hpet<'a> {
-      unsafe fn read_reg(&self, reg: HpetReg) -> u32 {
-            self.base_ptr.add(reg as usize).read_volatile()
+      unsafe fn read_reg(base_ptr: *const u32, reg: HpetReg) -> u32 {
+            base_ptr.add(reg as usize).read_volatile()
       }
 
-      unsafe fn write_reg(&mut self, reg: HpetReg, val: u32) {
-            self.base_ptr.add(reg as usize).write_volatile(val)
+      unsafe fn write_reg(base_ptr: *mut u32, reg: HpetReg, val: u32) {
+            base_ptr.add(reg as usize).write_volatile(val)
+      }
+
+      pub unsafe fn new(data: HpetData) -> Result<Self, &'static str> {
+            let HpetData {
+                  base: phys,
+                  block_id,
+            } = data;
+
+            let mut memory = unsafe {
+                  krl(|space| {
+                        space.alloc_manual(
+                              paging::PAGE_LAYOUT,
+                              Some(phys),
+                              Flags::READABLE | Flags::WRITABLE,
+                        )
+                        .map_err(|_| "Memory allocation failed")
+                  })
+            }
+            .expect("Kernel space uninitialized")?;
+
+            let base_ptr = memory.as_mut_ptr().cast::<u32>();
+            let period_fs = Self::read_reg(base_ptr, HpetReg::Period).into();
+
+            Ok(Hpet {
+                  base_ptr,
+                  memory,
+                  block_id,
+                  period_fs,
+            })
       }
 }

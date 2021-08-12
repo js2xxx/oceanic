@@ -141,7 +141,6 @@ impl<'a> Ioapic<'a> {
                         space.alloc_manual(
                               PAGE_LAYOUT,
                               Some(base),
-                              false,
                               Flags::READABLE | Flags::WRITABLE,
                         )
                         .map_err(|_| "Memory allocation failed")

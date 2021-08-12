@@ -33,6 +33,7 @@ bitflags::bitflags! {
             const READABLE    = 1 << 1;
             const WRITABLE    = 1 << 2;
             const EXECUTABLE  = 1 << 3;
+            const ZEROED      = 1 << 4;
       }
 }
 
@@ -95,7 +96,6 @@ impl Space {
             &self,
             layout: Layout,
             phys: Option<PAddr>,
-            zeroed: bool,
             flags: Flags,
       ) -> Result<Pin<&mut [MemBlock]>, &'static str> {
             self.canary.assert();
@@ -108,7 +108,7 @@ impl Space {
             let (phys, alloc_ptr) = match phys {
                   Some(phys) => (phys, None),
                   None => {
-                        let ptr = if zeroed {
+                        let ptr = if flags.contains(Flags::ZEROED) {
                               alloc::alloc::alloc_zeroed(layout)
                         } else {
                               alloc::alloc::alloc(layout)
@@ -196,12 +196,11 @@ impl Space {
       pub unsafe fn alloc_typed<T>(
             &self,
             phys: Option<PAddr>,
-            zeroed: bool,
             flags: Flags,
       ) -> Result<Pin<&mut MaybeUninit<T>>, &'static str> {
             self.canary.assert();
 
-            self.alloc_manual(Layout::new::<T>(), phys, zeroed, flags)
+            self.alloc_manual(Layout::new::<T>(), phys, flags)
                   .and_then(|r| MemBlock::into_typed(r))
       }
 

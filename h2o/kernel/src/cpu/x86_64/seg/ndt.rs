@@ -307,8 +307,12 @@ fn create_gdt() -> DescTable<'static> {
       // SAFE: No physical address specified.
       let memory = unsafe {
             krl(|space| {
-                  space.alloc_manual(layout, None, true, Flags::READABLE | Flags::WRITABLE)
-                        .expect("Failed to allocate memory for GDT")
+                  space.alloc_manual(
+                        layout,
+                        None,
+                        Flags::READABLE | Flags::WRITABLE | Flags::ZEROED,
+                  )
+                  .expect("Failed to allocate memory for GDT")
             })
       }
       .expect("Kernel space uninitialized");
@@ -372,8 +376,7 @@ fn create_ldt() -> (DescTable<'static>, (LAddr, usize)) {
                   space.alloc_manual(
                         paging::PAGE_LAYOUT,
                         None,
-                        false,
-                        Flags::READABLE | Flags::WRITABLE,
+                        Flags::READABLE | Flags::WRITABLE | Flags::ZEROED,
                   )
                   .expect("Failed to allocate memory for LDT")
             })
@@ -445,8 +448,12 @@ fn create_tss() -> (Pin<&'static mut TssStruct>, LAddr) {
                   .expect("Failed to calculate the layout");
             assert!(k == paging::PAGE_SIZE);
             let memory = krl(|space| {
-                  space.alloc_manual(layout, None, false, Flags::READABLE | Flags::WRITABLE)
-                        .expect("Failed to allocate stack")
+                  space.alloc_manual(
+                        layout,
+                        None,
+                        Flags::READABLE | Flags::WRITABLE | Flags::ZEROED,
+                  )
+                  .expect("Failed to allocate stack")
             })
             .expect("Kernel space uninitialized");
 
@@ -459,8 +466,11 @@ fn create_tss() -> (Pin<&'static mut TssStruct>, LAddr) {
       // SAFE: No physical address specified.
       let mut memory = unsafe {
             krl(|space| {
-                  space.alloc_typed::<TssStruct>(None, true, Flags::READABLE | Flags::WRITABLE)
-                        .expect("Failed to allocate TSS")
+                  space.alloc_typed::<TssStruct>(
+                        None,
+                        Flags::READABLE | Flags::WRITABLE | Flags::ZEROED,
+                  )
+                  .expect("Failed to allocate TSS")
             })
       }
       .expect("Kernel space uninitialized");
@@ -531,10 +541,10 @@ unsafe fn load_tss(tr: SegSelector) {
 /// preparations.
 ///
 /// The caller must ensure that this function is called only once from the bootstrap CPU.
-pub unsafe fn init() -> LAddr {
+pub unsafe fn init() -> (LAddr, LAddr) {
       let mut gdt = ndt::create_gdt();
       unsafe { ndt::load_gdt(&gdt) };
-      unsafe { reload_pls() };
+      let kernel_fs = unsafe { reload_pls() };
 
       let (ldt, ldt_ptr) = ndt::create_ldt();
       let ldtr = unsafe { ndt::push_ldt(&mut gdt, ldt_ptr) };
@@ -552,5 +562,5 @@ pub unsafe fn init() -> LAddr {
       // no longer needed to be referenced by the code.
       let _ = ManuallyDrop::new(ldt);
 
-      tss_rsp0
+      (tss_rsp0, kernel_fs)
 }

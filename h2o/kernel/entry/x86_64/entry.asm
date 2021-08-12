@@ -1,10 +1,8 @@
 extern kmain
 extern INIT_STACK
 
-global kentry
-global reset_seg
-
 [section .text]
+global kentry
 kentry:
       mov   rsp, INIT_STACK
       call  kmain
@@ -13,6 +11,7 @@ kentry:
       hlt
       jmp   .lp
 
+global reset_seg
 ; void reset_seg(di code_selector, si data_selector)
 reset_seg:
       push  rdi

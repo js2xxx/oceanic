@@ -37,15 +37,17 @@ pub struct KernelGs {
       tss_rsp0: LAddr,
       syscall_user_stack: *mut u8,
       syscall_stack: LAddr,
+      kernel_fs: LAddr,
 }
 
 impl KernelGs {
-      pub fn new(tss_rsp0: LAddr, syscall_stack: LAddr) -> Self {
+      pub fn new(tss_rsp0: LAddr, syscall_stack: LAddr, kernel_fs: LAddr) -> Self {
             KernelGs {
                   save_regs: intr::ctx::test::save_regs as *mut u8,
                   tss_rsp0,
                   syscall_user_stack: null_mut(),
                   syscall_stack,
+                  kernel_fs,
             }
       }
 
@@ -101,7 +103,7 @@ impl KernelGs {
 /// The caller must ensure that this function should only be called once from bootstrap
 /// CPU.
 pub unsafe fn init(lapic_data: acpi::table::madt::LapicData) {
-      let tss_rsp0 = seg::init();
+      let (tss_rsp0, kernel_fs) = seg::init();
 
       let acpi::table::madt::LapicData {
             ty: lapic_ty,
@@ -111,7 +113,7 @@ pub unsafe fn init(lapic_data: acpi::table::madt::LapicData) {
 
       let syscall_stack = syscall::init().expect("Memory allocation failed");
 
-      let kernel_gs = KernelGs::new(tss_rsp0, syscall_stack);
+      let kernel_gs = KernelGs::new(tss_rsp0, syscall_stack, kernel_fs);
       // SAFE: During bootstrap initialization.
       unsafe { kernel_gs.load() };
 

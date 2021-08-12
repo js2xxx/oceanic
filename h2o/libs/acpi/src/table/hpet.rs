@@ -16,13 +16,15 @@ pub struct HpetData {
 pub unsafe fn get_hpet_data() -> Result<HpetData, raw::ACPI_STATUS> {
       let hpet = {
             let mut tbl = null_mut();
-            let status = raw::AcpiGetTable(raw::ACPI_SIG_MADT.as_ptr() as _, 0, &mut tbl);
+            let status = raw::AcpiGetTable(raw::ACPI_SIG_HPET.as_ptr() as _, 0, &mut tbl);
             if status != raw::AE_OK {
                   return Err(status);
             }
             tbl.cast::<raw::ACPI_TABLE_HPET>()
       };
-      assert!((*hpet).Address.SpaceId == 0);
+      if (*hpet).Address.SpaceId != 0 {
+            return Err(raw::AE_ERROR);
+      }
 
       let addr_val = {
             let val = (*hpet).Address.Address;
