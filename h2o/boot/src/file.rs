@@ -163,13 +163,19 @@ fn load_prog(
       }
 }
 
-/// Load a Thread-Local Storage (TLS) segment.
-fn load_tls(size: usize) {
+/// Load a Processor-Local Storage (PLS) segment.
+fn load_pls(syst: &SystemTable<Boot>, size: usize) {
       log::trace!("file::map: loading TLS: size = {:?}", size);
 
       unsafe {
-            let tls_vec = alloc::vec::Vec::<u8>::with_capacity(size + size_of::<*mut usize>());
-            let (tls, _, _) = tls_vec.into_raw_parts();
+            let tls = {
+                  let alloc_size = size + size_of::<*mut usize>();
+                  let laddr = crate::mem::alloc(syst)
+                        .alloc_n(alloc_size.div_ceil_bit(paging::PAGE_SHIFT))
+                        .expect("Failed to allocate memory for PLS")
+                        .to_laddr(crate::mem::EFI_ID_OFFSET);
+                  *laddr
+            };
             let self_ptr = tls.add(size).cast::<usize>();
             // TLS's self-pointer is written its physical address there,
             // and therefore should be modified in the kernel.
@@ -204,7 +210,7 @@ pub fn map_elf(syst: &SystemTable<Boot>, data: &[u8]) -> (*mut u8, Option<usize>
             _ => panic!("ELF64 file accepted only"),
       };
 
-      let mut tls_size = None;
+      let mut pls_size = None;
       for phdr in elf.program_headers() {
             match phdr.ph_type() {
                   ProgramType::LOAD => load_prog(
@@ -220,8 +226,8 @@ pub fn map_elf(syst: &SystemTable<Boot>, data: &[u8]) -> (*mut u8, Option<usize>
 
                   ProgramType::Unknown(7) => {
                         let ts = phdr.memsz() as usize;
-                        tls_size = Some(ts);
-                        load_tls(ts);
+                        pls_size = Some(ts);
+                        load_pls(syst, ts);
                   }
 
                   _ => {}
@@ -229,5 +235,5 @@ pub fn map_elf(syst: &SystemTable<Boot>, data: &[u8]) -> (*mut u8, Option<usize>
       }
 
       let entry = paging::LAddr::from(elf.header().entry_point() as usize);
-      (*entry, tls_size)
+      (*entry, pls_size)
 }

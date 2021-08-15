@@ -33,7 +33,7 @@ pub extern "C" fn kmain(
       efi_mmap_paddr: paging::PAddr,
       efi_mmap_len: usize,
       efi_mmap_unit: usize,
-      _tls_size: usize,
+      pls_size: usize,
 ) {
       unsafe { cpu::set_id() };
 
@@ -53,7 +53,7 @@ pub extern "C" fn kmain(
             unsafe { acpi::table::get_ioapic_data() }.expect("Failed to get IOAPIC data");
 
       l::debug!("Set up CPU architecture");
-      unsafe { cpu::arch::init(lapic_data) };
+      unsafe { cpu::arch::init(pls_size, lapic_data) };
 
       l::debug!("Set up Interrupt system");
       unsafe { dev::init_intr_chip(ioapic_data) };

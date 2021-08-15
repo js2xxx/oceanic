@@ -10,10 +10,9 @@ pub mod ndt;
 
 use paging::{LAddr, PAddr};
 
-use core::mem::ManuallyDrop;
 use core::mem::{size_of, transmute};
-use core::ptr::null_mut;
 use core::ops::Range;
+use core::ptr::null_mut;
 use modular_bitfield::prelude::*;
 use static_assertions::*;
 
@@ -112,12 +111,19 @@ pub unsafe fn get_type_attr(ptr: *mut u8) -> u16 {
 ///
 /// The caller must ensure the value stored in [`archop::msr::FS_BASE`] is a
 /// valid physical address.
-pub(super) unsafe fn reload_pls() -> LAddr {
+pub unsafe fn reload_pls(pls_size: usize) -> LAddr {
+      extern "C" {
+            static TDATA_START: u8;
+            static TBSS_START: u8;
+      }
       use archop::msr;
 
       let val = msr::read(msr::FS_BASE) as usize;
       if val != 0 {
             let ptr = PAddr::new(val).to_laddr(minfo::ID_OFFSET).cast::<usize>();
+            let base = ptr.cast::<u8>().sub(pls_size);
+            let size = (&TBSS_START as *const u8).offset_from(&TDATA_START) as usize;
+            base.copy_from(&TDATA_START, size);
             ptr.write(ptr as usize);
 
             msr::write(msr::FS_BASE, ptr as u64);
@@ -133,8 +139,8 @@ pub(super) unsafe fn reload_pls() -> LAddr {
 ///
 /// The caller must ensure that this function is called only once from the bootstrap
 /// CPU.
-pub(super) unsafe fn init() -> (LAddr, LAddr) {
-      let ret = ndt::init();
+pub(super) unsafe fn init(pls_size: usize) -> (LAddr, LAddr) {
+      let ret = ndt::init(pls_size);
       idt::init();
 
       ret

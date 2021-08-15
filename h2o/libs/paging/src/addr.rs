@@ -11,7 +11,7 @@ impl PAddr {
             PAddr(addr)
       }
 
-      pub const fn as_non_zero(&self) -> Option<NonZeroUsize> {
+      pub const fn as_non_zero(self) -> Option<NonZeroUsize> {
             NonZeroUsize::new(self.0)
       }
 
@@ -53,11 +53,11 @@ impl LAddr {
             LAddr(ptr)
       }
 
-      pub fn val(&self) -> usize {
+      pub fn val(self) -> usize {
             self.0 as usize
       }
 
-      pub fn as_non_null(&self) -> Option<NonNull<u8>> {
+      pub fn as_non_null(self) -> Option<NonNull<u8>> {
             NonNull::new(self.0)
       }
 

@@ -1,6 +1,6 @@
 use super::{DelivMode, TriggerMode};
 use crate::cpu::arch::apic::{ipi, lapic};
-use crate::cpu::arch::seg::ndt::Seg64;
+use crate::cpu::arch::seg::ndt::Segment;
 use crate::cpu::arch::tsc::{delay, ns_clock};
 use crate::mem::space::{krl, Flags};
 use acpi::table::madt::LapicNode;
@@ -70,7 +70,7 @@ pub struct TramHeader {
       init_efer: u64,
       init_cr4: u64,
       init_cr0: u64,
-      gdt: [Seg64; 3],
+      gdt: [Segment; 3],
 }
 
 impl TramHeader {
@@ -90,9 +90,9 @@ impl TramHeader {
                         const ATTR: u16 = attrs::PRESENT | attrs::G4K;
 
                         [
-                              Seg64::new(0, 0, 0, None),
-                              Seg64::new(0, LIM, attrs::SEG_CODE | attrs::X64 | ATTR, None),
-                              Seg64::new(0, LIM, attrs::SEG_DATA | attrs::X64 | ATTR, None),
+                              Segment::new(0, 0, 0, 0),
+                              Segment::new(0, LIM, attrs::SEG_CODE | attrs::X64 | ATTR, 0),
+                              Segment::new(0, LIM, attrs::SEG_DATA | attrs::X64 | ATTR, 0),
                         ]
                   },
             }

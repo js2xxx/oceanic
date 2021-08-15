@@ -1,13 +1,12 @@
 use super::ndt::INTR_CODE;
 use super::*;
 use crate::cpu::arch::intr::def::{IdtEntry, IdtInit, IDT_INIT};
-use crate::mem::space::{krl, Flags};
 use paging::LAddr;
 
 use core::mem::size_of;
 use core::ops::{Index, IndexMut, Range};
-use core::pin::Pin;
-use core::slice::{Iter, IterMut};
+// use core::slice::{Iter, IterMut};
+use lazy_static::lazy_static;
 use static_assertions::*;
 
 /// The count of all the interrupts in one CPU.
@@ -20,8 +19,37 @@ const NR_INTRS: usize = 256;
 /// NOTE: `0..32` is reserved for exceptions.
 const ALLOCABLE_INTRS: Range<usize> = 32..NR_INTRS;
 
-#[thread_local]
-static mut IDT: Option<IntDescTable<'static>> = None;
+lazy_static! {
+      #[thread_local]
+      static ref IDT: IntDescTable = {
+            let mut array = [Gate::zeroed(); NR_INTRS];
+
+            let mut set_ent = |entry: &IdtEntry| {
+                  let desc = GateBuilder::new()
+                        .offset(LAddr::new(entry.entry as *mut u8))
+                        .selector(INTR_CODE)
+                        .attribute(attrs::INT_GATE | attrs::PRESENT, entry.dpl)
+                        .ist(entry.ist)
+                        .build()
+                        .expect("Failed to build a gate descriptor");
+
+                  array[entry.vec as u16 as usize] = desc;
+            };
+
+            for init in IDT_INIT {
+                  match init {
+                        IdtInit::Single(ent) => set_ent(ent),
+                        IdtInit::Multiple(entries) => {
+                              for ent in entries.iter() {
+                                    set_ent(ent);
+                              }
+                        }
+                  }
+            }
+
+            IntDescTable(array)
+      };
+}
 
 /// The gate descriptor.
 ///
@@ -147,108 +175,63 @@ pub type IdtArray = [Gate; NR_INTRS];
 
 /// The IDT structure.
 #[repr(align(4096))]
-pub struct IntDescTable<'a> {
-      data: Pin<&'a mut IdtArray>,
-}
+pub struct IntDescTable(IdtArray);
 
-impl<'a> Index<usize> for IntDescTable<'a> {
+impl Index<usize> for IntDescTable {
       type Output = Gate;
       fn index(&self, index: usize) -> &Self::Output {
-            &self.data[index]
+            &self.0[index]
       }
 }
 
-impl<'a> IndexMut<usize> for IntDescTable<'a> {
+impl IndexMut<usize> for IntDescTable {
       fn index_mut(&mut self, index: usize) -> &mut Self::Output {
-            &mut self.data[index]
+            &mut self.0[index]
       }
 }
 
-impl<'a> IntDescTable<'a> {
+impl IntDescTable {
       /// Construct a new (zeroed) IDT.
-      pub fn new(data: Pin<&'a mut IdtArray>) -> Self {
-            IntDescTable { data }
+      pub fn new(array: IdtArray) -> Self {
+            IntDescTable(array)
       }
 
       /// Export the fat pointer of the IDT.
       pub fn export_fp(&self) -> FatPointer {
-            let base = LAddr::new(self.data.as_ptr().cast::<u8>() as *mut _);
-            let size = self.data.len() * size_of::<Gate>();
+            let base = LAddr::new(self.0.as_ptr().cast::<u8>() as *mut _);
+            let size = self.0.len() * size_of::<Gate>();
             FatPointer {
                   base,
                   limit: (size - 1) as u16,
             }
       }
 
-      /// Return the iterator of the IDT.
-      pub fn iter(&self) -> Iter<Gate> {
-            self.data.iter()
-      }
+      // /// Return the iterator of the IDT.
+      // pub fn iter(&self) -> Iter<Gate> {
+      //       self.0.iter()
+      // }
 
-      /// Return the mutable iterator of the IDT.
-      pub fn iter_mut(&mut self) -> IterMut<Gate> {
-            self.data.iter_mut()
-      }
+      // /// Return the mutable iterator of the IDT.
+      // pub fn iter_mut(&mut self) -> IterMut<Gate> {
+      //       self.0.iter_mut()
+      // }
 
-      /// Allocate a free slot (position of gate descriptor) in the IDT.
-      pub fn alloc(&self) -> Option<usize> {
-            self.iter()
-                  .enumerate()
-                  .find(|x| !x.1.is_valid() && ALLOCABLE_INTRS.contains(&x.0))
-                  .map(|x| x.0)
-      }
+      // /// Allocate a free slot (position of gate descriptor) in the IDT.
+      // pub fn alloc(&self) -> Option<usize> {
+      //       self.iter()
+      //             .enumerate()
+      //             .find(|x| !x.1.is_valid() && ALLOCABLE_INTRS.contains(&x.0))
+      //             .map(|x| x.0)
+      // }
 
-      /// Deallocate (destroy) a gate descriptor in the IDT.
-      pub fn dealloc(&mut self, idx: usize) -> Result<(), &'static str> {
-            if !(0..NR_INTRS).contains(&idx) {
-                  return Err("Index out of range");
-            }
-            self[idx] = Gate::zeroed();
-            Ok(())
-      }
-}
-
-/// Create an IDT.
-///
-/// Construct a standard IDT object with entries from [`IDT_INIT`] and `intr_sel`.
-fn create_idt() -> IntDescTable<'static> {
-      // SAFE: No physical address specified.
-      let idt_array = unsafe {
-            krl(|space| {
-                  space.alloc_typed::<IdtArray>(
-                        None,
-                        Flags::READABLE | Flags::WRITABLE | Flags::ZEROED,
-                  )
-                  .expect("Failed to allocate memory for IDT")
-                  .map_unchecked_mut(|u| u.assume_init_mut())
-            })
-      }
-      .expect("Kernel space uninitialized");
-
-      let mut idt = IntDescTable::new(idt_array);
-      let mut set_ent = |entry: &IdtEntry| {
-            let desc = GateBuilder::new()
-                  .offset(LAddr::new(entry.entry as *mut u8))
-                  .selector(INTR_CODE)
-                  .attribute(attrs::INT_GATE | attrs::PRESENT, entry.dpl)
-                  .ist(entry.ist)
-                  .build()
-                  .expect("Failed to build a gate descriptor");
-
-            idt[entry.vec as u16 as usize] = desc;
-      };
-      for init in IDT_INIT {
-            match init {
-                  IdtInit::Single(ent) => set_ent(ent),
-                  IdtInit::Multiple(entries) => {
-                        for ent in entries.iter() {
-                              set_ent(ent);
-                        }
-                  }
-            }
-      }
-
-      idt
+      // /// Deallocate (destroy) a gate descriptor in the IDT.
+      // pub fn dealloc(&mut self, idx: usize) -> Result<(), &'static str> {
+      //       if !(0..NR_INTRS).contains(&idx) {
+      //             return Err("Index out of range");
+      //       }
+      //       self[idx] = Gate::zeroed();
+      //       Ok(())
+      // }
 }
 
 /// Load an IDT into x86 architecture's `idtr`.
@@ -271,7 +254,5 @@ unsafe fn load_idt(idt: &IntDescTable) {
 /// WARNING: This function modifies the architecture's basic registers. Be sure to make
 /// preparations.
 pub unsafe fn init() {
-      let idt = idt::create_idt();
-      unsafe { idt::load_idt(&idt) };
-      IDT = Some(idt);
+      unsafe { idt::load_idt(&IDT) };
 }

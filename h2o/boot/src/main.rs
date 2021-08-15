@@ -40,7 +40,7 @@ unsafe fn call_kmain(
       efi_mmap_paddr: paging::PAddr,
       efi_mmap_len: usize,
       efi_mmap_unit: usize,
-      tls_size: usize,
+      pls_size: usize,
 ) {
       asm!(
             "call {}",
@@ -49,7 +49,7 @@ unsafe fn call_kmain(
             in("rsi") *efi_mmap_paddr,
             in("rdx") efi_mmap_len,
             in("rcx") efi_mmap_unit,
-            in("r8") tls_size,
+            in("r8") pls_size,
       );
 }
 
@@ -108,7 +108,7 @@ fn efi_main(img: Handle, syst: SystemTable<Boot>) -> Status {
             h2o.as_mut_ptr(),
             h2o.len()
       );
-      let (entry, tls_size) = file::map_elf(&syst, unsafe { &mut *h2o });
+      let (entry, pls_size) = file::map_elf(&syst, unsafe { &mut *h2o });
 
       // Prepare the data needed for H2O.
       let (mmap_unit, mmap_size_approx) = mem::init_pf(&syst);
@@ -135,7 +135,7 @@ fn efi_main(img: Handle, syst: SystemTable<Boot>) -> Status {
                   mmap_paddr,
                   mmap_len,
                   mmap_unit,
-                  tls_size.unwrap_or(0),
+                  pls_size.unwrap_or(0),
             )
       };
 

@@ -24,6 +24,9 @@ SECTIONS
 
       .tbss ALIGN (4K) :
       {
+            TDATA_START = .;
+            *(.tdata*)
+            TBSS_START = .;
             *(.tbss*)
       }
 
