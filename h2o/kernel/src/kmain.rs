@@ -7,7 +7,6 @@
 #![feature(concat_idents)]
 #![feature(const_btree_new)]
 #![feature(const_fn_fn_ptr_basics)]
-#![feature(const_fn_transmute)]
 #![feature(default_alloc_error_handler)]
 #![feature(lang_items)]
 #![feature(macro_attributes_in_derive_output)]
@@ -60,7 +59,18 @@ pub extern "C" fn kmain(
       unsafe { dev::init_intr_chip(ioapic_data) };
 
       // Tests
+      let hpet_data =
+            unsafe { acpi::table::hpet::get_hpet_data().expect("Failed to get HPET data") };
+      let hpet = unsafe { dev::hpet::Hpet::new(hpet_data) }.expect("Failed to initialize HPET");
+      let _ = core::mem::ManuallyDrop::new(hpet);
 
       // Test end
       l::debug!("Reaching end of kernel");
+}
+
+#[no_mangle]
+pub extern "C" fn kmain_ap() {
+      unsafe { cpu::set_id() };
+
+      unsafe { archop::halt_loop(Some(false)) };
 }

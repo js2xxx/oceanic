@@ -126,5 +126,5 @@ pub unsafe fn init(masked: bool) {
       } else {
             lpic.init();
       }
-      LPIC_CHIP.insert(Arc::new(Mutex::new(lpic)));
+      LPIC_CHIP = Some(Arc::new(Mutex::new(lpic)));
 }

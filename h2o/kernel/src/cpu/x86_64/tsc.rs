@@ -1,3 +1,5 @@
+use core::time::Duration;
+
 use archop::io::{Io, Port};
 use archop::msr::rdtsc;
 
@@ -6,6 +8,28 @@ use static_assertions::const_assert;
 static mut TSC_FREQ_KHZ: u64 = 2600000;
 static mut TSC_INITIAL: u64 = 0;
 static mut NS_CLOCK_FACTORS: (u64, u64) = (0, 0);
+
+/// Get the per-CPU clock in nanoseconds.
+///
+/// # Safety
+///
+/// This function must be called only after [`tsc_init`].
+pub unsafe fn ns_clock() -> u64 {
+      let val = rdtsc() - TSC_INITIAL;
+      let (mul, sft) = NS_CLOCK_FACTORS;
+      (((val & 0xFFFFFFFF) * mul) >> sft) | (((val >> 32) * mul) << (32 - sft))
+}
+
+/// Delay an amount of time in nanoseconds.
+///
+/// # Safety
+///
+/// This function must be called only after [`tsc_init`].
+pub unsafe fn delay(duration: Duration) {
+      let ns = duration.as_nanos() as u64;
+      let start = ns_clock();
+      while ns_clock() - start < ns {}
+}
 
 /// Calibrate the CPU's frequency (KHz) by activating the PIT timer.
 unsafe fn pit_calibrate_tsc() -> u64 {
@@ -33,17 +57,6 @@ unsafe fn pit_calibrate_tsc() -> u64 {
       let end = t;
 
       (end - start) / CALIB_TIME_MS
-}
-
-/// Get the per-CPU clock in nanoseconds.
-///
-/// # Safety
-///
-/// This function must be called only after [`tsc_init`].
-pub unsafe fn ns_clock() -> u64 {
-      let val = rdtsc() - TSC_INITIAL;
-      let (mul, sft) = NS_CLOCK_FACTORS;
-      (((val & 0xFFFFFFFF) * mul) >> sft) | (((val >> 32) * mul) << (32 - sft))
 }
 
 /// # Safety

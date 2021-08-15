@@ -1,7 +1,7 @@
 //! # Address space management for H2O.
 //!
 //! This module is responsible for managing system memory and address space in a higher
-//! level, especially for large objects like GDT and APIC.
+//! level, especially for large objects like APIC.
 
 use canary::Canary;
 use collection_ex::RangeSet;
@@ -279,7 +279,18 @@ impl Space {
 pub unsafe fn init_kernel() {
       let krl_space = Space::new(CreateType::Kernel);
       krl_space.load();
-      KRL_SPACE.insert(krl_space);
+      KRL_SPACE = Some(krl_space);
+}
+
+/// Initialize the kernel space for the application CPU.
+///
+/// # Safety
+///
+/// The function must be called only once from each application CPU.
+pub unsafe fn init_ap() {
+      let ap_space = Space::new(CreateType::Kernel);
+      ap_space.load();
+      AP_SPACE = Some(ap_space);
 }
 
 /// Get the reference of the per-CPU kernel space.

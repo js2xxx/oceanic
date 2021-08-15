@@ -554,9 +554,9 @@ pub unsafe fn init() -> (LAddr, LAddr) {
       let tr = unsafe { ndt::push_tss(&mut gdt, tss_base) };
       unsafe { ndt::load_tss(tr) };
 
-      GDT.insert(Mutex::new(gdt));
+      GDT = Some(Mutex::new(gdt));
       let tss_rsp0 = tss.rsp0();
-      TSS.insert(tss);
+      TSS = Some(tss);
 
       // Manually drop the reference to LDT without dropping the data because those structures are
       // no longer needed to be referenced by the code.

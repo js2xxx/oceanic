@@ -29,10 +29,18 @@ pub fn fix_canonical(addr: LAddr) -> LAddr {
 
 /// # Safety
 ///
-/// Invalid use of this function can cause CPU unrecoverable fault.
+/// Invalid use of this function can cause CPU's unrecoverable fault.
 #[inline]
 pub unsafe fn halt() {
       asm!("hlt");
+}
+
+/// # Safety
+///
+/// Invalid use of this function can cause CPU's unrecoverable fault.
+#[inline]
+pub unsafe fn pause() {
+      asm!("pause");
 }
 
 #[inline]

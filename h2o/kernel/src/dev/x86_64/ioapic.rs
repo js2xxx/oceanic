@@ -368,5 +368,5 @@ impl<'a> IntrChip for Ioapics<'a> {
 
 pub unsafe fn init(ioapic_data: IoapicData) {
       let ioapics = Ioapics::new(ioapic_data);
-      IOAPIC_CHIP.insert(Arc::new(Mutex::new(ioapics)));
+      IOAPIC_CHIP = Some(Arc::new(Mutex::new(ioapics)));
 }

@@ -273,5 +273,5 @@ unsafe fn load_idt(idt: &IntDescTable) {
 pub unsafe fn init() {
       let idt = idt::create_idt();
       unsafe { idt::load_idt(&idt) };
-      IDT.insert(idt);
+      IDT = Some(idt);
 }

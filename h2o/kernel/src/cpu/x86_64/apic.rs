@@ -37,6 +37,7 @@ pub enum DelivMode {
       Smi = 0b010,
       Nmi = 0b100,
       Init = 0b101,
+      StartUp = 0b110,
       ExtInt = 0b111,
 }
 
@@ -293,6 +294,35 @@ impl<'a> Lapic<'a> {
                   it >>= 1;
             }
       }
+
+      /// # Safety
+      ///
+      /// The caller must ensure that `dest_apicid` and `shorthand` corresponds with each other
+      /// and `vec` is valid.
+      ///
+      /// WARNING: This function modifies the architecture's basic registers. Be sure to make
+      /// preparations.
+      pub unsafe fn send_ipi(
+            &mut self,
+            vec: u8,
+            deliv_mode: DelivMode,
+            shorthand: ipi::Shorthand,
+            dest_apicid: u32,
+      ) {
+            let icr_low = ipi::IcrEntry::new()
+                  .with_vec(vec)
+                  .with_deliv_mode(deliv_mode)
+                  .with_shorthand(shorthand);
+            let icr_high = match self.ty {
+                  LapicType::X1(_) => dest_apicid << 24,
+                  LapicType::X2 => dest_apicid,
+            };
+            Self::write_reg_64(
+                  &mut self.ty,
+                  msr::X2APIC_ICR,
+                  u32::from(icr_low) as u64 | ((icr_high as u64) << 32),
+            );
+      }
 }
 
 /// # Safety
@@ -315,5 +345,5 @@ pub unsafe fn init(lapic_ty: acpi::table::madt::LapicType) {
       lapic.enable();
       let lapic = lapic.activate_timer(timer::TimerMode::Periodic, 7, 256);
 
-      LAPIC.insert(lapic);
+      LAPIC = Some(lapic);
 }

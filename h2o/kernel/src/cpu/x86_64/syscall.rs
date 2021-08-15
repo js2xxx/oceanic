@@ -44,5 +44,5 @@ pub unsafe fn init() -> Option<LAddr> {
 
 #[no_mangle]
 unsafe extern "C" fn hdl_syscall(_frame: *mut Frame) {
-      asm!("pause")
+      archop::pause()
 }
