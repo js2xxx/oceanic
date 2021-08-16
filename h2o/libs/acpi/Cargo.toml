@@ -7,15 +7,14 @@ version = "0.1.0"
 
 [dependencies]
 # Local crates
-minfo = { path = "../minfo" }
-paging = { path = "../paging" }
+minfo = {path = "../minfo"}
+paging = {path = "../paging"}
 # External crates
 cty = "0.2"
 log = "0.4"
-spin = "0.7"
 raw-cpuid = "9.0"
-va_list = { version = "0.1", default-features = false, features = ["no_std"] }
+spin = "0.9"
+va_list = {version = "0.1", default-features = false, features = ["no_std"]}
 
 [build-dependencies]
 bindgen = {version = "0.58", default-features = false, features = ["clap", "runtime", "which-rustfmt"]}
-# cc = { version = "1.0", features = ["parallel"] }

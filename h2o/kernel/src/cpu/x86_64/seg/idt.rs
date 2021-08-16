@@ -6,7 +6,7 @@ use paging::LAddr;
 use core::mem::size_of;
 use core::ops::{Index, IndexMut, Range};
 // use core::slice::{Iter, IterMut};
-use lazy_static::lazy_static;
+use spin::Lazy;
 use static_assertions::*;
 
 /// The count of all the interrupts in one CPU.
@@ -19,37 +19,35 @@ const NR_INTRS: usize = 256;
 /// NOTE: `0..32` is reserved for exceptions.
 const ALLOCABLE_INTRS: Range<usize> = 32..NR_INTRS;
 
-lazy_static! {
-      #[thread_local]
-      static ref IDT: IntDescTable = {
-            let mut array = [Gate::zeroed(); NR_INTRS];
+#[thread_local]
+static IDT: Lazy<IntDescTable> = Lazy::new(|| {
+      let mut array = [Gate::zeroed(); NR_INTRS];
 
-            let mut set_ent = |entry: &IdtEntry| {
-                  let desc = GateBuilder::new()
-                        .offset(LAddr::new(entry.entry as *mut u8))
-                        .selector(INTR_CODE)
-                        .attribute(attrs::INT_GATE | attrs::PRESENT, entry.dpl)
-                        .ist(entry.ist)
-                        .build()
-                        .expect("Failed to build a gate descriptor");
+      let mut set_ent = |entry: &IdtEntry| {
+            let desc = GateBuilder::new()
+                  .offset(LAddr::new(entry.entry as *mut u8))
+                  .selector(INTR_CODE)
+                  .attribute(attrs::INT_GATE | attrs::PRESENT, entry.dpl)
+                  .ist(entry.ist)
+                  .build()
+                  .expect("Failed to build a gate descriptor");
 
-                  array[entry.vec as u16 as usize] = desc;
-            };
+            array[entry.vec as u16 as usize] = desc;
+      };
 
-            for init in IDT_INIT {
-                  match init {
-                        IdtInit::Single(ent) => set_ent(ent),
-                        IdtInit::Multiple(entries) => {
-                              for ent in entries.iter() {
-                                    set_ent(ent);
-                              }
+      for init in IDT_INIT {
+            match init {
+                  IdtInit::Single(ent) => set_ent(ent),
+                  IdtInit::Multiple(entries) => {
+                        for ent in entries.iter() {
+                              set_ent(ent);
                         }
                   }
             }
+      }
 
-            IntDescTable(array)
-      };
-}
+      IntDescTable(array)
+});
 
 /// The gate descriptor.
 ///

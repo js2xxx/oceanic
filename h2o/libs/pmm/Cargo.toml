@@ -1,16 +1,16 @@
 [package]
-name = "pmm"
-version = "0.1.0"
 authors = ["徐启航 <akucxy@163.com>"]
 edition = "2018"
+name = "pmm"
+version = "0.1.0"
 
 [dependencies]
 # Local crates
-bitop_ex = { path = "../bitop_ex" }
-iter_ex = { path = "../iter_ex" }
-paging = { path = "../paging" }
+bitop_ex = {path = "../bitop_ex"}
+iter_ex = {path = "../iter_ex"}
+paging = {path = "../paging"}
 # External crates
-intrusive-collections = { version = "0.9", default-features = false, features = ["nightly"] }
+intrusive-collections = {version = "0.9", default-features = false, features = ["nightly"]}
 log = "0.4"
-spin = { version = "0.7", default-features = false }
-uefi = { version = "0.11", default-features = false }
+spin = "0.9"
+uefi = {version = "0.11", default-features = false}

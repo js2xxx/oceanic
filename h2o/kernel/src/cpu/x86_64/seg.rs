@@ -124,6 +124,7 @@ pub unsafe fn reload_pls(pls_size: usize) -> LAddr {
             let base = ptr.cast::<u8>().sub(pls_size);
             let size = (&TBSS_START as *const u8).offset_from(&TDATA_START) as usize;
             base.copy_from(&TDATA_START, size);
+            base.add(size).write_bytes(0, pls_size - size);
             ptr.write(ptr as usize);
 
             msr::write(msr::FS_BASE, ptr as u64);

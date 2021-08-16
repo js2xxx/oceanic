@@ -33,7 +33,7 @@ pub enum AllocError {
 /// called globally (a.k.a. multi-CPU) so they must be locked to prevent data race.
 pub struct DefaultAlloc {
       /// The main memory pool
-      pub(super) pool: Mutex<[u8; core::mem::size_of::<pool::Pool>()]>,
+      pub(super) pool: Mutex<pool::Pool>,
       /// The default pager
       pub(super) pager: Mutex<Pager>,
 }
@@ -45,8 +45,7 @@ unsafe impl GlobalAlloc for DefaultAlloc {
 
             // The size is not too big
             if size <= page::MAX_OBJ_SIZE {
-                  let pool = self.pool.lock();
-                  let pool = &mut *(pool.as_ptr() as *mut pool::Pool);
+                  let mut pool = self.pool.lock();
 
                   // The first allocation (assuming something available)
                   match pool.alloc(layout).map(|x| *x) {
@@ -90,8 +89,7 @@ unsafe impl GlobalAlloc for DefaultAlloc {
 
             // The size is not too big
             if size <= page::MAX_OBJ_SIZE {
-                  let pool = self.pool.lock();
-                  let pool = &mut *(pool.as_ptr() as *mut pool::Pool);
+                  let mut pool = self.pool.lock();
 
                   // Deallocate it
                   if let Some(page) = pool.dealloc(LAddr::new(ptr), layout).unwrap_or(None) {

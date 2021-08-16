@@ -7,7 +7,7 @@ use super::page::*;
 use super::slab::*;
 use paging::LAddr;
 
-use arr_macro::arr;
+use array_macro::array;
 use core::alloc::Layout;
 use core::ptr::NonNull;
 
@@ -22,7 +22,7 @@ impl Pool {
       #[allow(clippy::new_without_default)]
       pub const fn new() -> Pool {
             Pool {
-                  slabs: arr![Slab::new(); 36],
+                  slabs: array![_ => Slab::new(); 36],
             }
       }
 

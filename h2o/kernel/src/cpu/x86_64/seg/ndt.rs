@@ -3,7 +3,7 @@ use crate::mem::space::{krl, Flags};
 use paging::LAddr;
 
 use core::mem::size_of;
-use lazy_static::lazy_static;
+use spin::Lazy;
 use static_assertions::*;
 
 pub const KRL_CODE_X64: SegSelector = SegSelector::from_const(0x08); // SegSelector::new().with_index(1)
@@ -19,67 +19,68 @@ pub const GDT_TR: SegSelector = SegSelector::from_const(0x40); // SegSelector::n
 pub const INTR_CODE: SegSelector = SegSelector::from_const(0x08 + 4); // SegSelector::new().with_index(1).with_ti(true)
 pub const INTR_DATA: SegSelector = SegSelector::from_const(0x10 + 4); // SegSelector::new().with_index(2).with_ti(true)
 
+const INIT_LIM: u32 = 0xFFFFF;
 const INIT_ATTR: u16 = attrs::PRESENT | attrs::G4K;
 
 static LDT: DescTable<3> = DescTable::new([
       Segment::new(0, 0, 0, 0),
-      Segment::new(0, 0xFFFFF, attrs::SEG_CODE | attrs::X64 | INIT_ATTR, 0),
-      Segment::new(0, 0xFFFFF, attrs::SEG_DATA | attrs::X64 | INIT_ATTR, 0),
+      Segment::new(0, INIT_LIM, attrs::SEG_CODE | attrs::X64 | INIT_ATTR, 0),
+      Segment::new(0, INIT_LIM, attrs::SEG_DATA | attrs::X64 | INIT_ATTR, 0),
 ]);
 
-lazy_static! {
-      #[thread_local]
-      static ref GDT: DescTable<10> = DescTable::new([
+#[thread_local]
+pub static GDT: Lazy<DescTable<10>> = Lazy::new(|| {
+      DescTable::new([
             Segment::new(0, 0, 0, 0),
-            Segment::new(0, 0xFFFFF, attrs::SEG_CODE | attrs::X64 | INIT_ATTR, 0),
-            Segment::new(0, 0xFFFFF, attrs::SEG_DATA | attrs::X64 | INIT_ATTR, 0),
-            Segment::new(0, 0xFFFFF, attrs::SEG_CODE | attrs::X86 | INIT_ATTR, 0),
-            Segment::new(0, 0xFFFFF, attrs::SEG_DATA | attrs::X64 | INIT_ATTR, 3),
-            Segment::new(0, 0xFFFFF, attrs::SEG_CODE | attrs::X64 | INIT_ATTR, 3),
+            Segment::new(0, INIT_LIM, attrs::SEG_CODE | attrs::X64 | INIT_ATTR, 0),
+            Segment::new(0, INIT_LIM, attrs::SEG_DATA | attrs::X64 | INIT_ATTR, 0),
+            Segment::new(0, INIT_LIM, attrs::SEG_CODE | attrs::X86 | INIT_ATTR, 0),
+            Segment::new(0, INIT_LIM, attrs::SEG_DATA | attrs::X64 | INIT_ATTR, 3),
+            Segment::new(0, INIT_LIM, attrs::SEG_CODE | attrs::X64 | INIT_ATTR, 3),
             Segment::new_fp(LDT.export_fp(), attrs::SYS_LDT | attrs::PRESENT, 0),
             unsafe { Segment::new_fp_high(LDT.export_fp()) },
             Segment::new_fp(TSS.export_fp(), attrs::SYS_TSS | attrs::PRESENT, 0),
             unsafe { Segment::new_fp_high(TSS.export_fp()) },
-      ]);
+      ])
+});
 
-      #[thread_local]
-      static ref TSS: TssStruct = {
-            // SAFE: No physical address specified.
-            let alloc_stack = || unsafe {
-                  let (layout, k) = paging::PAGE_LAYOUT
-                        .repeat(4)
-                        .expect("Failed to calculate the layout");
-                  assert!(k == paging::PAGE_SIZE);
-                  let memory = krl(|space| {
-                        space.alloc_manual(
-                              layout,
-                              None,
-                              Flags::READABLE | Flags::WRITABLE | Flags::ZEROED,
-                        )
-                        .expect("Failed to allocate stack")
-                  })
-                  .expect("Kernel space uninitialized");
+#[thread_local]
+static TSS: Lazy<TssStruct> = Lazy::new(|| {
+      // SAFE: No physical address specified.
+      let alloc_stack = || unsafe {
+            let (layout, k) = paging::PAGE_LAYOUT
+                  .repeat(4)
+                  .expect("Failed to calculate the layout");
+            assert!(k == paging::PAGE_SIZE);
+            let memory = krl(|space| {
+                  space.alloc_manual(
+                        layout,
+                        None,
+                        Flags::READABLE | Flags::WRITABLE | Flags::ZEROED,
+                  )
+                  .expect("Failed to allocate stack")
+            })
+            .expect("Kernel space uninitialized");
 
-                  memory.as_ptr().cast::<u8>().add(layout.size())
-            };
-
-            let rsp0 = alloc_stack();
-            let ist1 = alloc_stack();
-
-            TssStruct {
-                  _rsvd1: 0,
-                  // The legacy RSPs of different privilege levels.
-                  rsp: [rsp0 as u64, 0, 0],
-                  _rsvd2: 0,
-                  // The Interrupt Stack Tables.
-                  ist: [ist1 as u64, 0, 0, 0, 0, 0, 0],
-                  _rsvd3: 0,
-                  _rsvd4: 0,
-                  // The IO base mappings.
-                  io_base: 0,
-            }
+            memory.as_ptr().cast::<u8>().add(layout.size())
       };
-}
+
+      let rsp0 = alloc_stack();
+      let ist1 = alloc_stack();
+
+      TssStruct {
+            _rsvd1: 0,
+            // The legacy RSPs of different privilege levels.
+            rsp: [rsp0 as u64, 0, 0],
+            _rsvd2: 0,
+            // The Interrupt Stack Tables.
+            ist: [ist1 as u64, 0, 0, 0, 0, 0, 0],
+            _rsvd3: 0,
+            _rsvd4: 0,
+            // The IO base mappings.
+            io_base: 0,
+      }
+});
 
 /// All the segment descriptor that consumes a quadword.
 #[repr(C, packed)]

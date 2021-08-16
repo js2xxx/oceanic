@@ -1,33 +1,32 @@
 use core::marker::PhantomData;
-use core::ptr::NonNull;
 use intrusive_collections::{Adapter, DefaultLinkOps, KeyAdapter, RBTreeLink};
 
-pub struct NonNullPointerOps<T>(PhantomData<T>);
+pub struct PagePointerOps(PhantomData<super::Page>);
 
-unsafe impl<T> intrusive_collections::PointerOps for NonNullPointerOps<T> {
-      type Value = T;
+unsafe impl intrusive_collections::PointerOps for PagePointerOps {
+      type Value = super::Page;
 
-      type Pointer = NonNull<T>;
+      type Pointer = &'static mut super::Page;
 
       unsafe fn from_raw(&self, value: *const Self::Value) -> Self::Pointer {
-            NonNull::new_unchecked(value as *mut _)
+            &mut *(value as *mut _)
       }
 
       #[allow(clippy::wrong_self_convention)]
       fn into_raw(&self, ptr: Self::Pointer) -> *const Self::Value {
-            ptr.as_ptr()
+            ptr as *const _
       }
 }
 
 pub struct PageAdapter {
       link_ops: <RBTreeLink as DefaultLinkOps>::Ops,
-      pointer_ops: NonNullPointerOps<super::Page>,
+      pointer_ops: PagePointerOps,
 }
 
 impl PageAdapter {
       pub const NEW: Self = PageAdapter {
             link_ops: <RBTreeLink as DefaultLinkOps>::NEW,
-            pointer_ops: NonNullPointerOps(PhantomData),
+            pointer_ops: PagePointerOps(PhantomData),
       };
 }
 
@@ -43,7 +42,7 @@ unsafe impl Sync for PageAdapter {}
 unsafe impl Adapter for PageAdapter {
       type LinkOps = <RBTreeLink as DefaultLinkOps>::Ops;
 
-      type PointerOps = NonNullPointerOps<super::Page>;
+      type PointerOps = PagePointerOps;
 
       unsafe fn get_value(
             &self,
@@ -59,7 +58,7 @@ unsafe impl Adapter for PageAdapter {
             // We need to do this instead of just accessing the field directly
             // to strictly follow the stack borrow rules.
             let ptr =
-                  (value as *const u8).add(intrusive_collections::offset_of!(super::Page, link));
+                  (value.cast::<u8>()).add(intrusive_collections::offset_of!(super::Page, link));
             core::ptr::NonNull::new_unchecked(ptr as *mut _)
       }
 

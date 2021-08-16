@@ -14,23 +14,19 @@ use core::alloc::Layout;
 use core::mem::{size_of, MaybeUninit};
 use core::ops::Range;
 use core::pin::Pin;
-use lazy_static::lazy_static;
-use spin::Mutex;
+use spin::{Lazy, Mutex};
 
-lazy_static! {
-      /// The root page table at initialization time.
-      static ref KERNEL_ROOT: Box<Table> = {
-            let mut table = box Table::zeroed();
+/// The root page table at initialization time.
+static KERNEL_ROOT: Lazy<Box<Table>> = Lazy::new(|| {
+      let mut table = box Table::zeroed();
 
-            let cr3_laddr = PAddr::new(unsafe { archop::reg::cr3::read() } as usize)
-                  .to_laddr(minfo::ID_OFFSET);
-            let init_table =
-                  unsafe { core::slice::from_raw_parts(cr3_laddr.cast(), paging::NR_ENTRIES) };
-            table.copy_from_slice(init_table);
+      let cr3_laddr =
+            PAddr::new(unsafe { archop::reg::cr3::read() } as usize).to_laddr(minfo::ID_OFFSET);
+      let init_table = unsafe { core::slice::from_raw_parts(cr3_laddr.cast(), paging::NR_ENTRIES) };
+      table.copy_from_slice(init_table);
 
-            table
-      };
-}
+      table
+});
 
 /// The root page table.
 #[derive(Debug)]

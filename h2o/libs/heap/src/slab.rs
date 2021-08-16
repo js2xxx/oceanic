@@ -37,9 +37,9 @@ impl Slab {
       ///
       /// This will gain more allocation space, thus making it able to return available
       /// objects
-      pub fn extend(&mut self, page: NonNull<Page>) {
+      pub fn extend(&mut self, mut page: NonNull<Page>) {
             let _lock = self.lock.lock();
-            self.list.insert(page);
+            self.list.insert(unsafe { page.as_mut() });
       }
 
       /// Pop an object from the slab list
@@ -55,12 +55,9 @@ impl Slab {
             let _lock = self.lock.lock();
 
             let mut front = self.list.lower_bound_mut(Bound::Excluded(&0));
-            if let Some(mut ptr) = front.remove() {
-                  let ret = {
-                        let page = unsafe { ptr.as_mut() };
-                        page.pop()
-                  }?;
-                  self.list.insert(ptr);
+            if let Some(page) = front.remove() {
+                  let ret = page.pop()?;
+                  self.list.insert(page);
                   Ok(ret)
             } else {
                   Err(AllocError::NeedExt)
@@ -92,7 +89,7 @@ impl Slab {
             let mut cur = unsafe { self.list.cursor_mut_from_ptr(base.as_ptr()) };
             cur.remove();
             if partially_free {
-                  self.list.insert(base);
+                  self.list.insert(unsafe { base.as_mut() });
                   Ok(None)
             } else {
                   Ok(Some(base))

@@ -164,18 +164,24 @@ fn load_prog(
 }
 
 /// Load a Processor-Local Storage (PLS) segment.
-fn load_pls(syst: &SystemTable<Boot>, size: usize) {
+fn load_pls(syst: &SystemTable<Boot>, size: usize, align: usize) -> usize {
       log::trace!("file::map: loading TLS: size = {:?}", size);
 
+      let size = core::alloc::Layout::from_size_align(size, align)
+            .expect("Failed to create the PLS layout")
+            .pad_to_align()
+            .size();
+
+      let tls = {
+            let alloc_size = size + size_of::<*mut usize>();
+            let laddr = crate::mem::alloc(syst)
+                  .alloc_n(alloc_size.div_ceil_bit(paging::PAGE_SHIFT))
+                  .expect("Failed to allocate memory for PLS")
+                  .to_laddr(crate::mem::EFI_ID_OFFSET);
+            *laddr
+      };
+
       unsafe {
-            let tls = {
-                  let alloc_size = size + size_of::<*mut usize>();
-                  let laddr = crate::mem::alloc(syst)
-                        .alloc_n(alloc_size.div_ceil_bit(paging::PAGE_SHIFT))
-                        .expect("Failed to allocate memory for PLS")
-                        .to_laddr(crate::mem::EFI_ID_OFFSET);
-                  *laddr
-            };
             let self_ptr = tls.add(size).cast::<usize>();
             // TLS's self-pointer is written its physical address there,
             // and therefore should be modified in the kernel.
@@ -188,7 +194,9 @@ fn load_pls(syst: &SystemTable<Boot>, size: usize) {
                   in("eax") self_ptr,
                   in("edx") self_ptr as u64 >> 32
             );
-      };
+      }
+
+      size
 }
 
 /// Map a ELF executable into the memory.
@@ -226,8 +234,7 @@ pub fn map_elf(syst: &SystemTable<Boot>, data: &[u8]) -> (*mut u8, Option<usize>
 
                   ProgramType::Unknown(7) => {
                         let ts = phdr.memsz() as usize;
-                        pls_size = Some(ts);
-                        load_pls(syst, ts);
+                        pls_size = Some(load_pls(syst, ts, phdr.align() as usize));
                   }
 
                   _ => {}
