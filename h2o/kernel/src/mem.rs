@@ -19,8 +19,13 @@ unsafe fn dealloc_pages(pages: NonNull<[heap::Page]>) {
 }
 
 /// Initialize the PMM and the kernel heap (Rust global allocator).
-pub fn init(efi_mmap_paddr: paging::PAddr, efi_mmap_len: usize, efi_mmap_unit: usize) {
-      pmm::init(efi_mmap_paddr, efi_mmap_len, efi_mmap_unit, minfo::TRAMPOLINE_RANGE);
+pub fn init() {
+      pmm::init(
+            crate::KARGS.efi_mmap_paddr,
+            crate::KARGS.efi_mmap_len,
+            crate::KARGS.efi_mmap_unit,
+            minfo::TRAMPOLINE_RANGE,
+      );
       heap::set_alloc(alloc_pages, dealloc_pages);
       heap::test();
 }

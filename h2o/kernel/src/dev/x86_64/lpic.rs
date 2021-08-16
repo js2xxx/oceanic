@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use crate::cpu::arch::intr::ArchReg;
 use crate::cpu::intr::{Interrupt, IntrChip, TypeHandler};
 use archop::io::{Io, Port};

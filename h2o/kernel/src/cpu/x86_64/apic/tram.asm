@@ -4,9 +4,9 @@ bits  16
 times 16 - ($-$$) db    0
       booted      dq    0
       stack       dq    0
-      pgc         dq    0
-      tls         dq    0
+      pls         dq    0
       
+      pgc         dq    0
       kmain       dq    0
       init_efer   dq    0
       init_cr4    dq    0
@@ -52,7 +52,7 @@ bits 64
 
       mov   rsp, [stack]
 
-      mov   rax, [tls]
+      mov   rax, [pls]
       mov   rdx, rax
       shr   rdx, 32
       mov   rcx, 0xc0000100

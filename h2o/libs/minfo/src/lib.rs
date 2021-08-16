@@ -1,6 +1,8 @@
 #![no_std]
 // Physical addresses
 
+pub const KARGS_BASE: usize = 0;
+
 pub const TRAMPOLINE_RANGE: core::ops::Range<usize> = 0..0x100000;
 
 pub const INITIAL_ID_SPACE: usize = 0x1_0000_0000;

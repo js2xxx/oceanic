@@ -54,13 +54,18 @@ pub struct RangeMap<K, V> {
       inner: BTreeMap<K, (Range<K>, V)>,
 }
 
-impl<K: Ord + Copy, V> RangeMap<K, V> {
-      pub const fn new() -> Self {
+impl<K, V> RangeMap<K, V> {
+      pub const fn new() -> Self
+      where
+            K: Ord,
+      {
             RangeMap {
                   inner: BTreeMap::new(),
             }
       }
+}
 
+impl<K: Ord + Copy, V> RangeMap<K, V> {
       pub fn insert(&mut self, range: Range<K>, value: V) -> Result<(), &'static str> {
             if self.range(range.clone()).next().is_some() {
                   Err("There are existent item(s) in this range")

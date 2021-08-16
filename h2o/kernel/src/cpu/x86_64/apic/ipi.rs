@@ -1,8 +1,9 @@
 use super::{DelivMode, TriggerMode};
 use crate::cpu::arch::apic::{ipi, lapic};
+use crate::cpu::arch::seg::alloc_pls;
 use crate::cpu::arch::seg::ndt::Segment;
 use crate::cpu::arch::tsc::{delay, ns_clock};
-use crate::mem::space::{krl, Flags};
+use crate::mem::space::init_pgc;
 use acpi::table::madt::LapicNode;
 use paging::PAddr;
 
@@ -58,14 +59,14 @@ impl From<IcrEntry> for u32 {
 #[repr(C)]
 pub struct TramSubheader {
       stack: u64,
-      pgc: u64,
-      tls: u64,
+      pls: u64,
 }
 
 #[repr(C)]
 pub struct TramHeader {
       booted: AtomicBool,
       subheader: UnsafeCell<TramSubheader>,
+      pgc: u64,
       kmain: *mut u8,
       init_efer: u64,
       init_cr4: u64,
@@ -80,6 +81,7 @@ impl TramHeader {
             TramHeader {
                   booted: AtomicBool::new(true),
                   subheader: UnsafeCell::new(core::mem::zeroed()),
+                  pgc: init_pgc(),
                   kmain: crate::kmain_ap as *mut _,
                   init_efer: msr::read(msr::EFER),
                   init_cr4: reg::cr4::read(),
@@ -98,36 +100,33 @@ impl TramHeader {
             }
       }
 
-      pub unsafe fn reset_subheader(&self, start: u64) {
+      pub unsafe fn test_booted(&self, start: u64) -> bool {
             while !self.booted.swap(false, Ordering::SeqCst) && ns_clock() - start < 1000000 {
                   archop::pause();
             }
+            ns_clock() - start < 1000000
+      }
 
+      pub unsafe fn reset_subheader(&self) {
             let stack = unsafe {
                   let (layout, _) = paging::PAGE_LAYOUT
                         .repeat(16)
                         .expect("Failed to create a layout");
-                  let mut memory = krl(|space| {
-                        space.alloc_manual(layout, None, Flags::READABLE | Flags::WRITABLE)
-                              .expect("Failed to allocate stack for AP")
-                  })
-                  .expect("Kernel space uninitialized");
-                  memory.as_mut_ptr_range().end
+                  let memory = alloc::alloc::alloc(layout);
+                  memory.add(layout.size())
             } as u64;
 
+            let pls = alloc_pls() as u64;
+
             let ptr = self.subheader.get();
-            ptr.write(TramSubheader {
-                  stack,
-                  pgc: 0,
-                  tls: 0,
-            });
+            ptr.write(TramSubheader { stack, pls });
       }
 }
 
 /// # Safety
 ///
 /// This function must be called after Local APIC initialization.
-pub unsafe fn start_cpu(lapics: Vec<LapicNode>) {
+pub unsafe fn start_cpus(lapics: Vec<LapicNode>) {
       static TRAM_DATA: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/tram"));
 
       let base_phys = PAddr::new(minfo::TRAMPOLINE_RANGE.start);
@@ -146,9 +145,9 @@ pub unsafe fn start_cpu(lapics: Vec<LapicNode>) {
             &*header
       };
 
-      let mut start = 0;
-      for LapicNode { id, .. } in lapics.iter() {
-            header.reset_subheader(start);
+      let self_id = lapic(|lapic| lapic.id).expect("LAPIC uninitialized");
+      for LapicNode { id, .. } in lapics.iter().filter(|node| node.id != self_id) {
+            header.reset_subheader();
 
             lapic(|lapic| {
                   lapic.send_ipi(0, DelivMode::Init, ipi::Shorthand::None, *id);
@@ -160,8 +159,19 @@ pub unsafe fn start_cpu(lapics: Vec<LapicNode>) {
                         ipi::Shorthand::None,
                         *id,
                   );
-            });
 
-            start = ns_clock();
+                  if !header.test_booted(ns_clock()) {
+                        lapic.send_ipi(
+                              (*base_phys >> 3) as u8,
+                              DelivMode::StartUp,
+                              ipi::Shorthand::None,
+                              *id,
+                        );
+
+                        if !header.test_booted(ns_clock()) {
+                              log::warn!("CPU with LAPIC ID {} failed to boot", id);
+                        }
+                  }
+            });
       }
 }

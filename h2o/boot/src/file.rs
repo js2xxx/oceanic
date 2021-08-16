@@ -2,6 +2,7 @@
 
 use bitop_ex::BitOpEx;
 
+use core::alloc::Layout;
 use core::mem::size_of;
 use elf_rs::*;
 use uefi::prelude::*;
@@ -164,15 +165,15 @@ fn load_prog(
 }
 
 /// Load a Processor-Local Storage (PLS) segment.
-fn load_pls(syst: &SystemTable<Boot>, size: usize, align: usize) -> usize {
+fn load_pls(syst: &SystemTable<Boot>, size: usize, align: usize) -> Layout {
       log::trace!("file::map: loading TLS: size = {:?}", size);
 
-      let size = core::alloc::Layout::from_size_align(size, align)
+      let layout = Layout::from_size_align(size, align)
             .expect("Failed to create the PLS layout")
-            .pad_to_align()
-            .size();
+            .pad_to_align();
+      let size = layout.size();
 
-      let tls = {
+      let pls = {
             let alloc_size = size + size_of::<*mut usize>();
             let laddr = crate::mem::alloc(syst)
                   .alloc_n(alloc_size.div_ceil_bit(paging::PAGE_SHIFT))
@@ -182,7 +183,7 @@ fn load_pls(syst: &SystemTable<Boot>, size: usize, align: usize) -> usize {
       };
 
       unsafe {
-            let self_ptr = tls.add(size).cast::<usize>();
+            let self_ptr = pls.add(size).cast::<usize>();
             // TLS's self-pointer is written its physical address there,
             // and therefore should be modified in the kernel.
             self_ptr.write(self_ptr as usize);
@@ -196,7 +197,7 @@ fn load_pls(syst: &SystemTable<Boot>, size: usize, align: usize) -> usize {
             );
       }
 
-      size
+      layout
 }
 
 /// Map a ELF executable into the memory.
@@ -205,7 +206,7 @@ fn load_pls(syst: &SystemTable<Boot>, size: usize, align: usize) -> usize {
 ///
 /// This function returns a tuple with 2 elements where the first element is the entry point of the
 /// ELF executable and the second element is the TLS size of it.
-pub fn map_elf(syst: &SystemTable<Boot>, data: &[u8]) -> (*mut u8, Option<usize>) {
+pub fn map_elf(syst: &SystemTable<Boot>, data: &[u8]) -> (*mut u8, Option<Layout>) {
       log::trace!(
             "file::map: syst = {:?}, data = {:?}",
             syst as *const _,
@@ -218,7 +219,7 @@ pub fn map_elf(syst: &SystemTable<Boot>, data: &[u8]) -> (*mut u8, Option<usize>
             _ => panic!("ELF64 file accepted only"),
       };
 
-      let mut pls_size = None;
+      let mut pls_layout = None;
       for phdr in elf.program_headers() {
             match phdr.ph_type() {
                   ProgramType::LOAD => load_prog(
@@ -234,7 +235,7 @@ pub fn map_elf(syst: &SystemTable<Boot>, data: &[u8]) -> (*mut u8, Option<usize>
 
                   ProgramType::Unknown(7) => {
                         let ts = phdr.memsz() as usize;
-                        pls_size = Some(load_pls(syst, ts, phdr.align() as usize));
+                        pls_layout = Some(load_pls(syst, ts, phdr.align() as usize));
                   }
 
                   _ => {}
@@ -242,5 +243,5 @@ pub fn map_elf(syst: &SystemTable<Boot>, data: &[u8]) -> (*mut u8, Option<usize>
       }
 
       let entry = paging::LAddr::from(elf.header().entry_point() as usize);
-      (*entry, pls_size)
+      (*entry, pls_layout)
 }

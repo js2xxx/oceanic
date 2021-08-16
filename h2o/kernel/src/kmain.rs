@@ -23,37 +23,40 @@ pub mod log;
 pub mod mem;
 pub mod rxx;
 
+use kargs::KernelArgs;
+
 use ::log as l;
+use minfo::KARGS_BASE;
+use spin::Lazy;
 
 extern crate alloc;
 
+static KARGS: Lazy<KernelArgs> = Lazy::new(|| {
+      let ptr = KARGS_BASE as *const KernelArgs;
+      unsafe { ptr.read() }
+});
+
 #[no_mangle]
-pub extern "C" fn kmain(
-      rsdp: *const core::ffi::c_void,
-      efi_mmap_paddr: paging::PAddr,
-      efi_mmap_len: usize,
-      efi_mmap_unit: usize,
-      pls_size: usize,
-) {
+pub extern "C" fn kmain() {
       unsafe { cpu::set_id() };
 
       // SAFE: Everything is uninitialized.
       unsafe { self::log::init(l::Level::Debug) };
       l::info!("Starting initialization");
 
-      mem::init(efi_mmap_paddr, efi_mmap_len, efi_mmap_unit);
+      mem::init();
 
       l::debug!("Creating the kernel space");
       unsafe { mem::space::init_kernel() };
 
       l::debug!("Initializing ACPI tables");
-      unsafe { acpi::init_tables(rsdp) };
+      unsafe { acpi::init_tables(*KARGS.rsdp) };
       let lapic_data = unsafe { acpi::table::get_lapic_data() }.expect("Failed to get LAPIC data");
       let ioapic_data =
             unsafe { acpi::table::get_ioapic_data() }.expect("Failed to get IOAPIC data");
 
       l::debug!("Set up CPU architecture");
-      unsafe { cpu::arch::init(pls_size, lapic_data) };
+      unsafe { cpu::arch::init(lapic_data) };
 
       l::debug!("Set up Interrupt system");
       unsafe { dev::init_intr_chip(ioapic_data) };
@@ -71,6 +74,9 @@ pub extern "C" fn kmain(
 #[no_mangle]
 pub extern "C" fn kmain_ap() {
       unsafe { cpu::set_id() };
+
+      l::debug!("{}", unsafe { cpu::id() });
+      unsafe { mem::space::init_ap() };
 
       unsafe { archop::halt_loop(Some(false)) };
 }

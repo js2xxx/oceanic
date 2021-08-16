@@ -92,7 +92,7 @@ unsafe fn write_eoi(base_ptr: *mut u32, val: u32) {
 }
 
 pub struct Ioapic<'a> {
-      memory: Pin<&'a mut [MemBlock]>,
+      _memory: Pin<&'a mut [MemBlock]>,
       base_ptr: *mut u32,
       id: u8,
       version: u32,
@@ -150,7 +150,7 @@ impl<'a> Ioapic<'a> {
             let base_ptr = unsafe { memory.as_mut_ptr().cast::<u8>().add(offset) }.cast::<u32>();
 
             let mut ioapic = Ioapic {
-                  memory,
+                  _memory: memory,
                   base_ptr,
                   id,
                   version: 0,

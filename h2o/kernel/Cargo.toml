@@ -17,6 +17,7 @@ bitop_ex = {path = "../libs/bitop_ex"}
 canary = {path = "../libs/canary"}
 collection_ex = {path = "../libs/collection_ex"}
 heap = {path = "../libs/heap"}
+kargs = {path = "../libs/kargs"}
 minfo = {path = "../libs/minfo"}
 paging = {path = "../libs/paging"}
 pmm = {path = "../libs/pmm"}

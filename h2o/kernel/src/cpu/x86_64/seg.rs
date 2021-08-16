@@ -10,6 +10,7 @@ pub mod ndt;
 
 use paging::{LAddr, PAddr};
 
+use core::alloc::Layout;
 use core::mem::{size_of, transmute};
 use core::ops::Range;
 use core::ptr::null_mut;
@@ -107,16 +108,19 @@ pub unsafe fn get_type_attr(ptr: *mut u8) -> u16 {
       (ptr as *mut u16).read()
 }
 
+/// Reload the Processor-Local Storage of the bootstrap CPU.
+///
 /// # Safety
 ///
 /// The caller must ensure the value stored in [`archop::msr::FS_BASE`] is a
 /// valid physical address.
-pub unsafe fn reload_pls(pls_size: usize) -> LAddr {
+pub unsafe fn reload_pls() -> LAddr {
       extern "C" {
             static TDATA_START: u8;
             static TBSS_START: u8;
       }
       use archop::msr;
+      let pls_size = crate::KARGS.pls_layout.map_or(0, |layout| layout.size());
 
       let val = msr::read(msr::FS_BASE) as usize;
       if val != 0 {
@@ -134,14 +138,48 @@ pub unsafe fn reload_pls(pls_size: usize) -> LAddr {
       }
 }
 
+/// Allocate and initialize a new PLS for application CPU.
+pub fn alloc_pls() -> *mut u8 {
+      extern "C" {
+            static TDATA_START: u8;
+            static TBSS_START: u8;
+      }
+
+      let pls_layout = match crate::KARGS.pls_layout {
+            Some(layout) => layout,
+            None => return null_mut(),
+      };
+
+      unsafe {
+            let base = alloc::alloc::alloc_zeroed(
+                  pls_layout
+                        .extend(Layout::new::<*mut u8>())
+                        .expect("Failed to get the allocation layout")
+                        .0,
+            );
+
+            if base.is_null() {
+                  return null_mut();
+            }
+
+            let size = (&TBSS_START as *const u8).offset_from(&TDATA_START) as usize;
+            base.copy_from(&TDATA_START, size);
+
+            let self_ptr = base.add(pls_layout.size());
+            self_ptr.cast::<*mut u8>().write(self_ptr);
+
+            self_ptr
+      }
+}
+
 /// Initialize segmentation structures
 ///
 /// # Safety
 ///
 /// The caller must ensure that this function is called only once from the bootstrap
 /// CPU.
-pub(super) unsafe fn init(pls_size: usize) -> (LAddr, LAddr) {
-      let ret = ndt::init(pls_size);
+pub(super) unsafe fn init() -> (LAddr, LAddr) {
+      let ret = ndt::init();
       idt::init();
 
       ret

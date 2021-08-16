@@ -102,8 +102,8 @@ impl KernelGs {
 ///
 /// The caller must ensure that this function should only be called once from bootstrap
 /// CPU.
-pub unsafe fn init(pls_size: usize, lapic_data: acpi::table::madt::LapicData) {
-      let (tss_rsp0, kernel_fs) = seg::init(pls_size);
+pub unsafe fn init(lapic_data: acpi::table::madt::LapicData) {
+      let (tss_rsp0, kernel_fs) = seg::init();
 
       let acpi::table::madt::LapicData {
             ty: lapic_ty,
@@ -118,4 +118,6 @@ pub unsafe fn init(pls_size: usize, lapic_data: acpi::table::madt::LapicData) {
       unsafe { kernel_gs.load() };
 
       unsafe { tsc::init() };
+
+      apic::ipi::start_cpus(lapics);
 }

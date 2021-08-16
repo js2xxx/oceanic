@@ -26,7 +26,7 @@ pub const AE_LIMIT: ACPI_STATUS = AE_CODE_ENVIRONMENTAL | 0x10;
 pub const AE_TIME: ACPI_STATUS = AE_CODE_ENVIRONMENTAL | 0x11;
 pub const AE_BAD_PARAMETER: ACPI_STATUS = AE_CODE_PROGRAMMER | 1;
 
-pub(super) static mut RSDP: *const core::ffi::c_void = core::ptr::null_mut();
+pub(super) static mut RSDP: usize = 0;
 
 static PRINT_BUF: Mutex<String> = Mutex::new(String::new());
 

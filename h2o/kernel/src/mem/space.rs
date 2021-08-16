@@ -19,6 +19,7 @@ cfg_if::cfg_if! {
             mod x86_64;
             type ArchSpace = x86_64::Space;
             pub use x86_64::MemBlock;
+            pub use x86_64::init_pgc;
       }
 }
 

@@ -17,16 +17,21 @@ use core::pin::Pin;
 use spin::{Lazy, Mutex};
 
 /// The root page table at initialization time.
-static KERNEL_ROOT: Lazy<Box<Table>> = Lazy::new(|| {
+static KERNEL_ROOT: Lazy<(Box<Table>, u64)> = Lazy::new(|| {
       let mut table = box Table::zeroed();
 
+      let cr3 = unsafe { archop::reg::cr3::read() };
       let cr3_laddr =
-            PAddr::new(unsafe { archop::reg::cr3::read() } as usize).to_laddr(minfo::ID_OFFSET);
+            PAddr::new(cr3 as usize).to_laddr(minfo::ID_OFFSET);
       let init_table = unsafe { core::slice::from_raw_parts(cr3_laddr.cast(), paging::NR_ENTRIES) };
       table.copy_from_slice(init_table);
 
-      table
+      (table, cr3)
 });
+
+pub fn init_pgc() -> u64 {
+      KERNEL_ROOT.1
+}
 
 /// The root page table.
 #[derive(Debug)]
@@ -57,7 +62,7 @@ impl Space {
                   let mut dst_rt = space.root_table.lock();
                   let dst_kernel_half = &mut dst_rt[(paging::NR_ENTRIES / 2)..];
 
-                  let src_kernel_half = &KERNEL_ROOT[(paging::NR_ENTRIES / 2)..];
+                  let src_kernel_half = &KERNEL_ROOT.0[(paging::NR_ENTRIES / 2)..];
 
                   dst_kernel_half.copy_from_slice(src_kernel_half);
             }
