@@ -4,7 +4,7 @@ use bitop_ex::BitOpEx;
 use paging::LAddr;
 
 use core::alloc::{GlobalAlloc, Layout};
-use core::ptr::{null_mut, NonNull};
+use core::ptr::{null_mut, Unique};
 use spin::Mutex;
 
 /// The kinds of allocation errors.
@@ -62,7 +62,7 @@ unsafe impl GlobalAlloc for DefaultAlloc {
                                     };
 
                                     if let Some(page) = page {
-                                          pool.extend(layout, page.as_non_null_ptr()).unwrap();
+                                          pool.extend(layout, page.cast()).unwrap();
                                           // The second allocation
                                           pool.alloc(layout).map_or(null_mut(), |x| *x)
                                     } else {
@@ -79,7 +79,7 @@ unsafe impl GlobalAlloc for DefaultAlloc {
                   let n = size.div_ceil_bit(paging::PAGE_SHIFT);
                   let mut pager = self.pager.lock();
                   pager.alloc_pages(n)
-                        .map_or(null_mut(), |x| x.as_mut_ptr().cast())
+                        .map_or(null_mut(), |x| x.as_ptr().cast())
             }
       }
 
@@ -95,14 +95,20 @@ unsafe impl GlobalAlloc for DefaultAlloc {
                   if let Some(page) = pool.dealloc(LAddr::new(ptr), layout).unwrap_or(None) {
                         // A page is totally empty, drop it
                         let mut pager = self.pager.lock();
-                        pager.dealloc_pages(NonNull::slice_from_raw_parts(page, 1));
+                        pager.dealloc_pages(Unique::from(core::slice::from_raw_parts_mut(
+                              page.as_ptr(),
+                              1,
+                        )));
                   }
             } else {
                   // The size is too big, call the pager directly
                   let n = size.div_ceil_bit(paging::PAGE_SHIFT);
-                  let page = NonNull::new(ptr.cast::<page::Page>()).expect("Null pointer provided");
+                  let page = Unique::new(ptr.cast::<page::Page>()).expect("Null pointer provided");
                   let mut pager = self.pager.lock();
-                  pager.dealloc_pages(NonNull::slice_from_raw_parts(page, n));
+                  pager.dealloc_pages(Unique::from(core::slice::from_raw_parts_mut(
+                        page.as_ptr(),
+                        n,
+                  )));
             }
       }
 }

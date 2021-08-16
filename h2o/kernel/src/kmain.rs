@@ -11,6 +11,7 @@
 #![feature(lang_items)]
 #![feature(macro_attributes_in_derive_output)]
 #![feature(nonnull_slice_from_raw_parts)]
+#![feature(ptr_internals)]
 #![feature(slice_ptr_get)]
 #![feature(slice_ptr_len)]
 #![feature(thread_local)]
@@ -75,7 +76,7 @@ pub extern "C" fn kmain() {
 pub extern "C" fn kmain_ap() {
       unsafe { cpu::set_id() };
 
-      l::debug!("Begin initialization");
+      l::debug!("Starting initialization");
       unsafe { mem::space::init_ap() };
 
       let lapic_data = unsafe { acpi::table::get_lapic_data() }.expect("Failed to get LAPIC data");

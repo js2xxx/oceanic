@@ -10,7 +10,7 @@ use paging::LAddr;
 
 use array_macro::array;
 use core::alloc::Layout;
-use core::ptr::NonNull;
+use core::ptr::Unique;
 
 /// The memory pool structure.
 pub struct Pool {
@@ -64,7 +64,7 @@ impl Pool {
       ///
       /// If the memory layout doesn't match all the available [`OBJ_SIZES`], it'll return an
       /// error.
-      pub fn extend(&mut self, layout: Layout, mut page: NonNull<Page>) -> Result<(), AllocError> {
+      pub fn extend(&mut self, layout: Layout, mut page: Unique<Page>) -> Result<(), AllocError> {
             let idx = Self::unwrap_layout(layout)?;
             unsafe { page.as_mut() }.init(OBJ_SIZES[idx]);
             self.slabs[idx].extend(page);
@@ -101,7 +101,7 @@ impl Pool {
             &mut self,
             addr: LAddr,
             layout: Layout,
-      ) -> Result<Option<NonNull<Page>>, AllocError> {
+      ) -> Result<Option<Unique<Page>>, AllocError> {
             let idx = Self::unwrap_layout(layout)?;
             self.slabs[idx].push(addr).map(|ret| {
                   self.stat.dealloc(layout.pad_to_align().size());

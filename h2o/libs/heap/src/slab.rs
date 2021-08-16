@@ -9,7 +9,7 @@ use super::page::*;
 use adapter::PageAdapter;
 use paging::{LAddr, PAGE_MASK};
 
-use core::ptr::NonNull;
+use core::ptr::Unique;
 use intrusive_collections::{Bound, RBTree};
 use spin::Mutex;
 
@@ -37,9 +37,9 @@ impl Slab {
       ///
       /// This will gain more allocation space, thus making it able to return available
       /// objects
-      pub fn extend(&mut self, mut page: NonNull<Page>) {
+      pub fn extend(&mut self, page: Unique<Page>) {
             let _lock = self.lock.lock();
-            self.list.insert(unsafe { page.as_mut() });
+            self.list.insert(page);
       }
 
       /// Pop an object from the slab list
@@ -55,9 +55,12 @@ impl Slab {
             let _lock = self.lock.lock();
 
             let mut front = self.list.lower_bound_mut(Bound::Excluded(&0));
-            if let Some(page) = front.remove() {
-                  let ret = page.pop()?;
-                  self.list.insert(page);
+            if let Some(mut ptr) = front.remove() {
+                  let ret = {
+                        let page = unsafe { ptr.as_mut() };
+                        page.pop()?
+                  };
+                  self.list.insert(ptr);
                   Ok(ret)
             } else {
                   Err(AllocError::NeedExt)
@@ -74,10 +77,10 @@ impl Slab {
       ///
       /// If the page is not valid or something else (see `Page::push` for more), it'll return
       /// an error.
-      pub fn push(&mut self, addr: LAddr) -> Result<Option<NonNull<Page>>, AllocError> {
+      pub fn push(&mut self, addr: LAddr) -> Result<Option<Unique<Page>>, AllocError> {
             let _lock = self.lock.lock();
 
-            let mut base = NonNull::new((addr.val() & !PAGE_MASK) as *mut Page)
+            let mut base = Unique::new((addr.val() & !PAGE_MASK) as *mut Page)
                   .map_or(Err(AllocError::Internal("Null address")), Ok)?;
 
             let partially_free = {
@@ -89,7 +92,7 @@ impl Slab {
             let mut cur = unsafe { self.list.cursor_mut_from_ptr(base.as_ptr()) };
             cur.remove();
             if partially_free {
-                  self.list.insert(unsafe { base.as_mut() });
+                  self.list.insert(base);
                   Ok(None)
             } else {
                   Ok(Some(base))

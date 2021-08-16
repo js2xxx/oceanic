@@ -2,19 +2,19 @@ pub mod space;
 
 use paging::LAddr;
 
-use core::ptr::NonNull;
+use core::ptr::Unique;
 
 #[inline(never)]
-unsafe fn alloc_pages(n: usize) -> Option<NonNull<[heap::Page]>> {
+unsafe fn alloc_pages(n: usize) -> Option<Unique<[heap::Page]>> {
       let laddr = pmm::alloc_pages_exact(n, None)?.to_laddr(minfo::ID_OFFSET);
-      let ptr = NonNull::new(laddr.cast::<heap::Page>());
-      ptr.map(|ptr| NonNull::slice_from_raw_parts(ptr, n))
+      let ptr = Unique::new(laddr.cast::<heap::Page>());
+      ptr.map(|ptr| Unique::from(core::slice::from_raw_parts_mut(ptr.as_ptr(), n)))
 }
 
 #[inline(never)]
-unsafe fn dealloc_pages(pages: NonNull<[heap::Page]>) {
-      let paddr = LAddr::new(pages.as_mut_ptr().cast()).to_paddr(minfo::ID_OFFSET);
-      let n = pages.len();
+unsafe fn dealloc_pages(pages: Unique<[heap::Page]>) {
+      let paddr = LAddr::new(pages.as_ptr().cast()).to_paddr(minfo::ID_OFFSET);
+      let n = pages.as_ref().len();
       pmm::dealloc_pages_exact(n, paddr);
 }
 

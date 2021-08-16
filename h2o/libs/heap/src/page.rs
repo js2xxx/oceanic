@@ -19,12 +19,12 @@ use paging::{LAddr, PAGE_SIZE};
 
 use bitvec::prelude::*;
 use core::mem::{align_of, size_of};
-use core::ptr::NonNull;
+use core::ptr::Unique;
 use intrusive_collections::RBTreeLink;
 use static_assertions::*;
 
-pub type AllocPages = unsafe fn(n: usize) -> Option<NonNull<[Page]>>;
-pub type DeallocPages = unsafe fn(pages: NonNull<[Page]>);
+pub type AllocPages = unsafe fn(n: usize) -> Option<Unique<[Page]>>;
+pub type DeallocPages = unsafe fn(pages: Unique<[Page]>);
 
 /// Defines the sizes of objects.
 ///
@@ -188,7 +188,7 @@ impl Pager {
       ///
       /// It'll always be safe **ONLY IF** it's called single-thread, and its components
       /// won't fail.
-      pub unsafe fn alloc_pages(&mut self, n: usize) -> Option<NonNull<[Page]>> {
+      pub unsafe fn alloc_pages(&mut self, n: usize) -> Option<Unique<[Page]>> {
             (self.alloc_pages)(n)
       }
 
@@ -196,7 +196,7 @@ impl Pager {
       ///
       /// It'll always be safe **ONLY IF** it's called single-thread, and its components
       /// won't fail.
-      pub unsafe fn dealloc_pages(&mut self, pages: NonNull<[Page]>) {
+      pub unsafe fn dealloc_pages(&mut self, pages: Unique<[Page]>) {
             (self.dealloc_pages)(pages)
       }
 }

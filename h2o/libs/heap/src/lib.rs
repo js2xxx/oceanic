@@ -46,6 +46,7 @@
 #![feature(lang_items)]
 #![feature(nonnull_slice_from_raw_parts)]
 #![feature(slice_ptr_get)]
+#![feature(ptr_internals)]
 
 pub mod alloc;
 pub mod page;
@@ -55,7 +56,7 @@ pub mod stat;
 
 pub use page::{AllocPages, DeallocPages, Page};
 
-use core::ptr::NonNull;
+use core::ptr::Unique;
 
 #[global_allocator]
 static GLOBAL_ALLOC: alloc::DefaultAlloc = alloc::DefaultAlloc {
@@ -64,12 +65,12 @@ static GLOBAL_ALLOC: alloc::DefaultAlloc = alloc::DefaultAlloc {
 };
 
 #[inline(never)]
-fn null_alloc_pages(_n: usize) -> Option<NonNull<[page::Page]>> {
+fn null_alloc_pages(_n: usize) -> Option<Unique<[page::Page]>> {
       None
 }
 
 #[inline(never)]
-fn null_dealloc_pages(_pages: NonNull<[page::Page]>) {}
+fn null_dealloc_pages(_pages: Unique<[page::Page]>) {}
 
 /// Set the functions for allocating and deallocating pages.
 pub fn set_alloc(alloc_pages: AllocPages, dealloc_pages: DeallocPages) {
