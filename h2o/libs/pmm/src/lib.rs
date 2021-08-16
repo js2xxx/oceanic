@@ -29,7 +29,7 @@ pub fn init(
       efi_mmap_len: usize,
       efi_mmap_unit: usize,
       reserved_range: core::ops::Range<usize>,
-) {
+) -> usize {
       let efi_mmap_ptr = *efi_mmap_paddr as *mut uefi::table::boot::MemoryDescriptor;
-      buddy::init(efi_mmap_ptr, efi_mmap_len, efi_mmap_unit, reserved_range);
+      buddy::init(efi_mmap_ptr, efi_mmap_len, efi_mmap_unit, reserved_range)
 }

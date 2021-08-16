@@ -69,6 +69,7 @@ impl Frame {
 /// TODO: Must be removed after thread module creation.
 pub mod test {
       use super::Frame;
+      #[thread_local]
       static mut THREAD_STACK_TOP: *mut u8 = core::ptr::null_mut();
 
       pub unsafe fn save_regs(frame: *const Frame) -> *mut u8 {

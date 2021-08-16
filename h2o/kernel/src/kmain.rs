@@ -75,8 +75,14 @@ pub extern "C" fn kmain() {
 pub extern "C" fn kmain_ap() {
       unsafe { cpu::set_id() };
 
-      l::debug!("{}", unsafe { cpu::id() });
+      l::debug!("Begin initialization");
       unsafe { mem::space::init_ap() };
+
+      let lapic_data = unsafe { acpi::table::get_lapic_data() }.expect("Failed to get LAPIC data");
+
+      unsafe { cpu::arch::init_ap(lapic_data) };
+
+      l::debug!("Finished");
 
       unsafe { archop::halt_loop(Some(false)) };
 }

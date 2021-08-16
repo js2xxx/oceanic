@@ -3,6 +3,7 @@ use crate::subt_parser;
 
 use alloc::{vec, vec::Vec};
 use core::ptr::null_mut;
+use core::sync::atomic::{AtomicBool, Ordering};
 
 #[derive(Debug, Clone)]
 pub struct IoapicNode {
@@ -41,16 +42,15 @@ pub struct IoapicData {
 
 static mut IOAPIC: Vec<IoapicNode> = Vec::new();
 static mut INTR_OVR: Vec<IntrOvr> = Vec::new();
-static mut INIT: bool = false;
+static INIT: AtomicBool = AtomicBool::new(false);
 
 /// # Safety
 ///
 /// The caller must ensure that the memory mapping for ACPI tables is fixed and valid,
 /// and that this function is not called twice or after SMP initialization.
 pub unsafe fn get_ioapic_data() -> Result<IoapicData, raw::ACPI_STATUS> {
-      if !INIT {
+      if !INIT.swap(true, Ordering::SeqCst) {
             acquire_ioapic_data()?;
-            INIT = true;
       }
 
       Ok(IoapicData {

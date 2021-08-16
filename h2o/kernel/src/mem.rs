@@ -20,11 +20,16 @@ unsafe fn dealloc_pages(pages: NonNull<[heap::Page]>) {
 
 /// Initialize the PMM and the kernel heap (Rust global allocator).
 pub fn init() {
-      pmm::init(
+      let all_available = pmm::init(
             crate::KARGS.efi_mmap_paddr,
             crate::KARGS.efi_mmap_len,
             crate::KARGS.efi_mmap_unit,
             minfo::TRAMPOLINE_RANGE,
+      );
+      log::info!(
+            "Memory size: {:.3} GB ({:#x} Bytes)",
+            (all_available as f64) / 1073741824.0,
+            all_available
       );
       heap::set_alloc(alloc_pages, dealloc_pages);
       heap::test();

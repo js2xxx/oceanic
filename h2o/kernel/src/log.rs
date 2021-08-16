@@ -57,9 +57,9 @@ impl log::Log for Logger {
                   write(
                         &mut *os,
                         format_args!(
-                              "#{} [{} {}: {}] {}\n",
-                              unsafe { crate::cpu::id() },
+                              "{}: [#{} {}: {}] {}\n",
                               record.level(),
+                              unsafe { crate::cpu::id() },
                               file,
                               line,
                               record.args()

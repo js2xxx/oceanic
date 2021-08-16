@@ -246,13 +246,12 @@ unsafe fn load_tss(tr: SegSelector) {
 /// preparations.
 ///
 /// The caller must ensure that this function is called only once from the bootstrap CPU.
-pub unsafe fn init() -> (LAddr, LAddr) {
-      let kernel_fs = unsafe { reload_pls() };
+pub unsafe fn init() -> LAddr {
       unsafe {
             load_gdt();
             load_ldt(GDT_LDTR);
             load_tss(GDT_TR);
       }
 
-      (TSS.rsp0(), kernel_fs)
+      TSS.rsp0()
 }

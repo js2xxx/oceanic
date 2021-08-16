@@ -51,6 +51,7 @@ pub mod alloc;
 pub mod page;
 pub mod pool;
 pub mod slab;
+pub mod stat;
 
 pub use page::{AllocPages, DeallocPages, Page};
 
@@ -58,7 +59,7 @@ use core::ptr::NonNull;
 
 #[global_allocator]
 static GLOBAL_ALLOC: alloc::DefaultAlloc = alloc::DefaultAlloc {
-      pool: spin::Mutex::new(unsafe { core::mem::transmute(pool::Pool::new()) }),
+      pool: spin::Mutex::new(pool::Pool::new()),
       pager: spin::Mutex::new(page::Pager::new(null_alloc_pages, null_dealloc_pages)),
 };
 
@@ -80,6 +81,10 @@ pub fn set_alloc(alloc_pages: AllocPages, dealloc_pages: DeallocPages) {
 pub fn reset_alloc() {
       let mut pager = GLOBAL_ALLOC.pager.lock();
       *pager = page::Pager::new(null_alloc_pages, null_dealloc_pages);
+}
+
+pub fn stat() -> stat::Stat {
+      GLOBAL_ALLOC.pool.lock().stat()
 }
 
 /// The test function for the module.

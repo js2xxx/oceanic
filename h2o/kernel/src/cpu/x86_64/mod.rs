@@ -121,3 +121,15 @@ pub unsafe fn init(lapic_data: acpi::table::madt::LapicData) {
 
       apic::ipi::start_cpus(lapics);
 }
+
+pub unsafe fn init_ap(lapic_data: acpi::table::madt::LapicData) {
+      let (tss_rsp0, kernel_fs) = seg::init_ap();
+
+      apic::init(lapic_data.ty);
+
+      let syscall_stack = syscall::init().expect("Memory allocation failed");
+
+      let kernel_gs = KernelGs::new(tss_rsp0, syscall_stack, kernel_fs);
+      // SAFE: During bootstrap initialization.
+      unsafe { kernel_gs.load() };
+}

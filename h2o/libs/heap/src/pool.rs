@@ -5,6 +5,7 @@
 use super::alloc::AllocError;
 use super::page::*;
 use super::slab::*;
+use super::stat::Stat;
 use paging::LAddr;
 
 use array_macro::array;
@@ -15,6 +16,7 @@ use core::ptr::NonNull;
 pub struct Pool {
       /// All the slab lists.
       slabs: [Slab; NR_OBJ_SIZES],
+      stat: Stat,
 }
 
 impl Pool {
@@ -23,6 +25,7 @@ impl Pool {
       pub const fn new() -> Pool {
             Pool {
                   slabs: array![_ => Slab::new(); 36],
+                  stat: Stat::new(),
             }
       }
 
@@ -65,6 +68,8 @@ impl Pool {
             let idx = Self::unwrap_layout(layout)?;
             unsafe { page.as_mut() }.init(OBJ_SIZES[idx]);
             self.slabs[idx].extend(page);
+
+            self.stat.extend(paging::PAGE_SIZE);
             Ok(())
       }
 
@@ -78,7 +83,10 @@ impl Pool {
       /// 2. There's no free slab page.
       pub fn alloc(&mut self, layout: Layout) -> Result<LAddr, AllocError> {
             let idx = Self::unwrap_layout(layout)?;
-            self.slabs[idx].pop()
+            self.slabs[idx].pop().map(|ret| {
+                  self.stat.alloc(layout.pad_to_align().size());
+                  ret
+            })
       }
 
       /// Deallocate an object to the slab lists
@@ -95,6 +103,13 @@ impl Pool {
             layout: Layout,
       ) -> Result<Option<NonNull<Page>>, AllocError> {
             let idx = Self::unwrap_layout(layout)?;
-            self.slabs[idx].push(addr)
+            self.slabs[idx].push(addr).map(|ret| {
+                  self.stat.dealloc(layout.pad_to_align().size());
+                  ret
+            })
+      }
+
+      pub fn stat(&self) -> Stat {
+            self.stat.clone()
       }
 }

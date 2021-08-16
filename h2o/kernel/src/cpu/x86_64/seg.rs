@@ -179,8 +179,19 @@ pub fn alloc_pls() -> *mut u8 {
 /// The caller must ensure that this function is called only once from the bootstrap
 /// CPU.
 pub(super) unsafe fn init() -> (LAddr, LAddr) {
-      let ret = ndt::init();
+      let kernel_fs = unsafe { reload_pls() };
+      let tss_rsp0 = ndt::init();
       idt::init();
 
-      ret
+      (tss_rsp0, kernel_fs)
+}
+
+pub(super) unsafe fn init_ap() -> (LAddr, LAddr) {
+      let tss_rsp0 = ndt::init();
+      idt::init();
+
+      (
+            tss_rsp0,
+            LAddr::from(archop::msr::read(archop::msr::FS_BASE) as usize),
+      )
 }

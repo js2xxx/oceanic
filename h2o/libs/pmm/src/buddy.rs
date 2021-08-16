@@ -684,7 +684,7 @@ pub unsafe fn dealloc_pages_exact(n: usize, addr: PAddr) {
 unsafe fn parse_mmap(
       mmap_iter: iter_ex::PointerIterator<uefi::table::boot::MemoryDescriptor>,
       reserved_range: Range<usize>,
-) {
+) -> usize {
       use uefi::table::boot::MemoryType;
 
       let available = |ty| matches!(ty, MemoryType::CONVENTIONAL | MemoryType::PERSISTENT_MEMORY);
@@ -692,6 +692,7 @@ unsafe fn parse_mmap(
             !reserved_range.contains(&start) && !reserved_range.contains(&(start + len))
       };
 
+      let mut sum = 0;
       for mdsc_ptr in mmap_iter {
             let mdsc = &*mdsc_ptr;
             log::trace!("Block at {:?}: {:?}", mdsc_ptr, *mdsc);
@@ -703,8 +704,11 @@ unsafe fn parse_mmap(
             {
                   let n = mdsc.page_count as usize;
                   dealloc_pages_exact(n, PAddr::new(mdsc.phys_start as usize));
+                  sum += n << PAGE_SHIFT;
             }
       }
+
+      sum
 }
 
 /// Dump PMM data with specific [`PfType`].
@@ -737,7 +741,7 @@ pub fn init(
       mmap_len: usize,
       mmap_unit: usize,
       reserved_range: Range<usize>,
-) {
+) -> usize {
       for i in ORDERS {
             *(pf_list_mut(PfType::Low, i).unwrap()) = PfList::new(PFAdapter::new());
             *(pf_list_mut(PfType::High, i).unwrap()) = PfList::new(PFAdapter::new());
@@ -746,6 +750,6 @@ pub fn init(
       // NOTE: There we trust the `mmap` is valid.
       unsafe {
             let iter = iter_ex::PointerIterator::new(mmap, mmap_len, mmap_unit);
-            parse_mmap(iter, reserved_range);
+            parse_mmap(iter, reserved_range)
       }
 }

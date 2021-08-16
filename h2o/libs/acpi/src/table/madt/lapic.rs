@@ -1,9 +1,9 @@
-use crate::raw;
-use crate::subt_parser;
+use crate::{raw, subt_parser};
 use paging::PAddr;
 
 use alloc::{vec, vec::Vec};
 use core::ptr::null_mut;
+use core::sync::atomic::{AtomicBool, Ordering};
 
 const INIT_BASE_ADDR: PAddr = PAddr::new(0xFEE00000);
 
@@ -28,15 +28,14 @@ pub struct LapicData {
 static mut IS_X2: bool = false;
 static mut BASE_ADDR: PAddr = INIT_BASE_ADDR;
 static mut LAPICS: Vec<LapicNode> = Vec::new();
-static mut INIT: bool = false;
+static INIT: AtomicBool = AtomicBool::new(false);
+
 /// # Safety
 ///
-/// The caller must ensure that the memory mapping for ACPI tables is fixed and valid,
-/// and that this function is not called twice or after SMP initialization.
+/// The caller must ensure that the memory mapping for ACPI tables is fixed and valid.
 pub unsafe fn get_lapic_data() -> Result<LapicData, raw::ACPI_STATUS> {
-      if !INIT {
+      if !INIT.swap(true, Ordering::SeqCst) {
             acquire_lapic_data()?;
-            INIT = true;
       }
 
       let lapic_data = LapicData {
