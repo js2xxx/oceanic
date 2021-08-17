@@ -39,6 +39,19 @@ impl MapInfo {
       }
 }
 
+#[derive(Clone, Debug)]
+pub struct ReprotectInfo {
+      pub virt: Range<LAddr>,
+      pub attr: Attr,
+      pub id_off: usize,
+}
+
+impl ReprotectInfo {
+      fn advance(&mut self, offset: usize) {
+            self.virt.start.advance(offset);
+      }
+}
+
 fn create_table(
       entry: &mut Entry,
       level: Level,
@@ -168,6 +181,39 @@ fn new_page(
 
             unsafe { invalidate_page(virt) };
             Ok(())
+      }
+}
+
+fn modify_page(
+      root_table: &mut Table,
+      virt: LAddr,
+      attr: Attr,
+      level: Level,
+      id_off: usize,
+      allocator: &mut impl PageAlloc,
+) -> Result<(), Error> {
+      let mut table: NonNull<[Entry]> = NonNull::from(&mut **root_table);
+      let mut lvl = Level::P4;
+      while lvl != level {
+            let idx = lvl.addr_idx(virt, false);
+            let table_mut = unsafe { table.as_mut() };
+            let item = &mut table_mut[idx];
+            table = get_or_split_table(item, lvl, id_off, allocator)?;
+            lvl = lvl.decrease().expect("Too low level");
+      }
+
+      let idx = level.addr_idx(virt, false);
+      let table_mut = unsafe { table.as_mut() };
+
+      if table_mut[idx].is_leaf(level) {
+            let attr = level.leaf_attr(attr);
+            let (phys, _) = table_mut[idx].get(level);
+            table_mut[idx] = Entry::new(phys, attr, level);
+
+            unsafe { invalidate_page(virt) };
+            Ok(())
+      } else {
+            Err(Error::EntryExistent(false))
       }
 }
 
@@ -308,6 +354,52 @@ pub fn maps(
             }
       }
       ret
+}
+
+pub fn reprotect(
+      root_table: &mut Table,
+      info: &ReprotectInfo,
+      allocator: &mut impl PageAlloc,
+) -> Result<(), Error> {
+      log::trace!(
+            "paging::reprotect: root table = {:?}, info = {:?}, allocator = {:?}",
+            root_table,
+            info,
+            allocator as *mut _
+      );
+
+      check(&info.virt, None)?;
+
+      let mut rem_info = info.clone();
+      while !rem_info.virt.is_empty() {
+            let phys = query(root_table, rem_info.virt.start, rem_info.id_off)
+                  .unwrap_or_else(|_| PAddr::new(0));
+            let level = core::cmp::min(
+                  core::cmp::min(
+                        Level::fit(rem_info.virt.start.val()).expect("Misaligned start address"),
+                        Level::fit(rem_info.virt.end.val() - rem_info.virt.start.val())
+                              .expect("Misaligned start address"),
+                  ),
+                  Level::fit(*phys).expect("Misaligned start address"),
+            );
+
+            match modify_page(
+                  root_table,
+                  rem_info.virt.start,
+                  rem_info.attr,
+                  level,
+                  rem_info.id_off,
+                  allocator,
+            ) {
+                  Ok(()) | Err(Error::EntryExistent(false)) => {}
+                  Err(e) => panic!("{:?}", e),
+            }
+
+            let ps = level.page_size();
+            rem_info.advance(ps);
+      }
+
+      Ok(())
 }
 
 pub fn query(root_table: &Table, virt: LAddr, id_off: usize) -> Result<PAddr, Error> {

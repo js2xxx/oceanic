@@ -23,6 +23,7 @@ pub mod dev;
 pub mod log;
 pub mod mem;
 pub mod rxx;
+pub mod sched;
 
 use kargs::KernelArgs;
 

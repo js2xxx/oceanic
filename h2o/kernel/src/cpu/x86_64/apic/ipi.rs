@@ -128,7 +128,7 @@ impl TramHeader {
 /// # Safety
 ///
 /// This function must be called after Local APIC initialization.
-pub unsafe fn start_cpus(lapics: Vec<LapicNode>) {
+pub unsafe fn start_cpus(lapics: Vec<LapicNode>) -> usize {
       static TRAM_DATA: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/tram"));
 
       let base_phys = PAddr::new(minfo::TRAMPOLINE_RANGE.start);
@@ -146,6 +146,8 @@ pub unsafe fn start_cpus(lapics: Vec<LapicNode>) {
             unsafe { header.write(TramHeader::new()) };
             &*header
       };
+
+      let mut cnt = lapics.len();
 
       let self_id = lapic(|lapic| lapic.id).expect("LAPIC uninitialized");
       for LapicNode { id, .. } in lapics.iter().filter(|node| node.id != self_id) {
@@ -172,8 +174,11 @@ pub unsafe fn start_cpus(lapics: Vec<LapicNode>) {
 
                         if !header.test_booted() {
                               log::warn!("CPU with LAPIC ID {} failed to boot", id);
+                              cnt -= 1;
                         }
                   }
             });
       }
+
+      cnt
 }

@@ -1,19 +1,19 @@
 [package]
-name = "h2o_boot"
-version = "0.1.0"
 authors = ["徐启航 <akucxy@163.com>"]
 edition = "2018"
+name = "h2o_boot"
+version = "0.1.0"
 
 [dependencies]
 # Local crates
-archop = { path = "../libs/archop" }
-bitop_ex = { path = "../libs/bitop_ex" }
-kargs = { path = "../libs/kargs" }
-minfo = { path = "../libs/minfo" }
-paging = { path = "../libs/paging" }
+archop = {path = "../libs/archop"}
+bitop_ex = {path = "../libs/bitop_ex"}
+kargs = {path = "../libs/kargs"}
+minfo = {path = "../libs/minfo"}
+paging = {path = "../libs/paging"}
 # External crates
 elf_rs = "0.1"
 log = "0.4"
 raw-cpuid = "9.0"
 tinybmp = "0.3"
-uefi = { version = "0.11", features = [ "logger", "alloc" ] }
+uefi = {version = "0.11", features = ["logger", "alloc"]}

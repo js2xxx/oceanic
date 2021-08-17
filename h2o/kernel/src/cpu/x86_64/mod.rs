@@ -13,6 +13,7 @@ use core::sync::atomic::{AtomicUsize, Ordering};
 
 pub const MAX_CPU: usize = 256;
 pub static CPU_INDEX: AtomicUsize = AtomicUsize::new(0);
+static CPU_COUNT: AtomicUsize = AtomicUsize::new(1);
 
 /// # Safety
 ///
@@ -30,6 +31,10 @@ pub unsafe fn set_id() -> usize {
 pub unsafe fn id() -> usize {
       use archop::msr;
       msr::read(msr::TSC_AUX) as usize
+}
+
+pub fn count() -> usize {
+      CPU_COUNT.load(Ordering::SeqCst)
 }
 
 #[repr(C)]
@@ -120,7 +125,8 @@ pub unsafe fn init(lapic_data: acpi::table::madt::LapicData) {
       // SAFE: During bootstrap initialization.
       unsafe { kernel_gs.load() };
 
-      apic::ipi::start_cpus(lapics);
+      let cnt = apic::ipi::start_cpus(lapics);
+      CPU_COUNT.store(cnt, Ordering::SeqCst);
 }
 
 pub unsafe fn init_ap(lapic_data: acpi::table::madt::LapicData) {

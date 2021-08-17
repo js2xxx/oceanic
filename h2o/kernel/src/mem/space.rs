@@ -202,7 +202,49 @@ impl Space {
             self.canary.assert();
 
             self.alloc_manual(Layout::new::<T>(), phys, flags)
-                  .and_then(|r| MemBlock::into_typed(r))
+                  .and_then(MemBlock::into_typed)
+      }
+
+      /// Modify the access flags of an address range without a specific type.
+      ///
+      /// # Safety
+      ///
+      /// The caller must ensure that `b` was allocated by this `Space` and no pointers or
+      /// references to the block are present (or influenced by the modification).
+      pub unsafe fn modify_manual<'b>(
+            &self,
+            b: Pin<&'b mut [MemBlock]>,
+            flags: Flags,
+      ) -> Result<Pin<&'b mut [MemBlock]>, &'static str> {
+            self.canary.assert();
+
+            let virt = {
+                  let ptr = b.as_ptr_range();
+                  LAddr::new(ptr.start as *mut _)..LAddr::new(ptr.end as *mut _)
+            };
+
+            self.arch
+                  .reprotect(virt, flags)
+                  .map_err(|_| "Paging error")?;
+
+            Ok(b)
+      }
+
+      /// Modify the access flags of an address range with a specific type.
+      ///
+      /// # Safety
+      ///
+      /// The caller must ensure that `b` was allocated by this `Space` and no pointers or
+      /// references to the block are present (or influenced by the modification).
+      pub unsafe fn modify_typed<'b, T>(
+            &self,
+            b: Pin<&'b mut MaybeUninit<T>>,
+            flags: Flags,
+      ) -> Result<Pin<&'b mut MaybeUninit<T>>, &'static str> {
+            self.canary.assert();
+
+            self.modify_manual(MemBlock::from_typed(b), flags)
+                  .and_then(MemBlock::into_typed)
       }
 
       /// Deallocate an address range in the space without a specific type.

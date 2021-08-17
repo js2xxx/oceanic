@@ -204,7 +204,7 @@ intr_entry:
       mov   rcx, FS_BASE
       mov   rax, [gs:(KernelGs.kernel_fs)]
       mov   rdx, rax
-      shl   rdx, 32
+      shr   rdx, 32
       wrmsr
 
       pop   r12
@@ -268,7 +268,7 @@ rout_syscall:
       mov   rcx, FS_BASE
       mov   rax, [gs:(KernelGs.kernel_fs)]
       mov   rdx, rax
-      shl   rdx, 32
+      shr   rdx, 32
       wrmsr
 
       mov   rdi, rsp

@@ -11,7 +11,7 @@ use paging::{LAddr, PAddr, Table};
 use alloc::boxed::Box;
 use alloc::sync::Arc;
 use core::alloc::Layout;
-use core::mem::{size_of, MaybeUninit};
+use core::mem::{align_of, size_of, MaybeUninit};
 use core::ops::Range;
 use core::pin::Pin;
 use spin::{Lazy, Mutex};
@@ -21,8 +21,7 @@ static KERNEL_ROOT: Lazy<(Box<Table>, u64)> = Lazy::new(|| {
       let mut table = box Table::zeroed();
 
       let cr3 = unsafe { archop::reg::cr3::read() };
-      let cr3_laddr =
-            PAddr::new(cr3 as usize).to_laddr(minfo::ID_OFFSET);
+      let cr3_laddr = PAddr::new(cr3 as usize).to_laddr(minfo::ID_OFFSET);
       let init_table = unsafe { core::slice::from_raw_parts(cr3_laddr.cast(), paging::NR_ENTRIES) };
       table.copy_from_slice(init_table);
 
@@ -94,11 +93,37 @@ impl Space {
             paging::maps(&mut *self.root_table.lock(), &map_info, &mut PageAlloc)
       }
 
-      pub fn query(&self, virt: LAddr) -> Result<PAddr, paging::Error> {
+      pub(in crate::mem) fn reprotect(
+            &self,
+            virt: Range<LAddr>,
+            flags: Flags,
+      ) -> Result<(), paging::Error> {
             self.canary.assert();
 
-            paging::query(&mut *self.root_table.lock(), virt, minfo::ID_OFFSET)
+            let attr = paging::Attr::builder()
+                  .writable(flags.contains(Flags::WRITABLE))
+                  .user_access(flags.contains(Flags::USER_ACCESS))
+                  .executable(flags.contains(Flags::EXECUTABLE))
+                  .build();
+
+            let reprotect_info = paging::ReprotectInfo {
+                  virt,
+                  attr,
+                  id_off: minfo::ID_OFFSET,
+            };
+
+            paging::reprotect(
+                  &mut *self.root_table.lock(),
+                  &reprotect_info,
+                  &mut PageAlloc,
+            )
       }
+
+      // pub fn query(&self, virt: LAddr) -> Result<PAddr, paging::Error> {
+      //       self.canary.assert();
+
+      //       paging::query(&mut *self.root_table.lock(), virt, minfo::ID_OFFSET)
+      // }
 
       pub(in crate::mem) fn unmaps(
             &self,
@@ -148,6 +173,8 @@ impl MemBlock {
                   core::slice::from_raw_parts_mut(
                         (u as *mut MaybeUninit<T>).cast(),
                         Layout::new::<T>()
+                              .align_to(align_of::<MemBlock>())
+                              .unwrap()
                               .pad_to_align()
                               .size()
                               .div_ceil_bit(paging::PAGE_SHIFT),
@@ -161,9 +188,8 @@ struct PageAlloc;
 unsafe impl paging::PageAlloc for PageAlloc {
       unsafe fn alloc(&mut self) -> Option<PAddr> {
             let ptr = alloc::alloc::alloc(core::alloc::Layout::new::<paging::Table>());
-            let paddr = LAddr::new(ptr).to_paddr(minfo::ID_OFFSET);
-            if *paddr != 0 {
-                  Some(paddr)
+            if !ptr.is_null() {
+                  Some(LAddr::new(ptr).to_paddr(minfo::ID_OFFSET))
             } else {
                   None
             }
