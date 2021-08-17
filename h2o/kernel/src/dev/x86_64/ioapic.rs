@@ -2,8 +2,8 @@ use crate::cpu::arch::apic::{lapic, DelivMode, Polarity, TriggerMode, LAPIC_ID};
 use crate::cpu::arch::intr::ArchReg;
 use crate::cpu::intr::{edge_handler, fasteoi_handler, Interrupt, IntrChip, TypeHandler};
 use crate::mem::space::{krl, Flags, MemBlock};
-use acpi::table::madt::ioapic::{IntrOvrPolarity, IntrOvrTrig};
-use acpi::table::madt::{IoapicData, IoapicNode};
+use crate::dev::acpi::table::madt::ioapic::{IntrOvrPolarity, IntrOvrTrig};
+use crate::dev::acpi::table::madt::{IoapicData, IoapicNode};
 use paging::{PAddr, PAGE_LAYOUT, PAGE_MASK};
 
 use alloc::sync::Arc;

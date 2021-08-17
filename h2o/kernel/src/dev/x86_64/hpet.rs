@@ -2,7 +2,7 @@
 #![allow(dead_code)]
 
 use crate::mem::space::{krl, Flags, MemBlock};
-use acpi::table::hpet::HpetData;
+use crate::dev::acpi::table::hpet::HpetData;
 
 use core::pin::Pin;
 

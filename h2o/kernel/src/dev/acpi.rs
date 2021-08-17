@@ -1,11 +1,5 @@
-#![no_std]
-#![feature(box_syntax)]
-#![feature(const_btree_new)]
-
 mod raw;
 pub mod table;
-
-extern crate alloc;
 
 const NR_INIT_TABLES: usize = 128;
 static mut INIT_TABLES: [core::mem::MaybeUninit<raw::ACPI_TABLE_DESC>; NR_INIT_TABLES] =

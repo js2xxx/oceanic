@@ -2,6 +2,7 @@ pub mod ipi;
 pub mod timer;
 
 use super::intr::def::ApicVec;
+use crate::dev::acpi;
 use crate::mem::space;
 use alloc::collections::BTreeMap;
 use archop::msr;

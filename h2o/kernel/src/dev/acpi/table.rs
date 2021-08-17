@@ -4,7 +4,7 @@ pub mod hpet;
 pub use madt::get_lapic_data;
 pub use madt::get_ioapic_data;
 
-use crate::raw;
+use super::raw;
 
 use alloc::boxed::Box;
 use alloc::vec::Vec;
@@ -39,7 +39,7 @@ unsafe fn parse_subtable(
 #[macro_export]
 macro_rules! subt_parser {
       ($ty_idx:expr => $handler:expr) => {
-            crate::table::SubtableParser {
+            $crate::dev::acpi::table::SubtableParser {
                   ty_idx: $ty_idx,
                   handler: $handler,
             }

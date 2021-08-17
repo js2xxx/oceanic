@@ -4,6 +4,7 @@ pub mod seg;
 pub mod syscall;
 pub mod tsc;
 
+use crate::dev::acpi;
 use paging::LAddr;
 
 use alloc::boxed::Box;

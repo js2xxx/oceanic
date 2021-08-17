@@ -4,7 +4,7 @@ use crate::cpu::arch::seg::alloc_pls;
 use crate::cpu::arch::seg::ndt::Segment;
 use crate::cpu::time::{delay, Instant};
 use crate::mem::space::init_pgc;
-use acpi::table::madt::LapicNode;
+use crate::dev::acpi::table::madt::LapicNode;
 use paging::PAddr;
 
 use alloc::vec::Vec;
