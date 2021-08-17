@@ -5,13 +5,10 @@
 #![allow(clippy::redundant_static_lifetimes)]
 
 mod mem;
+mod outp;
+mod table;
 
-use ::va_list::VaList;
-use alloc::borrow::ToOwned;
-use alloc::string::{String, ToString};
-use alloc::vec::Vec;
 use cty::*;
-use spin::Mutex;
 
 include!(concat!(env!("OUT_DIR"), "/acpica.rs"));
 
@@ -27,8 +24,6 @@ pub const AE_TIME: ACPI_STATUS = AE_CODE_ENVIRONMENTAL | 0x11;
 pub const AE_BAD_PARAMETER: ACPI_STATUS = AE_CODE_PROGRAMMER | 1;
 
 pub(super) static mut RSDP: usize = 0;
-
-static PRINT_BUF: Mutex<String> = Mutex::new(String::new());
 
 #[no_mangle]
 unsafe extern "C" fn AcpiOsGetRootPointer() -> ACPI_PHYSICAL_ADDRESS {
@@ -47,36 +42,7 @@ extern "C" fn AcpiOsTerminate() -> ACPI_STATUS {
 
 #[no_mangle]
 unsafe extern "C" fn AcpiOsGetTimer() -> UINT64 {
-      unimplemented!()
-}
-
-#[no_mangle]
-unsafe extern "C" fn AcpiOsPredefinedOverride(
-      obj: *const ACPI_PREDEFINED_NAMES,
-      newv: ACPI_STRING,
-) -> ACPI_STATUS {
-      *newv = '\0' as i8;
-      AE_OK
-}
-
-#[no_mangle]
-unsafe extern "C" fn AcpiOsTableOverride(
-      ExistingTable: *const ACPI_TABLE_HEADER,
-      NewTable: *mut (*const ACPI_TABLE_HEADER),
-) -> ACPI_STATUS {
-      *NewTable = core::ptr::null_mut();
-      AE_OK
-}
-
-#[no_mangle]
-unsafe extern "C" fn AcpiOsPhysicalTableOverride(
-      ExistingTable: *const ACPI_TABLE_HEADER,
-      NewAddress: *mut ACPI_PHYSICAL_ADDRESS,
-      NewTableLength: *mut UINT32,
-) -> ACPI_STATUS {
-      *NewAddress = 0;
-      *NewTableLength = 0;
-      AE_OK
+      crate::cpu::time::Instant::now().raw()
 }
 
 #[no_mangle]
@@ -215,56 +181,4 @@ unsafe extern "C" fn AcpiOsWritePciConfiguration(
 #[no_mangle]
 unsafe extern "C" fn AcpiOsSignal(Function: UINT32, Info: *mut cty::c_void) -> ACPI_STATUS {
       unimplemented!()
-}
-
-extern "C" {
-      #[no_mangle]
-      fn strlen(s: *const u8) -> usize;
-
-      #[no_mangle]
-      fn vsnprintf(buf: *const u8, len: usize, fmt: *const u8, args: VaList) -> cty::c_int;
-}
-
-#[no_mangle]
-unsafe extern "C" fn AcpiOsVprintf(format: *const u8, args: VaList) {
-      let mut buf = PRINT_BUF.lock();
-
-      let mut new_buf = {
-            let len = strlen(format);
-            let slice = core::slice::from_raw_parts(format, len as usize);
-            let mut buf = Vec::with_capacity(256);
-            buf.extend_from_slice(slice);
-            {
-                  let ptr = buf.as_mut_ptr();
-                  vsnprintf(ptr, 256, format, args);
-            }
-            buf
-      };
-
-      let mut input: &[u8] = &new_buf;
-      loop {
-            match core::str::from_utf8(input) {
-                  Ok(valid) => {
-                        buf.push_str(valid);
-                        break;
-                  }
-                  Err(error) => {
-                        let (valid, after_valid) = input.split_at(error.valid_up_to());
-                        unsafe { buf.push_str(core::str::from_utf8_unchecked(valid)) }
-                        buf.push('\u{FFFD}');
-
-                        if let Some(invalid_sequence_length) = error.error_len() {
-                              input = &after_valid[invalid_sequence_length..]
-                        } else {
-                              break;
-                        }
-                  }
-            }
-      }
-
-      if buf.ends_with('\n') {
-            buf.pop();
-            log::info!("{}", &buf);
-            buf.clear();
-      }
 }

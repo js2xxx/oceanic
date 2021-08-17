@@ -21,6 +21,10 @@ impl Instant {
       pub fn elapsed(&self) -> Duration {
             Self::now() - *self
       }
+
+      pub unsafe fn raw(&self) -> u64 {
+            self.data
+      }
 }
 
 #[cfg(target_arch = "x86_64")]
