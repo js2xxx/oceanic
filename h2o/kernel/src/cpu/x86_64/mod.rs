@@ -105,6 +105,8 @@ impl KernelGs {
 pub unsafe fn init(lapic_data: acpi::table::madt::LapicData) {
       let (tss_rsp0, kernel_fs) = seg::init();
 
+      unsafe { tsc::init() };
+
       let acpi::table::madt::LapicData {
             ty: lapic_ty,
             lapics,
@@ -116,8 +118,6 @@ pub unsafe fn init(lapic_data: acpi::table::madt::LapicData) {
       let kernel_gs = KernelGs::new(tss_rsp0, syscall_stack, kernel_fs);
       // SAFE: During bootstrap initialization.
       unsafe { kernel_gs.load() };
-
-      unsafe { tsc::init() };
 
       apic::ipi::start_cpus(lapics);
 }

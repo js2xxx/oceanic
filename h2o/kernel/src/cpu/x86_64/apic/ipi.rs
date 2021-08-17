@@ -2,7 +2,7 @@ use super::{DelivMode, TriggerMode};
 use crate::cpu::arch::apic::{ipi, lapic};
 use crate::cpu::arch::seg::alloc_pls;
 use crate::cpu::arch::seg::ndt::Segment;
-use crate::cpu::arch::tsc::{delay, ns_clock};
+use crate::cpu::time::{delay, Instant};
 use crate::mem::space::init_pgc;
 use acpi::table::madt::LapicNode;
 use paging::PAddr;
@@ -100,11 +100,13 @@ impl TramHeader {
             }
       }
 
-      pub unsafe fn test_booted(&self, start: u64) -> bool {
-            while !self.booted.swap(false, Ordering::SeqCst) && ns_clock() - start < 1000000 {
+      pub unsafe fn test_booted(&self) -> bool {
+            let limit = Duration::from_millis(50);
+            let instant = Instant::now();
+            while !self.booted.swap(false, Ordering::SeqCst) && instant.elapsed() < limit {
                   archop::pause();
             }
-            ns_clock() - start < 1000000
+            instant.elapsed() < limit
       }
 
       pub unsafe fn reset_subheader(&self) {
@@ -160,7 +162,7 @@ pub unsafe fn start_cpus(lapics: Vec<LapicNode>) {
                         *id,
                   );
 
-                  if !header.test_booted(ns_clock()) {
+                  if !header.test_booted() {
                         lapic.send_ipi(
                               (*base_phys >> 3) as u8,
                               DelivMode::StartUp,
@@ -168,7 +170,7 @@ pub unsafe fn start_cpus(lapics: Vec<LapicNode>) {
                               *id,
                         );
 
-                        if !header.test_booted(ns_clock()) {
+                        if !header.test_booted() {
                               log::warn!("CPU with LAPIC ID {} failed to boot", id);
                         }
                   }
