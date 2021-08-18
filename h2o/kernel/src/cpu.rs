@@ -17,4 +17,10 @@ pub fn all_mask() -> CpuMask {
       arr
 }
 
+pub fn current_mask() -> CpuMask {
+      let mut arr = bitarr![0; MAX_CPU];
+      arr.set(unsafe { id() }, true);
+      arr
+}
+
 pub type CpuMask = BitArr!(for MAX_CPU);

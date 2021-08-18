@@ -9,7 +9,6 @@ use canary::Canary;
 use paging::{LAddr, PAddr, Table};
 
 use alloc::boxed::Box;
-use alloc::sync::Arc;
 use core::alloc::Layout;
 use core::mem::{align_of, size_of, MaybeUninit};
 use core::ops::Range;
@@ -45,15 +44,15 @@ impl Space {
       ///
       /// The space's root page table must contains the page tables of the kernel half otherwise
       /// if loaded the kernel will crash due to #PF.
-      pub fn new() -> Arc<Space> {
+      pub fn new() -> Space {
             let rt = box Table::zeroed();
             let cr3 = Box::into_raw(rt);
 
-            let space = Arc::new(Space {
+            let space = Space {
                   canary: Canary::new(),
                   root_table: Mutex::new(unsafe { Box::from_raw(cr3) }),
                   cr3: LAddr::new(cr3.cast()),
-            });
+            };
 
             {
                   // So far we only copy the higher half kernel mappings. In the future, we'll set
@@ -181,6 +180,17 @@ impl MemBlock {
                   )
             })
       }
+
+      // pub fn into_raw<'a>(b: Pin<&'a mut [Self]>) -> (LAddr, usize) {
+      //       (LAddr::new(b.as_ptr() as *mut u8), b.len())
+      // }
+
+      // /// # Safety
+      // ///
+      // /// The caller must ensure that the data is acquired from [`MemBlock::into_raw`].
+      // pub unsafe fn from_raw<'a>(addr: LAddr, len: usize) -> Pin<&'a mut [Self]> {
+      //       Pin::new_unchecked(core::slice::from_raw_parts_mut(addr.cast(), len))
+      // }
 }
 
 struct PageAlloc;

@@ -1,9 +1,9 @@
 use crate::cpu::arch::apic::{lapic, DelivMode, Polarity, TriggerMode, LAPIC_ID};
 use crate::cpu::arch::intr::ArchReg;
 use crate::cpu::intr::{edge_handler, fasteoi_handler, Interrupt, IntrChip, TypeHandler};
-use crate::mem::space::{krl, Flags, MemBlock};
 use crate::dev::acpi::table::madt::ioapic::{IntrOvrPolarity, IntrOvrTrig};
 use crate::dev::acpi::table::madt::{IoapicData, IoapicNode};
+use crate::mem::space::{krl, Flags, MemBlock};
 use paging::{PAddr, PAGE_LAYOUT, PAGE_MASK};
 
 use alloc::sync::Arc;
@@ -136,16 +136,10 @@ impl<'a> Ioapic<'a> {
                   let paddr = PAddr::new(paddr as usize);
                   (PAddr::new(*paddr & !PAGE_MASK), paddr.in_page_offset())
             };
-            let mut memory = unsafe {
-                  krl(|space| {
-                        space.alloc_manual(
-                              PAGE_LAYOUT,
-                              Some(base),
-                              Flags::READABLE | Flags::WRITABLE,
-                        )
+            let mut memory = krl(|space| unsafe {
+                  space.alloc_manual(PAGE_LAYOUT, Some(base), Flags::READABLE | Flags::WRITABLE)
                         .map_err(|_| "Memory allocation failed")
-                  })
-            }
+            })
             .expect("Kernel space uninitialized")?;
             let base_ptr = unsafe { memory.as_mut_ptr().cast::<u8>().add(offset) }.cast::<u32>();
 

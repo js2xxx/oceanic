@@ -15,6 +15,8 @@ pub use pmm::PF_SIZE;
 
 pub const USER_BASE: usize = 0x100000;
 
+pub const USER_STACK_BASE: usize = 0x7F80_0000_0000;
+
 pub const USER_END: usize = 0x7FFF_0000_0000;
 
 pub const KERNEL_SPACE_START: usize = 0xFFFF_8000_0000_0000;

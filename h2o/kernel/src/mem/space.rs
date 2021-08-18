@@ -3,11 +3,13 @@
 //! This module is responsible for managing system memory and address space in a higher
 //! level, especially for large objects like APIC.
 
+use crate::sched::task;
+use alloc::collections::BTreeMap;
+use bitop_ex::BitOpEx;
 use canary::Canary;
 use collection_ex::RangeSet;
 use paging::{LAddr, PAddr};
 
-use alloc::sync::Arc;
 use core::alloc::Layout;
 use core::mem::{align_of, size_of, MaybeUninit};
 use core::ops::Range;
@@ -38,23 +40,14 @@ bitflags::bitflags! {
       }
 }
 
-/// The create type of a [`Space`].
-#[derive(Debug)]
-pub enum CreateType {
-      Kernel,
-      User,
-}
-
-impl CreateType {
-      /// The total available range of address space for the create type.
-      ///
-      /// We cannot simply pass a [`Range`] to [`Space`]'s constructor because without control
-      /// arbitrary, even incanonical ranges would be passed and cause unrecoverable errors.
-      fn range(&self) -> Range<LAddr> {
-            match self {
-                  CreateType::Kernel => minfo::KERNEL_ALLOCABLE_RANGE,
-                  CreateType::User => LAddr::from(minfo::USER_BASE)..LAddr::from(minfo::USER_END),
-            }
+/// The total available range of address space for the create type.
+///
+/// We cannot simply pass a [`Range`] to [`Space`]'s constructor because without control
+/// arbitrary, even incanonical ranges would be passed and cause unrecoverable errors.
+fn ty_to_range(ty: task::Type) -> Range<LAddr> {
+      match ty {
+            task::Type::Kernel => minfo::KERNEL_ALLOCABLE_RANGE,
+            task::Type::User => LAddr::from(minfo::USER_BASE)..LAddr::from(minfo::USER_STACK_BASE),
       }
 }
 
@@ -65,26 +58,32 @@ impl CreateType {
 /// This structure is used to allocate & reserve address space ranges for various requests.
 ///
 /// >TODO: Support the requests for reserving address ranges.
+#[derive(Debug)]
 pub struct Space {
       canary: Canary<Space>,
+      ty: task::Type,
 
       /// The arch-specific part of the address space.
-      arch: Arc<ArchSpace>,
+      arch: ArchSpace,
 
       /// The free ranges in allocation.
       free_range: Mutex<RangeSet<LAddr>>,
+
+      stack_blocks: Mutex<BTreeMap<LAddr, Layout>>,
 }
 
 impl Space {
       /// Create a new address space.
-      pub fn new(ty: CreateType) -> Self {
+      pub fn new(ty: task::Type) -> Self {
             let mut free_range = RangeSet::new();
-            let _ = free_range.insert(ty.range());
+            let _ = free_range.insert(ty_to_range(ty));
 
             Space {
                   canary: Canary::new(),
+                  ty,
                   arch: ArchSpace::new(),
                   free_range: Mutex::new(free_range),
+                  stack_blocks: Mutex::new(BTreeMap::new()),
             }
       }
 
@@ -310,7 +309,101 @@ impl Space {
       ///
       /// The caller must ensure that loading the space is safe and not cause any #PF.
       pub unsafe fn load(&self) {
+            self.canary.assert();
             self.arch.load()
+      }
+
+      fn alloc_stack(&self, base: LAddr, size: usize) -> Result<(), &'static str> {
+            let layout = {
+                  let n = size.div_ceil_bit(paging::PAGE_SHIFT);
+                  paging::PAGE_LAYOUT
+                        .repeat(n)
+                        .expect("Failed to get layout")
+                        .0
+            };
+
+            if base.val() < minfo::USER_STACK_BASE {
+                  return Err("Max allocation size exceeded");
+            }
+
+            let (phys, alloc_ptr) = unsafe {
+                  let ptr = alloc::alloc::alloc(layout);
+
+                  if ptr.is_null() {
+                        return Err("Memory allocation failed");
+                  }
+
+                  (LAddr::new(ptr).to_paddr(minfo::ID_OFFSET), ptr)
+            };
+            let virt = base..LAddr::from(base.val() + size);
+
+            self.arch
+                  .maps(virt, phys, Flags::READABLE | Flags::WRITABLE)
+                  .map_err(|_| unsafe {
+                        alloc::alloc::dealloc(alloc_ptr, layout);
+                        "Paging error"
+                  })?;
+
+            if let Some(_) = self.stack_blocks.lock().insert(base, layout) {
+                  panic!("Duplicate allocation");
+            }
+
+            Ok(())
+      }
+
+      pub fn init_stack(&self, size: usize) -> Result<LAddr, &'static str> {
+            self.canary.assert();
+            if matches!(self.ty, task::Type::Kernel) {
+                  return Err("Stack allocation is not allowed in kernel");
+            }
+
+            let size = size.round_up_bit(paging::PAGE_SHIFT);
+
+            let top = minfo::USER_END;
+            let base = LAddr::from(top - size);
+
+            self.alloc_stack(base, size)?;
+
+            Ok(LAddr::from(top))
+      }
+
+      pub fn grow_stack(&self, addr: LAddr) -> Result<(), &'static str> {
+            self.canary.assert();
+            if matches!(self.ty, task::Type::Kernel) {
+                  return Err("Stack allocation is not allowed in kernel");
+            }
+
+            let addr = LAddr::from(addr.val().round_down_bit(paging::PAGE_SHIFT));
+
+            let mut stack_blocks = self.stack_blocks.lock();
+
+            let last = stack_blocks
+                  .iter()
+                  .next()
+                  .map_or(LAddr::from(minfo::USER_END), |(&k, _v)| k);
+
+            let size = unsafe { last.offset_from(*addr) } as usize;
+
+            self.alloc_stack(addr, size)
+      }
+
+      pub fn clear_stack(&self) -> Result<(), &'static str> {
+            self.canary.assert();
+            if matches!(self.ty, task::Type::Kernel) {
+                  return Err("Stack allocation is not allowed in kernel");
+            }
+
+            let mut stack_blocks = self.stack_blocks.lock();
+            for (&base, &layout) in stack_blocks.iter() {
+                  let virt = base..LAddr::from(base.val() + layout.pad_to_align().size());
+                  if let Ok(Some(phys)) = self.arch.unmaps(virt) {
+                        let ptr = phys.to_laddr(minfo::ID_OFFSET);
+                        unsafe { alloc::alloc::dealloc(*ptr, layout) };
+                  }
+            }
+
+            stack_blocks.clear();
+            Ok(())
       }
 }
 
@@ -320,7 +413,7 @@ impl Space {
 ///
 /// The function must be called only once from the bootstrap CPU.
 pub unsafe fn init_kernel() {
-      let krl_space = Space::new(CreateType::Kernel);
+      let krl_space = Space::new(task::Type::Kernel);
       krl_space.load();
       KRL_SPACE = Some(krl_space);
 }
@@ -331,24 +424,38 @@ pub unsafe fn init_kernel() {
 ///
 /// The function must be called only once from each application CPU.
 pub unsafe fn init_ap() {
-      let ap_space = Space::new(CreateType::Kernel);
+      let ap_space = Space::new(task::Type::Kernel);
       ap_space.load();
       AP_SPACE = Some(ap_space);
 }
 
 /// Get the reference of the per-CPU kernel space.
-///
-/// # Safety
-///
-/// The function must be called only after the CPU's kernel space is initialized and loaded.
-pub unsafe fn krl<F, R>(f: F) -> Option<R>
+pub fn krl<F, R>(f: F) -> Option<R>
 where
       F: FnOnce(&'static Space) -> R,
 {
-      let k = if crate::cpu::id() == 0 {
-            KRL_SPACE.as_ref()
-      } else {
-            AP_SPACE.as_ref()
+      let k = unsafe {
+            if crate::cpu::id() == 0 {
+                  KRL_SPACE.as_ref()
+            } else {
+                  AP_SPACE.as_ref()
+            }
       };
       k.map(|krl| f(krl))
+}
+
+/// # Safety
+///
+/// The caller must ensure that the current loaded space is the kernel space.
+pub unsafe fn with<'s, F, R>(space: &'s Space, f: F) -> Option<R>
+where
+      F: FnOnce(&'s Space) -> R,
+{
+      krl(|krl| {
+            space.load();
+            let ret = f(space);
+            krl.load();
+
+            ret
+      })
 }

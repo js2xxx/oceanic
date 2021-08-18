@@ -94,7 +94,7 @@ impl<'a> Timer<'a> {
 ///
 /// The caller must ensure that this function is called only by interrupt routines and when
 /// everything about interrupts is set up.
-pub unsafe fn timer_handler(_frame: *mut crate::cpu::intr::arch::ctx::Frame) {
+pub unsafe fn timer_handler(_frame: *mut crate::sched::task::ctx::arch::Frame) {
       // SAFE: Inside the timer interrupt handler.
       super::lapic(|lapic| lapic.eoi());
 }

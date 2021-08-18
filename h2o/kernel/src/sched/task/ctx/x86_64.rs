@@ -1,3 +1,10 @@
+use super::Entry;
+use crate::cpu::arch::seg::ndt::{KRL_CODE_X64, KRL_DATA_X64, USR_CODE_X64, USR_DATA_X64};
+use crate::cpu::arch::seg::SegSelector;
+use crate::sched::task;
+
+pub const DEFAULT_STACK_SIZE: usize = 6 * paging::PAGE_SIZE;
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[repr(C)]
 pub struct Frame {
@@ -27,6 +34,21 @@ pub struct Frame {
 }
 
 impl Frame {
+      pub fn set_entry(&mut self, entry: Entry, ty: task::Type) {
+            let (cs, ss) = match ty {
+                  task::Type::User => (USR_CODE_X64, USR_DATA_X64),
+                  task::Type::Kernel => (KRL_CODE_X64, KRL_DATA_X64),
+            };
+
+            self.rip = entry.entry.val() as u64;
+            self.rsp = entry.stack.val() as u64;
+            self.rflags = archop::reg::rflags::IF;
+            self.cs = SegSelector::into_val(cs) as u64;
+            self.ss = SegSelector::into_val(ss) as u64;
+            self.rdi = entry.args[0];
+            self.rsi = entry.args[1];
+      }
+
       const RFLAGS: &'static str =
             "CF - PF - AF - ZF SF TF IF DF OF IOPLL IOPLH NT - RF VM AC VIF VIP ID";
 

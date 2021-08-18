@@ -1,8 +1,8 @@
 //! TODO: Add HPET device support.
 #![allow(dead_code)]
 
-use crate::mem::space::{krl, Flags, MemBlock};
 use crate::dev::acpi::table::hpet::HpetData;
+use crate::mem::space::{krl, Flags, MemBlock};
 
 use core::pin::Pin;
 
@@ -74,16 +74,14 @@ impl<'a> Hpet<'a> {
                   block_id,
             } = data;
 
-            let mut memory = unsafe {
-                  krl(|space| {
-                        space.alloc_manual(
-                              paging::PAGE_LAYOUT,
-                              Some(phys),
-                              Flags::READABLE | Flags::WRITABLE,
-                        )
-                        .map_err(|_| "Memory allocation failed")
-                  })
-            }
+            let mut memory = krl(|space| unsafe {
+                  space.alloc_manual(
+                        paging::PAGE_LAYOUT,
+                        Some(phys),
+                        Flags::READABLE | Flags::WRITABLE,
+                  )
+                  .map_err(|_| "Memory allocation failed")
+            })
             .expect("Kernel space uninitialized")?;
 
             let base_ptr = memory.as_mut_ptr().cast::<u32>();

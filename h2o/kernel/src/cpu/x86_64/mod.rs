@@ -4,6 +4,7 @@ pub mod seg;
 pub mod syscall;
 pub mod tsc;
 
+use crate::sched::task::ctx;
 use crate::dev::acpi;
 use paging::LAddr;
 
@@ -49,7 +50,7 @@ pub struct KernelGs {
 impl KernelGs {
       pub fn new(tss_rsp0: LAddr, syscall_stack: LAddr, kernel_fs: LAddr) -> Self {
             KernelGs {
-                  save_regs: intr::ctx::test::save_regs as *mut u8,
+                  save_regs: ctx::arch::test::save_regs as *mut u8,
                   tss_rsp0,
                   syscall_user_stack: null_mut(),
                   syscall_stack,
@@ -71,7 +72,7 @@ impl KernelGs {
       /// The caller must ensure that this function is called only if
       /// [`archop::msr::KERNEL_GS_BASE`] is uninitialized.
       pub unsafe fn load(self) {
-            intr::ctx::test::init_stack_top(
+            ctx::arch::test::init_stack_top(
                   alloc::alloc::alloc(paging::PAGE_LAYOUT).add(paging::PAGE_SIZE),
             );
 

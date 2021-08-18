@@ -1,10 +1,10 @@
 pub mod alloc;
-pub mod ctx;
 pub(super) mod def;
 
 use self::def::NR_VECTORS;
 use crate::cpu::arch::apic::lapic;
 use crate::cpu::intr::Interrupt;
+use crate::sched::task::ctx::arch::Frame;
 
 use ::alloc::sync::{Arc, Weak};
 use spin::Mutex;
@@ -76,7 +76,7 @@ pub unsafe fn try_unregister(intr: &Arc<Interrupt>) -> Result<(), RegisterError>
 ///
 /// This function must only be called from its assembly routine `rout_XX`.
 #[no_mangle]
-unsafe extern "C" fn common_interrupt(frame: *mut ctx::Frame) {
+unsafe extern "C" fn common_interrupt(frame: *mut Frame) {
       let vec = unsafe { &*frame }.errc_vec as u16;
       if let Some(mut intr_slot) = VEC_INTR[vec as usize].try_lock() {
             if let Some(intr) = intr_slot.clone().and_then(|intr_weak| {

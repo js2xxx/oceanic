@@ -1,4 +1,4 @@
-use super::intr::ctx::Frame;
+use crate::sched::task::ctx::arch::Frame;
 use super::seg::ndt::{INTR_CODE, USR_CODE_X86};
 use super::seg::SegSelector;
 use archop::{msr, reg};

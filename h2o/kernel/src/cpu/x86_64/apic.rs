@@ -183,16 +183,14 @@ impl<'a> Lapic<'a> {
                   }
                   acpi::table::madt::LapicType::X1(paddr) => {
                         // SAFE: The physical address is valid and aligned.
-                        let memory = unsafe {
-                              space::krl(|space| {
-                                    space.alloc_manual(
-                                          LAPIC_LAYOUT,
-                                          Some(paddr),
-                                          space::Flags::READABLE | space::Flags::WRITABLE,
-                                    )
-                                    .expect("Failed to allocate space")
-                              })
-                        }
+                        let memory = space::krl(|space| unsafe {
+                              space.alloc_manual(
+                                    LAPIC_LAYOUT,
+                                    Some(paddr),
+                                    space::Flags::READABLE | space::Flags::WRITABLE,
+                              )
+                              .expect("Failed to allocate space")
+                        })
                         .expect("Kernel space uninitialized");
                         LapicType::X1(memory)
                   }

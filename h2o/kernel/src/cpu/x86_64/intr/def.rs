@@ -1,4 +1,4 @@
-use super::ctx::Frame;
+use crate::sched::task::ctx::arch::Frame;
 
 use core::ops::Range;
 
