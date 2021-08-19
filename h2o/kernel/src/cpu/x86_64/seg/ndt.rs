@@ -22,11 +22,17 @@ pub const INTR_DATA: SegSelector = SegSelector::from_const(0x10 + 4); // SegSele
 const INIT_LIM: u32 = 0xFFFFF;
 const INIT_ATTR: u16 = attrs::PRESENT | attrs::G4K;
 
-static LDT: DescTable<3> = DescTable::new([
-      Segment::new(0, 0, 0, 0),
-      Segment::new(0, INIT_LIM, attrs::SEG_CODE | attrs::X64 | INIT_ATTR, 0),
-      Segment::new(0, INIT_LIM, attrs::SEG_DATA | attrs::X64 | INIT_ATTR, 0),
-]);
+// NOTE: The segment tables must be initialized in `Lazy` or mutable statics. Otherwise the 
+// compiler or the linker will place it into the constant section of the executable file and 
+// cause load errors.
+
+static LDT: Lazy<DescTable<3>> = Lazy::new(|| {
+      DescTable::new([
+            Segment::new(0, 0, 0, 0),
+            Segment::new(0, INIT_LIM, attrs::SEG_CODE | attrs::X64 | INIT_ATTR, 0),
+            Segment::new(0, INIT_LIM, attrs::SEG_DATA | attrs::X64 | INIT_ATTR, 0),
+      ])
+});
 
 #[thread_local]
 pub static GDT: Lazy<DescTable<10>> = Lazy::new(|| {
