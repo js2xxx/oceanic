@@ -210,7 +210,7 @@ impl<'a> Lapic<'a> {
 
                   // Accept all the interrupt vectors but `0..32` since they are reserved by
                   // exceptions.
-                  unsafe { Self::write_reg_32(&mut lapic.ty, msr::X2APIC_TPR, 0x20) };
+                  unsafe { Self::write_reg_32(&mut lapic.ty, msr::X2APIC_TPR, 0x10) };
 
                   let lint0 = LocalEntry::new()
                         .with_deliv_mode(DelivMode::ExtInt)

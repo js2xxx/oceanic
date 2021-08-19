@@ -96,8 +96,8 @@ impl<'a> Timer<'a> {
 /// The caller must ensure that this function is called only by interrupt routines and when
 /// everything about interrupts is set up.
 pub unsafe fn timer_handler(frame: *const Frame) -> *const Frame {
+      // log::debug!("T");
       // SAFE: Inside the timer interrupt handler.
       super::lapic(|lapic| lapic.eoi());
-      // log::info!("T");
       frame
 }
