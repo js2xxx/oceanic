@@ -130,6 +130,12 @@ pub unsafe fn init(lapic_data: acpi::table::madt::LapicData) {
       CPU_COUNT.store(cnt, Ordering::SeqCst);
 }
 
+/// Initialize x86_64 architecture.
+///
+/// # Safety
+///
+/// The caller must ensure that this function should only be called once from each application
+/// CPU.
 pub unsafe fn init_ap(lapic_data: acpi::table::madt::LapicData) {
       let (tss_rsp0, kernel_fs) = seg::init_ap();
 

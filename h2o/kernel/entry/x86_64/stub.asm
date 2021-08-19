@@ -4,7 +4,14 @@ USR_CODE_X86 equ 0x18
 USR_DATA_X64 equ 0x20
 USR_CODE_X64 equ 0x28 + 3
 
+FS_BASE           equ 0xc0000100
+GS_BASE           equ 0xc0000101
+KERNEL_GS_BASE    equ 0xc0000102
+
 struc Frame
+      .gs_base resq 1
+      .fs_base resq 1
+
       .r15  resq 1
       .r14  resq 1
       .r13  resq 1
@@ -38,11 +45,31 @@ struc KernelGs
       .kernel_fs        resq 1
 endstruc
 
-; push_regs(bool save_ret_addr)
-%macro push_regs 1
+%macro push_xs 1
+      push  rcx
+      mov   rcx, %1
+      rdmsr
+      shl   rdx, 32
+      add   rax, rdx
+      mov   rcx, [rsp]
+      mov   [rsp], rax
+%endmacro
+
+%macro pop_xs 1
+      mov   rax, [rsp]
+      mov   [rsp], rcx
+      mov   rdx, rax
+      shr   rdx, 32
+      mov   rcx, %1
+      wrmsr
+      pop   rcx
+%endmacro
+
+; push_regs(bool save_ret_addr, bool gs_swapped)
+%macro push_regs 2
 %if %1 == 1
       push  rcx               ; | ret_addr  |<-rsp | ret_addr  |      |    rax    |
-      mov   rcx, [rsp + 8]    ; |-----------| ---> |-----------| ---> |-----------|, rax=ret_addr
+      mov   rcx, [rsp + 8]    ; |-----------| ---> |-----------| ---> |-----------|, rcx=ret_addr
       mov   [rsp + 8], rax    ; |           |      |    rcx    |<-rsp |    rcx    |<-rsp
 %else
       push  rax
@@ -61,6 +88,13 @@ endstruc
       push  r13
       push  r14
       push  r15
+
+      push_xs FS_BASE
+%if %2 == 1
+      push_xs KERNEL_GS_BASE
+%else
+      push_xs GS_BASE
+%endif
 %if %1 == 1
       push  rcx
 %endif
@@ -79,7 +113,14 @@ endstruc
       xor   r15, r15
 %endmacro
 
-%macro pop_regs 0
+; pop_regs(bool gs_swapped)
+%macro pop_regs 1
+%if %1 == 1
+      pop_xs KERNEL_GS_BASE
+%else
+      pop_xs GS_BASE
+%endif
+      pop_xs FS_BASE
       pop   r15
       pop   r14
       pop   r13
@@ -142,6 +183,7 @@ extern %3
 
       mov   rdi, rsp
       call  %3
+      mov   rsp, rax
 
       jmp   intr_exit
 
@@ -188,11 +230,9 @@ define_intr i, rout_name(i), common_interrupt, i
 %endrep
 %undef rout_name
 
-FS_BASE     equ 0xc0000100
-
 intr_entry:
       cld
-      push_regs   1; The routine has a return address, so we must preserve it.
+      push_regs   1, 0; The routine has a return address, so we must preserve it.
       lea   rbp, [rsp + 8 + 1]
 
       bt    qword [rsp + (8 + Frame.cs)], 2; Test if it's a reentrancy.
@@ -224,7 +264,7 @@ intr_exit:
       bt    qword [rsp + Frame.cs], 2; Test if it's a reentrancy.
       jc    .reent
 
-      pop_regs
+      pop_regs    1
 
       ; The stack now consists of errc and 'iretq stuff'
       push  rdi
@@ -262,7 +302,7 @@ rout_syscall:
       push  rcx                                       ; rip
       push  -1                                        ; errc_vec
 
-      push_regs   0
+      push_regs   0, 1
       lea   rbp, [rsp + 8 + 1]
 
       mov   rcx, FS_BASE
@@ -279,8 +319,9 @@ rout_syscall:
 
       mov   rdi, rsp
       call  hdl_syscall
+      mov   rsp, rax
 
-      pop_regs
+      pop_regs    1
       add   rsp, 8            ; errc_vec
 
       ; Here we must test the return address because Intel's mistake of `sysret`

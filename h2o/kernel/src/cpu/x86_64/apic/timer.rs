@@ -1,4 +1,5 @@
 use super::LocalEntry;
+use crate::sched::task::ctx::arch::Frame;
 
 use core::ops::Range;
 use modular_bitfield::prelude::*;
@@ -79,7 +80,7 @@ impl<'a> Timer<'a> {
                   use archop::msr;
                   Lapic::write_reg_32(&mut lapic.ty, msr::X2APIC_DIV_CONF, encdiv.into());
                   Lapic::write_reg_32(&mut lapic.ty, msr::X2APIC_LVT_TIMER, timer_val.into());
-                  if let TimerMode::TscDeadline = mode {
+                  if matches!(mode, TimerMode::TscDeadline) {
                         msr::write(msr::TSC_DEADLINE, init_value);
                   } else {
                         Lapic::write_reg_64(&mut lapic.ty, msr::X2APIC_INIT_COUNT, init_value);
@@ -94,7 +95,9 @@ impl<'a> Timer<'a> {
 ///
 /// The caller must ensure that this function is called only by interrupt routines and when
 /// everything about interrupts is set up.
-pub unsafe fn timer_handler(_frame: *mut crate::sched::task::ctx::arch::Frame) {
+pub unsafe fn timer_handler(frame: *const Frame) -> *const Frame {
       // SAFE: Inside the timer interrupt handler.
       super::lapic(|lapic| lapic.eoi());
+      // log::info!("T");
+      frame
 }

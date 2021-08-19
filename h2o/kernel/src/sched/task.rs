@@ -3,14 +3,15 @@ pub mod prio;
 pub mod tid;
 
 use crate::cpu::CpuMask;
+use crate::cpu::time::Instant;
 use crate::mem::space::Space;
-use ctx::Kstack;
 use paging::LAddr;
 
 use alloc::boxed::Box;
 use alloc::format;
 use alloc::string::String;
 use core::ptr::null_mut;
+use core::time::Duration;
 use spin::Lazy;
 
 #[cfg(target_arch = "x86_64")]
@@ -89,7 +90,8 @@ pub enum InitError {
 pub struct Init {
       tid: Tid,
       space: Space,
-      kstack: Box<Kstack>,
+      kstack: Box<ctx::Kstack>,
+      ext_frame: Box<ctx::ExtendedFrame>,
 }
 
 impl Init {
@@ -102,7 +104,9 @@ impl Init {
                   args,
             };
 
-            let kstack = Kstack::new(entry, ti.ty);
+            let kstack = ctx::Kstack::new(entry, ti.ty);
+
+            let ext_frame = box unsafe { core::mem::zeroed() };
 
             let mut ti_map = tid::TI_MAP.lock();
             let tid = tid::next(&ti_map).map_or_else(
@@ -114,13 +118,70 @@ impl Init {
             )?;
             ti_map.insert(tid, ti);
 
-            Ok(Init { tid, space, kstack })
+            Ok(Init {
+                  tid,
+                  space,
+                  kstack,
+                  ext_frame,
+            })
       }
+
+      pub fn tid(&self) -> Tid {
+            self.tid
+      }
+}
+
+#[derive(Debug)]
+pub enum RunningState {
+      NotRunning,
+      NeedResched,
+      Running(Instant),
 }
 
 #[derive(Debug)]
 pub struct Ready {
       tid: Tid,
+      time_slice: Duration,
+
+      space: Space,
+      kstack: Box<ctx::Kstack>,
+      ext_frame: Box<ctx::ExtendedFrame>,
+
+      pub(super) cpu: usize,
+      pub(super) running_state: RunningState,
+}
+
+impl Ready {
+      pub fn from_init(init: Init, cpu: usize, time_slice: Duration) -> Self {
+            let Init {
+                  tid,
+                  space,
+                  kstack,
+                  ext_frame,
+            } = init;
+            Ready {
+                  tid,
+                  time_slice,
+                  cpu,
+                  space,
+                  kstack,
+                  ext_frame,
+                  running_state: RunningState::NotRunning,
+            }
+      }
+
+      pub fn time_slice(&self) -> Duration {
+            self.time_slice
+      }
+
+      /// Get the arch-specific context of the task.
+      ///
+      /// # Safety
+      ///
+      /// The caller must ensure that the pointer is used only in context switching.
+      pub unsafe fn get_arch_context(&self) -> *const ctx::arch::Frame {
+            self.kstack.as_frame()
+      }
 }
 
 #[derive(Debug)]

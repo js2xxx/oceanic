@@ -56,3 +56,17 @@ impl Debug for Kstack {
             write!(f, "Kstack {{ {:?} }} ", *unsafe { self.as_frame() })
       }
 }
+
+#[derive(Debug)]
+#[repr(align(16))]
+pub struct ExtendedFrame([u8; arch::EXTENDED_FRAME_SIZE]);
+
+impl ExtendedFrame {
+      pub fn as_slice(&self) -> &[u8] {
+            &self.0
+      }
+
+      pub fn as_slice_mut(&mut self) -> &mut [u8] {
+            &mut self.0
+      }
+}

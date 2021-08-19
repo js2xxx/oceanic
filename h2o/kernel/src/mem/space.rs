@@ -14,7 +14,7 @@ use core::alloc::Layout;
 use core::mem::{align_of, size_of, MaybeUninit};
 use core::ops::Range;
 use core::pin::Pin;
-use spin::Mutex;
+use spin::{Mutex, MutexGuard};
 
 cfg_if::cfg_if! {
       if #[cfg(target_arch = "x86_64")] {
@@ -313,7 +313,12 @@ impl Space {
             self.arch.load()
       }
 
-      fn alloc_stack(&self, base: LAddr, size: usize) -> Result<(), &'static str> {
+      fn alloc_stack(
+            arch: &ArchSpace,
+            stack_blocks: &mut MutexGuard<BTreeMap<LAddr, Layout>>,
+            base: LAddr,
+            size: usize,
+      ) -> Result<(), &'static str> {
             let layout = {
                   let n = size.div_ceil_bit(paging::PAGE_SHIFT);
                   paging::PAGE_LAYOUT
@@ -337,14 +342,13 @@ impl Space {
             };
             let virt = base..LAddr::from(base.val() + size);
 
-            self.arch
-                  .maps(virt, phys, Flags::READABLE | Flags::WRITABLE)
+            arch.maps(virt, phys, Flags::READABLE | Flags::WRITABLE)
                   .map_err(|_| unsafe {
                         alloc::alloc::dealloc(alloc_ptr, layout);
                         "Paging error"
                   })?;
 
-            if let Some(_) = self.stack_blocks.lock().insert(base, layout) {
+            if let Some(_) = stack_blocks.insert(base, layout) {
                   panic!("Duplicate allocation");
             }
 
@@ -353,25 +357,25 @@ impl Space {
 
       pub fn init_stack(&self, size: usize) -> Result<LAddr, &'static str> {
             self.canary.assert();
-            if matches!(self.ty, task::Type::Kernel) {
-                  return Err("Stack allocation is not allowed in kernel");
-            }
+            // if matches!(self.ty, task::Type::Kernel) {
+            //       return Err("Stack allocation is not allowed in kernel");
+            // }
 
             let size = size.round_up_bit(paging::PAGE_SHIFT);
 
             let top = minfo::USER_END;
             let base = LAddr::from(top - size);
 
-            self.alloc_stack(base, size)?;
+            Self::alloc_stack(&self.arch, &mut self.stack_blocks.lock(), base, size)?;
 
             Ok(LAddr::from(top))
       }
 
       pub fn grow_stack(&self, addr: LAddr) -> Result<(), &'static str> {
             self.canary.assert();
-            if matches!(self.ty, task::Type::Kernel) {
-                  return Err("Stack allocation is not allowed in kernel");
-            }
+            // if matches!(self.ty, task::Type::Kernel) {
+            //       return Err("Stack allocation is not allowed in kernel");
+            // }
 
             let addr = LAddr::from(addr.val().round_down_bit(paging::PAGE_SHIFT));
 
@@ -384,14 +388,14 @@ impl Space {
 
             let size = unsafe { last.offset_from(*addr) } as usize;
 
-            self.alloc_stack(addr, size)
+            Self::alloc_stack(&self.arch, &mut stack_blocks, addr, size)
       }
 
       pub fn clear_stack(&self) -> Result<(), &'static str> {
             self.canary.assert();
-            if matches!(self.ty, task::Type::Kernel) {
-                  return Err("Stack allocation is not allowed in kernel");
-            }
+            // if matches!(self.ty, task::Type::Kernel) {
+            //       return Err("Stack allocation is not allowed in kernel");
+            // }
 
             let mut stack_blocks = self.stack_blocks.lock();
             for (&base, &layout) in stack_blocks.iter() {

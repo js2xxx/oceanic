@@ -5,9 +5,14 @@ use crate::sched::task;
 
 pub const DEFAULT_STACK_SIZE: usize = 6 * paging::PAGE_SIZE;
 
+pub const EXTENDED_FRAME_SIZE: usize = 768;
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[repr(C)]
 pub struct Frame {
+      gs_base: u64,
+      fs_base: u64,
+
       r15: u64,
       r14: u64,
       r13: u64,
@@ -59,7 +64,7 @@ impl Frame {
             use crate::log::flags::Flags;
             use log::info;
 
-            info!("Frame dump");
+            info!("Frame dump on CPU #{}", unsafe { crate::cpu::id() });
 
             if self.errc_vec != 0u64.wrapping_sub(1) && errc_format != "" {
                   info!("> Error Code = {}", Flags::new(self.errc_vec, errc_format));
@@ -84,6 +89,8 @@ impl Frame {
 
             info!("> Segments:");
             info!("  cs  = {:#018X}, ss  = {:#018X}", self.cs, self.ss);
+            info!("  fs_base = {:#018X}", self.fs_base);
+            info!("  gs_base = {:#018X}", self.gs_base);
       }
 }
 

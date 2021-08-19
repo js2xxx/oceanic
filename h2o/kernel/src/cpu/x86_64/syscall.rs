@@ -43,6 +43,7 @@ pub unsafe fn init() -> Option<LAddr> {
 }
 
 #[no_mangle]
-unsafe extern "C" fn hdl_syscall(_frame: *mut Frame) {
-      archop::pause()
+unsafe extern "C" fn hdl_syscall(frame: *const Frame) -> *const Frame {
+      archop::pause();
+      frame
 }
