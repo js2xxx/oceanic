@@ -4,8 +4,8 @@ pub mod seg;
 pub mod syscall;
 pub mod tsc;
 
-use crate::sched::task::ctx;
 use crate::dev::acpi;
+use crate::sched::task::ctx;
 use paging::LAddr;
 
 use alloc::boxed::Box;
@@ -36,6 +36,13 @@ pub unsafe fn id() -> usize {
 
 pub fn count() -> usize {
       CPU_COUNT.load(Ordering::SeqCst)
+}
+
+/// # Safety
+///
+/// This function is only called after [`set_id`].
+pub unsafe fn is_bsp() -> bool {
+      id() == 0
 }
 
 #[repr(C)]

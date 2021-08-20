@@ -139,8 +139,7 @@ impl<'a> Ioapic<'a> {
             let mut memory = krl(|space| unsafe {
                   space.alloc_manual(PAGE_LAYOUT, Some(base), Flags::READABLE | Flags::WRITABLE)
                         .map_err(|_| "Memory allocation failed")
-            })
-            .expect("Kernel space uninitialized")?;
+            })?;
             let base_ptr = unsafe { memory.as_mut_ptr().cast::<u8>().add(offset) }.cast::<u32>();
 
             let mut ioapic = Ioapic {

@@ -14,18 +14,18 @@ const LAPIC_LAYOUT: core::alloc::Layout = paging::PAGE_LAYOUT;
 
 pub static LAPIC_ID: spin::RwLock<BTreeMap<usize, u32>> = spin::RwLock::new(BTreeMap::new());
 #[thread_local]
-static mut LAPIC: Option<Lapic<'static>> = None;
+static mut LAPIC: Option<Lapic> = None;
 
 /// Get the per-CPU instance of Local APIC.
-pub unsafe fn lapic<F, R>(f: F) -> Option<R>
+pub unsafe fn lapic<F, R>(f: F) -> R
 where
-      F: FnOnce(&'static mut Lapic<'static>) -> R,
+      F: FnOnce(&'static mut Lapic) -> R,
 {
-      LAPIC.as_mut().map(|lapic| f(lapic))
+      f(LAPIC.as_mut().expect("Local APIC uninitialized"))
 }
 
-pub enum LapicType<'a> {
-      X1(Pin<&'a mut [space::MemBlock]>),
+pub enum LapicType {
+      X1(Pin<&'static mut [space::MemBlock]>),
       X2,
 }
 
@@ -88,12 +88,12 @@ impl From<LocalEntry> for u32 {
       }
 }
 
-pub struct Lapic<'a> {
-      ty: LapicType<'a>,
+pub struct Lapic {
+      ty: LapicType,
       id: u32,
 }
 
-impl<'a> Lapic<'a> {
+impl Lapic {
       fn reg_32_to_1_off(reg: msr::Msr) -> usize {
             (reg as u32 as usize - 0x800) << 4
       }
@@ -190,8 +190,7 @@ impl<'a> Lapic<'a> {
                                     space::Flags::READABLE | space::Flags::WRITABLE,
                               )
                               .expect("Failed to allocate space")
-                        })
-                        .expect("Kernel space uninitialized");
+                        });
                         LapicType::X1(memory)
                   }
             };
@@ -260,7 +259,7 @@ impl<'a> Lapic<'a> {
       /// WARNING: This function modifies the architecture's basic registers. Be sure to make
       /// preparations.
       ///
-      /// The caller must ensure that IDT is initialized before LAPIC Timer's activation and that 
+      /// The caller must ensure that IDT is initialized before LAPIC Timer's activation and that
       /// `div` is within the range [`timer::DIV`].
       pub unsafe fn activate_timer(&mut self, mode: timer::TimerMode, div: u8, init_value: u64) {
             timer::activate(self, mode, div, init_value);

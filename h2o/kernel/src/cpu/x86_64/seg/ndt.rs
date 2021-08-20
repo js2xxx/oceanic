@@ -22,8 +22,8 @@ pub const INTR_DATA: SegSelector = SegSelector::from_const(0x10 + 4); // SegSele
 const INIT_LIM: u32 = 0xFFFFF;
 const INIT_ATTR: u16 = attrs::PRESENT | attrs::G4K;
 
-// NOTE: The segment tables must be initialized in `Lazy` or mutable statics. Otherwise the 
-// compiler or the linker will place it into the constant section of the executable file and 
+// NOTE: The segment tables must be initialized in `Lazy` or mutable statics. Otherwise the
+// compiler or the linker will place it into the constant section of the executable file and
 // cause load errors.
 
 static LDT: Lazy<DescTable<3>> = Lazy::new(|| {
@@ -65,8 +65,7 @@ static TSS: Lazy<TssStruct> = Lazy::new(|| {
                         Flags::READABLE | Flags::WRITABLE | Flags::ZEROED,
                   )
                   .expect("Failed to allocate stack")
-            })
-            .expect("Kernel space uninitialized");
+            });
 
             memory.as_ptr().cast::<u8>().add(layout.size())
       };

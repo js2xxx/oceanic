@@ -81,8 +81,7 @@ impl<'a> Hpet<'a> {
                         Flags::READABLE | Flags::WRITABLE,
                   )
                   .map_err(|_| "Memory allocation failed")
-            })
-            .expect("Kernel space uninitialized")?;
+            })?;
 
             let base_ptr = memory.as_mut_ptr().cast::<u32>();
             let period_fs = Self::read_reg(base_ptr, HpetReg::Period).into();

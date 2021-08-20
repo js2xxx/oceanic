@@ -25,6 +25,12 @@ cfg_if::cfg_if! {
       }
 }
 
+fn init_krl_space() -> Space {
+      let space = Space::new(task::Type::Kernel);
+      unsafe { space.load() };
+      space
+}
+
 static mut KRL_SPACE: Option<Space> = None;
 #[thread_local]
 static mut AP_SPACE: Option<Space> = None;
@@ -419,9 +425,7 @@ impl Space {
 ///
 /// The function must be called only once from the bootstrap CPU.
 pub unsafe fn init_kernel() {
-      let krl_space = Space::new(task::Type::Kernel);
-      krl_space.load();
-      KRL_SPACE = Some(krl_space);
+      KRL_SPACE = Some(init_krl_space());
 }
 
 /// Initialize the kernel space for the application CPU.
@@ -430,30 +434,28 @@ pub unsafe fn init_kernel() {
 ///
 /// The function must be called only once from each application CPU.
 pub unsafe fn init_ap() {
-      let ap_space = Space::new(task::Type::Kernel);
-      ap_space.load();
-      AP_SPACE = Some(ap_space);
+      AP_SPACE = Some(init_krl_space());
 }
 
 /// Get the reference of the per-CPU kernel space.
-pub fn krl<F, R>(f: F) -> Option<R>
+pub fn krl<F, R>(f: F) -> R
 where
       F: FnOnce(&'static Space) -> R,
 {
-      let k = unsafe {
-            if crate::cpu::id() == 0 {
+      f(unsafe {
+            if crate::cpu::is_bsp() {
                   KRL_SPACE.as_ref()
             } else {
                   AP_SPACE.as_ref()
             }
-      };
-      k.map(|krl| f(krl))
+            .expect("Kernel space uninitialized")
+      })
 }
 
 /// # Safety
 ///
 /// The caller must ensure that the current loaded space is the kernel space.
-pub unsafe fn with<'s, F, R>(space: &'s Space, f: F) -> Option<R>
+pub unsafe fn with<'s, F, R>(space: &'s Space, f: F) -> R
 where
       F: FnOnce(&'s Space) -> R,
 {

@@ -150,7 +150,7 @@ pub unsafe fn start_cpus(lapics: Vec<LapicNode>) -> usize {
 
       let mut cnt = lapics.len();
 
-      let self_id = lapic(|lapic| lapic.id).expect("LAPIC uninitialized");
+      let self_id = lapic(|lapic| lapic.id);
       for LapicNode { id, .. } in lapics.iter().filter(|node| node.id != self_id) {
             header.reset_subheader();
 

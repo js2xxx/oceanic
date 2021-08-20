@@ -1,4 +1,5 @@
 use super::LocalEntry;
+use crate::cpu::time::Instant;
 use crate::sched::task::ctx::arch::Frame;
 
 use core::ops::Range;
@@ -59,5 +60,7 @@ pub unsafe fn timer_handler(frame: *const Frame) -> *const Frame {
       // log::debug!("T");
       // SAFE: Inside the timer interrupt handler.
       super::lapic(|lapic| lapic.eoi());
+
+      // crate::sched::SCHED.lock().tick(Instant::now());
       frame
 }
