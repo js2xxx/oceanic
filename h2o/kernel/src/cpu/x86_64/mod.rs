@@ -50,7 +50,7 @@ pub struct KernelGs {
 impl KernelGs {
       pub fn new(tss_rsp0: LAddr, syscall_stack: LAddr, kernel_fs: LAddr) -> Self {
             KernelGs {
-                  save_regs: ctx::arch::test::save_regs as *mut u8,
+                  save_regs: ctx::arch::save_regs as *mut u8,
                   tss_rsp0,
                   syscall_user_stack: null_mut(),
                   syscall_stack,
@@ -72,10 +72,6 @@ impl KernelGs {
       /// The caller must ensure that this function is called only if
       /// [`archop::msr::KERNEL_GS_BASE`] is uninitialized.
       pub unsafe fn load(self) {
-            ctx::arch::test::init_stack_top(
-                  alloc::alloc::alloc(paging::PAGE_LAYOUT).add(paging::PAGE_SIZE),
-            );
-
             let ptr = Box::into_raw(box self);
 
             use archop::msr;

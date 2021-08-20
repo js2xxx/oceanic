@@ -2,8 +2,8 @@ pub mod ctx;
 pub mod prio;
 pub mod tid;
 
-use crate::cpu::CpuMask;
 use crate::cpu::time::Instant;
+use crate::cpu::CpuMask;
 use crate::mem::space::Space;
 use paging::LAddr;
 
@@ -91,7 +91,6 @@ pub struct Init {
       tid: Tid,
       space: Space,
       kstack: Box<ctx::Kstack>,
-      ext_frame: Box<ctx::ExtendedFrame>,
 }
 
 impl Init {
@@ -106,8 +105,6 @@ impl Init {
 
             let kstack = ctx::Kstack::new(entry, ti.ty);
 
-            let ext_frame = box unsafe { core::mem::zeroed() };
-
             let mut ti_map = tid::TI_MAP.lock();
             let tid = tid::next(&ti_map).map_or_else(
                   || {
@@ -118,12 +115,7 @@ impl Init {
             )?;
             ti_map.insert(tid, ti);
 
-            Ok(Init {
-                  tid,
-                  space,
-                  kstack,
-                  ext_frame,
-            })
+            Ok(Init { tid, space, kstack })
       }
 
       pub fn tid(&self) -> Tid {
@@ -145,7 +137,7 @@ pub struct Ready {
 
       space: Space,
       kstack: Box<ctx::Kstack>,
-      ext_frame: Box<ctx::ExtendedFrame>,
+      ext_frame: Option<Box<ctx::ExtendedFrame>>,
 
       pub(super) cpu: usize,
       pub(super) running_state: RunningState,
@@ -153,25 +145,29 @@ pub struct Ready {
 
 impl Ready {
       pub fn from_init(init: Init, cpu: usize, time_slice: Duration) -> Self {
-            let Init {
-                  tid,
-                  space,
-                  kstack,
-                  ext_frame,
-            } = init;
+            let Init { tid, space, kstack } = init;
             Ready {
                   tid,
                   time_slice,
                   cpu,
                   space,
                   kstack,
-                  ext_frame,
+                  ext_frame: None,
                   running_state: RunningState::NotRunning,
             }
       }
 
       pub fn time_slice(&self) -> Duration {
             self.time_slice
+      }
+
+      /// Save the context frame of the current task.
+      ///
+      /// # Safety
+      ///
+      /// The caller must ensure that `frame` points to a valid frame.
+      pub unsafe fn save_arch(&mut self, frame: *const ctx::arch::Frame) {
+            frame.copy_to(self.kstack.as_frame_mut(), 1);
       }
 
       /// Get the arch-specific context of the task.
@@ -181,6 +177,10 @@ impl Ready {
       /// The caller must ensure that the pointer is used only in context switching.
       pub unsafe fn get_arch_context(&self) -> *const ctx::arch::Frame {
             self.kstack.as_frame()
+      }
+
+      pub fn space(&self) -> &Space {
+            &self.space
       }
 }
 

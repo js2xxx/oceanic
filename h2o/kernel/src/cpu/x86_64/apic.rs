@@ -259,9 +259,11 @@ impl<'a> Lapic<'a> {
       ///
       /// WARNING: This function modifies the architecture's basic registers. Be sure to make
       /// preparations.
-      pub unsafe fn activate_timer(self, mode: timer::TimerMode, div: u8, init_value: u64) -> Self {
-            let (ret, _, _) = timer::Timer::new(mode, div, self).activate(init_value);
-            ret
+      ///
+      /// The caller must ensure that IDT is initialized before LAPIC Timer's activation and that 
+      /// `div` is within the range [`timer::DIV`].
+      pub unsafe fn activate_timer(&mut self, mode: timer::TimerMode, div: u8, init_value: u64) {
+            timer::activate(self, mode, div, init_value);
       }
 
       /// # Safety
@@ -342,7 +344,7 @@ pub unsafe fn error_handler() {
 pub unsafe fn init(lapic_ty: acpi::table::madt::LapicType) {
       let mut lapic = Lapic::new(lapic_ty);
       lapic.enable();
-      let lapic = lapic.activate_timer(timer::TimerMode::Periodic, 7, 256);
+      lapic.activate_timer(timer::TimerMode::Periodic, 7, 256);
 
       LAPIC = Some(lapic);
 }

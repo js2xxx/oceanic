@@ -1,6 +1,7 @@
 pub mod io;
 pub mod msr;
 pub mod reg;
+pub mod fpu;
 
 use paging::LAddr;
 

@@ -91,12 +91,12 @@ unsafe extern "C" fn common_interrupt(frame: *const Frame) -> *const Frame {
             } else {
                   lapic(|lapic| lapic.eoi());
 
-                  log::warn!("No interrupt for vector {:X}", vec);
+                  log::warn!("No interrupt for vector {:#x}", vec);
                   frame
             }
       } else {
             log::warn!(
-                  "The interrupt for vector {:X} is already firing without block next ones",
+                  "The interrupt for vector {:#x} is already firing without block next ones",
                   vec
             );
             frame

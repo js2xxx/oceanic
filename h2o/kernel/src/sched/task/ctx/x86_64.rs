@@ -69,45 +69,41 @@ impl Frame {
             if self.errc_vec != 0u64.wrapping_sub(1) && errc_format != "" {
                   info!("> Error Code = {}", Flags::new(self.errc_vec, errc_format));
                   if errc_format == Self::ERRC_PF {
-                        info!("> cr2 (PF addr) = {:#018X}", unsafe {
+                        info!("> cr2 (PF addr) = {:#018x}", unsafe {
                               archop::reg::cr2::read()
                         });
                   }
             }
-            info!("> Code addr  = {:#018X}", self.rip);
+            info!("> Code addr  = {:#018x}", self.rip);
             info!("> RFlags     = {}", Flags::new(self.rflags, Self::RFLAGS));
 
             info!("> GPRs: ");
-            info!("  rax = {:#018X}, rcx = {:#018X}", self.rax, self.rcx);
-            info!("  rdx = {:#018X}, rbx = {:#018X}", self.rdx, self.rbx);
-            info!("  rbp = {:#018X}, rsp = {:#018X}", self.rbp, self.rsp);
-            info!("  rsi = {:#018X}, rdi = {:#018X}", self.rsi, self.rdi);
-            info!("  r8  = {:#018X}, r9  = {:#018X}", self.r8, self.r9);
-            info!("  r10 = {:#018X}, r11 = {:#018X}", self.r10, self.r11);
-            info!("  r12 = {:#018X}, r13 = {:#018X}", self.r12, self.r13);
-            info!("  r14 = {:#018X}, r15 = {:#018X}", self.r14, self.r15);
+            info!("  rax = {:#018x}, rcx = {:#018x}", self.rax, self.rcx);
+            info!("  rdx = {:#018x}, rbx = {:#018x}", self.rdx, self.rbx);
+            info!("  rbp = {:#018x}, rsp = {:#018x}", self.rbp, self.rsp);
+            info!("  rsi = {:#018x}, rdi = {:#018x}", self.rsi, self.rdi);
+            info!("  r8  = {:#018x}, r9  = {:#018x}", self.r8, self.r9);
+            info!("  r10 = {:#018x}, r11 = {:#018x}", self.r10, self.r11);
+            info!("  r12 = {:#018x}, r13 = {:#018x}", self.r12, self.r13);
+            info!("  r14 = {:#018x}, r15 = {:#018x}", self.r14, self.r15);
 
             info!("> Segments:");
-            info!("  cs  = {:#018X}, ss  = {:#018X}", self.cs, self.ss);
-            info!("  fs_base = {:#018X}", self.fs_base);
-            info!("  gs_base = {:#018X}", self.gs_base);
+            info!("  cs  = {:#018x}, ss  = {:#018x}", self.cs, self.ss);
+            info!("  fs_base = {:#018x}", self.fs_base);
+            info!("  gs_base = {:#018x}", self.gs_base);
       }
 }
 
-/// A temporary module for storing the thread stack.
-/// TODO: Must be removed after thread module creation.
-pub mod test {
-      use super::Frame;
-      #[thread_local]
-      static mut THREAD_STACK_TOP: *mut u8 = core::ptr::null_mut();
+/// # Safety
+///
+/// This function must be called only by assembly stubs.
+pub unsafe fn save_regs(frame: *const Frame) -> *const u8 {
+      let mut sched = crate::sched::SCHED.lock();
+      sched.current_mut()
+            .map_or(frame, |cur| {
+                  cur.save_arch(frame);
 
-      pub unsafe fn save_regs(frame: *const Frame) -> *mut u8 {
-            let thread_frame = THREAD_STACK_TOP.cast::<Frame>().sub(1);
-            thread_frame.copy_from(frame, 1);
-            thread_frame.cast()
-      }
-
-      pub unsafe fn init_stack_top(st: *mut u8) {
-            THREAD_STACK_TOP = st;
-      }
+                  cur.get_arch_context()
+            })
+            .cast()
 }

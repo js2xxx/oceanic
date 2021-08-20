@@ -70,6 +70,8 @@ pub extern "C" fn kmain() {
       let hpet = unsafe { dev::hpet::Hpet::new(hpet_data) }.expect("Failed to initialize HPET");
       let _ = core::mem::ManuallyDrop::new(hpet);
 
+      spin::Lazy::force(&sched::SCHED);
+
       // Test end
       l::debug!("Reaching end of kernel");
 }

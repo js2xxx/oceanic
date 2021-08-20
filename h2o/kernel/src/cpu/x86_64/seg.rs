@@ -127,7 +127,7 @@ pub unsafe fn reload_pls() -> LAddr {
             let ptr = PAddr::new(val).to_laddr(minfo::ID_OFFSET).cast::<usize>();
             let base = ptr.cast::<u8>().sub(pls_size);
             let size = (&TBSS_START as *const u8).offset_from(&TDATA_START) as usize;
-            base.copy_from(&TDATA_START, size);
+            base.copy_from_nonoverlapping(&TDATA_START, size);
             base.add(size).write_bytes(0, pls_size - size);
             ptr.write(ptr as usize);
 
@@ -163,7 +163,7 @@ pub fn alloc_pls() -> *mut u8 {
             }
 
             let size = (&TBSS_START as *const u8).offset_from(&TDATA_START) as usize;
-            base.copy_from(&TDATA_START, size);
+            base.copy_from_nonoverlapping(&TDATA_START, size);
 
             let self_ptr = base.add(pls_layout.size());
             self_ptr.cast::<*mut u8>().write(self_ptr);
