@@ -72,6 +72,8 @@ pub struct Space {
       stack_blocks: Mutex<BTreeMap<LAddr, Layout>>,
 }
 
+unsafe impl Send for Space {}
+
 impl Space {
       /// Create a new address space.
       pub fn new(ty: task::Type) -> Self {

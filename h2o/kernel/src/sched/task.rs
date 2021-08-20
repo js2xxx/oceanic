@@ -48,7 +48,8 @@ static IDLE: Lazy<Tid> = Lazy::new(|| {
       let init = Init::new(ti, DEFAULT_STACK_SIZE, [0; 2]).expect("Failed to initialize IDLE");
       let tid = init.tid;
 
-      // TODO: Push the task to the scheduler.
+      let mut sched = super::SCHED.lock();
+      unsafe { sched.push(init) };
 
       tid
 });
@@ -77,6 +78,18 @@ impl TaskInfo {
                   affinity,
                   prio,
             }
+      }
+
+      pub fn name(&self) -> &str {
+            &self.name
+      }
+
+      pub fn affinity(&self) -> crate::cpu::CpuMask {
+            self.affinity.clone()
+      }
+
+      pub fn ty(&self) -> Type {
+            self.ty
       }
 }
 

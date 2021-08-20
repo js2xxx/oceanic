@@ -1,10 +1,11 @@
 use super::{DelivMode, TriggerMode};
 use crate::cpu::arch::apic::{ipi, lapic};
+use crate::cpu::arch::intr;
 use crate::cpu::arch::seg::alloc_pls;
 use crate::cpu::arch::seg::ndt::Segment;
 use crate::cpu::time::{delay, Instant};
-use crate::mem::space::init_pgc;
 use crate::dev::acpi::table::madt::LapicNode;
+use crate::mem::space::init_pgc;
 use paging::PAddr;
 
 use alloc::vec::Vec;
@@ -181,4 +182,19 @@ pub unsafe fn start_cpus(lapics: Vec<LapicNode>) -> usize {
       }
 
       cnt
+}
+
+/// # Safety
+///
+/// This function must be called only by the scheduler of the current CPU and the caller must
+/// ensure that `cpu` is valid.
+pub unsafe fn task_migrate(cpu: usize) {
+      lapic(|lapic| {
+            lapic.send_ipi(
+                  intr::def::ApicVec::IpiTaskMigrate as u8,
+                  DelivMode::Fixed,
+                  Shorthand::None,
+                  *super::LAPIC_ID.read().get(&cpu).expect("CPU not present"),
+            )
+      });
 }

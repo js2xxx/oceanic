@@ -36,7 +36,7 @@ pub fn init_pgc() -> u64 {
 pub struct Space {
       canary: Canary<Space>,
       root_table: Mutex<Box<Table>>,
-      cr3: LAddr,
+      cr3: PAddr,
 }
 
 impl Space {
@@ -51,7 +51,7 @@ impl Space {
             let space = Space {
                   canary: Canary::new(),
                   root_table: Mutex::new(unsafe { Box::from_raw(cr3) }),
-                  cr3: LAddr::new(cr3.cast()),
+                  cr3: LAddr::new(cr3.cast()).to_paddr(minfo::ID_OFFSET),
             };
 
             {
@@ -139,8 +139,7 @@ impl Space {
       ///
       /// The caller must ensure that loading the space is safe and not cause any #PF.
       pub(in crate::mem) unsafe fn load(&self) {
-            let cr3 = self.cr3.to_paddr(minfo::ID_OFFSET);
-            archop::reg::cr3::write(*cr3 as u64);
+            archop::reg::cr3::write(*self.cr3 as u64);
       }
 }
 

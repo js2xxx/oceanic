@@ -164,10 +164,10 @@ ExVec_Virtual           equ   20
 ExVec_ControlProt       equ   21
 ExVec_VmmComm           equ   29
 
-ApicVec_Timer     equ   0x20
-ApicVec_Ipi       equ   0x21
-ApicVec_Error     equ   0x22
-ApicVec_Spurious  equ   0xFF
+ApicVec_Timer           equ   0x20
+ApicVec_Error           equ   0x21
+ApicVec_IpiTaskMigrate  equ   0x22
+ApicVec_Spurious        equ   0xFF
 
 ; define_intr(vec, asm_name, name, err_vec)
 %macro define_intr 4
@@ -215,9 +215,10 @@ define_intr ExVec_Alignment,        rout_alignment,         hdl_alignment,      
 define_intr ExVec_SimdExcep,        rout_simd,              hdl_simd,               0
 
 ; Local APIC interrupts
-define_intr ApicVec_Timer,          rout_lapic_timer,       hdl_lapic_timer,        -1
-define_intr ApicVec_Spurious,       rout_lapic_spurious,    hdl_lapic_spurious,     -1
-define_intr ApicVec_Error,          rout_lapic_error,       hdl_lapic_error,        -1
+define_intr ApicVec_Timer,          rout_lapic_timer,             hdl_lapic_timer,              -1
+define_intr ApicVec_Error,          rout_lapic_error,             hdl_lapic_error,              -1
+define_intr ApicVec_IpiTaskMigrate, rout_lapic_ipi_task_migrate,  hdl_lapic_ipi_task_migrate,   -1
+define_intr ApicVec_Spurious,       rout_lapic_spurious,          hdl_lapic_spurious,           -1
 
 ; All other interrupts
 %define rout_name(x) rout_ %+ x

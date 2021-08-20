@@ -5,7 +5,7 @@ use spin::{Mutex, MutexGuard};
 
 pub const NR_TASKS: usize = 65536;
 
-pub(super) static TI_MAP: Mutex<BTreeMap<Tid, TaskInfo>> = Mutex::new(BTreeMap::new());
+pub(in crate::sched) static TI_MAP: Mutex<BTreeMap<Tid, TaskInfo>> = Mutex::new(BTreeMap::new());
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Tid(u32);

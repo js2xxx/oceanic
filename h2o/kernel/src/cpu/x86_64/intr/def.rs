@@ -35,8 +35,8 @@ pub enum ExVec {
 #[repr(u8)]
 pub enum ApicVec {
       Timer = 0x20,
-      Ipi = 0x21,
-      Error = 0x22,
+      Error = 0x21,
+      IpiTaskMigrate = 0x22,
       Spurious = 0xFF,
 }
 
@@ -47,7 +47,7 @@ type IdtRoute = unsafe extern "C" fn();
 macro_rules! single_ent {
       ($vec:expr, $name:ident, $ist:expr, $dpl:expr) => {
             Single(IdtEntry::new(
-                  $vec as u16,
+                  $vec as u8,
                   paste::paste! {[<rout_ $name>]},
                   $ist,
                   $dpl,
@@ -74,14 +74,14 @@ pub enum IdtInit {
 use IdtInit::*;
 
 pub struct IdtEntry {
-      pub vec: u16,
+      pub vec: u8,
       pub entry: IdtRoute,
       pub ist: u8,
       pub dpl: u16,
 }
 
 impl IdtEntry {
-      pub const fn new(vec: u16, entry: IdtRoute, ist: u8, dpl: u16) -> Self {
+      pub const fn new(vec: u8, entry: IdtRoute, ist: u8, dpl: u16) -> Self {
             IdtEntry {
                   vec,
                   entry,
@@ -94,31 +94,32 @@ impl IdtEntry {
 pub static IDT_INIT: &[IdtInit] = &[
       // x86 exceptions
       single_ent!(ExVec::DivideBy0, div_0, 0, 0),
-      single_ent!(ExVec::Debug as u16, debug, 0, 0),
-      single_ent!(ExVec::Nmi as u16, nmi, 0, 0),
-      single_ent!(ExVec::Breakpoint as u16, breakpoint, 0, 0),
-      single_ent!(ExVec::Overflow as u16, overflow, 0, 3),
-      single_ent!(ExVec::Bound as u16, bound, 0, 0),
-      single_ent!(ExVec::InvalidOp as u16, invalid_op, 0, 0),
-      single_ent!(ExVec::DeviceNa as u16, device_na, 0, 0),
-      single_ent!(ExVec::DoubleFault as u16, double_fault, 0, 0),
-      single_ent!(ExVec::CoprocOverrun as u16, coproc_overrun, 0, 0),
-      single_ent!(ExVec::InvalidTss as u16, invalid_tss, 0, 0),
-      single_ent!(ExVec::SegmentNa as u16, segment_na, 0, 0),
-      single_ent!(ExVec::StackFault as u16, stack_fault, 0, 0),
-      single_ent!(ExVec::GeneralProt as u16, general_prot, 0, 0),
-      single_ent!(ExVec::PageFault as u16, page_fault, 0, 0),
-      single_ent!(ExVec::FloatPoint as u16, fp_excep, 0, 0),
-      single_ent!(ExVec::Alignment as u16, alignment, 0, 0),
-      // single_ent!(ExVec::MachineCheck as u16, mach_check, 0, 0),
-      single_ent!(ExVec::SimdExcep as u16, simd, 0, 0),
+      single_ent!(ExVec::Debug, debug, 0, 0),
+      single_ent!(ExVec::Nmi, nmi, 0, 0),
+      single_ent!(ExVec::Breakpoint, breakpoint, 0, 0),
+      single_ent!(ExVec::Overflow, overflow, 0, 3),
+      single_ent!(ExVec::Bound, bound, 0, 0),
+      single_ent!(ExVec::InvalidOp, invalid_op, 0, 0),
+      single_ent!(ExVec::DeviceNa, device_na, 0, 0),
+      single_ent!(ExVec::DoubleFault, double_fault, 0, 0),
+      single_ent!(ExVec::CoprocOverrun, coproc_overrun, 0, 0),
+      single_ent!(ExVec::InvalidTss, invalid_tss, 0, 0),
+      single_ent!(ExVec::SegmentNa, segment_na, 0, 0),
+      single_ent!(ExVec::StackFault, stack_fault, 0, 0),
+      single_ent!(ExVec::GeneralProt, general_prot, 0, 0),
+      single_ent!(ExVec::PageFault, page_fault, 0, 0),
+      single_ent!(ExVec::FloatPoint, fp_excep, 0, 0),
+      single_ent!(ExVec::Alignment, alignment, 0, 0),
+      // single_ent!(ExVec::MachineCheck, mach_check, 0, 0),
+      single_ent!(ExVec::SimdExcep, simd, 0, 0),
       // Local APIC interrupts
-      single_ent!(ApicVec::Timer as u16, lapic_timer, 0, 0),
-      single_ent!(ApicVec::Spurious as u16, lapic_spurious, 0, 0),
-      single_ent!(ApicVec::Error as u16, lapic_error, 0, 0),
+      single_ent!(ApicVec::Timer, lapic_timer, 0, 0),
+      single_ent!(ApicVec::Error, lapic_error, 0, 0),
+      single_ent!(ApicVec::IpiTaskMigrate, lapic_ipi_task_migrate, 0, 0),
+      single_ent!(ApicVec::Spurious, lapic_spurious, 0, 0),
       // All other allocable interrupts
       Multiple(repeat::repeat! {"&[" for i in 0x40..0xFF {
-            IdtEntry::new(#i as u16, [<rout_ #i>], 0, 0)
+            IdtEntry::new(#i, [<rout_ #i>], 0, 0)
       }"," "]"}),
 ];
 
@@ -282,13 +283,18 @@ hdl!(lapic_timer, |frame| {
       crate::cpu::arch::apic::timer::timer_handler(frame)
 });
 
-hdl!(lapic_spurious, |frame| {
-      crate::cpu::arch::apic::spurious_handler();
+hdl!(lapic_error, |frame| {
+      crate::cpu::arch::apic::error_handler();
       frame
 });
 
-hdl!(lapic_error, |frame| {
-      crate::cpu::arch::apic::error_handler();
+hdl!(lapic_ipi_task_migrate, |frame| {
+      crate::sched::sched::task_migrate_handler();
+      frame
+});
+
+hdl!(lapic_spurious, |frame| {
+      crate::cpu::arch::apic::spurious_handler();
       frame
 });
 

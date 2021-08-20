@@ -99,11 +99,15 @@ impl Frame {
 /// This function must be called only by assembly stubs.
 pub unsafe fn save_regs(frame: *const Frame) -> *const u8 {
       let mut sched = crate::sched::SCHED.lock();
-      sched.current_mut()
+      let ret = sched
+            .current_mut()
             .map_or(frame, |cur| {
                   cur.save_arch(frame);
 
                   cur.get_arch_context()
             })
-            .cast()
+            .cast();
+
+      crate::mem::space::krl(|space| space.load());
+      ret
 }

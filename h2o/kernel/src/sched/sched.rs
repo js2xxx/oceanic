@@ -1,6 +1,7 @@
 use super::task;
 use super::task::ctx;
 use crate::cpu::time::Instant;
+use alloc::vec::Vec;
 use canary::Canary;
 
 use alloc::collections::LinkedList;
@@ -8,6 +9,11 @@ use core::time::Duration;
 use spin::{Lazy, Mutex};
 
 const MINIMUM_TIME_GRANULARITY: Duration = Duration::from_millis(30);
+
+pub static MIGRATION_QUEUE: Lazy<Vec<Mutex<LinkedList<task::Init>>>> = Lazy::new(|| {
+      let cnt = crate::cpu::count();
+      (0..cnt).map(|_| Mutex::new(LinkedList::new())).collect()
+});
 
 #[thread_local]
 pub static SCHED: Lazy<Mutex<Scheduler>> = Lazy::new(|| {
@@ -33,9 +39,22 @@ impl Scheduler {
       pub unsafe fn push(&mut self, task: task::Init) {
             self.canary.assert();
 
-            let time_slice = MINIMUM_TIME_GRANULARITY;
-            let task = task::Ready::from_init(task, self.cpu, time_slice);
-            self.list.push_back(task);
+            let affinity = {
+                  let ti_map = task::tid::TI_MAP.lock();
+                  let ti = ti_map.get(&task.tid()).expect("Invalid init");
+                  ti.affinity()
+            };
+
+            if !affinity.get(self.cpu).map_or(false, |r| *r) {
+                  let cpu = affinity.iter_ones().next().expect("Zero affinity");
+                  MIGRATION_QUEUE[cpu].lock().push_back(task);
+
+                  unsafe { crate::cpu::arch::apic::ipi::task_migrate(cpu) };
+            } else {
+                  let time_slice = MINIMUM_TIME_GRANULARITY;
+                  let task = task::Ready::from_init(task, self.cpu, time_slice);
+                  self.list.push_back(task);
+            }
       }
 
       pub fn current(&self) -> Option<&task::Ready> {
@@ -113,5 +132,16 @@ impl Scheduler {
                   unsafe { cur.space().load() };
                   unsafe { cur.get_arch_context() }
             })
+      }
+}
+
+/// # Safety
+///
+/// This function must be called only in task-migrate IPI handlers.
+pub unsafe fn task_migrate_handler() {
+      let mut sched = SCHED.lock();
+      let mut mq = MIGRATION_QUEUE[sched.cpu].lock();
+      while let Some(task) = mq.pop_front() {
+            unsafe { sched.push(task) };
       }
 }
