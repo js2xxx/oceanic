@@ -38,11 +38,10 @@ struc Frame
 endstruc
 
 struc KernelGs
-      .save_regs        resq 1 ; Save the GPRs from the current stack and *return the thread stack*
-      .tss_rsp0         resq 1
+      .tss_rsp0               resq 1
       .syscall_user_stack     resq 1
       .syscall_stack          resq 1
-      .kernel_fs        resq 1
+      .kernel_fs              resq 1
 endstruc
 
 %macro push_xs 1
@@ -183,7 +182,6 @@ extern %3
 
       mov   rdi, rsp
       call  %3
-      mov   rsp, rax
 
       jmp   intr_exit
 
@@ -231,6 +229,9 @@ define_intr i, rout_name(i), common_interrupt, i
 %endrep
 %undef rout_name
 
+extern save_regs; Save the GPRs from the current stack
+extern load_regs; Return the kernel stack of the current task
+
 intr_entry:
       cld
       push_regs   1, 0; The routine has a return address, so we must preserve it.
@@ -250,8 +251,7 @@ intr_entry:
 
       pop   r12
       mov   rdi, rsp
-      mov   rax, [gs:(KernelGs.save_regs)]
-      call  rax
+      call  save_regs
       mov   rsp, rax
       lea   rbp, [rsp + 1]
       push  r12
@@ -264,6 +264,10 @@ intr_entry:
 intr_exit:
       bt    qword [rsp + Frame.cs], 2; Test if it's a reentrancy.
       jc    .reent
+
+      mov   rdi, rsp
+      call  load_regs
+      mov   rsp, rax
 
       pop_regs    1
 
@@ -313,13 +317,15 @@ rout_syscall:
       wrmsr
 
       mov   rdi, rsp
-      mov   rax, [gs:(KernelGs.save_regs)]
-      call  rax
+      call  save_regs
       mov   rsp, rax
       lea   rbp, [rsp + 1]
 
       mov   rdi, rsp
       call  hdl_syscall
+
+      mov   rdi, rsp
+      call  load_regs
       mov   rsp, rax
 
       pop_regs    1

@@ -97,17 +97,24 @@ impl Frame {
 /// # Safety
 ///
 /// This function must be called only by assembly stubs.
-pub unsafe fn save_regs(frame: *const Frame) -> *const u8 {
+#[no_mangle]
+unsafe extern "C" fn save_regs(frame: *const Frame) -> *const u8 {
       let mut sched = crate::sched::SCHED.lock();
-      let ret = sched
-            .current_mut()
-            .map_or(frame, |cur| {
-                  cur.save_arch(frame);
+      let ret = sched.current_mut().map_or(frame, |cur| {
+            cur.save_arch(frame);
 
-                  cur.get_arch_context()
-            })
-            .cast();
+            cur.get_arch_context()
+      });
 
       crate::mem::space::krl(|space| space.load());
-      ret
+      ret.cast()
+}
+
+/// # Safety
+///
+/// This function must be called only by assembly stubs.
+#[no_mangle]
+unsafe extern "C" fn load_regs(frame: *const Frame) -> *const Frame {
+      let mut sched = crate::sched::SCHED.lock();
+      sched.restore_current(frame)
 }

@@ -5,7 +5,6 @@ pub mod syscall;
 pub mod tsc;
 
 use crate::dev::acpi;
-use crate::sched::task::ctx;
 use paging::LAddr;
 
 use alloc::boxed::Box;
@@ -47,7 +46,6 @@ pub unsafe fn is_bsp() -> bool {
 
 #[repr(C)]
 pub struct KernelGs {
-      save_regs: *mut u8,
       tss_rsp0: LAddr,
       syscall_user_stack: *mut u8,
       syscall_stack: LAddr,
@@ -57,7 +55,6 @@ pub struct KernelGs {
 impl KernelGs {
       pub fn new(tss_rsp0: LAddr, syscall_stack: LAddr, kernel_fs: LAddr) -> Self {
             KernelGs {
-                  save_regs: ctx::arch::save_regs as *mut u8,
                   tss_rsp0,
                   syscall_user_stack: null_mut(),
                   syscall_stack,
