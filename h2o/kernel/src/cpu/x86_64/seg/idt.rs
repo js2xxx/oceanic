@@ -4,7 +4,7 @@ use crate::cpu::arch::intr::def::{IdtEntry, IdtInit, IDT_INIT};
 use paging::LAddr;
 
 use core::mem::size_of;
-use core::ops::{Index, IndexMut, Range};
+use core::ops::{Index, IndexMut};
 // use core::slice::{Iter, IterMut};
 use spin::Lazy;
 use static_assertions::*;
@@ -12,16 +12,11 @@ use static_assertions::*;
 /// The count of all the interrupts in one CPU.
 ///
 /// This is limited by `int /imm8` assembly instruction.
-const NR_INTRS: usize = 256;
-
-/// The range of all the allocable (usable for custom) interrupts in one CPU.
-///
-/// NOTE: `0..32` is reserved for exceptions.
-const ALLOCABLE_INTRS: Range<usize> = 32..NR_INTRS;
+pub const NR_VECTORS: usize = 256;
 
 #[thread_local]
 static IDT: Lazy<IntDescTable> = Lazy::new(|| {
-      let mut array = [Gate::zeroed(); NR_INTRS];
+      let mut array = [Gate::zeroed(); NR_VECTORS];
 
       let mut set_ent = |entry: &IdtEntry| {
             let desc = GateBuilder::new()
@@ -169,7 +164,7 @@ impl Gate {
       }
 }
 
-pub type IdtArray = [Gate; NR_INTRS];
+pub type IdtArray = [Gate; NR_VECTORS];
 
 /// The IDT structure.
 #[repr(align(4096))]
@@ -224,7 +219,7 @@ impl IntDescTable {
 
       // /// Deallocate (destroy) a gate descriptor in the IDT.
       // pub fn dealloc(&mut self, idx: usize) -> Result<(), &'static str> {
-      //       if !(0..NR_INTRS).contains(&idx) {
+      //       if !(0..NR_VECTORS).contains(&idx) {
       //             return Err("Index out of range");
       //       }
       //       self[idx] = Gate::zeroed();

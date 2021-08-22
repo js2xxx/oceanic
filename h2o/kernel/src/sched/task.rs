@@ -155,10 +155,43 @@ impl Ready {
                   running_state: RunningState::NotRunning,
             }
       }
+
+      pub fn from_blocked(blocked: Blocked, time_slice: Duration) -> Self {
+            let Blocked {
+                  tid,
                   space,
                   kstack,
-                  ext_frame: None,
+                  ext_frame,
+                  cpu,
+                  ..
+            } = blocked;
+            Ready {
+                  tid,
+                  time_slice,
+                  space,
+                  kstack,
+                  ext_frame,
+                  cpu,
                   running_state: RunningState::NotRunning,
+            }
+      }
+
+      pub fn into_blocked(this: Self, block_desc: String) -> Blocked {
+            let Ready {
+                  tid,
+                  space,
+                  kstack,
+                  ext_frame,
+                  cpu,
+                  ..
+            } = this;
+            Blocked {
+                  tid,
+                  space,
+                  kstack,
+                  ext_frame,
+                  cpu,
+                  block_desc,
             }
       }
 
@@ -196,6 +229,13 @@ impl Ready {
 #[derive(Debug)]
 pub struct Blocked {
       tid: Tid,
+
+      space: Space,
+      kstack: Box<ctx::Kstack>,
+      ext_frame: Option<Box<ctx::ExtendedFrame>>,
+
+      cpu: usize,
+      block_desc: String,
 }
 
 #[derive(Debug)]

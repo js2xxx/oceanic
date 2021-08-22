@@ -1,6 +1,7 @@
 use super::task;
 use super::task::ctx;
 use crate::cpu::time::Instant;
+use alloc::string::String;
 use alloc::vec::Vec;
 use archop::IntrMutex;
 use canary::Canary;
@@ -69,6 +70,41 @@ impl Scheduler {
             self.canary.assert();
 
             self.running.as_mut()
+      }
+
+      pub fn block_current(&mut self, cur_time: Instant, block_desc: String) -> Option<task::Blocked> {
+            self.canary.assert();
+
+            let task = self.running.take();
+            if !self.schedule(cur_time) {
+                  self.running = task;
+                  None
+            } else {
+                  task.map(|t| task::Ready::into_blocked(t, block_desc))
+            }
+      }
+
+      pub fn block(&mut self, cur_time: Instant, tid: task::Tid, block_desc: String) -> Option<task::Blocked> {
+            self.canary.assert();
+
+            if self.current().map_or(false, |cur| cur.tid() == tid) {
+                  self.block_current(cur_time, block_desc)
+            } else {
+                  let idx = self
+                        .run_queue
+                        .iter()
+                        .enumerate()
+                        .find_map(|(i, t)| (t.tid() == tid).then_some(i));
+                  idx.map(|idx| task::Ready::into_blocked(self.run_queue.remove(idx), block_desc))
+            }
+      }
+
+      pub fn unblock(&mut self, task: task::Blocked) {
+            self.canary.assert();
+
+            let time_slice = MINIMUM_TIME_GRANULARITY;
+            let task = task::Ready::from_blocked(task, time_slice);
+            self.run_queue.push_back(task);
       }
 
       fn update(&mut self, cur_time: Instant) -> bool {

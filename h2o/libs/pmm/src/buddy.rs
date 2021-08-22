@@ -286,7 +286,6 @@ unsafe fn pfn_to_page(pfn: usize, pftype: PfType) -> &'static PageFrame {
 /// It'll return a `None` value only if the requested `PfType` is invalid or
 /// the page order is out of range.
 #[inline]
-#[allow(dead_code)]
 fn pf_list(pftype: PfType, order: usize) -> Option<&'static PfList> {
       if ORDERS.contains(&order) && pftype != PfType::Max {
             unsafe {

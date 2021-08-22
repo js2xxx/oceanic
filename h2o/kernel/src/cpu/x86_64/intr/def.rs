@@ -1,8 +1,8 @@
+pub use crate::cpu::arch::seg::idt::NR_VECTORS;
+
 use crate::sched::task::ctx::arch::Frame;
 
 use core::ops::Range;
-
-pub const NR_VECTORS: usize = 256;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]

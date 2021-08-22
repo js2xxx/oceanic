@@ -83,10 +83,10 @@ pub trait IntrChip {
 
 pub struct IntrState;
 impl IntrState {
-      const ENABLED: u16 = 0b0000_0001;
-      const ONESHOT: u16 = 0b0000_0010;
-      const RUNNING: u16 = 0b0000_0100;
-      const PENDING: u16 = 0b0000_1000;
+      pub const ENABLED: u16 = 0b0000_0001;
+      pub const ONESHOT: u16 = 0b0000_0010;
+      pub const RUNNING: u16 = 0b0000_0100;
+      pub const PENDING: u16 = 0b0000_1000;
 }
 
 pub struct Interrupt {

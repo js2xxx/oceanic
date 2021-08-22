@@ -125,6 +125,7 @@ impl Lapic {
             }
       }
 
+      #[allow(dead_code)]
       unsafe fn read_reg_64(ty: &mut LapicType, reg: msr::Msr) -> u64 {
             match ty {
                   LapicType::X1(memory) => {
