@@ -1,8 +1,12 @@
+pub mod fpu;
 pub mod io;
+pub mod lock;
 pub mod msr;
 pub mod reg;
-pub mod fpu;
 
+pub use lock::{IntrMutex, IntrMutexGuard};
+
+use bitop_ex::BitOpEx;
 use paging::LAddr;
 
 use core::ops::Range;
@@ -55,16 +59,20 @@ pub fn delay_loop(mut loops: usize) {
 ///
 /// Invalid use of this function can cause CPU unrecoverable fault.
 #[inline]
-pub unsafe fn pause_intr() {
+pub unsafe fn pause_intr() -> u64 {
+      let rflags = reg::rflags::read();
       asm!("cli");
+      rflags
 }
 
 /// # Safety
 ///
 /// Invalid use of this function can cause CPU unrecoverable fault.
 #[inline]
-pub unsafe fn resume_intr() {
-      asm!("sti");
+pub unsafe fn resume_intr(rflags: Option<u64>) {
+      if rflags.map_or(true, |rflags| rflags.contains_bit(reg::rflags::IF)) {
+            asm!("sti");
+      }
 }
 
 /// # Safety
@@ -75,9 +83,11 @@ pub unsafe fn halt_loop(intr_op: Option<bool>) -> ! {
       let f = match intr_op {
             Some(op) => {
                   if op {
-                        resume_intr
+                        || resume_intr(None)
                   } else {
-                        pause_intr
+                        || {
+                              pause_intr();
+                        }
                   }
             }
             None => || {},

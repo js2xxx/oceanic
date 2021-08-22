@@ -2,6 +2,7 @@ use super::task;
 use super::task::ctx;
 use crate::cpu::time::Instant;
 use alloc::vec::Vec;
+use archop::IntrMutex;
 use canary::Canary;
 
 use alloc::collections::LinkedList;
@@ -16,20 +17,19 @@ pub static MIGRATION_QUEUE: Lazy<Vec<Mutex<LinkedList<task::Init>>>> = Lazy::new
 });
 
 #[thread_local]
-pub static SCHED: Lazy<Mutex<Scheduler>> = Lazy::new(|| {
-      Mutex::new(Scheduler {
+pub static SCHED: Lazy<IntrMutex<Scheduler>> = Lazy::new(|| {
+      IntrMutex::new(Scheduler {
             canary: Canary::new(),
             cpu: unsafe { crate::cpu::id() },
             running: None,
-            list: LinkedList::new(),
+            run_queue: LinkedList::new(),
       })
 });
-
 pub struct Scheduler {
       canary: Canary<Scheduler>,
       cpu: usize,
       running: Option<task::Ready>,
-      list: LinkedList<task::Ready>,
+      run_queue: LinkedList<task::Ready>,
 }
 
 impl Scheduler {
@@ -48,14 +48,14 @@ impl Scheduler {
             };
 
             if !affinity.get(self.cpu).map_or(false, |r| *r) {
-                  let cpu = affinity.iter_ones().next().expect("Zero affinity");
+                  let cpu = select_cpu(&affinity).expect("Zero affinity");
                   MIGRATION_QUEUE[cpu].lock().push_back(task);
 
                   unsafe { crate::cpu::arch::apic::ipi::task_migrate(cpu) };
             } else {
                   let time_slice = MINIMUM_TIME_GRANULARITY;
                   let task = task::Ready::from_init(task, self.cpu, time_slice);
-                  self.list.push_back(task);
+                  self.run_queue.push_back(task);
             }
       }
 
@@ -74,7 +74,7 @@ impl Scheduler {
       fn update(&mut self, cur_time: Instant) -> bool {
             self.canary.assert();
 
-            let sole = self.list.is_empty();
+            let sole = self.run_queue.is_empty();
             let cur = match self.current_mut() {
                   Some(task) => task,
                   None => return !sole,
@@ -102,22 +102,24 @@ impl Scheduler {
             }
       }
 
-      fn schedule(&mut self, cur_time: Instant) {
+      fn schedule(&mut self, cur_time: Instant) -> bool {
             self.canary.assert();
 
             let cur_cpu = self.cpu;
-            if self.list.is_empty() {
-                  return;
+            if self.run_queue.is_empty() {
+                  return false;
             }
 
-            let mut next = self.list.pop_front().unwrap();
+            let mut next = self.run_queue.pop_front().unwrap();
             next.running_state = task::RunningState::Running(cur_time);
             next.cpu = cur_cpu;
 
             if let Some(mut prev) = self.running.replace(next) {
                   prev.running_state = task::RunningState::NotRunning;
-                  self.list.push_back(prev);
+                  self.run_queue.push_back(prev);
             }
+
+            true
       }
 
       /// Restore the context of the current task.
@@ -134,6 +136,10 @@ impl Scheduler {
                   unsafe { cur.get_arch_context() }
             })
       }
+}
+
+fn select_cpu(affinity: &crate::cpu::CpuMask) -> Option<usize> {
+      affinity.iter_ones().next()
 }
 
 /// # Safety

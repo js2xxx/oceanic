@@ -148,12 +148,22 @@ impl Ready {
             Ready {
                   tid,
                   time_slice,
+                  space,
+                  kstack,
+                  ext_frame: None,
                   cpu,
+                  running_state: RunningState::NotRunning,
+            }
+      }
                   space,
                   kstack,
                   ext_frame: None,
                   running_state: RunningState::NotRunning,
             }
+      }
+
+      pub fn tid(&self) -> Tid {
+            self.tid
       }
 
       pub fn time_slice(&self) -> Duration {

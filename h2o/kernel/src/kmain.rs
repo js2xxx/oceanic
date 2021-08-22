@@ -25,18 +25,13 @@ pub mod mem;
 pub mod rxx;
 pub mod sched;
 
-use kargs::KernelArgs;
-
 use ::log as l;
-use minfo::KARGS_BASE;
 use spin::Lazy;
 
 extern crate alloc;
 
-static KARGS: Lazy<KernelArgs> = Lazy::new(|| {
-      let ptr = KARGS_BASE as *const KernelArgs;
-      unsafe { ptr.read() }
-});
+static KARGS: Lazy<kargs::KernelArgs> =
+      Lazy::new(|| unsafe { (minfo::KARGS_BASE as *const kargs::KernelArgs).read() });
 
 #[no_mangle]
 pub extern "C" fn kmain() {
