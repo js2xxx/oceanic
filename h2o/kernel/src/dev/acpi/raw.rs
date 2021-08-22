@@ -42,7 +42,7 @@ extern "C" fn AcpiOsTerminate() -> ACPI_STATUS {
 
 #[no_mangle]
 unsafe extern "C" fn AcpiOsGetTimer() -> UINT64 {
-      crate::cpu::time::Instant::now().raw()
+      crate::cpu::time::Instant::now().raw() as u64
 }
 
 #[no_mangle]

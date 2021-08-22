@@ -358,10 +358,9 @@ fn split_page(page: &PageFrame, pftype: PfType, orders: Range<usize>) -> &PageFr
             let sib = unsafe { &*(page as *const PageFrame).add(1 << o) };
             let pflist = pf_list_mut(pftype, o).unwrap();
 
+            assert!(sib.order.get() == 0);
+            unsafe { sib.link.force_unlink() };
             sib.order.set(o + 1);
-            if sib.link.is_linked() {
-                  unsafe { sib.link.force_unlink() };
-            }
             pflist.push_back(sib);
       }
 
@@ -504,7 +503,8 @@ unsafe fn dealloc_page_typed(page: &'static PageFrame, order: usize, pftype: PfT
                   break;
             }
 
-            let mut bcur = pflist.cursor_mut_from_ptr(buddy as *const PageFrame);
+            buddy.order.set(0);
+            let mut bcur = pflist.cursor_mut_from_ptr(buddy);
             bcur.remove();
 
             p = get_combined(p, o, pftype);
@@ -515,10 +515,9 @@ unsafe fn dealloc_page_typed(page: &'static PageFrame, order: usize, pftype: PfT
       // Push the result into the final free list
       let pflist = pf_list_mut(pftype, o).unwrap();
 
+      assert!(p.order.get() == 0);
+      p.link.force_unlink();
       p.order.set(o + 1);
-      if p.link.is_linked() {
-            p.link.force_unlink();
-      }
       pflist.push_back(p);
 }
 
@@ -661,8 +660,8 @@ pub unsafe fn dealloc_pages_exact(n: usize, addr: PAddr) {
 
             let order = min(spfn.lsb(), MAX_ORDER - 1);
             log::trace!(
-                  "spage = {:?}, order = {}, epfn = {:x}, spfn = {:x}",
-                  spage as *const _,
+                  "start = {:?}, order = {}, epfn = {:x}, spfn = {:x}",
+                  start,
                   order,
                   epfn,
                   spfn

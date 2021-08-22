@@ -20,6 +20,7 @@ pub static SCHED: Lazy<Mutex<Scheduler>> = Lazy::new(|| {
       Mutex::new(Scheduler {
             canary: Canary::new(),
             cpu: unsafe { crate::cpu::id() },
+            running: None,
             list: LinkedList::new(),
       })
 });
@@ -27,6 +28,7 @@ pub static SCHED: Lazy<Mutex<Scheduler>> = Lazy::new(|| {
 pub struct Scheduler {
       canary: Canary<Scheduler>,
       cpu: usize,
+      running: Option<task::Ready>,
       list: LinkedList<task::Ready>,
 }
 
@@ -60,41 +62,42 @@ impl Scheduler {
       pub fn current(&self) -> Option<&task::Ready> {
             self.canary.assert();
 
-            self.list.front()
+            self.running.as_ref()
       }
 
       pub fn current_mut(&mut self) -> Option<&mut task::Ready> {
             self.canary.assert();
 
-            self.list.front_mut()
+            self.running.as_mut()
       }
 
-      fn update(&mut self, cur_time: Instant) {
+      fn update(&mut self, cur_time: Instant) -> bool {
             self.canary.assert();
 
-            let len = self.list.len();
+            let sole = self.list.is_empty();
             let cur = match self.current_mut() {
                   Some(task) => task,
-                  None => return,
+                  None => return !sole,
             };
 
-            let start_time = match cur.running_state {
-                  task::RunningState::Running(t) => t,
+            match cur.running_state {
+                  task::RunningState::Running(start_time) => {
+                        if cur.time_slice() < cur_time - start_time && !sole {
+                              cur.running_state = task::RunningState::NeedResched;
+                              true
+                        } else {
+                              false
+                        }
+                  }
                   task::RunningState::NotRunning => panic!("Not running"),
-                  task::RunningState::NeedResched => return,
-            };
-
-            if cur.time_slice() < cur_time - start_time && len > 1 {
-                  cur.running_state = task::RunningState::NeedResched;
+                  task::RunningState::NeedResched => true,
             }
       }
 
       pub fn tick(&mut self, cur_time: Instant) {
-            self.update(cur_time);
+            let need_resched = self.update(cur_time);
 
-            if self.current_mut().map_or(false, |cur| {
-                  matches!(cur.running_state, task::RunningState::NeedResched)
-            }) {
+            if need_resched {
                   self.schedule(cur_time);
             }
       }
@@ -103,20 +106,18 @@ impl Scheduler {
             self.canary.assert();
 
             let cur_cpu = self.cpu;
-            if self.list.len() <= 1 {
+            if self.list.is_empty() {
                   return;
             }
 
-            let mut prev = self.list.pop_front().unwrap();
-            let next = self.current_mut().unwrap();
-
-            prev.running_state = task::RunningState::NotRunning;
+            let mut next = self.list.pop_front().unwrap();
             next.running_state = task::RunningState::Running(cur_time);
             next.cpu = cur_cpu;
 
-            // TODO: further switches
-
-            self.list.push_back(prev);
+            if let Some(mut prev) = self.running.replace(next) {
+                  prev.running_state = task::RunningState::NotRunning;
+                  self.list.push_back(prev);
+            }
       }
 
       /// Restore the context of the current task.

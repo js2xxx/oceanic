@@ -12,7 +12,7 @@ pub struct Tid(u32);
 
 pub(super) fn next(ti_map: &MutexGuard<BTreeMap<Tid, TaskInfo>>) -> Option<Tid> {
       (1..=NR_TASKS as u32).find_map(|idx| {
-            if ti_map.contains_key(&Tid(idx)) {
+            if !ti_map.contains_key(&Tid(idx)) {
                   Some(Tid(idx))
             } else {
                   None

@@ -7,7 +7,7 @@ use core::time::Duration;
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Instant {
       #[cfg(target_arch = "x86_64")]
-      data: u64,
+      data: u128,
 }
 
 #[cfg(target_arch = "x86_64")]
@@ -22,7 +22,7 @@ impl Instant {
             Self::now() - *self
       }
 
-      pub unsafe fn raw(&self) -> u64 {
+      pub unsafe fn raw(&self) -> u128 {
             self.data
       }
 }
@@ -33,7 +33,7 @@ impl Add<Duration> for Instant {
 
       fn add(self, rhs: Duration) -> Self::Output {
             Instant {
-                  data: self.data + rhs.as_nanos() as u64,
+                  data: self.data + rhs.as_nanos(),
             }
       }
 }
@@ -41,7 +41,7 @@ impl Add<Duration> for Instant {
 #[cfg(target_arch = "x86_64")]
 impl AddAssign<Duration> for Instant {
       fn add_assign(&mut self, rhs: Duration) {
-            self.data += rhs.as_nanos() as u64;
+            self.data += rhs.as_nanos();
       }
 }
 
@@ -51,7 +51,7 @@ impl Sub<Duration> for Instant {
 
       fn sub(self, rhs: Duration) -> Self::Output {
             Instant {
-                  data: self.data - rhs.as_nanos() as u64,
+                  data: self.data - rhs.as_nanos(),
             }
       }
 }
@@ -59,7 +59,7 @@ impl Sub<Duration> for Instant {
 #[cfg(target_arch = "x86_64")]
 impl SubAssign<Duration> for Instant {
       fn sub_assign(&mut self, rhs: Duration) {
-            self.data -= rhs.as_nanos() as u64;
+            self.data -= rhs.as_nanos();
       }
 }
 
@@ -68,7 +68,9 @@ impl Sub<Instant> for Instant {
       type Output = Duration;
 
       fn sub(self, rhs: Instant) -> Self::Output {
-            Duration::from_nanos(self.data - rhs.data)
+            const NPS: u128 = 1_000_000_000;
+            let nanos = self.data - rhs.data;
+            Duration::new((nanos / NPS) as u64, (nanos % NPS) as u32)
       }
 }
 

@@ -8,7 +8,7 @@ kentry:
       call  kmain
 
 .lp:
-      ; sti
+      sti
       hlt
       jmp   .lp
 

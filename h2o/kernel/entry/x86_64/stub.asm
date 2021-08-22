@@ -181,8 +181,18 @@ extern %3
       call  intr_entry
 
       mov   rdi, rsp
+
+      mov   r12, 0
+      bt    rsp, 3
+      jnc   .call
+      mov   r12, 1
+      sub   rsp, 8
+.call:
       call  %3
 
+      cmp   r12, 0
+      je    intr_exit
+      add   rsp, 8
       jmp   intr_exit
 
 %endmacro

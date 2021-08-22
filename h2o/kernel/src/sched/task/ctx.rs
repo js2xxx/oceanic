@@ -24,12 +24,12 @@ pub struct Kstack([u8; KSTACK_SIZE]);
 
 impl Kstack {
       pub fn new(entry: Entry, ty: super::Type) -> Box<Self> {
-            let mut kstack = box unsafe { core::mem::zeroed::<Kstack>() };
+            let mut kstack = box core::mem::MaybeUninit::<Self>::uninit();
             unsafe {
-                  let frame = kstack.as_frame_mut();
+                  let frame = kstack.assume_init_mut().as_frame_mut();
                   frame.set_entry(entry, ty);
             }
-            kstack
+            unsafe { Box::from_raw(Box::into_raw(kstack).cast()) }
       }
 
       pub fn top(&self) -> LAddr {

@@ -13,15 +13,19 @@ use core::sync::atomic::{AtomicUsize, Ordering};
 
 pub const MAX_CPU: usize = 256;
 pub static CPU_INDEX: AtomicUsize = AtomicUsize::new(0);
-static CPU_COUNT: AtomicUsize = AtomicUsize::new(1);
+static CPU_COUNT: AtomicUsize = AtomicUsize::new(0);
 
 /// # Safety
 ///
 /// This function is only called before architecture initialization.
-pub unsafe fn set_id() -> usize {
+pub unsafe fn set_id(bsp: bool) -> usize {
       use archop::msr;
       let id = CPU_INDEX.fetch_add(1, Ordering::SeqCst);
       msr::write(msr::TSC_AUX, id as u64);
+
+      while !bsp && count() == 0 {
+            archop::pause();
+      }
       id
 }
 

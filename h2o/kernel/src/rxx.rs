@@ -1,6 +1,6 @@
 #[panic_handler]
 fn panic_handler(info: &core::panic::PanicInfo) -> ! {
-      log::error!("Kernel {}", info);
+      log::error!("CPU #{} {}", unsafe { crate::cpu::id() }, info);
       unsafe { archop::halt_loop(Some(true)) }
 }
 

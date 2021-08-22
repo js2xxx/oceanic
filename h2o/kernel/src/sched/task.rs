@@ -1,4 +1,5 @@
 pub mod ctx;
+pub mod idle;
 pub mod prio;
 pub mod tid;
 
@@ -10,7 +11,6 @@ use paging::LAddr;
 use alloc::boxed::Box;
 use alloc::format;
 use alloc::string::String;
-use core::ptr::null_mut;
 use core::time::Duration;
 use spin::Lazy;
 
@@ -31,25 +31,6 @@ static ROOT: Lazy<Tid> = Lazy::new(|| {
       let mut ti_map = tid::TI_MAP.lock();
       let tid = tid::next(&ti_map).expect("Failed to acquire a valid TID");
       ti_map.insert(tid, ti);
-
-      tid
-});
-
-#[thread_local]
-static IDLE: Lazy<Tid> = Lazy::new(|| {
-      let ti = TaskInfo::new(
-            *ROOT,
-            format!("IDLE{}", unsafe { crate::cpu::id() }),
-            Type::Kernel,
-            crate::cpu::current_mask(),
-            prio::IDLE,
-      );
-
-      let init = Init::new(ti, DEFAULT_STACK_SIZE, [0; 2]).expect("Failed to initialize IDLE");
-      let tid = init.tid;
-
-      let mut sched = super::SCHED.lock();
-      unsafe { sched.push(init) };
 
       tid
 });
@@ -107,11 +88,15 @@ pub struct Init {
 }
 
 impl Init {
-      pub fn new(ti: TaskInfo, stack_size: usize, args: [u64; 2]) -> Result<Self, InitError> {
-            let space = Space::new(ti.ty);
-
+      pub fn new(
+            ti: TaskInfo,
+            space: Space,
+            entry: LAddr,
+            stack_size: usize,
+            args: [u64; 2],
+      ) -> Result<Self, InitError> {
             let entry = ctx::Entry {
-                  entry: LAddr::new(null_mut()), // TODO: set up entry point correctly.
+                  entry,
                   stack: space.init_stack(stack_size).map_err(InitError::Stack)?,
                   args,
             };
@@ -127,6 +112,7 @@ impl Init {
                   Ok,
             )?;
             ti_map.insert(tid, ti);
+            drop(ti_map);
 
             Ok(Init { tid, space, kstack })
       }
@@ -136,7 +122,7 @@ impl Init {
       }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum RunningState {
       NotRunning,
       NeedResched,
@@ -210,4 +196,8 @@ pub struct Killed {
 #[derive(Debug)]
 pub struct Dead {
       tid: Tid,
+}
+
+pub(super) fn init() {
+      Lazy::force(&idle::IDLE);
 }

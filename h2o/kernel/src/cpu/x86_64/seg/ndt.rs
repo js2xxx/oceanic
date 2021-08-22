@@ -1,5 +1,4 @@
 use super::*;
-use crate::mem::space::{krl, Flags};
 use paging::LAddr;
 
 use core::mem::size_of;
@@ -58,16 +57,8 @@ static TSS: Lazy<TssStruct> = Lazy::new(|| {
                   .repeat(4)
                   .expect("Failed to calculate the layout");
             assert!(k == paging::PAGE_SIZE);
-            let memory = krl(|space| {
-                  space.alloc_manual(
-                        layout,
-                        None,
-                        Flags::READABLE | Flags::WRITABLE | Flags::ZEROED,
-                  )
-                  .expect("Failed to allocate stack")
-            });
-
-            memory.as_ptr().cast::<u8>().add(layout.size())
+            let memory = alloc::alloc::alloc(layout);
+            memory.add(layout.size())
       };
 
       let rsp0 = alloc_stack();

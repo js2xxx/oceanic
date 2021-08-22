@@ -5,17 +5,17 @@ use static_assertions::const_assert;
 
 static mut TSC_FREQ_KHZ: u64 = 2600000;
 static mut TSC_INITIAL: u64 = 0;
-static mut NS_CLOCK_FACTORS: (u64, u64) = (0, 0);
+static mut NS_CLOCK_FACTORS: (u128, u128) = (0, 0);
 
 /// Get the per-CPU clock in nanoseconds.
 ///
 /// # Safety
 ///
 /// This function must be called only after [`tsc_init`].
-pub(in crate::cpu) unsafe fn ns_clock() -> u64 {
+pub(in crate::cpu) unsafe fn ns_clock() -> u128 {
       let val = rdtsc() - TSC_INITIAL;
       let (mul, sft) = NS_CLOCK_FACTORS;
-      (((val & 0xFFFFFFFF) * mul) >> sft) | (((val >> 32) * mul) << (32 - sft))
+      (val as u128 * mul) >> sft
 }
 
 /// Calibrate the CPU's frequency (KHz) by activating the PIT timer.
@@ -62,7 +62,7 @@ pub unsafe fn init() {
                   }
                   sft -= 1;
             }
-            (mul, sft)
+            (mul as u128, sft as u128)
       };
       log::info!("CPU Timestamp frequency: {} KHz", TSC_FREQ_KHZ);
 }
