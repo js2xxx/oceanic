@@ -75,6 +75,7 @@ pub struct Space {
       /// The free ranges in allocation.
       free_range: Mutex<RangeSet<LAddr>>,
 
+      record: Mutex<BTreeMap<LAddr, Layout>>,
       stack_blocks: Mutex<BTreeMap<LAddr, Layout>>,
 }
 
@@ -91,6 +92,7 @@ impl Space {
                   ty,
                   arch: ArchSpace::new(),
                   free_range: Mutex::new(free_range),
+                  record: Mutex::new(BTreeMap::new()),
                   stack_blocks: Mutex::new(BTreeMap::new()),
             }
       }
@@ -192,6 +194,11 @@ impl Space {
                   ptr.cast(),
                   size / size_of::<MemBlock>(),
             ));
+            let _ = self
+                  .record
+                  .lock()
+                  .insert(LAddr::new(ptr), layout)
+                  .map(|_| panic!("Duplicate allocation"));
 
             Ok(blocks)
       }
@@ -267,12 +274,24 @@ impl Space {
       ) -> Result<(), &'static str> {
             self.canary.assert();
 
-            // Get the virtual address range from the given memory block.
-            let layout = Layout::for_value(&*b);
             let mut virt = {
                   let ptr = b.as_ptr_range();
                   LAddr::new(ptr.start as *mut _)..LAddr::new(ptr.end as *mut _)
             };
+
+            // Get the virtual address range from the given memory block.
+            let layout = Layout::for_value(&*b);
+            {
+                  let mut record = self.record.lock();
+                  match record.remove(&virt.start) {
+                        Some(l) if layout != l => {
+                              record.insert(virt.start, l);
+                              return Err("Invalid memory block");
+                        }
+                        None => return Err("Invalid memory block"),
+                        _ => {}
+                  }
+            }
 
             // Unmap the virtual address & get the physical address.
             let phys = self.arch.unmaps(virt.clone()).map_err(|_| "Paging error")?;
@@ -417,7 +436,7 @@ impl Space {
             self.canary.assert();
 
             let mut stack_blocks = self.stack_blocks.lock();
-            for (&base, &layout) in stack_blocks.iter() {
+            while let Some((base, layout)) = stack_blocks.pop_first() {
                   match self.ty {
                         task::Type::Kernel => unsafe { alloc::alloc::dealloc(*base, layout) },
                         task::Type::User => {
@@ -430,9 +449,27 @@ impl Space {
                         }
                   }
             }
-
-            stack_blocks.clear();
             Ok(())
+      }
+}
+
+impl Drop for Space {
+      fn drop(&mut self) {
+            unsafe {
+                  with(self, |space| {
+                        space.clear_stack();
+
+                        let mut record = space.record.lock();
+                        while let Some((base, layout)) = record.pop_first() {
+                              let virt =
+                                    base..LAddr::from(base.val() + layout.pad_to_align().size());
+                              if let Ok(Some(phys)) = self.arch.unmaps(virt) {
+                                    let ptr = phys.to_laddr(minfo::ID_OFFSET);
+                                    unsafe { alloc::alloc::dealloc(*ptr, layout) };
+                              }
+                        }
+                  });
+            }
       }
 }
 

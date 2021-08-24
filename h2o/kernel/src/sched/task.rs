@@ -143,7 +143,7 @@ pub struct Ready {
 }
 
 impl Ready {
-      pub fn from_init(init: Init, cpu: usize, time_slice: Duration) -> Self {
+      pub(in crate::sched) fn from_init(init: Init, cpu: usize, time_slice: Duration) -> Self {
             let Init { tid, space, kstack } = init;
             Ready {
                   tid,
@@ -156,7 +156,7 @@ impl Ready {
             }
       }
 
-      pub fn from_blocked(blocked: Blocked, time_slice: Duration) -> Self {
+      pub(in crate::sched) fn from_blocked(blocked: Blocked, time_slice: Duration) -> Self {
             let Blocked {
                   tid,
                   space,
@@ -176,7 +176,7 @@ impl Ready {
             }
       }
 
-      pub fn into_blocked(this: Self, block_desc: String) -> Blocked {
+      pub(in crate::sched) fn into_blocked(this: Self, block_desc: String) -> Blocked {
             let Ready {
                   tid,
                   space,
@@ -193,6 +193,11 @@ impl Ready {
                   cpu,
                   block_desc,
             }
+      }
+
+      pub(in crate::sched) fn into_dead(this: Self, retval: u64) -> Dead {
+            let Ready { tid, .. } = this;
+            Dead { tid, retval }
       }
 
       pub fn tid(&self) -> Tid {
@@ -246,6 +251,7 @@ pub struct Killed {
 #[derive(Debug)]
 pub struct Dead {
       tid: Tid,
+      retval: u64,
 }
 
 pub(super) fn init() {

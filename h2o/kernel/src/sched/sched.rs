@@ -72,7 +72,11 @@ impl Scheduler {
             self.running.as_mut()
       }
 
-      pub fn block_current(&mut self, cur_time: Instant, block_desc: String) -> Option<task::Blocked> {
+      pub fn block_current(
+            &mut self,
+            cur_time: Instant,
+            block_desc: String,
+      ) -> Option<task::Blocked> {
             self.canary.assert();
 
             let task = self.running.take();
@@ -84,7 +88,12 @@ impl Scheduler {
             }
       }
 
-      pub fn block(&mut self, cur_time: Instant, tid: task::Tid, block_desc: String) -> Option<task::Blocked> {
+      pub fn block(
+            &mut self,
+            cur_time: Instant,
+            tid: task::Tid,
+            block_desc: String,
+      ) -> Option<task::Blocked> {
             self.canary.assert();
 
             if self.current().map_or(false, |cur| cur.tid() == tid) {
@@ -156,6 +165,17 @@ impl Scheduler {
             }
 
             true
+      }
+
+      pub fn pop_current(&mut self, cur_time: Instant, retval: u64) -> Option<task::Dead> {
+            self.canary.assert();
+
+            let task = self.running.take();
+            if !self.schedule(cur_time) {
+                  panic!("No other task(s)")
+            }
+
+            task.map(|task| task::Ready::into_dead(task, retval))
       }
 
       /// Restore the context of the current task.
