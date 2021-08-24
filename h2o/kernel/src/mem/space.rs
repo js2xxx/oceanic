@@ -457,7 +457,7 @@ impl Drop for Space {
       fn drop(&mut self) {
             unsafe {
                   with(self, |space| {
-                        space.clear_stack();
+                        let _ = space.clear_stack();
 
                         let mut record = space.record.lock();
                         while let Some((base, layout)) = record.pop_first() {
