@@ -39,7 +39,7 @@ pub struct Frame {
 }
 
 impl Frame {
-      pub fn set_entry(&mut self, entry: Entry, ty: task::Type) {
+      pub fn set_entry<'a>(&mut self, entry: Entry<'a>, ty: task::Type) -> Option<&'a [u64]> {
             let (cs, ss) = match ty {
                   task::Type::User => (USR_CODE_X64, USR_DATA_X64),
                   task::Type::Kernel => (KRL_CODE_X64, KRL_DATA_X64),
@@ -52,6 +52,12 @@ impl Frame {
             self.ss = SegSelector::into_val(ss) as u64;
             self.rdi = entry.args[0];
             self.rsi = entry.args[1];
+            self.rdx = entry.args[2];
+            self.rcx = entry.args[3];
+            self.r8 = entry.args[4];
+            self.r9 = entry.args[5];
+
+            (entry.args.len() > 6).then_some(&entry.args[6..])
       }
 
       const RFLAGS: &'static str =

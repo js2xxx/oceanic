@@ -451,6 +451,22 @@ impl Space {
             }
             Ok(())
       }
+
+      pub fn clone(&self, ty: task::Type) -> Self {
+            let ty = match self.ty {
+                  task::Type::Kernel => ty,
+                  task::Type::User => task::Type::User,
+            };
+
+            Space {
+                  canary: Canary::new(),
+                  ty,
+                  arch: self.arch.clone(),
+                  free_range: Mutex::new(RangeSet::new()),
+                  record: Mutex::new(BTreeMap::new()),
+                  stack_blocks: Mutex::new(BTreeMap::new()),
+            }
+      }
 }
 
 impl Drop for Space {

@@ -26,6 +26,7 @@ pub static SCHED: Lazy<IntrMutex<Scheduler>> = Lazy::new(|| {
             run_queue: LinkedList::new(),
       })
 });
+
 pub struct Scheduler {
       canary: Canary<Scheduler>,
       cpu: usize,
@@ -34,12 +35,7 @@ pub struct Scheduler {
 }
 
 impl Scheduler {
-      /// Push a task into the scheduler's run queue.
-      ///
-      /// # Safety
-      ///
-      /// The caller must ensure that the affinity of the task contains the scheduler's CPU.
-      pub unsafe fn push(&mut self, task: task::Init) {
+      pub fn push(&mut self, task: task::Init) {
             self.canary.assert();
 
             let affinity = {
@@ -205,6 +201,6 @@ pub unsafe fn task_migrate_handler() {
       let mut sched = SCHED.lock();
       let mut mq = MIGRATION_QUEUE[sched.cpu].lock();
       while let Some(task) = mq.pop_front() {
-            unsafe { sched.push(task) };
+            sched.push(task);
       }
 }

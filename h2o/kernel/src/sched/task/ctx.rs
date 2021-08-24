@@ -13,23 +13,23 @@ use core::fmt::Debug;
 pub const KSTACK_SIZE: usize = paging::PAGE_SIZE * 6;
 
 #[derive(Debug)]
-pub struct Entry {
+pub struct Entry<'a> {
       pub entry: LAddr,
       pub stack: LAddr,
-      pub args: [u64; 2],
+      pub args: &'a [u64],
 }
 
 #[repr(align(4096))]
 pub struct Kstack([u8; KSTACK_SIZE]);
 
 impl Kstack {
-      pub fn new(entry: Entry, ty: super::Type) -> Box<Self> {
+      pub fn new<'a>(entry: Entry<'a>, ty: super::Type) -> (Box<Self>, Option<&'a [u64]>) {
             let mut kstack = box core::mem::MaybeUninit::<Self>::uninit();
-            unsafe {
+            let rem = unsafe {
                   let frame = kstack.assume_init_mut().as_frame_mut();
-                  frame.set_entry(entry, ty);
-            }
-            unsafe { Box::from_raw(Box::into_raw(kstack).cast()) }
+                  frame.set_entry(entry, ty)
+            };
+            (unsafe { Box::from_raw(Box::into_raw(kstack).cast()) }, rem)
       }
 
       pub fn top(&self) -> LAddr {

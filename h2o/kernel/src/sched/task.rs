@@ -88,20 +88,20 @@ pub struct Init {
 }
 
 impl Init {
-      pub fn new(
+      fn new(
             ti: TaskInfo,
             space: Space,
             entry: LAddr,
             stack_size: usize,
-            args: [u64; 2],
-      ) -> Result<Self, InitError> {
+            args: &[u64],
+      ) -> Result<(Self, Option<&[u64]>), InitError> {
             let entry = ctx::Entry {
                   entry,
                   stack: space.init_stack(stack_size).map_err(InitError::Stack)?,
                   args,
             };
 
-            let kstack = ctx::Kstack::new(entry, ti.ty);
+            let (kstack, rem) = ctx::Kstack::new(entry, ti.ty);
 
             let mut ti_map = tid::TI_MAP.lock();
             let tid = tid::next(&ti_map).map_or_else(
@@ -114,7 +114,7 @@ impl Init {
             ti_map.insert(tid, ti);
             drop(ti_map);
 
-            Ok(Init { tid, space, kstack })
+            Ok((Init { tid, space, kstack }, rem))
       }
 
       pub fn tid(&self) -> Tid {
@@ -254,6 +254,54 @@ pub struct Dead {
       retval: u64,
 }
 
+impl Dead {
+      pub fn tid(&self) -> Tid {
+            self.tid
+      }
+
+      pub fn retval(&self) -> u64 {
+            self.retval
+      }
+}
+
 pub(super) fn init() {
       Lazy::force(&idle::IDLE);
+}
+
+pub fn create(
+      name: String,
+      ty: Type,
+      affinity: CpuMask,
+      prio: Priority,
+      entry: LAddr,
+      stack_size: usize,
+      args: &[u64],
+) -> Result<(Init, Option<&[u64]>), &'static str> {
+      let (cur_tid, space) = {
+            let sched = super::SCHED.lock();
+            let cur = sched.current().ok_or("No current thread")?;
+            (cur.tid, cur.space.clone(ty))
+      };
+
+      let ti = {
+            let ti_map = tid::TI_MAP.lock();
+            let cur_ti = ti_map.get(&cur_tid).unwrap();
+
+            let ty = match ty {
+                  Type::Kernel => cur_ti.ty,
+                  Type::User => Type::User,
+            };
+            let affinity = affinity & cur_ti.affinity;
+            let prio = prio.min(cur_ti.prio);
+
+            TaskInfo {
+                  from: Some(cur_tid),
+                  name,
+                  ty,
+                  affinity,
+                  prio,
+            }
+      };
+
+      Init::new(ti, space, entry, stack_size, args).map_err(|_| "Init creation failed")
 }

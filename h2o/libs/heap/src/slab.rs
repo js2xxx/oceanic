@@ -81,7 +81,7 @@ impl Slab {
             let _lock = self.lock.lock();
 
             let mut base = Unique::new((addr.val() & !PAGE_MASK) as *mut Page)
-                  .map_or(Err(AllocError::Internal("Null address")), Ok)?;
+                  .ok_or(AllocError::Internal("Null address"))?;
 
             let partially_free = {
                   let page = unsafe { base.as_mut() };

@@ -75,7 +75,7 @@ fn create_table(
                         Err(Error::EntryExistent(true))
                   } else {
                         let phys = unsafe { allocator.alloc_zeroed(id_off) }
-                              .map_or(Err(Error::OutOfMemory), Ok)?;
+                              .ok_or(Error::OutOfMemory)?;
                         let attr = Attr::INTERMEDIATE;
                         *entry = Entry::new(phys, attr, Level::Pt);
                         log::trace!(
@@ -231,10 +231,8 @@ fn get_page(root_table: &Table, virt: LAddr, id_off: usize) -> Result<PAddr, Err
 
             table = item
                   .get_table(id_off, lvl)
-                  .map_or(Err(Error::EntryExistent(false)), Ok)?;
-            lvl = lvl
-                  .decrease()
-                  .map_or(Err(Error::EntryExistent(false)), Ok)?;
+                  .ok_or(Error::EntryExistent(false))?;
+            lvl = lvl.decrease().ok_or(Error::EntryExistent(false))?;
       }
 }
 

@@ -143,6 +143,26 @@ impl Space {
       }
 }
 
+impl Clone for Space {
+      fn clone(&self) -> Self {
+            let mut rt = box Table::zeroed();
+            let cr3 = Box::into_raw(rt);
+
+            rt.copy_from_slice(&self.root_table.lock()[..]);
+            let level = paging::Level::P4;
+            for ent in rt.iter_mut() {
+                  let (phys, attr) = (*ent).get(level);
+                  *ent = paging::Entry::new(phys, attr & !paging::Attr::PRESENT, level);
+            }
+
+            Space {
+                  canary: Canary::new(),
+                  root_table: Mutex::new(rt),
+                  cr3: LAddr::new(cr3.cast()).to_paddr(minfo::ID_OFFSET),
+            }
+      }
+}
+
 /// The standard memory block representing a page in x86_64 mode.
 ///
 /// This structure is only used for allocating unknown types and its data can only be accessed

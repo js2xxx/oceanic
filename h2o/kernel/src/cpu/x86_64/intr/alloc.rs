@@ -45,7 +45,7 @@ impl Allocator {
             let cpu = alloc_cpu
                   .iter_ones()
                   .find(|&cpu| self.cpus[cpu].free_cnt > 0)
-                  .map_or(Err(AllocError::Available(false)), Ok)?;
+                  .ok_or(AllocError::Available(false))?;
 
             let cpu_chunk = &mut self.cpus[cpu];
             let pos = cpu_chunk

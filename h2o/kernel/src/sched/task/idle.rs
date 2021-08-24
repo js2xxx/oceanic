@@ -17,12 +17,12 @@ pub(super) static IDLE: Lazy<Tid> = Lazy::new(|| {
       let space = Space::new(ti.ty);
       let entry = LAddr::new(idle as *mut u8);
 
-      let init = Init::new(ti, space, entry, DEFAULT_STACK_SIZE, [cpu as u64, 0])
+      let (init, _) = Init::new(ti, space, entry, DEFAULT_STACK_SIZE, &[cpu as u64])
             .expect("Failed to initialize IDLE");
       let tid = init.tid;
 
       let mut sched = crate::sched::SCHED.lock();
-      unsafe { sched.push(init) };
+      sched.push(init);
 
       tid
 });
