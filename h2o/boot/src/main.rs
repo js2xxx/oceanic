@@ -95,14 +95,14 @@ fn efi_main(img: Handle, syst: SystemTable<Boot>) -> Status {
       outp::choose_mode(&syst, (1024, 768));
       outp::draw_logo(&syst);
 
-      let (entry, pls_layout) = {
+      let (entry, pls_layout, tinit) = {
             // Load the TAR archive file.
             let tar = file::load(&syst, "\\EFI\\Oceanic\\H2O.k");
             // Get the files.
             let files = file::tar::untar(unsafe { &*tar });
 
             // Map kernel file
-            let h2o_args = {
+            let (h2o_entry, h2o_pls_layout) = {
                   let h2o = unsafe { &*file::realloc_file(&syst, files.find("KERNEL")) };
 
                   log::debug!(
@@ -113,8 +113,10 @@ fn efi_main(img: Handle, syst: SystemTable<Boot>) -> Status {
                   file::elf::map_elf(&syst, h2o)
             };
 
+            let tinit = unsafe { &*file::realloc_file(&syst, files.find("TINIT")) };
+
             mem::alloc(&syst).dealloc_from_slice(tar, mem::EFI_ID_OFFSET);
-            h2o_args
+            (h2o_entry, h2o_pls_layout, tinit)
       };
 
       // Prepare the data needed for H2O.
@@ -142,6 +144,9 @@ fn efi_main(img: Handle, syst: SystemTable<Boot>) -> Status {
                   efi_mmap_len,
                   efi_mmap_unit,
                   pls_layout,
+                  tinit_phys: paging::LAddr::new(tinit.as_ptr() as *mut _)
+                        .to_paddr(mem::EFI_ID_OFFSET),
+                  tinit_len: tinit.len(),
             });
             call_kmain(entry);
       }

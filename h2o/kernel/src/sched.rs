@@ -1,5 +1,5 @@
-pub mod task;
 pub mod sched;
+pub mod task;
 pub mod wait;
 
 pub use sched::SCHED;

@@ -2,7 +2,7 @@
 
 cd target
 
-tar vcf H2O.k KERNEL
+tar vcf H2O.k KERNEL TINIT
 
 cd img
 

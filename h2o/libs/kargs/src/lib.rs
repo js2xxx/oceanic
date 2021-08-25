@@ -11,4 +11,7 @@ pub struct KernelArgs {
       pub efi_mmap_unit: usize,
 
       pub pls_layout: Option<Layout>,
+
+      pub tinit_phys: paging::PAddr,
+      pub tinit_len: usize,
 }
