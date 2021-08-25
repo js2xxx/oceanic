@@ -5,7 +5,7 @@ pub mod tid;
 
 use crate::cpu::time::Instant;
 use crate::cpu::CpuMask;
-use crate::mem::space::Space;
+use crate::mem::space::{with, Space};
 use paging::LAddr;
 
 use alloc::boxed::Box;
@@ -317,3 +317,38 @@ where
 
       Init::new(ti, space, entry, stack_size, args)
 }
+
+// pub fn from_elf<'a, 'b>(
+//       image: &'b [u8],
+//       name: String,
+//       affinity: CpuMask,
+//       args: &'a [u64],
+// ) -> Result<(Init, Option<&'a [u64]>)> {
+//       use object::{elf::*, read::elf::*, Endianness};
+
+//       let en = Endianness::default();
+//       let elf = ElfFile64::<'_, Endianness>::parse(image).map_err(|_| TaskError::InvalidFormat)?;
+//       assert!(elf.raw_header().is_class_64());
+
+//       create(
+//             name,
+//             Type::User,
+//             affinity,
+//             prio::DEFAULT,
+//             |space| {
+//                   let entry = LAddr::new(elf.raw_header().e_entry(en) as *mut u8);
+//                   let mut stack_size = DEFAULT_STACK_SIZE;
+//                   for segment in elf.raw_segments() {
+//                         match segment.p_type(en) {
+//                               PT_GNU_STACK if segment.p_memsz(en) != 0 => {
+//                                     stack_size = segment.p_memsz(en) as usize
+//                               }
+
+//                               _ => return Err(TaskError::NotSupported),
+//                         }
+//                   }
+//                   Ok((entry, stack_size))
+//             },
+//             args,
+//       )
+// }
