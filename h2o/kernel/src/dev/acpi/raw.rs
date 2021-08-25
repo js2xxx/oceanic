@@ -138,8 +138,8 @@ unsafe extern "C" fn AcpiOsSleep(Milliseconds: UINT64) {
       unimplemented!();
 }
 #[no_mangle]
-unsafe extern "C" fn AcpiOsStall(Microseconds: UINT32) {
-      unimplemented!();
+unsafe extern "C" fn AcpiOsStall(micros: UINT32) {
+      crate::cpu::time::delay(core::time::Duration::from_micros(micros as u64))
 }
 
 #[no_mangle]

@@ -35,6 +35,18 @@ static ROOT: Lazy<Tid> = Lazy::new(|| {
       tid
 });
 
+#[derive(Debug)]
+pub enum TaskError {
+      NotSupported,
+      InvalidFormat,
+      NoCurrentTask,
+      TidExhausted,
+      StackError(&'static str),
+      Other(&'static str),
+}
+
+pub type Result<T> = core::result::Result<T, TaskError>;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Type {
       Kernel,
@@ -75,12 +87,6 @@ impl TaskInfo {
 }
 
 #[derive(Debug)]
-pub enum InitError {
-      Stack(&'static str),
-      Tid,
-}
-
-#[derive(Debug)]
 pub struct Init {
       tid: Tid,
       space: Space,
@@ -94,10 +100,12 @@ impl Init {
             entry: LAddr,
             stack_size: usize,
             args: &[u64],
-      ) -> Result<(Self, Option<&[u64]>), InitError> {
+      ) -> Result<(Self, Option<&[u64]>)> {
             let entry = ctx::Entry {
                   entry,
-                  stack: space.init_stack(stack_size).map_err(InitError::Stack)?,
+                  stack: space
+                        .init_stack(stack_size)
+                        .map_err(TaskError::StackError)?,
                   args,
             };
 
@@ -107,7 +115,7 @@ impl Init {
             let tid = tid::next(&ti_map).map_or_else(
                   || {
                         let _ = space.clear_stack();
-                        Err(InitError::Tid)
+                        Err(TaskError::TidExhausted)
                   },
                   Ok,
             )?;
@@ -268,20 +276,24 @@ pub(super) fn init() {
       Lazy::force(&idle::IDLE);
 }
 
-pub fn create(
+pub fn create<F>(
       name: String,
       ty: Type,
       affinity: CpuMask,
       prio: Priority,
-      entry: LAddr,
-      stack_size: usize,
+      with_space: F,
       args: &[u64],
-) -> Result<(Init, Option<&[u64]>), &'static str> {
+) -> Result<(Init, Option<&[u64]>)>
+where
+      F: FnOnce(&Space) -> Result<(LAddr, usize)>,
+{
       let (cur_tid, space) = {
             let sched = super::SCHED.lock();
-            let cur = sched.current().ok_or("No current thread")?;
+            let cur = sched.current().ok_or(TaskError::NoCurrentTask)?;
             (cur.tid, cur.space.clone(ty))
       };
+
+      let (entry, stack_size) = unsafe { with(&space, with_space) }?;
 
       let ti = {
             let ti_map = tid::TI_MAP.lock();
@@ -303,5 +315,5 @@ pub fn create(
             }
       };
 
-      Init::new(ti, space, entry, stack_size, args).map_err(|_| "Init creation failed")
+      Init::new(ti, space, entry, stack_size, args)
 }

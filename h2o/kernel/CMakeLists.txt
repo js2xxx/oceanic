@@ -3,7 +3,7 @@ if (CMAKE_BUILD_TYPE STREQUAL "Debug")
     set(GLOB_PATH ${CMAKE_CURRENT_BINARY_DIR}/x86_64-unknown-linux-gnu/debug)
 else ()
     set(CARGO_CMD cargo build ${CARGO_ARGS} --target x86_64-unknown-linux-gnu --release)
-    set(GLOB_PATH ${CMAKE_CURRENT_BINARY_DIR}/x86_64-unknown-linux-gnu/rls)
+    set(GLOB_PATH ${CMAKE_CURRENT_BINARY_DIR}/x86_64-unknown-linux-gnu/release)
 endif ()
 
 add_custom_target(
