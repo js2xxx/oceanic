@@ -1,6 +1,10 @@
 #!/bin/bash
 
-cd target/img
+cd target
+
+tar vcf H2O.k KERNEL
+
+cd img
 
 rm -f efi.img
 dd if=/dev/zero of=efi.img bs=1k count=5760

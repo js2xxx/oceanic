@@ -15,5 +15,6 @@ paging = {path = "../libs/paging"}
 log = "0.4"
 object = {version = "0.26", default-features = false, features = ["read"]}
 raw-cpuid = "9.0"
+static_assertions = "1.1"
 tinybmp = "0.3"
 uefi = {version = "0.11", features = ["logger", "alloc"]}

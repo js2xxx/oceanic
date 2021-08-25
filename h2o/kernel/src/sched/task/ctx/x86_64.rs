@@ -50,14 +50,22 @@ impl Frame {
             self.rflags = archop::reg::rflags::IF;
             self.cs = SegSelector::into_val(cs) as u64;
             self.ss = SegSelector::into_val(ss) as u64;
-            self.rdi = entry.args[0];
-            self.rsi = entry.args[1];
-            self.rdx = entry.args[2];
-            self.rcx = entry.args[3];
-            self.r8 = entry.args[4];
-            self.r9 = entry.args[5];
 
-            (entry.args.len() > 6).then_some(&entry.args[6..])
+            {
+                  let mut reg_args = [
+                        &mut self.rdi,
+                        &mut self.rsi,
+                        &mut self.rdx,
+                        &mut self.rcx,
+                        &mut self.r8,
+                        &mut self.r9,
+                  ];
+                  for (reg, &arg) in reg_args.iter_mut().zip(entry.args.iter()) {
+                        **reg = arg;
+                  }
+            }
+
+            (entry.args.len() > 6).then(|| &entry.args[6..])
       }
 
       const RFLAGS: &'static str =

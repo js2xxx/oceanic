@@ -43,6 +43,15 @@ impl<'a> BootAlloc<'a> {
             ret
       }
 
+      pub fn dealloc_n(&mut self, phys: paging::PAddr, n: usize) {
+            log::trace!(
+                  "deallocated {:x} ~ {:x}",
+                  *phys,
+                  *phys + n * paging::PAGE_SIZE
+            );
+            let _ = self.bs.free_pages(*phys as u64, n).log_warning();
+      }
+
       pub fn alloc_into_slice(
             &mut self,
             size: usize,
@@ -60,6 +69,12 @@ impl<'a> BootAlloc<'a> {
                   core::slice::from_raw_parts_mut(*paddr.to_laddr(id_off), size)
             }))
       }
+
+      pub fn dealloc_from_slice(&mut self, slice: *mut [u8], id_off: usize) {
+            let phys = paging::LAddr::new(slice.cast()).to_paddr(id_off);
+            let n = slice.len().div_ceil_bit(paging::PAGE_SHIFT);
+            self.dealloc_n(phys, n)
+      }
 }
 
 unsafe impl<'a> paging::alloc::PageAlloc for BootAlloc<'a> {
@@ -68,8 +83,7 @@ unsafe impl<'a> paging::alloc::PageAlloc for BootAlloc<'a> {
       }
 
       unsafe fn dealloc(&mut self, addr: paging::PAddr) {
-            log::trace!("deallocated {:x}", *addr);
-            let _ = self.bs.free_pages(*addr as u64, 1).log_warning();
+            self.dealloc_n(addr, 1)
       }
 }
 

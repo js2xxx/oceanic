@@ -26,5 +26,5 @@ add_dependencies(KERNEL H2O)
 add_dependencies(GEN_IMG KERNEL)
 add_custom_command(
     TARGET KERNEL POST_BUILD
-    COMMAND cp KERNEL ${CMAKE_SOURCE_DIR}/target/H2O.k
+    COMMAND cp KERNEL ${CMAKE_SOURCE_DIR}/target
 )

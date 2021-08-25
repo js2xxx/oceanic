@@ -145,12 +145,14 @@ impl Space {
 
 impl Clone for Space {
       fn clone(&self) -> Self {
-            let mut rt = box Table::zeroed();
+            let rt = box Table::zeroed();
             let cr3 = Box::into_raw(rt);
+            let mut rt = unsafe { Box::from_raw(cr3) };
 
             rt.copy_from_slice(&self.root_table.lock()[..]);
+            // TODO: Set up the page-fault handler for task cloning.
             let level = paging::Level::P4;
-            for ent in rt.iter_mut() {
+            for ent in rt.iter_mut().take(paging::NR_ENTRIES / 2) {
                   let (phys, attr) = (*ent).get(level);
                   *ent = paging::Entry::new(phys, attr & !paging::Attr::PRESENT, level);
             }

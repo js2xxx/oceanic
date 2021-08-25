@@ -12,6 +12,7 @@
 #![feature(abi_efiapi)]
 #![feature(alloc_error_handler)]
 #![feature(asm)]
+#![feature(bool_to_option)]
 #![feature(box_syntax)]
 #![feature(nonnull_slice_from_raw_parts)]
 #![feature(panic_info_message)]
@@ -94,15 +95,27 @@ fn efi_main(img: Handle, syst: SystemTable<Boot>) -> Status {
       outp::choose_mode(&syst, (1024, 768));
       outp::draw_logo(&syst);
 
-      // Load and map the kernel file. Note: in the future, the file(s) needed to be loaded and
-      // mapped may get more and more.
-      let h2o = file::load(&syst, "\\EFI\\Oceanic\\H2O.k");
-      log::debug!(
-            "Kernel file loaded at {:?}, ksize = {:#x}",
-            h2o.as_mut_ptr(),
-            h2o.len()
-      );
-      let (entry, pls_layout) = file::map_elf(&syst, unsafe { &mut *h2o });
+      let (entry, pls_layout) = {
+            // Load the TAR archive file.
+            let tar = file::load(&syst, "\\EFI\\Oceanic\\H2O.k");
+            // Get the files.
+            let files = file::tar::untar(unsafe { &*tar });
+
+            // Map kernel file
+            let h2o_args = {
+                  let h2o = unsafe { &*file::realloc_file(&syst, files.find("KERNEL")) };
+
+                  log::debug!(
+                        "Kernel file loaded at {:?}, ksize = {:#x}",
+                        h2o.as_ptr(),
+                        h2o.len()
+                  );
+                  file::elf::map_elf(&syst, h2o)
+            };
+
+            mem::alloc(&syst).dealloc_from_slice(tar, mem::EFI_ID_OFFSET);
+            h2o_args
+      };
 
       // Prepare the data needed for H2O.
       let (efi_mmap_unit, mmap_size_approx) = mem::init_pf(&syst);
