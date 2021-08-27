@@ -2,9 +2,6 @@
 #![allow(dead_code)]
 
 use crate::dev::acpi::table::hpet::HpetData;
-use crate::mem::space::{krl, Flags, MemBlock};
-
-use core::pin::Pin;
 
 #[repr(usize)]
 enum HpetReg {
@@ -51,15 +48,14 @@ impl HpetReg {
       }
 }
 
-pub struct Hpet<'a> {
+pub struct Hpet {
       base_ptr: *mut u32,
-      memory: Pin<&'a mut [MemBlock]>,
 
       block_id: u8,
       period_fs: u64,
 }
 
-impl<'a> Hpet<'a> {
+impl Hpet {
       unsafe fn read_reg(base_ptr: *const u32, reg: HpetReg) -> u32 {
             base_ptr.add(reg as usize).read_volatile()
       }
@@ -74,21 +70,11 @@ impl<'a> Hpet<'a> {
                   block_id,
             } = data;
 
-            let mut memory = krl(|space| unsafe {
-                  space.alloc_manual(
-                        paging::PAGE_LAYOUT,
-                        Some(phys),
-                        Flags::READABLE | Flags::WRITABLE,
-                  )
-                  .map_err(|_| "Memory allocation failed")
-            })?;
-
-            let base_ptr = memory.as_mut_ptr().cast::<u32>();
+            let base_ptr = phys.to_laddr(minfo::ID_OFFSET).cast::<u32>();
             let period_fs = Self::read_reg(base_ptr, HpetReg::Period).into();
 
             Ok(Hpet {
                   base_ptr,
-                  memory,
                   block_id,
                   period_fs,
             })

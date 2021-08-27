@@ -10,11 +10,11 @@ use canary::Canary;
 use collection_ex::RangeSet;
 use paging::{LAddr, PAddr};
 
+use alloc::sync::Arc;
 use core::alloc::Layout;
 use core::mem::{align_of, size_of, MaybeUninit};
-use core::ops::Range;
 use core::pin::Pin;
-use spin::{Mutex, MutexGuard};
+use spin::{Lazy, Mutex, MutexGuard};
 
 cfg_if::cfg_if! {
       if #[cfg(target_arch = "x86_64")] {
@@ -25,15 +25,10 @@ cfg_if::cfg_if! {
       }
 }
 
-fn init_krl_space() -> Space {
-      let space = Space::new(task::Type::Kernel);
-      unsafe { space.load() };
-      space
-}
+static INIT: Lazy<Arc<Space>> = Lazy::new(|| Arc::new(Space::new(task::Type::Kernel)));
 
-static mut KRL_SPACE: Option<Space> = None;
 #[thread_local]
-static mut AP_SPACE: Option<Space> = None;
+static mut CURRENT: Option<Arc<Space>> = None;
 
 bitflags::bitflags! {
       /// Flags to describe a block of memory.
@@ -50,11 +45,15 @@ bitflags::bitflags! {
 ///
 /// We cannot simply pass a [`Range`] to [`Space`]'s constructor because without control
 /// arbitrary, even incanonical ranges would be passed and cause unrecoverable errors.
-fn ty_to_range(ty: task::Type) -> Range<LAddr> {
-      match ty {
+fn ty_to_range_set(ty: task::Type) -> RangeSet<LAddr> {
+      let range = match ty {
             task::Type::Kernel => minfo::KERNEL_ALLOCABLE_RANGE,
             task::Type::User => LAddr::from(minfo::USER_BASE)..LAddr::from(minfo::USER_STACK_BASE),
-      }
+      };
+
+      let mut range_set = RangeSet::new();
+      let _ = range_set.insert(range);
+      range_set
 }
 
 /// The structure that represents an address space.
@@ -80,18 +79,16 @@ pub struct Space {
 }
 
 unsafe impl Send for Space {}
+unsafe impl Sync for Space {}
 
 impl Space {
       /// Create a new address space.
       pub fn new(ty: task::Type) -> Self {
-            let mut free_range = RangeSet::new();
-            let _ = free_range.insert(ty_to_range(ty));
-
             Space {
                   canary: Canary::new(),
                   ty,
                   arch: ArchSpace::new(),
-                  free_range: Mutex::new(free_range),
+                  free_range: Mutex::new(ty_to_range_set(ty)),
                   record: Mutex::new(BTreeMap::new()),
                   stack_blocks: Mutex::new(BTreeMap::new()),
             }
@@ -452,88 +449,93 @@ impl Space {
             Ok(())
       }
 
-      pub fn clone(&self, ty: task::Type) -> Self {
+      pub fn duplicate(&self, ty: task::Type) -> Arc<Self> {
             let ty = match self.ty {
                   task::Type::Kernel => ty,
                   task::Type::User => task::Type::User,
             };
 
-            Space {
+            Arc::new(Space {
                   canary: Canary::new(),
                   ty,
                   arch: self.arch.clone(),
-                  free_range: Mutex::new(RangeSet::new()),
-                  record: Mutex::new(BTreeMap::new()),
+                  free_range: Mutex::new(match ty {
+                        task::Type::User => ty_to_range_set(ty),
+                        task::Type::Kernel => self.free_range.lock().clone(),
+                  }),
+                  record: Mutex::new(match ty {
+                        task::Type::User => BTreeMap::new(),
+                        task::Type::Kernel => self.record.lock().clone(),
+                  }),
                   stack_blocks: Mutex::new(BTreeMap::new()),
-            }
+            })
       }
 }
 
 impl Drop for Space {
       fn drop(&mut self) {
-            unsafe {
-                  with(self, |space| {
-                        let _ = space.clear_stack();
+            unsafe { self.load() };
+            let _ = self.clear_stack();
 
-                        let mut record = space.record.lock();
-                        while let Some((base, layout)) = record.pop_first() {
-                              let virt =
-                                    base..LAddr::from(base.val() + layout.pad_to_align().size());
-                              if let Ok(Some(phys)) = self.arch.unmaps(virt) {
-                                    let ptr = phys.to_laddr(minfo::ID_OFFSET);
-                                    unsafe { alloc::alloc::dealloc(*ptr, layout) };
-                              }
-                        }
-                  });
+            let mut record = self.record.lock();
+            while let Some((base, layout)) = record.pop_first() {
+                  let virt = base..LAddr::from(base.val() + layout.pad_to_align().size());
+                  if let Ok(Some(phys)) = self.arch.unmaps(virt) {
+                        let ptr = phys.to_laddr(minfo::ID_OFFSET);
+                        unsafe { alloc::alloc::dealloc(*ptr, layout) };
+                  }
             }
+
+            unsafe { current().load() };
       }
 }
 
-/// Initialize the kernel space for the bootstrap CPU.
+/// Initialize the kernel memory space.
 ///
 /// # Safety
 ///
 /// The function must be called only once from the bootstrap CPU.
-pub unsafe fn init_kernel() {
-      KRL_SPACE = Some(init_krl_space());
+pub unsafe fn init_bsp_early() {
+      INIT.load();
 }
 
-/// Initialize the kernel space for the application CPU.
+/// Load the kernel space for enery CPU.
 ///
 /// # Safety
 ///
 /// The function must be called only once from each application CPU.
-pub unsafe fn init_ap() {
-      AP_SPACE = Some(init_krl_space());
+pub unsafe fn init() {
+      let space = INIT.clone();
+      unsafe { space.load() };
+      CURRENT = Some(space);
 }
 
-/// Get the reference of the per-CPU kernel space.
-pub fn krl<F, R>(f: F) -> R
-where
-      F: FnOnce(&'static Space) -> R,
-{
-      f(unsafe {
-            if crate::cpu::is_bsp() {
-                  KRL_SPACE.as_ref()
-            } else {
-                  AP_SPACE.as_ref()
-            }
-            .expect("Kernel space uninitialized")
-      })
+/// Get the reference of the per-CPU current space.
+pub fn current() -> &'static Arc<Space> {
+      unsafe { CURRENT.as_ref().expect("No current space available") }
+}
+
+/// Set the current memory space of the current CPU.
+///
+/// # Safety
+///
+/// The function must be called only from the epilogue of context switching.
+pub unsafe fn set_current(space: Arc<Space>) {
+      space.load();
+      CURRENT = Some(space);
 }
 
 /// # Safety
 ///
-/// The caller must ensure that the current loaded space is the kernel space.
-pub unsafe fn with<'s, F, R>(space: &'s Space, f: F) -> R
+/// The caller must ensure that [`set_current`] won't be called during the execution of `f`.
+pub unsafe fn with<S, F, R>(space: S, f: F) -> R
 where
-      F: FnOnce(&'s Space) -> R,
+      S: AsRef<Space>,
+      F: FnOnce(&Space) -> R,
 {
-      krl(|krl| {
-            space.load();
-            let ret = f(space);
-            krl.load();
+      space.as_ref().load();
+      let ret = f(space.as_ref());
+      current().load();
 
-            ret
-      })
+      ret
 }

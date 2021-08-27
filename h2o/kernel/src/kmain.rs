@@ -47,7 +47,7 @@ pub extern "C" fn kmain() {
       mem::init();
 
       l::debug!("Creating the kernel space");
-      unsafe { mem::space::init_kernel() };
+      unsafe { mem::space::init_bsp_early() };
 
       l::debug!("Initializing ACPI tables");
       unsafe { dev::acpi::init_tables(*KARGS.rsdp) };
@@ -58,6 +58,7 @@ pub extern "C" fn kmain() {
 
       l::debug!("Set up CPU architecture");
       unsafe { cpu::arch::init(lapic_data) };
+      unsafe { mem::space::init() };
 
       l::debug!("Set up Interrupt system");
       unsafe { dev::init_intr_chip(ioapic_data) };
@@ -80,7 +81,7 @@ pub extern "C" fn kmain_ap() {
       unsafe { cpu::set_id(false) };
 
       l::debug!("Starting initialization");
-      unsafe { mem::space::init_ap() };
+      unsafe { mem::space::init() };
 
       l::debug!("Set up CPU architecture");
       let lapic_data =

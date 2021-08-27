@@ -3,14 +3,11 @@ pub mod timer;
 
 use super::intr::def::ApicVec;
 use crate::dev::acpi;
-use crate::mem::space;
 use alloc::collections::BTreeMap;
 use archop::msr;
+use paging::LAddr;
 
-use core::pin::Pin;
 use modular_bitfield::prelude::*;
-
-const LAPIC_LAYOUT: core::alloc::Layout = paging::PAGE_LAYOUT;
 
 pub static LAPIC_ID: spin::RwLock<BTreeMap<usize, u32>> = spin::RwLock::new(BTreeMap::new());
 #[thread_local]
@@ -25,7 +22,7 @@ where
 }
 
 pub enum LapicType {
-      X1(Pin<&'static mut [space::MemBlock]>),
+      X1(LAddr),
       X2,
 }
 
@@ -105,8 +102,7 @@ impl Lapic {
 
       unsafe fn read_reg_32(ty: &mut LapicType, reg: msr::Msr) -> u32 {
             match ty {
-                  LapicType::X1(memory) => {
-                        let base = memory.as_ptr().cast::<u8>();
+                  LapicType::X1(base) => {
                         let ptr = base.add(Self::reg_32_to_1_off(reg)).cast::<u32>();
                         ptr.read_volatile()
                   }
@@ -116,8 +112,7 @@ impl Lapic {
 
       unsafe fn write_reg_32(ty: &mut LapicType, reg: msr::Msr, val: u32) {
             match ty {
-                  LapicType::X1(memory) => {
-                        let base = memory.as_mut_ptr().cast::<u8>();
+                  LapicType::X1(base) => {
                         let ptr = base.add(Self::reg_32_to_1_off(reg)).cast::<u32>();
                         ptr.write_volatile(val)
                   }
@@ -128,9 +123,7 @@ impl Lapic {
       #[allow(dead_code)]
       unsafe fn read_reg_64(ty: &mut LapicType, reg: msr::Msr) -> u64 {
             match ty {
-                  LapicType::X1(memory) => {
-                        let base = memory.as_ptr().cast::<u8>();
-
+                  LapicType::X1(base) => {
                         let ptr_array = Self::reg_64_to_1_off(reg);
                         let mut ptr_iter = ptr_array.iter().map(|&off| base.add(off).cast::<u32>());
                         let low = ptr_iter.next().unwrap().read_volatile() as u64;
@@ -143,8 +136,7 @@ impl Lapic {
 
       unsafe fn write_reg_64(ty: &mut LapicType, reg: msr::Msr, val: u64) {
             match ty {
-                  LapicType::X1(memory) => {
-                        let base = memory.as_mut_ptr().cast::<u8>();
+                  LapicType::X1(base) => {
                         let (low, high) = ((val & 0xFFFFFFFF) as u32, ((val >> 32) as u32));
 
                         let ptr_array = Self::reg_64_to_1_off(reg);
@@ -182,17 +174,8 @@ impl Lapic {
                         }
                         LapicType::X2
                   }
-                  acpi::table::madt::LapicType::X1(paddr) => {
-                        // SAFE: The physical address is valid and aligned.
-                        let memory = space::krl(|space| unsafe {
-                              space.alloc_manual(
-                                    LAPIC_LAYOUT,
-                                    Some(paddr),
-                                    space::Flags::READABLE | space::Flags::WRITABLE,
-                              )
-                              .expect("Failed to allocate space")
-                        });
-                        LapicType::X1(memory)
+                  acpi::table::madt::LapicType::X1(phys) => {
+                        LapicType::X1(phys.to_laddr(minfo::ID_OFFSET))
                   }
             };
 

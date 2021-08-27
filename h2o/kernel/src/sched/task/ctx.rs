@@ -16,6 +16,7 @@ pub const KSTACK_SIZE: usize = paging::PAGE_SIZE * 6;
 pub struct Entry<'a> {
       pub entry: LAddr,
       pub stack: LAddr,
+      pub tls: Option<LAddr>,
       pub args: &'a [u64],
 }
 

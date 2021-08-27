@@ -3,13 +3,11 @@ use crate::cpu::arch::intr::ArchReg;
 use crate::cpu::intr::{edge_handler, fasteoi_handler, Interrupt, IntrChip, TypeHandler};
 use crate::dev::acpi::table::madt::ioapic::{IntrOvrPolarity, IntrOvrTrig};
 use crate::dev::acpi::table::madt::{IoapicData, IoapicNode};
-use crate::mem::space::{krl, Flags, MemBlock};
-use paging::{PAddr, PAGE_LAYOUT, PAGE_MASK};
+use paging::PAddr;
 
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::ops::Range;
-use core::pin::Pin;
 use modular_bitfield::prelude::*;
 use spin::Mutex;
 
@@ -91,15 +89,14 @@ unsafe fn write_eoi(base_ptr: *mut u32, val: u32) {
       base_ptr.add(16).write_volatile(val);
 }
 
-pub struct Ioapic<'a> {
-      _memory: Pin<&'a mut [MemBlock]>,
+pub struct Ioapic {
       base_ptr: *mut u32,
       id: u8,
       version: u32,
       gsi: Range<u32>,
 }
 
-impl<'a> Ioapic<'a> {
+impl Ioapic {
       unsafe fn read_reg(&mut self, reg: u32) -> u32 {
             write_regsel(self.base_ptr, reg);
             read_win(self.base_ptr)
@@ -132,18 +129,10 @@ impl<'a> Ioapic<'a> {
                   gsi_base,
             } = node;
 
-            let (base, offset) = {
-                  let paddr = PAddr::new(paddr as usize);
-                  (PAddr::new(*paddr & !PAGE_MASK), paddr.in_page_offset())
-            };
-            let mut memory = krl(|space| unsafe {
-                  space.alloc_manual(PAGE_LAYOUT, Some(base), Flags::READABLE | Flags::WRITABLE)
-                        .map_err(|_| "Memory allocation failed")
-            })?;
-            let base_ptr = unsafe { memory.as_mut_ptr().cast::<u8>().add(offset) }.cast::<u32>();
+            let base = PAddr::new(paddr as usize).to_laddr(minfo::ID_OFFSET);
+            let base_ptr = base.cast::<u32>();
 
             let mut ioapic = Ioapic {
-                  _memory: memory,
                   base_ptr,
                   id,
                   version: 0,
@@ -171,12 +160,12 @@ struct IntrOvr {
       trigger_mode: TriggerMode,
 }
 
-pub struct Ioapics<'a> {
-      ioapic_data: Vec<Ioapic<'a>>,
+pub struct Ioapics {
+      ioapic_data: Vec<Ioapic>,
       intr_ovr: Vec<IntrOvr>,
 }
 
-impl<'a> Ioapics<'a> {
+impl Ioapics {
       pub unsafe fn new(ioapic_data: IoapicData) -> Self {
             let IoapicData {
                   ioapic: acpi_ioapics,
@@ -237,7 +226,7 @@ impl<'a> Ioapics<'a> {
             }
       }
 
-      pub fn chip_pin(&self, gsi: u32) -> Option<(&Ioapic<'_>, u8)> {
+      pub fn chip_pin(&self, gsi: u32) -> Option<(&Ioapic, u8)> {
             for chip in self.ioapic_data.iter() {
                   if chip.gsi.contains(&gsi) {
                         return Some((chip, (gsi - chip.gsi.start) as u8));
@@ -246,7 +235,7 @@ impl<'a> Ioapics<'a> {
             None
       }
 
-      pub fn chip_mut_pin(&mut self, gsi: u32) -> Option<(&mut Ioapic<'a>, u8)> {
+      pub fn chip_mut_pin(&mut self, gsi: u32) -> Option<(&mut Ioapic, u8)> {
             for chip in self.ioapic_data.iter_mut() {
                   if chip.gsi.contains(&gsi) {
                         let start = chip.gsi.start;
@@ -257,7 +246,7 @@ impl<'a> Ioapics<'a> {
       }
 }
 
-impl<'a> IntrChip for Ioapics<'a> {
+impl IntrChip for Ioapics {
       unsafe fn setup(&mut self, arch_reg: ArchReg, gsi: u32) -> Result<TypeHandler, &'static str> {
             let (vec, apic_id) = {
                   (

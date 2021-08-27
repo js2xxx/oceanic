@@ -46,10 +46,14 @@ impl Frame {
             };
 
             self.rip = entry.entry.val() as u64;
-            self.rsp = entry.stack.val() as u64;
+            self.rsp = (entry.stack.val() - 8) as u64;
             self.rflags = archop::reg::rflags::IF;
             self.cs = SegSelector::into_val(cs) as u64;
             self.ss = SegSelector::into_val(ss) as u64;
+
+            if let Some(tls) = entry.tls {
+                  self.fs_base = tls.val() as u64;
+            }
 
             {
                   let mut reg_args = [
@@ -120,7 +124,6 @@ unsafe extern "C" fn save_regs(frame: *const Frame) -> *const u8 {
             cur.get_arch_context()
       });
 
-      crate::mem::space::krl(|space| space.load());
       ret.cast()
 }
 

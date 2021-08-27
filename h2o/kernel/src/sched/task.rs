@@ -8,6 +8,7 @@ use crate::cpu::CpuMask;
 use crate::mem::space::{with, Space};
 use paging::LAddr;
 
+use alloc::sync::Arc;
 use alloc::boxed::Box;
 use alloc::format;
 use alloc::string::String;
@@ -89,16 +90,17 @@ impl TaskInfo {
 #[derive(Debug)]
 pub struct Init {
       tid: Tid,
-      space: Space,
+      space: Arc<Space>,
       kstack: Box<ctx::Kstack>,
 }
 
 impl Init {
       fn new(
             ti: TaskInfo,
-            space: Space,
+            space: Arc<Space>,
             entry: LAddr,
             stack_size: usize,
+            tls: Option<LAddr>,
             args: &[u64],
       ) -> Result<(Self, Option<&[u64]>)> {
             let entry = ctx::Entry {
@@ -106,6 +108,7 @@ impl Init {
                   stack: space
                         .init_stack(stack_size)
                         .map_err(TaskError::StackError)?,
+                  tls,
                   args,
             };
 
@@ -142,7 +145,7 @@ pub struct Ready {
       tid: Tid,
       time_slice: Duration,
 
-      space: Space,
+      space: Arc<Space>,
       kstack: Box<ctx::Kstack>,
       ext_frame: Option<Box<ctx::ExtendedFrame>>,
 
@@ -234,7 +237,7 @@ impl Ready {
             self.kstack.as_frame()
       }
 
-      pub fn space(&self) -> &Space {
+      pub fn space(&self) -> &Arc<Space> {
             &self.space
       }
 }
@@ -243,7 +246,7 @@ impl Ready {
 pub struct Blocked {
       tid: Tid,
 
-      space: Space,
+      space: Arc<Space>,
       kstack: Box<ctx::Kstack>,
       ext_frame: Option<Box<ctx::ExtendedFrame>>,
 
@@ -285,15 +288,15 @@ pub fn create<F>(
       args: &[u64],
 ) -> Result<(Init, Option<&[u64]>)>
 where
-      F: FnOnce(&Space) -> Result<(LAddr, usize)>,
+      F: FnOnce(&Space) -> Result<(LAddr, Option<LAddr>, usize)>,
 {
       let (cur_tid, space) = {
             let sched = super::SCHED.lock();
             let cur = sched.current().ok_or(TaskError::NoCurrentTask)?;
-            (cur.tid, cur.space.clone(ty))
+            (cur.tid, cur.space.duplicate(ty))
       };
 
-      let (entry, stack_size) = unsafe { with(&space, with_space) }?;
+      let (entry, tls, stack_size) = unsafe { with(&space, with_space) }?;
 
       let ti = {
             let ti_map = tid::TI_MAP.lock();
@@ -315,7 +318,7 @@ where
             }
       };
 
-      Init::new(ti, space, entry, stack_size, args)
+      Init::new(ti, space, entry, stack_size, tls, args)
 }
 
 // pub fn from_elf<'a, 'b>(

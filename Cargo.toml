@@ -2,8 +2,10 @@
 members = ["h2o/boot", "h2o/kernel", "h2o/libs/*"]
 
 [profile.dev]
+lto = 'thin'
 panic = 'abort'
 
 [profile.release]
+lto = 'thin'
 opt-level = 2
 panic = 'abort'

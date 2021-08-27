@@ -184,7 +184,7 @@ impl Scheduler {
             frame: *const ctx::arch::Frame,
       ) -> *const ctx::arch::Frame {
             self.current().map_or(frame, |cur| {
-                  unsafe { cur.space().load() };
+                  unsafe { crate::mem::space::set_current(cur.space().clone()) };
                   unsafe { cur.get_arch_context() }
             })
       }
