@@ -1,17 +1,20 @@
 pub mod ctx;
+pub mod elf;
 pub mod idle;
 pub mod prio;
 pub mod tid;
+
+pub use elf::from_elf;
 
 use crate::cpu::time::Instant;
 use crate::cpu::CpuMask;
 use crate::mem::space::{with, Space};
 use paging::LAddr;
 
-use alloc::sync::Arc;
 use alloc::boxed::Box;
 use alloc::format;
 use alloc::string::String;
+use alloc::sync::Arc;
 use core::time::Duration;
 use spin::Lazy;
 
@@ -40,6 +43,7 @@ static ROOT: Lazy<Tid> = Lazy::new(|| {
 pub enum TaskError {
       NotSupported,
       InvalidFormat,
+      Memory(&'static str),
       NoCurrentTask,
       TidExhausted,
       StackError(&'static str),
@@ -306,7 +310,6 @@ where
                   Type::Kernel => cur_ti.ty,
                   Type::User => Type::User,
             };
-            let affinity = affinity & cur_ti.affinity;
             let prio = prio.min(cur_ti.prio);
 
             TaskInfo {
@@ -320,38 +323,3 @@ where
 
       Init::new(ti, space, entry, stack_size, tls, args)
 }
-
-// pub fn from_elf<'a, 'b>(
-//       image: &'b [u8],
-//       name: String,
-//       affinity: CpuMask,
-//       args: &'a [u64],
-// ) -> Result<(Init, Option<&'a [u64]>)> {
-//       use object::{elf::*, read::elf::*, Endianness};
-
-//       let en = Endianness::default();
-//       let elf = ElfFile64::<'_, Endianness>::parse(image).map_err(|_| TaskError::InvalidFormat)?;
-//       assert!(elf.raw_header().is_class_64());
-
-//       create(
-//             name,
-//             Type::User,
-//             affinity,
-//             prio::DEFAULT,
-//             |space| {
-//                   let entry = LAddr::new(elf.raw_header().e_entry(en) as *mut u8);
-//                   let mut stack_size = DEFAULT_STACK_SIZE;
-//                   for segment in elf.raw_segments() {
-//                         match segment.p_type(en) {
-//                               PT_GNU_STACK if segment.p_memsz(en) != 0 => {
-//                                     stack_size = segment.p_memsz(en) as usize
-//                               }
-
-//                               _ => return Err(TaskError::NotSupported),
-//                         }
-//                   }
-//                   Ok((entry, stack_size))
-//             },
-//             args,
-//       )
-// }

@@ -3,7 +3,7 @@ use crate::cpu::arch::seg::ndt::{KRL_CODE_X64, KRL_DATA_X64, USR_CODE_X64, USR_D
 use crate::cpu::arch::seg::SegSelector;
 use crate::sched::task;
 
-pub const DEFAULT_STACK_SIZE: usize = 6 * paging::PAGE_SIZE;
+pub const DEFAULT_STACK_SIZE: usize = 64 * paging::PAGE_SIZE;
 
 pub const EXTENDED_FRAME_SIZE: usize = 768;
 

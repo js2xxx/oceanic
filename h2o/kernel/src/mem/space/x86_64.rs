@@ -4,15 +4,11 @@
 //! of x86_64 paging.
 
 use super::Flags;
-use bitop_ex::BitOpEx;
 use canary::Canary;
 use paging::{LAddr, PAddr, Table};
 
 use alloc::boxed::Box;
-use core::alloc::Layout;
-use core::mem::{align_of, size_of, MaybeUninit};
 use core::ops::Range;
-use core::pin::Pin;
 use spin::{Lazy, Mutex};
 
 /// The root page table at initialization time.
@@ -163,55 +159,6 @@ impl Clone for Space {
                   cr3: LAddr::new(cr3.cast()).to_paddr(minfo::ID_OFFSET),
             }
       }
-}
-
-/// The standard memory block representing a page in x86_64 mode.
-///
-/// This structure is only used for allocating unknown types and its data can only be accessed
-/// via type conversion.
-#[repr(align(4096))]
-pub struct MemBlock {
-      _data: [u8; 4096],
-}
-
-impl MemBlock {
-      pub fn into_typed<'a, T>(
-            blocks: Pin<&'a mut [Self]>,
-      ) -> Result<Pin<&'a mut MaybeUninit<T>>, &'static str> {
-            if blocks.len() * size_of::<MemBlock>() < size_of::<T>() {
-                  Err("The size is not satisfied")
-            } else {
-                  Ok(unsafe { blocks.map_unchecked_mut(|u| &mut *u.as_mut_ptr().cast()) })
-            }
-      }
-
-      /// # Safety
-      ///
-      /// The caller must ensure that the block is allocated by [`super::Space`].
-      pub unsafe fn from_typed<'a, T>(b: Pin<&'a mut MaybeUninit<T>>) -> Pin<&'a mut [Self]> {
-            b.map_unchecked_mut(|u| {
-                  core::slice::from_raw_parts_mut(
-                        (u as *mut MaybeUninit<T>).cast(),
-                        Layout::new::<T>()
-                              .align_to(align_of::<MemBlock>())
-                              .unwrap()
-                              .pad_to_align()
-                              .size()
-                              .div_ceil_bit(paging::PAGE_SHIFT),
-                  )
-            })
-      }
-
-      // pub fn into_raw<'a>(b: Pin<&'a mut [Self]>) -> (LAddr, usize) {
-      //       (LAddr::new(b.as_ptr() as *mut u8), b.len())
-      // }
-
-      // /// # Safety
-      // ///
-      // /// The caller must ensure that the data is acquired from [`MemBlock::into_raw`].
-      // pub unsafe fn from_raw<'a>(addr: LAddr, len: usize) -> Pin<&'a mut [Self]> {
-      //       Pin::new_unchecked(core::slice::from_raw_parts_mut(addr.cast(), len))
-      // }
 }
 
 struct PageAlloc;

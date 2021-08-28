@@ -12,7 +12,7 @@ use paging::{LAddr, PAddr};
 
 use alloc::sync::Arc;
 use core::alloc::Layout;
-use core::mem::{align_of, size_of, MaybeUninit};
+use core::ops::Range;
 use core::pin::Pin;
 use spin::{Lazy, Mutex, MutexGuard};
 
@@ -20,7 +20,6 @@ cfg_if::cfg_if! {
       if #[cfg(target_arch = "x86_64")] {
             mod x86_64;
             type ArchSpace = x86_64::Space;
-            pub use x86_64::MemBlock;
             pub use x86_64::init_pgc;
       }
 }
@@ -54,6 +53,12 @@ fn ty_to_range_set(ty: task::Type) -> RangeSet<LAddr> {
       let mut range_set = RangeSet::new();
       let _ = range_set.insert(range);
       range_set
+}
+
+#[derive(Debug)]
+pub enum AllocType {
+      Layout(Layout),
+      Virt(Range<LAddr>),
 }
 
 /// The structure that represents an address space.
@@ -94,31 +99,75 @@ impl Space {
             }
       }
 
-      /// Allocate an address range in the space without a specific type.
-      ///
-      /// # Safety
-      ///
-      /// The caller must ensure that the physical address is aligned with `layout`.
-      pub unsafe fn alloc_manual(
+      /// Allocate an address range in the space.
+      pub fn alloc(
             &self,
-            layout: Layout,
+            ty: AllocType,
             phys: Option<PAddr>,
             flags: Flags,
-      ) -> Result<Pin<&mut [MemBlock]>, &'static str> {
+      ) -> Result<Pin<&mut [u8]>, &'static str> {
             self.canary.assert();
 
-            // Calculate the real size used.
-            let layout = layout.align_to(align_of::<MemBlock>()).unwrap();
-            let size = layout.pad_to_align().size();
+            if phys.map_or(false, |phys| phys.contains_bit(paging::PAGE_MASK)) {
+                  return Err("Physical address must be aligned");
+            }
+
+            // Get the virtual address.
+            // `prefix` and `suffix` are the gaps beside the allocated address range.
+            let mut range = self.free_range.lock();
+
+            let (layout, size, prefix, virt, suffix) = match ty {
+                  AllocType::Layout(layout) => {
+                        // Calculate the real size used.
+                        let layout = layout.align_to(paging::PAGE_LAYOUT.align()).unwrap();
+                        let size = layout.pad_to_align().size();
+                        let (prefix, virt, suffix) = {
+                              let res = range.range_iter().find_map(|r| {
+                                    let mut start = r.start.val();
+                                    while start & (layout.align() - 1) != 0 {
+                                          start += 1 << start.trailing_zeros();
+                                    }
+                                    if start + size <= r.end.val() {
+                                          Some((
+                                                r.start..LAddr::from(start),
+                                                LAddr::from(start)..LAddr::from(start + size),
+                                                LAddr::from(start + size)..r.end,
+                                          ))
+                                    } else {
+                                          None
+                                    }
+                              });
+                              res.ok_or("No satisfactory virtual space")?
+                        };
+                        (layout, size, prefix, virt, suffix)
+                  }
+                  AllocType::Virt(virt) => {
+                        let size = unsafe { virt.end.offset_from(*virt.start) } as usize;
+                        let layout = Layout::from_size_align(size, paging::PAGE_SIZE)
+                              .map_err(|_| "Address range must be aligned")?;
+
+                        let (prefix, suffix) = {
+                              let res = range.range_iter().find_map(|r| {
+                                    (r.start <= virt.start && virt.end <= r.end)
+                                          .then_some((r.start..virt.start, virt.end..r.end))
+                              });
+
+                              res.ok_or("No satisfactory virtual space")?
+                        };
+                        (layout, size, prefix, virt, suffix)
+                  }
+            };
 
             // Get the physical address mapped to.
             let (phys, alloc_ptr) = match phys {
                   Some(phys) => (phys, None),
                   None => {
-                        let ptr = if flags.contains(Flags::ZEROED) {
-                              alloc::alloc::alloc_zeroed(layout)
-                        } else {
-                              alloc::alloc::alloc(layout)
+                        let ptr = unsafe {
+                              if flags.contains(Flags::ZEROED) {
+                                    alloc::alloc::alloc_zeroed(layout)
+                              } else {
+                                    alloc::alloc::alloc(layout)
+                              }
                         };
 
                         if ptr.is_null() {
@@ -129,91 +178,32 @@ impl Space {
                   }
             };
 
-            // Get the virtual address.
-            // `prefix` and `suffix` are the gaps beside the allocated address range.
-            let mut range = self.free_range.lock();
-            let (prefix, virt, suffix) = {
-                  let res = range.range_iter().find_map(|r| {
-                        let mut start = r.start.val();
-                        while start & (layout.align() - 1) != 0 {
-                              start += 1 << start.trailing_zeros();
-                        }
-                        if start + size <= r.end.val() {
-                              Some((
-                                    r.start..LAddr::from(start),
-                                    LAddr::from(start)..LAddr::from(start + size),
-                                    LAddr::from(start + size)..r.end,
-                              ))
-                        } else {
-                              None
-                        }
-                  });
-                  match res {
-                        Some((prefix, free, suffix)) => {
-                              range.remove(prefix.start);
-                              if !prefix.is_empty() {
-                                    let _ = range.insert(prefix.clone());
-                              }
-                              if !suffix.is_empty() {
-                                    let _ = range.insert(suffix.clone());
-                              }
-                              (prefix, free, suffix)
-                        }
-                        None => {
-                              if let Some(alloc_ptr) = alloc_ptr {
-                                    alloc::alloc::dealloc(alloc_ptr, layout);
-                              }
-                              return Err("No satisfactory virtual space");
-                        }
-                  }
-            };
-
             // Map it.
             let ptr = *virt.start;
             self.arch.maps(virt, phys, flags).map_err(|_| {
-                  if !prefix.is_empty() {
-                        range.remove(prefix.start);
-                  }
-                  if !suffix.is_empty() {
-                        range.remove(suffix.start);
-                  }
-                  let _ = range.insert(prefix.start..suffix.end);
-
                   if let Some(alloc_ptr) = alloc_ptr {
-                        alloc::alloc::dealloc(alloc_ptr, layout);
+                        unsafe { alloc::alloc::dealloc(alloc_ptr, layout) };
                   }
                   "Paging error"
             })?;
+
+            range.remove(prefix.start);
+            if !prefix.is_empty() {
+                  let _ = range.insert(prefix.clone());
+            }
+            if !suffix.is_empty() {
+                  let _ = range.insert(suffix.clone());
+            }
             drop(range);
 
-            // Build a memory block from the address range.
-            let blocks = Pin::new_unchecked(core::slice::from_raw_parts_mut(
-                  ptr.cast(),
-                  size / size_of::<MemBlock>(),
-            ));
+            let ret = unsafe { Pin::new_unchecked(core::slice::from_raw_parts_mut(ptr, size)) };
             let _ = self
                   .record
                   .lock()
                   .insert(LAddr::new(ptr), layout)
                   .map(|_| panic!("Duplicate allocation"));
 
-            Ok(blocks)
-      }
-
-      /// Allocate an address range in the space with a specific type.
-      ///
-      /// # Safety
-      ///
-      /// The caller must ensure that the physical address is aligned with `layout`.
-      pub unsafe fn alloc_typed<T>(
-            &self,
-            phys: Option<PAddr>,
-            flags: Flags,
-      ) -> Result<Pin<&mut MaybeUninit<T>>, &'static str> {
-            self.canary.assert();
-
-            self.alloc_manual(Layout::new::<T>(), phys, flags)
-                  .and_then(MemBlock::into_typed)
+            Ok(ret)
       }
 
       /// Modify the access flags of an address range without a specific type.
@@ -222,16 +212,16 @@ impl Space {
       ///
       /// The caller must ensure that `b` was allocated by this `Space` and no pointers or
       /// references to the block are present (or influenced by the modification).
-      pub unsafe fn modify_manual<'b>(
+      pub unsafe fn modify<'b>(
             &self,
-            b: Pin<&'b mut [MemBlock]>,
+            mut b: Pin<&'b mut [u8]>,
             flags: Flags,
-      ) -> Result<Pin<&'b mut [MemBlock]>, &'static str> {
+      ) -> Result<Pin<&'b mut [u8]>, &'static str> {
             self.canary.assert();
 
             let virt = {
-                  let ptr = b.as_ptr_range();
-                  LAddr::new(ptr.start as *mut _)..LAddr::new(ptr.end as *mut _)
+                  let ptr = b.as_mut_ptr_range();
+                  LAddr::new(ptr.start)..LAddr::new(ptr.end)
             };
 
             self.arch
@@ -241,39 +231,22 @@ impl Space {
             Ok(b)
       }
 
-      /// Modify the access flags of an address range with a specific type.
-      ///
-      /// # Safety
-      ///
-      /// The caller must ensure that `b` was allocated by this `Space` and no pointers or
-      /// references to the block are present (or influenced by the modification).
-      pub unsafe fn modify_typed<'b, T>(
-            &self,
-            b: Pin<&'b mut MaybeUninit<T>>,
-            flags: Flags,
-      ) -> Result<Pin<&'b mut MaybeUninit<T>>, &'static str> {
-            self.canary.assert();
-
-            self.modify_manual(MemBlock::from_typed(b), flags)
-                  .and_then(MemBlock::into_typed)
-      }
-
       /// Deallocate an address range in the space without a specific type.
       ///
       /// # Safety
       ///
       /// The caller must ensure that `b` was allocated by this `Space` and `free_phys`
       /// is only set if the physical address range is allocated within `b`'s allocation.
-      pub unsafe fn dealloc_manual(
+      pub unsafe fn dealloc(
             &self,
-            b: Pin<&mut [MemBlock]>,
+            mut b: Pin<&mut [u8]>,
             free_phys: bool,
       ) -> Result<(), &'static str> {
             self.canary.assert();
 
             let mut virt = {
-                  let ptr = b.as_ptr_range();
-                  LAddr::new(ptr.start as *mut _)..LAddr::new(ptr.end as *mut _)
+                  let ptr = b.as_mut_ptr_range();
+                  LAddr::new(ptr.start)..LAddr::new(ptr.end)
             };
 
             // Get the virtual address range from the given memory block.
@@ -311,22 +284,6 @@ impl Space {
                   range.remove(suffix.start);
             }
             range.insert(virt).map_err(|_| "Occupied range")
-      }
-
-      /// Deallocate an address range in the space without a specific type.
-      ///
-      /// # Safety
-      ///
-      /// The caller must ensure that `b` was allocated by this `Space` and `free_phys`
-      /// is only set if the physical address range is allocated within `b`'s allocation.
-      pub unsafe fn dealloc_typed<T>(
-            &self,
-            b: Pin<&mut MaybeUninit<T>>,
-            free_phys: bool,
-      ) -> Result<(), &'static str> {
-            self.canary.assert();
-
-            self.dealloc_manual(MemBlock::from_typed(b), free_phys)
       }
 
       /// # Safety

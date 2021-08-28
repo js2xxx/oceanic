@@ -1,9 +1,7 @@
 use bitop_ex::BitOpEx;
 use core::alloc::Layout;
 use core::mem::size_of;
-use object::elf::*;
-use object::read::elf::*;
-use object::Endianness;
+use goblin::elf::*;
 use uefi::prelude::*;
 
 /// Transform the flags of a ELF program header into the attribute of a paging entry.
@@ -11,10 +9,10 @@ use uefi::prelude::*;
 /// In this case, we only focus on the read/write-ability and executability.
 fn flags_to_pg_attr(flags: u32) -> paging::Attr {
       let mut ret = paging::Attr::PRESENT;
-      if (flags & PF_W) != 0 {
+      if (flags & program_header::PF_W) != 0 {
             ret |= paging::Attr::WRITABLE;
       }
-      if (flags & PF_X) == 0 {
+      if (flags & program_header::PF_X) == 0 {
             ret |= paging::Attr::EXE_DISABLE;
       }
       ret
@@ -119,33 +117,32 @@ pub fn map_elf(syst: &SystemTable<Boot>, data: &[u8]) -> (*mut u8, Option<Layout
             data.as_ptr()
       );
 
-      let en = Endianness::default();
-      let elf = ElfFile64::<'_, Endianness>::parse(data).expect("Failed to map ELF64 file");
-      assert!(elf.raw_header().is_type_64());
+      let file = Elf::parse(data).expect("Failed to parse ELF64 file");
+      assert!(file.is_64);
 
       let mut pls_layout = None;
-      for phdr in elf.raw_segments() {
-            match phdr.p_type(en) {
-                  PT_LOAD => load_prog(
+      for phdr in file.program_headers.iter() {
+            match phdr.p_type {
+                  program_header::PT_LOAD => load_prog(
                         syst,
-                        phdr.p_flags(en),
-                        paging::LAddr::from(phdr.p_vaddr(en) as usize),
+                        phdr.p_flags,
+                        paging::LAddr::from(phdr.p_vaddr as usize),
                         paging::PAddr::new(
-                              unsafe { data.as_ptr().add(phdr.p_offset(en) as usize) } as usize,
+                              unsafe { data.as_ptr().add(phdr.p_offset as usize) } as usize
                         ),
-                        (phdr.p_filesz(en) as usize).round_up_bit(paging::PAGE_SHIFT),
-                        (phdr.p_memsz(en) as usize).round_up_bit(paging::PAGE_SHIFT),
+                        (phdr.p_filesz as usize).round_up_bit(paging::PAGE_SHIFT),
+                        (phdr.p_memsz as usize).round_up_bit(paging::PAGE_SHIFT),
                   ),
 
-                  PT_TLS => {
-                        let ts = phdr.p_memsz(en) as usize;
-                        pls_layout = Some(load_pls(syst, ts, phdr.p_align(en) as usize));
+                  program_header::PT_TLS => {
+                        let ts = phdr.p_memsz as usize;
+                        pls_layout = Some(load_pls(syst, ts, phdr.p_align as usize));
                   }
 
                   _ => {}
             }
       }
 
-      let entry = paging::LAddr::from(elf.raw_header().e_entry(en) as usize);
+      let entry = paging::LAddr::from(file.entry as usize);
       (*entry, pls_layout)
 }

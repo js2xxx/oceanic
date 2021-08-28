@@ -151,7 +151,7 @@ fn new_page(
 ) -> Result<(), Error> {
       log::trace!(
             "paging::new_page: root table = {:?}, virt = {:?}, phys = {:?}, attr = {:?}, level = {:?}, id_off = {:?}, allocator = {:?}",
-            root_table,
+            root_table as *mut _,
             virt,
             phys,
             attr,
@@ -304,7 +304,7 @@ pub fn maps(
 ) -> Result<(), Error> {
       log::trace!(
             "paging::maps: root table = {:?}, info = {:?}, allocator = {:?}",
-            root_table,
+            root_table as *mut _,
             info,
             allocator as *mut _
       );
@@ -361,7 +361,7 @@ pub fn reprotect(
 ) -> Result<(), Error> {
       log::trace!(
             "paging::reprotect: root table = {:?}, info = {:?}, allocator = {:?}",
-            root_table,
+            root_table as *mut _,
             info,
             allocator as *mut _
       );
@@ -415,7 +415,7 @@ pub fn unmaps(
 ) -> Result<(), Error> {
       log::trace!(
             "paging::unmaps: root table = {:?}, virt = {:?}, id_off = {:?}, allocator = {:?}",
-            root_table,
+            root_table as *mut _,
             virt,
             id_off,
             allocator as *mut _
