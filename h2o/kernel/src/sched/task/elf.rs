@@ -99,10 +99,14 @@ fn load_elf(space: &Space, file: &Elf, image: &[u8]) -> Result<(LAddr, Option<LA
 
       for phdr in file.program_headers.iter() {
             match phdr.p_type {
-                  program_header::PT_GNU_STACK if phdr.p_memsz != 0 => {
-                        log::trace!("Found stack size {:?}", phdr.p_memsz);
-                        stack_size = phdr.p_memsz as usize
+                  program_header::PT_GNU_STACK => {
+                        if phdr.p_memsz != 0 {
+                              log::trace!("Found stack size {:?}", phdr.p_memsz);
+                              stack_size = phdr.p_memsz as usize
+                        }
                   }
+
+                  program_header::PT_GNU_RELRO => {}
 
                   program_header::PT_LOAD => {
                         load_prog(
@@ -125,7 +129,7 @@ fn load_elf(space: &Space, file: &Elf, image: &[u8]) -> Result<(LAddr, Option<LA
                         )?)
                   }
 
-                  _ => return Err(TaskError::NotSupported),
+                  x @ _ => return Err(TaskError::NotSupported(x)),
             }
       }
       Ok((entry, tls, stack_size))

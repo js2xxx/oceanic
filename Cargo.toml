@@ -1,5 +1,5 @@
 [workspace]
-members = ["h2o/boot", "h2o/kernel", "h2o/libs/*"]
+members = ["h2o/boot", "h2o/kernel", "h2o/libs/*", "h2o/tinit"]
 
 [profile.dev]
 lto = 'thin'

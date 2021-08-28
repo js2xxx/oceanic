@@ -41,7 +41,7 @@ static ROOT: Lazy<Tid> = Lazy::new(|| {
 
 #[derive(Debug)]
 pub enum TaskError {
-      NotSupported,
+      NotSupported(u32),
       InvalidFormat,
       Memory(&'static str),
       NoCurrentTask,

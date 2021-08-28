@@ -1,0 +1,12 @@
+[package]
+edition = "2018"
+name = "tinit"
+version = "0.1.0"
+
+[lib]
+crate-type = ["staticlib"]
+name = "tinit"
+path = "src/tmain.rs"
+
+[dependencies]
+solvent = {path = "../libs/syscall"}

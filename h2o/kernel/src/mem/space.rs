@@ -326,11 +326,15 @@ impl Space {
                         };
                         let virt = base..LAddr::from(base.val() + size);
 
-                        arch.maps(virt, phys, Flags::READABLE | Flags::WRITABLE)
-                              .map_err(|_| unsafe {
-                                    alloc::alloc::dealloc(alloc_ptr, layout);
-                                    "Paging error"
-                              })?;
+                        arch.maps(
+                              virt,
+                              phys,
+                              Flags::READABLE | Flags::WRITABLE | Flags::USER_ACCESS,
+                        )
+                        .map_err(|_| unsafe {
+                              alloc::alloc::dealloc(alloc_ptr, layout);
+                              "Paging error"
+                        })?;
 
                         if let Some(_) = stack_blocks.insert(base, layout) {
                               panic!("Duplicate allocation");

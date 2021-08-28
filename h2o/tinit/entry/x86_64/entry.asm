@@ -1,9 +1,10 @@
+extern tmain
 [section .text]
 
 global _start
 _start:
+      call  tmain
 .lp:
-      ; mov   rax, 0x1234567890
       ; mov   dword [rax], 0
       pause
       jmp   .lp
