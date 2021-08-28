@@ -38,23 +38,23 @@ impl Kstack {
       }
 
       #[cfg(target_arch = "x86_64")]
-      pub unsafe fn as_frame(&self) -> &arch::Frame {
+      pub fn as_frame(&self) -> &arch::Frame {
             let ptr = self.top().cast::<arch::Frame>();
 
-            &*ptr.sub(1)
+            unsafe { &*ptr.sub(1) }
       }
 
       #[cfg(target_arch = "x86_64")]
-      pub unsafe fn as_frame_mut(&mut self) -> &mut arch::Frame {
+      pub fn as_frame_mut(&mut self) -> &mut arch::Frame {
             let ptr = self.top().cast::<arch::Frame>();
 
-            &mut *ptr.sub(1)
+            unsafe { &mut *ptr.sub(1) }
       }
 }
 
 impl Debug for Kstack {
       fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-            write!(f, "Kstack {{ {:?} }} ", *unsafe { self.as_frame() })
+            write!(f, "Kstack {{ {:?} }} ", *self.as_frame())
       }
 }
 

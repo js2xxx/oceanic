@@ -5,7 +5,7 @@ use crate::sched::task;
 
 use core::alloc::Layout;
 
-pub const DEFAULT_STACK_SIZE: usize = 32 * paging::PAGE_SIZE;
+pub const DEFAULT_STACK_SIZE: usize = 48 * paging::PAGE_SIZE;
 pub const DEFAULT_STACK_LAYOUT: Layout =
       unsafe { Layout::from_size_align_unchecked(DEFAULT_STACK_SIZE, paging::PAGE_SIZE) };
 
@@ -74,6 +74,23 @@ impl Frame {
             }
 
             (entry.args.len() > 6).then(|| &entry.args[6..])
+      }
+
+      pub fn syscall_args(&self) -> solvent::Arguments {
+            solvent::Arguments {
+                  fn_num: self.rax as usize,
+                  args: [
+                        self.rdi as usize,
+                        self.rsi as usize,
+                        self.rdx as usize,
+                        self.r8 as usize,
+                        self.r9 as usize,
+                  ],
+            }
+      }
+
+      pub fn set_syscall_retval(&mut self, retval: usize) {
+            self.rax = retval as u64;
       }
 
       const RFLAGS: &'static str =

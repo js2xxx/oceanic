@@ -240,6 +240,10 @@ impl Ready {
             frame.copy_to(self.kstack.as_frame_mut(), 1);
       }
 
+      pub fn save_syscall_retval(&mut self, retval: usize) {
+            self.kstack.as_frame_mut().set_syscall_retval(retval);
+      }
+
       /// Get the arch-specific context of the task.
       ///
       /// # Safety

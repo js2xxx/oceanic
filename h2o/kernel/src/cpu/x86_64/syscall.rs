@@ -1,5 +1,4 @@
 use super::seg::ndt::{INTR_CODE, USR_CODE_X86};
-use super::seg::SegSelector;
 use crate::sched::task::ctx::arch::Frame;
 use archop::{msr, reg};
 use paging::LAddr;
@@ -21,16 +20,12 @@ pub unsafe fn init() -> Option<LAddr> {
             base.add(layout.size())
       };
 
-      let rflags = (reg::rflags::read() & 0xFFFFFFFF)
-            & !reg::rflags::IF
-            & !reg::rflags::DF
-            & !reg::rflags::TF;
+      let rflags = reg::rflags::IF & reg::rflags::DF & reg::rflags::TF;
       msr::write(msr::FMASK, rflags);
 
       msr::write(msr::LSTAR, rout_syscall as u64);
 
-      let star = (SegSelector::into_val(USR_CODE_X86) as u64) << 48
-            | (SegSelector::into_val(INTR_CODE) as u64) << 32;
+      let star = (USR_CODE_X86.into_val() as u64) << 48 | (INTR_CODE.into_val() as u64) << 32;
       msr::write(msr::STAR, star);
 
       let efer = msr::read(msr::EFER);
@@ -40,7 +35,14 @@ pub unsafe fn init() -> Option<LAddr> {
 }
 
 #[no_mangle]
-unsafe extern "C" fn hdl_syscall(frame: *const Frame) -> *const Frame {
-      archop::pause();
-      frame
+unsafe extern "C" fn hdl_syscall(frame: *const Frame) {
+      let arg = (*frame).syscall_args();
+      let res = crate::syscall::handler(&arg);
+      if !matches!(res, Err(solvent::Error(0))) {
+            let val = solvent::Error::encode(res);
+            let mut sched = crate::sched::SCHED.lock();
+            if let Some(cur) = sched.current_mut() {
+                  cur.save_syscall_retval(val);
+            }
+      }
 }
