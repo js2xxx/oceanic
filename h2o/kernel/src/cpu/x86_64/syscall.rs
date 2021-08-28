@@ -1,6 +1,6 @@
-use crate::sched::task::ctx::arch::Frame;
 use super::seg::ndt::{INTR_CODE, USR_CODE_X86};
 use super::seg::SegSelector;
+use crate::sched::task::ctx::arch::Frame;
 use archop::{msr, reg};
 use paging::LAddr;
 
@@ -13,10 +13,7 @@ extern "C" {
 /// This function should only be called once per CPU.
 pub unsafe fn init() -> Option<LAddr> {
       let stack = {
-            let (layout, k) = paging::PAGE_LAYOUT
-                  .repeat(2)
-                  .expect("Failed to repeat layout");
-            assert!(k == paging::PAGE_SIZE);
+            let layout = crate::sched::task::DEFAULT_STACK_LAYOUT;
             let base = alloc::alloc::alloc(layout);
             if base.is_null() {
                   return None;

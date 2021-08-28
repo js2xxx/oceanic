@@ -19,7 +19,7 @@ use core::time::Duration;
 use spin::Lazy;
 
 #[cfg(target_arch = "x86_64")]
-pub use ctx::arch::DEFAULT_STACK_SIZE;
+pub use ctx::arch::{DEFAULT_STACK_LAYOUT, DEFAULT_STACK_SIZE};
 pub use prio::Priority;
 pub use tid::Tid;
 
@@ -151,7 +151,7 @@ pub struct Ready {
 
       space: Arc<Space>,
       kstack: Box<ctx::Kstack>,
-      ext_frame: Option<Box<ctx::ExtendedFrame>>,
+      ext_frame: Box<ctx::ExtendedFrame>,
 
       pub(super) cpu: usize,
       pub(super) running_state: RunningState,
@@ -165,7 +165,7 @@ impl Ready {
                   time_slice,
                   space,
                   kstack,
-                  ext_frame: None,
+                  ext_frame: box unsafe { core::mem::zeroed() },
                   cpu,
                   running_state: RunningState::NotRunning,
             }
@@ -223,6 +223,14 @@ impl Ready {
             self.time_slice
       }
 
+      pub unsafe fn save_ext_frame(&mut self) {
+            self.ext_frame.save()
+      }
+
+      pub unsafe fn load_ext_frame(&self) {
+            self.ext_frame.load()
+      }
+
       /// Save the context frame of the current task.
       ///
       /// # Safety
@@ -252,7 +260,7 @@ pub struct Blocked {
 
       space: Arc<Space>,
       kstack: Box<ctx::Kstack>,
-      ext_frame: Option<Box<ctx::ExtendedFrame>>,
+      ext_frame: Box<ctx::ExtendedFrame>,
 
       cpu: usize,
       block_desc: String,

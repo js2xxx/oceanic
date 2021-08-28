@@ -63,11 +63,13 @@ impl Debug for Kstack {
 pub struct ExtendedFrame([u8; arch::EXTENDED_FRAME_SIZE]);
 
 impl ExtendedFrame {
-      pub fn as_slice(&self) -> &[u8] {
-            &self.0
+      pub unsafe fn save(&mut self) {
+            let ptr = self.0.as_mut_ptr();
+            archop::fpu::save(ptr);
       }
 
-      pub fn as_slice_mut(&mut self) -> &mut [u8] {
-            &mut self.0
+      pub unsafe fn load(&self) {
+            let ptr = self.0.as_ptr();
+            archop::fpu::load(ptr);
       }
 }

@@ -1,5 +1,4 @@
 use super::task;
-use super::task::ctx;
 use crate::cpu::time::Instant;
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -23,6 +22,7 @@ pub static SCHED: Lazy<IntrMutex<Scheduler>> = Lazy::new(|| {
             canary: Canary::new(),
             cpu: unsafe { crate::cpu::id() },
             running: None,
+            need_reload: true,
             run_queue: LinkedList::new(),
       })
 });
@@ -31,6 +31,7 @@ pub struct Scheduler {
       canary: Canary<Scheduler>,
       cpu: usize,
       running: Option<task::Ready>,
+      pub(in crate::sched) need_reload: bool,
       run_queue: LinkedList<task::Ready>,
 }
 
@@ -160,6 +161,7 @@ impl Scheduler {
                   self.run_queue.push_back(prev);
             }
 
+            self.need_reload = true;
             true
       }
 
@@ -172,21 +174,6 @@ impl Scheduler {
             }
 
             task.map(|task| task::Ready::into_dead(task, retval))
-      }
-
-      /// Restore the context of the current task.
-      ///
-      /// # Safety
-      ///
-      /// This function should only be called at the end of interrupt / syscall handlers.
-      pub unsafe fn restore_current(
-            &mut self,
-            frame: *const ctx::arch::Frame,
-      ) -> *const ctx::arch::Frame {
-            self.current().map_or(frame, |cur| {
-                  unsafe { crate::mem::space::set_current(cur.space().clone()) };
-                  unsafe { cur.get_arch_context() }
-            })
       }
 }
 

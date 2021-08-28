@@ -112,9 +112,7 @@ impl TramHeader {
 
       pub unsafe fn reset_subheader(&self) {
             let stack = unsafe {
-                  let (layout, _) = paging::PAGE_LAYOUT
-                        .repeat(16)
-                        .expect("Failed to create a layout");
+                  let layout = crate::sched::task::DEFAULT_STACK_LAYOUT;
                   let memory = alloc::alloc::alloc(layout);
                   memory.add(layout.size())
             } as u64;

@@ -3,7 +3,11 @@ use crate::cpu::arch::seg::ndt::{KRL_CODE_X64, KRL_DATA_X64, USR_CODE_X64, USR_D
 use crate::cpu::arch::seg::SegSelector;
 use crate::sched::task;
 
-pub const DEFAULT_STACK_SIZE: usize = 64 * paging::PAGE_SIZE;
+use core::alloc::Layout;
+
+pub const DEFAULT_STACK_SIZE: usize = 32 * paging::PAGE_SIZE;
+pub const DEFAULT_STACK_LAYOUT: Layout =
+      unsafe { Layout::from_size_align_unchecked(DEFAULT_STACK_SIZE, paging::PAGE_SIZE) };
 
 pub const EXTENDED_FRAME_SIZE: usize = 768;
 
@@ -116,15 +120,16 @@ impl Frame {
 ///
 /// This function must be called only by assembly stubs.
 #[no_mangle]
-unsafe extern "C" fn save_regs(frame: *const Frame) -> *const u8 {
+unsafe extern "C" fn save_regs(frame: *const Frame) -> *const Frame {
       let mut sched = crate::sched::SCHED.lock();
-      let ret = sched.current_mut().map_or(frame, |cur| {
+
+      sched.need_reload = false;
+      sched.current_mut().map_or(frame, |cur| {
             cur.save_arch(frame);
+            cur.save_ext_frame();
 
             cur.get_arch_context()
-      });
-
-      ret.cast()
+      })
 }
 
 /// # Safety
@@ -132,6 +137,13 @@ unsafe extern "C" fn save_regs(frame: *const Frame) -> *const u8 {
 /// This function must be called only by assembly stubs.
 #[no_mangle]
 unsafe extern "C" fn load_regs(frame: *const Frame) -> *const Frame {
-      let mut sched = crate::sched::SCHED.lock();
-      sched.restore_current(frame)
+      let sched = crate::sched::SCHED.lock();
+
+      sched.current().map_or(frame, |cur| unsafe {
+            if sched.need_reload {
+                  crate::mem::space::set_current(cur.space().clone());
+                  cur.load_ext_frame();
+            }
+            cur.get_arch_context()
+      })
 }

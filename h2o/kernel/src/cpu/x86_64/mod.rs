@@ -114,6 +114,8 @@ impl KernelGs {
 /// The caller must ensure that this function should only be called once from bootstrap
 /// CPU.
 pub unsafe fn init(lapic_data: acpi::table::madt::LapicData) {
+      archop::fpu::init();
+      
       let (tss_rsp0, kernel_fs) = seg::init();
 
       unsafe { tsc::init() };
