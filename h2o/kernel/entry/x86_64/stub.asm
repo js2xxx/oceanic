@@ -332,7 +332,19 @@ rout_syscall:
       lea   rbp, [rsp + 1]
 
       mov   rdi, rsp
+
+      mov   r12, 0
+      bt    rsp, 3
+      jnc   .call
+      mov   r12, 1
+      sub   rsp, 8
+.call:
       call  hdl_syscall
+
+      cmp   r12, 0
+      je    .exit
+      add   rsp, 8
+.exit:
 
       mov   rdi, rsp
       call  load_regs

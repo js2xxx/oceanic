@@ -4,6 +4,7 @@ use crate::cpu::arch::seg::SegSelector;
 use crate::sched::task;
 
 use core::alloc::Layout;
+use core::mem::size_of;
 
 pub const DEFAULT_STACK_SIZE: usize = 48 * paging::PAGE_SIZE;
 pub const DEFAULT_STACK_LAYOUT: Layout =
@@ -50,7 +51,7 @@ impl Frame {
             };
 
             self.rip = entry.entry.val() as u64;
-            self.rsp = (entry.stack.val() - 8) as u64;
+            self.rsp = (entry.stack.val() - size_of::<usize>()) as u64;
             self.rflags = archop::reg::rflags::IF;
             self.cs = SegSelector::into_val(cs) as u64;
             self.ss = SegSelector::into_val(ss) as u64;

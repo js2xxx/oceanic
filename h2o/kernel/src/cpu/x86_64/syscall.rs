@@ -3,6 +3,8 @@ use crate::sched::task::ctx::arch::Frame;
 use archop::{msr, reg};
 use paging::LAddr;
 
+use core::mem::size_of;
+
 extern "C" {
       fn rout_syscall();
 }
@@ -17,16 +19,13 @@ pub unsafe fn init() -> Option<LAddr> {
             if base.is_null() {
                   return None;
             }
-            base.add(layout.size())
+            base.add(layout.size() - size_of::<usize>())
       };
-
-      let rflags = reg::rflags::IF & reg::rflags::DF & reg::rflags::TF;
-      msr::write(msr::FMASK, rflags);
-
-      msr::write(msr::LSTAR, rout_syscall as u64);
 
       let star = (USR_CODE_X86.into_val() as u64) << 48 | (INTR_CODE.into_val() as u64) << 32;
       msr::write(msr::STAR, star);
+      msr::write(msr::LSTAR, rout_syscall as u64);
+      msr::write(msr::FMASK, reg::rflags::IF | reg::rflags::TF);
 
       let efer = msr::read(msr::EFER);
       msr::write(msr::EFER, efer | 1);

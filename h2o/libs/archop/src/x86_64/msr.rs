@@ -237,7 +237,7 @@ pub enum Msr {
       EFER = 0xc0000080,
       STAR = 0xc0000081,
       LSTAR = 0xc0000082,
-      FMASK = 0xc0000083,
+      FMASK = 0xc0000084,
       FS_BASE = 0xc0000100,
       GS_BASE = 0xc0000101,
       KERNEL_GS_BASE = 0xc0000102,
