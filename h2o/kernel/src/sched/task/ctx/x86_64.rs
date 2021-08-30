@@ -6,7 +6,7 @@ use crate::sched::task;
 use core::alloc::Layout;
 use core::mem::size_of;
 
-pub const DEFAULT_STACK_SIZE: usize = 48 * paging::PAGE_SIZE;
+pub const DEFAULT_STACK_SIZE: usize = 64 * paging::PAGE_SIZE;
 pub const DEFAULT_STACK_LAYOUT: Layout =
       unsafe { Layout::from_size_align_unchecked(DEFAULT_STACK_SIZE, paging::PAGE_SIZE) };
 

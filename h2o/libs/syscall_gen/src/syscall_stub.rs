@@ -5,6 +5,7 @@ use syn::*;
 
 pub struct SyscallStub {
       num: LitInt,
+      vis: Visibility,
       unsafety: Option<Token![unsafe]>,
       ident: Ident,
       args: Punctuated<FnArg, Token![,]>,
@@ -14,7 +15,8 @@ pub struct SyscallStub {
 impl Parse for SyscallStub {
       fn parse(input: parse::ParseStream) -> Result<Self> {
             let num = input.parse::<LitInt>()?;
-            input.parse::<Token![;]>()?;
+            input.parse::<Token![=>]>()?;
+            let vis = input.parse::<Visibility>()?;
             let unsafety = input.parse::<Option<Token![unsafe]>>()?;
             input.parse::<Token![fn]>()?;
             let ident = input.parse::<Ident>()?;
@@ -27,6 +29,7 @@ impl Parse for SyscallStub {
 
             Ok(SyscallStub {
                   num,
+                  vis,
                   unsafety,
                   ident,
                   args,
@@ -39,6 +42,7 @@ impl ToTokens for SyscallStub {
       fn to_tokens(&self, tokens: &mut __private::TokenStream2) {
             let SyscallStub {
                   num,
+                  vis,
                   unsafety,
                   ident,
                   args,
@@ -69,7 +73,7 @@ impl ToTokens for SyscallStub {
 
             let out_fn: ItemFn = parse_quote! {
                   #[cfg(feature = "call")]
-                  pub #unsafety fn #ident (#args) -> crate::Result<#ty> {
+                  #vis #unsafety fn #ident (#args) -> crate::Result<#ty> {
                         let arg = crate::Arguments {
                               fn_num: #num,
                               args: [#args_into],

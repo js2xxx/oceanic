@@ -83,3 +83,13 @@ pub unsafe fn init(max_level: log::Level) {
       log::set_logger(LOGGER.assume_init_ref()).expect("Failed to set the logger");
       log::set_max_level(max_level.to_level_filter());
 }
+
+mod syscall {
+      use solvent::*;
+      #[syscall]
+      fn log(rec: *const log::Record) {
+            let logger = unsafe { super::LOGGER.assume_init_ref() } as &dyn log::Log;
+            logger.log(unsafe { &*rec });
+            Ok(())
+      }
+}

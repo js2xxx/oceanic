@@ -8,6 +8,9 @@ pub mod call;
 pub mod error;
 #[cfg(feature = "call")]
 pub mod rxx;
+#[cfg(feature = "call")]
+pub mod log;
+pub mod time;
 
 pub use call::reg::*;
 pub use error::*;

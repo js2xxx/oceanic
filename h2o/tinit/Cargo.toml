@@ -9,4 +9,7 @@ name = "tinit"
 path = "src/tmain.rs"
 
 [dependencies]
+# Local crates
 solvent = {path = "../libs/syscall"}
+# External crates
+log = "0.4"

@@ -9,4 +9,8 @@ call = []
 default = ["call"]
 
 [dependencies]
+# Local crates
 solvent-gen = {path = "../syscall_gen"}
+# External crates
+log = "0.4"
+spin = {version = "0.9", features = ["use_ticket_mutex"]}

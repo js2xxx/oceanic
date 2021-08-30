@@ -30,7 +30,7 @@ pub type DeallocPages = unsafe fn(pages: Unique<[Page]>);
 ///
 /// Object sizes are discrete, which simplifies allocation and alignment. They're divided
 /// into 3 classes. The constants in each class are made of arithmetic and geometric series.
-pub const OBJ_SIZES: [usize; 36] = [
+pub const OBJ_SIZES: &[usize] = &[
       16, 24, // \ - Class 1
       32, 48, // /
       64, 80, 96, 112, // \ - Class 2
@@ -38,7 +38,9 @@ pub const OBJ_SIZES: [usize; 36] = [
       256, 320, 384, 448, // |
       512, 640, 768, 896, // /
       1024, 1152, 1280, 1408, 1536, 1664, 1792, 1920, // \ - Class 3
-      2048, 2304, 2560, 2816, 3072, 3328, 3584, 3840, // /
+      // The last line is useless because their `max_count` is 1 and that block of memory is used
+      // for headers and no free memory for allocations.
+      // 2048, 2304, 2560, 2816, 3072, 3328, 3584, 3840, // /
 ];
 
 /// The number of the items of [`OBJ_SIZES`].

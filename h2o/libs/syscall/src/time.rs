@@ -7,12 +7,14 @@ pub struct Instant {
 }
 
 impl Instant {
+      #[cfg(feature = "call")]
       pub fn now() -> Self {
             let mut data = 0;
-            let _ = syscall::get_time(&mut data);
+            crate::call::get_time(&mut data).expect("SYSCALL failed");
             Instant { data }
       }
 
+      #[cfg(feature = "call")]
       pub fn elapsed(&self) -> Duration {
             Self::now() - *self
       }
@@ -61,25 +63,5 @@ impl Sub<Instant> for Instant {
             const NPS: u128 = 1_000_000_000;
             let nanos = self.data - rhs.data;
             Duration::new((nanos / NPS) as u64, (nanos % NPS) as u32)
-      }
-}
-
-pub fn delay(duration: Duration) {
-      let instant = Instant::now();
-      while instant.elapsed() < duration {}
-}
-
-mod syscall {
-      #[cfg(target_arch = "x86_64")]
-      use crate::cpu::arch::tsc::ns_clock;
-      use solvent::*;
-
-      #[syscall]
-      pub(super) fn get_time(ptr: *mut u128) {
-            #[cfg(target_arch = "x86_64")]
-            unsafe {
-                  ptr.write(ns_clock())
-            };
-            Ok(())
       }
 }

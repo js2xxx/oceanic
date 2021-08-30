@@ -1,6 +1,6 @@
 use solvent::*;
 
-static SYSCALL_TABLE: &[SyscallWrapper] = &[];
+static SYSCALL_TABLE: &[SyscallWrapper] = &[syscall_wrapper!(get_time), syscall_wrapper!(log)];
 
 pub fn handler(arg: &Arguments) -> solvent::Result<usize> {
       let h = if (0..SYSCALL_TABLE.len()).contains(&arg.fn_num) {
@@ -18,5 +18,4 @@ pub fn handler(arg: &Arguments) -> solvent::Result<usize> {
                   arg.args[4],
             )
       })
-}
 }

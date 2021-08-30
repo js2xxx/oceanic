@@ -24,7 +24,7 @@ impl Pool {
       #[allow(clippy::new_without_default)]
       pub const fn new() -> Pool {
             Pool {
-                  slabs: array![_ => Slab::new(); 36],
+                  slabs: array![_ => Slab::new(); NR_OBJ_SIZES],
                   stat: Stat::new(),
             }
       }
@@ -41,10 +41,7 @@ impl Pool {
             }
 
             let size = layout.pad_to_align().size();
-            let idx = match OBJ_SIZES.binary_search(&size) {
-                  Ok(idx) => idx,
-                  Err(idx) => idx,
-            };
+            let idx = OBJ_SIZES.binary_search(&size).into_ok_or_err();
 
             if !(0..NR_OBJ_SIZES).contains(&idx) {
                   Err(AllocError::InvLayout(layout))
