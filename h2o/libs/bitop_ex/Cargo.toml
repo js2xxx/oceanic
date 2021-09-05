@@ -2,7 +2,7 @@
 name = "bitop_ex"
 version = "0.1.0"
 authors = ["徐启航 <akucxy@163.com>"]
-edition = "2018"
+edition = "2021"
 
 [dependencies]
 num-traits = { version = "0.2", default-features = false }

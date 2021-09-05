@@ -1,6 +1,6 @@
 [package]
 authors = ["徐启航 <akucxy@163.com>"]
-edition = "2018"
+edition = "2021"
 name = "kernel"
 version = "0.1.0"
 

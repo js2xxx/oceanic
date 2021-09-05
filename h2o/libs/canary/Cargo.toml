@@ -2,6 +2,6 @@
 name = "canary"
 version = "0.1.0"
 authors = ["徐启航 <akucxy@163.com>"]
-edition = "2018"
+edition = "2021"
 
 [dependencies]

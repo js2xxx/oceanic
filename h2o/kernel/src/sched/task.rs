@@ -223,10 +223,6 @@ impl Ready {
             self.time_slice
       }
 
-      pub unsafe fn save_ext_frame(&mut self) {
-            self.ext_frame.save()
-      }
-
       pub unsafe fn load_ext_frame(&self) {
             self.ext_frame.load()
       }
@@ -236,8 +232,9 @@ impl Ready {
       /// # Safety
       ///
       /// The caller must ensure that `frame` points to a valid frame.
-      pub unsafe fn save_arch(&mut self, frame: *const ctx::arch::Frame) {
+      pub unsafe fn save_arch_ext_frame(&mut self, frame: *const ctx::arch::Frame) {
             frame.copy_to(self.kstack.as_frame_mut(), 1);
+            self.ext_frame.save()
       }
 
       pub fn save_syscall_retval(&mut self, retval: usize) {

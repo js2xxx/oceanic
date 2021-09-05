@@ -57,12 +57,13 @@ macro_rules! single_ent {
 
 #[macro_export]
 macro_rules! hdl {
-      ($name:ident, |$frame_arg:ident| $body:block) => {
+      ($name:ident, |$frame_arg:ident| $body:expr) => {
             paste::paste! {
                   extern "C" { pub fn [<rout_ $name>](); }
                   #[no_mangle]
-                  unsafe extern "C" fn [<hdl_ $name>]($frame_arg: *const Frame) -> *const Frame
-                        $body
+                  unsafe extern "C" fn [<hdl_ $name>]($frame_arg: *const Frame) {
+                        { $body };
+                  }
             }
       };
 }
@@ -279,23 +280,20 @@ hdl!(simd, |frame| {
 
 // Local APIC interrupts
 
-hdl!(lapic_timer, |frame| {
-      crate::cpu::arch::apic::timer::timer_handler(frame)
+hdl!(lapic_timer, |_frame| {
+      crate::cpu::arch::apic::timer::timer_handler();
 });
 
-hdl!(lapic_error, |frame| {
+hdl!(lapic_error, |_frame| {
       crate::cpu::arch::apic::error_handler();
-      frame
 });
 
-hdl!(lapic_ipi_task_migrate, |frame| {
+hdl!(lapic_ipi_task_migrate, |_frame| {
       crate::sched::sched::task_migrate_handler();
-      frame
 });
 
-hdl!(lapic_spurious, |frame| {
+hdl!(lapic_spurious, |_frame| {
       crate::cpu::arch::apic::spurious_handler();
-      frame
 });
 
 // All other allocable interrupts

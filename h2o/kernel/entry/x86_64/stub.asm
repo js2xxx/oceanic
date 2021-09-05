@@ -266,18 +266,26 @@ intr_entry:
       lea   rbp, [rsp + 1]
       push  r12
 
-      ret
+      jmp   .ret
 .reent:
       ; TODO: Handle some errors inside this routine.
+      lfence
+
+      pop   r12
+      mov   rdi, rsp
+      call  save_regs
+      push  r12
+.ret:
       ret
 
 intr_exit:
-      bt    qword [rsp + Frame.cs], 2; Test if it's a reentrancy.
-      jc    .reent
 
       mov   rdi, rsp
       call  load_regs
       mov   rsp, rax
+
+      bt    qword [rsp + Frame.cs], 2; Test if it's a reentrancy.
+      jc    .reent
 
       pop_regs    1
 
@@ -293,10 +301,14 @@ intr_exit:
       mov   rdi, [rdi]
 
       swapgs
-      jmp   .return
+      jmp   .ret
 .reent:
       ; TODO: Handle some errors inside this routine.
-.return:
+
+      pop_regs    1
+
+      add   rsp, 8
+.ret:
       iretq
 
 ; ---------------------------------------------------------------------------------------
