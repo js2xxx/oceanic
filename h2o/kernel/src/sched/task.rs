@@ -150,7 +150,8 @@ pub struct Ready {
       time_slice: Duration,
 
       space: Arc<Space>,
-      kstack: Box<ctx::Kstack>,
+      intr_stack: Box<ctx::Kstack>,
+      syscall_stack: Box<ctx::Kstack>,
       ext_frame: Box<ctx::ExtendedFrame>,
 
       pub(super) cpu: usize,
@@ -164,7 +165,8 @@ impl Ready {
                   tid,
                   time_slice,
                   space,
-                  kstack,
+                  intr_stack: kstack,
+                  syscall_stack: ctx::Kstack::new_syscall(),
                   ext_frame: box unsafe { core::mem::zeroed() },
                   cpu,
                   running_state: RunningState::NotRunning,
@@ -175,7 +177,8 @@ impl Ready {
             let Blocked {
                   tid,
                   space,
-                  kstack,
+                  intr_stack,
+                  syscall_stack,
                   ext_frame,
                   cpu,
                   ..
@@ -184,7 +187,8 @@ impl Ready {
                   tid,
                   time_slice,
                   space,
-                  kstack,
+                  intr_stack,
+                  syscall_stack,
                   ext_frame,
                   cpu,
                   running_state: RunningState::NotRunning,
@@ -195,7 +199,8 @@ impl Ready {
             let Ready {
                   tid,
                   space,
-                  kstack,
+                  intr_stack,
+                  syscall_stack,
                   ext_frame,
                   cpu,
                   ..
@@ -203,7 +208,8 @@ impl Ready {
             Blocked {
                   tid,
                   space,
-                  kstack,
+                  intr_stack,
+                  syscall_stack,
                   ext_frame,
                   cpu,
                   block_desc,
@@ -223,31 +229,38 @@ impl Ready {
             self.time_slice
       }
 
-      pub unsafe fn load_ext_frame(&self) {
-            self.ext_frame.load()
-      }
-
       /// Save the context frame of the current task.
       ///
       /// # Safety
       ///
       /// The caller must ensure that `frame` points to a valid frame.
-      pub unsafe fn save_arch_ext_frame(&mut self, frame: *const ctx::arch::Frame) {
-            frame.copy_to(self.kstack.as_frame_mut(), 1);
-            self.ext_frame.save()
+      pub unsafe fn save_intr(
+            &mut self,
+            frame: *const ctx::arch::Frame,
+      ) -> *const ctx::arch::Frame {
+            frame.copy_to(self.intr_stack.task_frame_mut(), 1);
+            self.ext_frame.save();
+            self.intr_stack.task_frame()
+      }
+
+      pub unsafe fn sync_syscall(
+            &mut self,
+            frame: *const ctx::arch::Frame,
+      ) -> *const ctx::arch::Frame {
+            frame.copy_to(self.syscall_stack.task_frame_mut(), 1);
+            self.syscall_stack.task_frame()
       }
 
       pub fn save_syscall_retval(&mut self, retval: usize) {
-            self.kstack.as_frame_mut().set_syscall_retval(retval);
+            self.intr_stack.task_frame_mut().set_syscall_retval(retval);
       }
 
-      /// Get the arch-specific context of the task.
-      ///
-      /// # Safety
-      ///
-      /// The caller must ensure that the pointer is used only in context switching.
-      pub unsafe fn get_arch_context(&self) -> *const ctx::arch::Frame {
-            self.kstack.as_frame()
+      pub unsafe fn load_intr(&self, reload_all: bool) -> *const ctx::arch::Frame {
+            if reload_all {
+                  crate::mem::space::set_current(self.space.clone());
+                  self.ext_frame.load();
+            }
+            self.intr_stack.task_frame()
       }
 
       pub fn space(&self) -> &Arc<Space> {
@@ -260,7 +273,8 @@ pub struct Blocked {
       tid: Tid,
 
       space: Arc<Space>,
-      kstack: Box<ctx::Kstack>,
+      intr_stack: Box<ctx::Kstack>,
+      syscall_stack: Box<ctx::Kstack>,
       ext_frame: Box<ctx::ExtendedFrame>,
 
       cpu: usize,

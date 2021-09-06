@@ -20,24 +20,27 @@
 //!     ```
 //! 3.  Add a corresponding slot to the [`SYSCALL_TABLE`] in the position:
 //!     ```rust,no_run
-//!     static SYSCALL_TABLE: &[SyscallWrapper] = &[
+//!     static SYSCALL_TABLE: &[Option<SyscallWrapper>] = &[
 //!           ...,
-//!           syscall_wrapper!(cast_init)
+//!           Some(syscall_wrapper!(cast_init))
 //!     ];
 //!     ```
 
 use solvent::*;
 
-static SYSCALL_TABLE: &[SyscallWrapper] = &[syscall_wrapper!(get_time), syscall_wrapper!(log)];
+static SYSCALL_TABLE: &[Option<SyscallWrapper>] = &[
+      Some(syscall_wrapper!(get_time)),
+      Some(syscall_wrapper!(log)),
+];
 
 pub fn handler(arg: &Arguments) -> solvent::Result<usize> {
       let h = if (0..SYSCALL_TABLE.len()).contains(&arg.fn_num) {
-            SYSCALL_TABLE[arg.fn_num]
+            SYSCALL_TABLE[arg.fn_num].ok_or(Error(EINVAL))?
       } else {
             return Err(Error(EINVAL));
       };
 
-      solvent::Error::decode(unsafe {
+      let ret = unsafe {
             h(
                   arg.args[0],
                   arg.args[1],
@@ -45,5 +48,6 @@ pub fn handler(arg: &Arguments) -> solvent::Result<usize> {
                   arg.args[3],
                   arg.args[4],
             )
-      })
+      };
+      solvent::Error::decode(ret)
 }

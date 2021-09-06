@@ -53,7 +53,7 @@ pub struct RangeSet<T> {
       inner: BTreeMap<T, Range<T>>,
 }
 
-impl<T> RangeSet<T> {
+impl<T: Ord + Copy> RangeSet<T> {
       pub const fn new() -> Self
       where
             T: Ord,
@@ -62,9 +62,7 @@ impl<T> RangeSet<T> {
                   inner: BTreeMap::new(),
             }
       }
-}
 
-impl<T: Ord + Copy> RangeSet<T> {
       pub fn insert(&mut self, range: Range<T>) -> Result<(), &'static str> {
             if self.range(range.clone()).next().is_some() {
                   Err("There are existent item(s) in this range")

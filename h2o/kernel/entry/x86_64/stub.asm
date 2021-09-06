@@ -44,6 +44,22 @@ struc KernelGs
       .kernel_fs              resq 1
 endstruc
 
+%macro align_rsp 1
+      mov   %1, 0
+      bt    rsp, 3
+      jnc   %%next
+      mov   %1, 1
+      sub   rsp, 8
+%%next:
+%endmacro
+
+%macro recover_rsp 1
+      cmp   %1, 0
+      je    %%next
+      add   rsp, 8
+%%next:
+%endmacro
+
 %macro push_xs 1
       push  rcx
       mov   rcx, %1
@@ -182,17 +198,10 @@ extern %3
 
       mov   rdi, rsp
 
-      mov   r12, 0
-      bt    rsp, 3
-      jnc   .call
-      mov   r12, 1
-      sub   rsp, 8
-.call:
+      align_rsp   r12
       call  %3
+      recover_rsp r12
 
-      cmp   r12, 0
-      je    intr_exit
-      add   rsp, 8
       jmp   intr_exit
 
 %endmacro
@@ -239,8 +248,9 @@ define_intr i, rout_name(i), common_interrupt, i
 %endrep
 %undef rout_name
 
-extern save_regs; Save the GPRs from the current stack
-extern load_regs; Return the kernel stack of the current task
+extern save_intr; Save the GPRs from the current stack and switch to the task's `intr_stack`.
+extern load_intr; Return `intr_stack` of the current task
+extern sync_syscall; Sync the GPRs from the cur stack and switch to the task's `syscall_stack`.
 
 intr_entry:
       cld
@@ -261,27 +271,26 @@ intr_entry:
 
       pop   r12
       mov   rdi, rsp
-      call  save_regs
+      call  save_intr
       mov   rsp, rax
       lea   rbp, [rsp + 1]
       push  r12
 
       jmp   .ret
 .reent:
-      ; TODO: Handle some errors inside this routine.
+      ; TODO: Handle some errors there because interrupts are not allowed to reenter.
       lfence
 
       pop   r12
       mov   rdi, rsp
-      call  save_regs
+      call  save_intr
       push  r12
 .ret:
       ret
 
 intr_exit:
-
       mov   rdi, rsp
-      call  load_regs
+      call  load_intr
       mov   rsp, rax
 
       bt    qword [rsp + Frame.cs], 2; Test if it's a reentrancy.
@@ -303,8 +312,7 @@ intr_exit:
       swapgs
       jmp   .ret
 .reent:
-      ; TODO: Handle some errors inside this routine.
-
+      ; TODO: Handle some errors there because interrupts are not allowed to reenter.
       pop_regs    1
 
       add   rsp, 8
@@ -338,29 +346,21 @@ rout_syscall:
       shr   rdx, 32
       wrmsr
 
+      mov   rcx, GS_BASE
+      rdmsr
+      mov   rcx, KERNEL_GS_BASE
+      wrmsr
+
       mov   rdi, rsp
-      call  save_regs
+      call  sync_syscall
       mov   rsp, rax
       lea   rbp, [rsp + 1]
 
       mov   rdi, rsp
 
-      mov   r12, 0
-      bt    rsp, 3
-      jnc   .call
-      mov   r12, 1
-      sub   rsp, 8
-.call:
+      align_rsp   r12
       call  hdl_syscall
-
-      cmp   r12, 0
-      je    .exit
-      add   rsp, 8
-.exit:
-
-      mov   rdi, rsp
-      call  load_regs
-      mov   rsp, rax
+      recover_rsp r12
 
       pop_regs    1
       add   rsp, 8            ; errc_vec

@@ -138,30 +138,26 @@ impl Frame {
 ///
 /// This function must be called only by assembly stubs.
 #[no_mangle]
-unsafe extern "C" fn save_regs(frame: *const Frame) -> *const Frame {
+unsafe extern "C" fn save_intr(frame: *mut Frame) -> *const Frame {
       let mut sched = crate::sched::SCHED.lock();
-
       sched.need_reload = false;
-      sched.current_mut().map_or(frame, |cur| {
-            cur.save_arch(frame);
-            cur.save_ext_frame();
-
-            cur.get_arch_context()
-      })
+      sched.current_mut()
+            .map_or(frame, |cur| cur.save_intr(frame))
 }
 
 /// # Safety
 ///
 /// This function must be called only by assembly stubs.
 #[no_mangle]
-unsafe extern "C" fn load_regs(frame: *const Frame) -> *const Frame {
+unsafe extern "C" fn load_intr(frame: *const Frame) -> *const Frame {
       let sched = crate::sched::SCHED.lock();
+      sched.current()
+            .map_or(frame, |cur| cur.load_intr(sched.need_reload))
+}
 
-      sched.current().map_or(frame, |cur| unsafe {
-            if sched.need_reload {
-                  crate::mem::space::set_current(cur.space().clone());
-                  cur.load_ext_frame();
-            }
-            cur.get_arch_context()
-      })
+#[no_mangle]
+unsafe extern "C" fn sync_syscall(frame: *const Frame) -> *const Frame {
+      let mut sched = crate::sched::SCHED.lock();
+      sched.current_mut()
+            .map_or(frame, |cur| cur.sync_syscall(frame))
 }

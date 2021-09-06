@@ -2,10 +2,10 @@ pub mod flags;
 mod serial;
 
 use serial::COM_LOG;
+use archop::IntrMutex;
 
 use core::fmt::*;
 use core::mem::MaybeUninit;
-use spin::Mutex;
 
 struct OptionU32Display(Option<u32>);
 
@@ -20,14 +20,14 @@ impl core::fmt::Display for OptionU32Display {
 }
 
 struct Logger {
-      output: Mutex<serial::Output>,
+      output: IntrMutex<serial::Output>,
       level: log::Level,
 }
 
 impl Logger {
       pub fn new(level: log::Level) -> Logger {
             Logger {
-                  output: Mutex::new(unsafe { serial::Output::new(COM_LOG) }),
+                  output: IntrMutex::new(unsafe { serial::Output::new(COM_LOG) }),
                   level,
             }
       }
