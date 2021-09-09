@@ -7,14 +7,12 @@ pub struct Instant {
 }
 
 impl Instant {
-      #[cfg(feature = "call")]
       pub fn now() -> Self {
             let mut data = 0;
             crate::call::get_time(&mut data).expect("SYSCALL failed");
             Instant { data }
       }
 
-      #[cfg(feature = "call")]
       pub fn elapsed(&self) -> Duration {
             Self::now() - *self
       }

@@ -130,6 +130,14 @@ endstruc
 
 ; pop_regs(bool gs_swapped)
 %macro pop_regs 1
+      cmp   word [rsp + Frame.cs], KRL_CODE_X64
+      jne   %%set_user
+      mov   ax, KRL_DATA_X64
+      jmp   %%pop
+%%set_user:
+      mov   ax, USR_DATA_X64
+%%pop:
+      mov   fs, ax
 %if %1 == 1
       pop_xs KERNEL_GS_BASE
 %else
@@ -366,7 +374,7 @@ rout_syscall:
       add   rsp, 8            ; errc_vec
 
       ; Here we must test the return address because Intel's mistake of `sysret`
-      ; machanism. Normally, only codes on the lower half can execute `syscall`.
+      ; machanism. Normally, only codes on ring 3 (lower half) can execute `syscall`.
       ; See https://xenproject.org/2012/06/13/the-intel-sysret-privilege-escalation/
       test  dword [rsp + 4], 0xFFFF8000 ; test if the return address is on the higher half
       jnz   .fault_iret

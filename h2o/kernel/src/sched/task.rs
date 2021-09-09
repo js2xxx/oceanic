@@ -1,10 +1,12 @@
 pub mod ctx;
 pub mod elf;
+pub mod hdl;
 pub mod idle;
 pub mod prio;
 pub mod tid;
 
 pub use elf::from_elf;
+pub use hdl::{UserHandle, UserHandles};
 
 use crate::cpu::time::Instant;
 use crate::cpu::CpuMask;
@@ -23,6 +25,8 @@ pub use ctx::arch::{DEFAULT_STACK_LAYOUT, DEFAULT_STACK_SIZE};
 pub use prio::Priority;
 pub use tid::Tid;
 
+use super::wait::{WaitCell, WaitObject};
+
 static ROOT: Lazy<Tid> = Lazy::new(|| {
       let ti = TaskInfo {
             from: None,
@@ -30,6 +34,7 @@ static ROOT: Lazy<Tid> = Lazy::new(|| {
             ty: Type::Kernel,
             affinity: crate::cpu::all_mask(),
             prio: prio::DEFAULT,
+            user_handles: UserHandles::new(),
       };
 
       let mut ti_map = tid::TI_MAP.lock();
@@ -60,24 +65,15 @@ pub enum Type {
 
 #[derive(Debug)]
 pub struct TaskInfo {
-      from: Option<Tid>,
+      from: Option<(Tid, UserHandle)>,
       name: String,
       ty: Type,
       affinity: CpuMask,
       prio: Priority,
+      user_handles: UserHandles,
 }
 
 impl TaskInfo {
-      pub fn new(from: Tid, name: String, ty: Type, affinity: CpuMask, prio: Priority) -> Self {
-            TaskInfo {
-                  from: Some(from),
-                  name,
-                  ty,
-                  affinity,
-                  prio,
-            }
-      }
-
       pub fn name(&self) -> &str {
             &self.name
       }
@@ -137,11 +133,13 @@ impl Init {
       }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub enum RunningState {
       NotRunning,
       NeedResched,
       Running(Instant),
+      Drowsy(Arc<WaitObject>, &'static str),
+      Dying(usize),
 }
 
 #[derive(Debug)]
@@ -195,7 +193,7 @@ impl Ready {
             }
       }
 
-      pub(in crate::sched) fn into_blocked(this: Self, block_desc: String) -> Blocked {
+      pub(in crate::sched) fn into_blocked(this: Self) {
             let Ready {
                   tid,
                   space,
@@ -203,9 +201,14 @@ impl Ready {
                   syscall_stack,
                   ext_frame,
                   cpu,
+                  running_state,
                   ..
             } = this;
-            Blocked {
+            let (wo, block_desc) = match running_state {
+                  RunningState::Drowsy(wo, block_desc) => (wo, block_desc),
+                  _ => unreachable!("Blocked task unblockable"),
+            };
+            let blocked = Blocked {
                   tid,
                   space,
                   intr_stack,
@@ -213,11 +216,18 @@ impl Ready {
                   ext_frame,
                   cpu,
                   block_desc,
-            }
+            };
+            wo.wait_queue.lock().push_back(blocked);
       }
 
-      pub(in crate::sched) fn into_dead(this: Self, retval: u64) -> Dead {
-            let Ready { tid, .. } = this;
+      pub(in crate::sched) fn into_dead(this: Self) -> Dead {
+            let Ready {
+                  tid, running_state, ..
+            } = this;
+            let retval = match running_state {
+                  RunningState::Dying(retval) => retval,
+                  _ => unreachable!("Dead task not dying"),
+            };
             Dead { tid, retval }
       }
 
@@ -278,7 +288,7 @@ pub struct Blocked {
       ext_frame: Box<ctx::ExtendedFrame>,
 
       cpu: usize,
-      block_desc: String,
+      block_desc: &'static str,
 }
 
 #[derive(Debug)]
@@ -289,7 +299,7 @@ pub struct Killed {
 #[derive(Debug)]
 pub struct Dead {
       tid: Tid,
-      retval: u64,
+      retval: usize,
 }
 
 impl Dead {
@@ -297,7 +307,7 @@ impl Dead {
             self.tid
       }
 
-      pub fn retval(&self) -> u64 {
+      pub fn retval(&self) -> usize {
             self.retval
       }
 }
@@ -326,8 +336,10 @@ where
       let (entry, tls, stack_size) = unsafe { with(&space, with_space) }?;
 
       let ti = {
-            let ti_map = tid::TI_MAP.lock();
-            let cur_ti = ti_map.get(&cur_tid).unwrap();
+            let mut ti_map = tid::TI_MAP.lock();
+            let cur_ti = ti_map.get_mut(&cur_tid).unwrap();
+
+            let ret_wo = cur_ti.user_handles.insert(WaitCell::<usize>::new());
 
             let ty = match ty {
                   Type::Kernel => cur_ti.ty,
@@ -336,13 +348,42 @@ where
             let prio = prio.min(cur_ti.prio);
 
             TaskInfo {
-                  from: Some(cur_tid),
+                  from: Some((cur_tid, ret_wo)),
                   name,
                   ty,
                   affinity,
                   prio,
+                  user_handles: UserHandles::new(),
             }
       };
 
       Init::new(ti, space, entry, stack_size, tls, args)
+}
+
+pub fn destroy(task: Dead) {
+      let mut ti_map = tid::TI_MAP.lock();
+      let TaskInfo { from, .. } = ti_map.remove(&task.tid).unwrap();
+
+      if let Some(cell) = from.and_then(|(from_tid, ret_wo_hdl)| {
+            ti_map.get(&from_tid)
+                  .and_then(|parent| parent.user_handles.get::<WaitCell<usize>>(ret_wo_hdl))
+      }) {
+            let _ = cell.replace(task.retval);
+      }
+}
+
+pub mod syscall {
+      use solvent::*;
+      #[syscall]
+      pub fn exit(retval: usize) {
+            {
+                  let mut sched = crate::sched::SCHED.lock();
+                  if let Some(cur) = sched.current_mut() {
+                        cur.running_state = super::RunningState::Dying(retval);
+                  }
+            }
+            loop {
+                  unsafe { archop::pause() };
+            }
+      }
 }

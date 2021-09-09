@@ -6,11 +6,14 @@
 
 pub mod call;
 pub mod error;
-#[cfg(feature = "call")]
-pub mod rxx;
-#[cfg(feature = "call")]
-pub mod log;
-pub mod time;
+cfg_if::cfg_if! {
+      if #[cfg(feature = "call")] {
+            pub mod rxx;
+            pub mod log;
+            pub mod time;
+            pub mod task;
+      }
+}
 
 pub use call::reg::*;
 pub use error::*;

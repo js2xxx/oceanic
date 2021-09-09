@@ -6,5 +6,6 @@ pub mod reg;
 use crate::{Arguments, SerdeReg};
 
 solvent_gen::syscall_stub!(0 => pub(crate) fn get_time(ptr: *mut u128));
+solvent_gen::syscall_stub!(1 => pub(crate) fn exit(retval: usize));
 #[cfg(debug_assertions)]
-solvent_gen::syscall_stub!(1 => pub(crate) fn log(args: *const ::log::Record));
+solvent_gen::syscall_stub!(2 => pub(crate) fn log(args: *const ::log::Record));

@@ -6,13 +6,14 @@ use spin::Lazy;
 pub(super) static IDLE: Lazy<Tid> = Lazy::new(|| {
       let cpu = unsafe { crate::cpu::id() };
 
-      let ti = TaskInfo::new(
-            *ROOT,
-            format!("IDLE{}", cpu),
-            Type::Kernel,
-            crate::cpu::current_mask(),
-            prio::IDLE,
-      );
+      let ti = TaskInfo {
+            from: Some((*ROOT, UserHandle::NULL)),
+            name: format!("IDLE{}", cpu),
+            ty: Type::Kernel,
+            affinity: crate::cpu::current_mask(),
+            prio: prio::IDLE,
+            user_handles: UserHandles::new(),
+      };
 
       let space = unsafe { crate::mem::space::current().duplicate(Type::Kernel) };
       let entry = LAddr::new(idle as *mut u8);

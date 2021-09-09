@@ -3,6 +3,8 @@
 pub use solvent::rxx::*;
 
 #[no_mangle]
-extern "C" fn tmain() -> usize {
-      0
+extern "C" fn tmain() {
+      solvent::log::init(log::Level::Debug);
+
+      log::debug!("Reaching end of TINIT");
 }

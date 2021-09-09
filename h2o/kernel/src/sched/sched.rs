@@ -1,6 +1,5 @@
 use super::task;
 use crate::cpu::time::Instant;
-use alloc::string::String;
 use alloc::vec::Vec;
 use archop::IntrMutex;
 use canary::Canary;
@@ -69,42 +68,6 @@ impl Scheduler {
             self.running.as_mut()
       }
 
-      pub fn block_current(
-            &mut self,
-            cur_time: Instant,
-            block_desc: String,
-      ) -> Option<task::Blocked> {
-            self.canary.assert();
-
-            let task = self.running.take();
-            if !self.schedule(cur_time) {
-                  self.running = task;
-                  None
-            } else {
-                  task.map(|t| task::Ready::into_blocked(t, block_desc))
-            }
-      }
-
-      pub fn block(
-            &mut self,
-            cur_time: Instant,
-            tid: task::Tid,
-            block_desc: String,
-      ) -> Option<task::Blocked> {
-            self.canary.assert();
-
-            if self.current().map_or(false, |cur| cur.tid() == tid) {
-                  self.block_current(cur_time, block_desc)
-            } else {
-                  let idx = self
-                        .run_queue
-                        .iter()
-                        .enumerate()
-                        .find_map(|(i, t)| (t.tid() == tid).then_some(i));
-                  idx.map(|idx| task::Ready::into_blocked(self.run_queue.remove(idx), block_desc))
-            }
-      }
-
       pub fn unblock(&mut self, task: task::Blocked) {
             self.canary.assert();
 
@@ -122,9 +85,9 @@ impl Scheduler {
                   None => return !sole,
             };
 
-            match cur.running_state {
+            match &cur.running_state {
                   task::RunningState::Running(start_time) => {
-                        if cur.time_slice() < cur_time - start_time && !sole {
+                        if cur.time_slice() < cur_time - *start_time && !sole {
                               cur.running_state = task::RunningState::NeedResched;
                               true
                         } else {
@@ -132,7 +95,9 @@ impl Scheduler {
                         }
                   }
                   task::RunningState::NotRunning => panic!("Not running"),
-                  task::RunningState::NeedResched => true,
+                  task::RunningState::NeedResched
+                  | task::RunningState::Dying(_)
+                  | task::RunningState::Drowsy(..) => true,
             }
       }
 
@@ -157,23 +122,23 @@ impl Scheduler {
             next.cpu = cur_cpu;
 
             if let Some(mut prev) = self.running.replace(next) {
-                  prev.running_state = task::RunningState::NotRunning;
-                  self.run_queue.push_back(prev);
+                  match &prev.running_state {
+                        task::RunningState::NeedResched => {
+                              prev.running_state = task::RunningState::NotRunning;
+                              self.run_queue.push_back(prev);
+                        }
+                        task::RunningState::Drowsy(..) => {
+                              task::Ready::into_blocked(prev);
+                        }
+                        task::RunningState::Dying(..) => {
+                              task::destroy(task::Ready::into_dead(prev));
+                        }
+                        _ => unreachable!(),
+                  }
             }
 
             self.need_reload = true;
             true
-      }
-
-      pub fn pop_current(&mut self, cur_time: Instant, retval: u64) -> Option<task::Dead> {
-            self.canary.assert();
-
-            let task = self.running.take();
-            if !self.schedule(cur_time) {
-                  panic!("No other task(s)")
-            }
-
-            task.map(|task| task::Ready::into_dead(task, retval))
       }
 }
 
