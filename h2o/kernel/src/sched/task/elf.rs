@@ -52,39 +52,33 @@ fn load_prog(
       Ok(())
 }
 
-fn load_tls(space: &Space, size: usize, align: usize) -> Result<LAddr> {
+fn load_tls(space: &Space, size: usize, align: usize, file_base: LAddr) -> Result<LAddr> {
       log::trace!("Loading TLS phdr (size = {:?}, align = {:?})", size, align);
-      let layout = paging::PAGE_LAYOUT
-            .repeat(size.div_ceil_bit(paging::PAGE_SHIFT))
-            .map_or(Err(TaskError::InvalidFormat), |(layout, _)| Ok(layout))?
-            .align_to(align)
+      let layout = core::alloc::Layout::from_size_align(size, align)
             .map_err(|_| TaskError::InvalidFormat)?;
-      let size = layout.size();
 
-      let tls = unsafe {
-            let (alloc_layout, off) = layout
-                  .extend(core::alloc::Layout::new::<*mut u8>())
-                  .map_err(|_| TaskError::Memory("Invalid TLS layout"))?;
-            assert_eq!(off, size);
+      let (alloc_layout, off) = layout
+            .extend(core::alloc::Layout::new::<*mut u8>())
+            .map_err(|_| TaskError::Memory("Invalid TLS layout"))?;
+      assert_eq!(off, layout.size());
 
-            log::trace!("Allocating TLS {:?}", alloc_layout);
-            let mut memory = space
-                  .alloc(
-                        AllocType::Layout(alloc_layout),
-                        None,
-                        Flags::READABLE | Flags::WRITABLE | Flags::EXECUTABLE | Flags::USER_ACCESS,
-                  )
-                  .map_err(TaskError::Memory)?;
-            memory.as_mut_ptr()
-      };
+      log::trace!("Allocating TLS {:?}", alloc_layout);
+      space.alloc_tls(
+            alloc_layout,
+            |tls| unsafe {
+                  tls.copy_from(*file_base, size);
+                  tls.add(size).write_bytes(0, layout.size() - size);
 
-      unsafe {
-            let self_ptr = tls.add(size).cast::<usize>();
-            // TLS's self-pointer is written its address there.
-            self_ptr.write(self_ptr as usize);
+                  let self_ptr = tls.add(layout.size()).cast::<usize>();
+                  // TLS's self-pointer is written its address there.
+                  self_ptr.write(self_ptr as usize);
 
-            Ok(LAddr::new(self_ptr.cast()))
-      }
+                  Ok(LAddr::new(self_ptr.cast()))
+            },
+            false,
+      )
+      .map_err(TaskError::Memory)?
+      .unwrap()
 }
 
 fn load_elf(space: &Space, file: &Elf, image: &[u8]) -> Result<(LAddr, Option<LAddr>, usize)> {
@@ -126,6 +120,8 @@ fn load_elf(space: &Space, file: &Elf, image: &[u8]) -> Result<(LAddr, Option<LA
                               space,
                               phdr.p_memsz as usize,
                               phdr.p_align as usize,
+                              LAddr::new(unsafe { image.as_ptr().add(phdr.p_offset as usize) }
+                                    as *mut u8),
                         )?)
                   }
 
@@ -140,7 +136,7 @@ pub fn from_elf<'a, 'b>(
       name: String,
       affinity: CpuMask,
       args: &'a [u64],
-) -> Result<(Init, Option<&'a [u64]>)> {
+) -> Result<(Init, UserHandle, Option<&'a [u64]>)> {
       let file = Elf::parse(image)
             .map_err(|_| TaskError::InvalidFormat)
             .and_then(|file| {
@@ -151,7 +147,7 @@ pub fn from_elf<'a, 'b>(
                   }
             })?;
 
-      super::create(
+      super::create_with_space(
             name,
             Type::User,
             affinity,

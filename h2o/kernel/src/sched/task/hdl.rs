@@ -3,7 +3,7 @@ use alloc::collections::BTreeMap;
 use core::any::Any;
 use core::num::NonZeroUsize;
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct UserHandle(usize);
 
 impl UserHandle {

@@ -32,6 +32,7 @@ static SYSCALL_TABLE: &[Option<SyscallWrapper>] = &[
       Some(syscall_wrapper!(get_time)),
       Some(syscall_wrapper!(exit)),
       Some(syscall_wrapper!(log)),
+      Some(syscall_wrapper!(task_fn)),
 ];
 
 pub fn handler(arg: &Arguments) -> solvent::Result<usize> {

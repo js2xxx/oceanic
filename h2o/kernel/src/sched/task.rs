@@ -46,6 +46,7 @@ static ROOT: Lazy<Tid> = Lazy::new(|| {
 
 #[derive(Debug)]
 pub enum TaskError {
+      Permission,
       NotSupported(u32),
       InvalidFormat,
       Memory(&'static str),
@@ -91,7 +92,7 @@ impl TaskInfo {
 pub struct Init {
       tid: Tid,
       space: Arc<Space>,
-      kstack: Box<ctx::Kstack>,
+      intr_stack: Box<ctx::Kstack>,
 }
 
 impl Init {
@@ -112,7 +113,7 @@ impl Init {
                   args,
             };
 
-            let (kstack, rem) = ctx::Kstack::new(entry, ti.ty);
+            let (intr_stack, rem) = ctx::Kstack::new(entry, ti.ty);
 
             let mut ti_map = tid::TI_MAP.lock();
             let tid = tid::next(&ti_map).map_or_else(
@@ -125,7 +126,14 @@ impl Init {
             ti_map.insert(tid, ti);
             drop(ti_map);
 
-            Ok((Init { tid, space, kstack }, rem))
+            Ok((
+                  Init {
+                        tid,
+                        space,
+                        intr_stack,
+                  },
+                  rem,
+            ))
       }
 
       pub fn tid(&self) -> Tid {
@@ -158,12 +166,16 @@ pub struct Ready {
 
 impl Ready {
       pub(in crate::sched) fn from_init(init: Init, cpu: usize, time_slice: Duration) -> Self {
-            let Init { tid, space, kstack } = init;
+            let Init {
+                  tid,
+                  space,
+                  intr_stack,
+            } = init;
             Ready {
                   tid,
                   time_slice,
                   space,
-                  intr_stack: kstack,
+                  intr_stack,
                   syscall_stack: ctx::Kstack::new_syscall(),
                   ext_frame: box unsafe { core::mem::zeroed() },
                   cpu,
@@ -316,14 +328,14 @@ pub(super) fn init() {
       Lazy::force(&idle::IDLE);
 }
 
-pub fn create<F>(
+fn create_with_space<F>(
       name: String,
       ty: Type,
       affinity: CpuMask,
       prio: Priority,
       with_space: F,
       args: &[u64],
-) -> Result<(Init, Option<&[u64]>)>
+) -> Result<(Init, UserHandle, Option<&[u64]>)>
 where
       F: FnOnce(&Space) -> Result<(LAddr, Option<LAddr>, usize)>,
 {
@@ -335,7 +347,7 @@ where
 
       let (entry, tls, stack_size) = unsafe { with(&space, with_space) }?;
 
-      let ti = {
+      let (ti, ret_wo) = {
             let mut ti_map = tid::TI_MAP.lock();
             let cur_ti = ti_map.get_mut(&cur_tid).unwrap();
 
@@ -343,24 +355,65 @@ where
 
             let ty = match ty {
                   Type::Kernel => cur_ti.ty,
-                  Type::User => Type::User,
+                  Type::User => {
+                        if ty == Type::Kernel {
+                              return Err(TaskError::Permission);
+                        } else {
+                              Type::User
+                        }
+                  }
             };
             let prio = prio.min(cur_ti.prio);
 
-            TaskInfo {
-                  from: Some((cur_tid, ret_wo)),
-                  name,
-                  ty,
-                  affinity,
-                  prio,
-                  user_handles: UserHandles::new(),
-            }
+            (
+                  TaskInfo {
+                        from: Some((cur_tid, ret_wo)),
+                        name,
+                        ty,
+                        affinity,
+                        prio,
+                        user_handles: UserHandles::new(),
+                  },
+                  ret_wo,
+            )
       };
 
-      Init::new(ti, space, entry, stack_size, tls, args)
+      Init::new(ti, space, entry, stack_size, tls, args).map(|(task, rem)| (task, ret_wo, rem))
 }
 
-pub fn destroy(task: Dead) {
+pub fn create_fn(
+      name: Option<String>,
+      stack_size: usize,
+      func: LAddr,
+      arg: *mut u8,
+) -> Result<(Init, UserHandle)> {
+      let (name, ty, affinity, prio) = {
+            let cur_tid = super::SCHED
+                  .lock()
+                  .current()
+                  .ok_or(TaskError::NoCurrentTask)?
+                  .tid;
+            let ti_map = tid::TI_MAP.lock();
+            let ti = ti_map.get(&cur_tid).unwrap();
+            (
+                  name.unwrap_or(format!("{}.func{:?}", ti.name, *func)),
+                  ti.ty,
+                  ti.affinity.clone(),
+                  ti.prio,
+            )
+      };
+      create_with_space(
+            name,
+            ty,
+            affinity,
+            prio,
+            |_| Ok((func, None, stack_size)),
+            &[arg as u64],
+      )
+      .map(|(task, ret_wo, _)| (task, ret_wo))
+}
+
+pub(super) fn destroy(task: Dead) {
       let mut ti_map = tid::TI_MAP.lock();
       let TaskInfo { from, .. } = ti_map.remove(&task.tid).unwrap();
 
@@ -385,5 +438,40 @@ pub mod syscall {
             loop {
                   unsafe { archop::pause() };
             }
+      }
+
+      #[syscall]
+      pub fn task_fn(name: *mut u8, stack_size: usize, func: *mut u8, arg: *mut u8) -> usize {
+            extern "C" {
+                  fn strlen(s: *const u8) -> usize;
+            }
+            use crate::alloc::string::ToString;
+
+            let name = if !name.is_null() {
+                  unsafe {
+                        let slice = core::slice::from_raw_parts(name, strlen(name));
+                        Some(core::str::from_utf8(slice)
+                              .map_err(|_| Error(EINVAL))?
+                              .to_string())
+                  }
+            } else {
+                  None
+            };
+
+            let (task, ret_wo) = super::create_fn(name, stack_size, paging::LAddr::new(func), arg)
+                  .map_err(|te| {
+                        Error(match te {
+                              super::TaskError::Permission => EPERM,
+                              super::TaskError::NotSupported(_) => ENOSPC,
+                              super::TaskError::InvalidFormat => EINVAL,
+                              super::TaskError::Memory(_) => ENOMEM,
+                              super::TaskError::NoCurrentTask => EFAULT,
+                              super::TaskError::TidExhausted => EFAULT,
+                              super::TaskError::StackError(_) => ENOMEM,
+                              super::TaskError::Other(_) => EFAULT,
+                        })
+                  })?;
+            crate::sched::SCHED.lock().push(task);
+            Ok(ret_wo.raw())
       }
 }

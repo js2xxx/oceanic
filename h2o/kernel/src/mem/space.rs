@@ -80,6 +80,7 @@ pub struct Space {
       free_range: Mutex<RangeSet<LAddr>>,
 
       record: Mutex<BTreeMap<LAddr, Layout>>,
+      tls: Mutex<Option<Layout>>,
       stack_blocks: Mutex<BTreeMap<LAddr, Layout>>,
 }
 
@@ -95,6 +96,7 @@ impl Space {
                   arch: ArchSpace::new(),
                   free_range: Mutex::new(ty_to_range_set(ty)),
                   record: Mutex::new(BTreeMap::new()),
+                  tls: Mutex::new(None),
                   stack_blocks: Mutex::new(BTreeMap::new()),
             }
       }
@@ -294,6 +296,74 @@ impl Space {
             self.arch.load()
       }
 
+      pub fn alloc_tls<F, R>(
+            &self,
+            layout: Layout,
+            init_func: F,
+            realloc: bool,
+      ) -> Result<Option<R>, &'static str>
+      where
+            F: FnOnce(LAddr) -> R,
+      {
+            if realloc {
+                  self.dealloc_tls();
+            }
+
+            let base = LAddr::from(minfo::USER_TLS_BASE);
+            let mut tls = self.tls.lock();
+
+            let ret = if tls.is_none() {
+                  let layout = layout
+                        .align_to(paging::PAGE_SIZE)
+                        .map_err(|_| "Invalid layout")?
+                        .pad_to_align();
+                  let size = layout.size();
+
+                  if minfo::USER_TLS_BASE + size > minfo::USER_TLS_END {
+                        return Err("Too big TLS size");
+                  }
+
+                  let alloc_ptr = unsafe { alloc::alloc::alloc(layout) };
+                  if alloc_ptr.is_null() {
+                        return Err("Memory allocation failed");
+                  }
+
+                  let virt = base..LAddr::from(base.val() + size);
+                  let phys = LAddr::new(alloc_ptr).to_paddr(minfo::ID_OFFSET);
+                  self.arch
+                        .maps(
+                              virt,
+                              phys,
+                              Flags::READABLE
+                                    | Flags::WRITABLE
+                                    | Flags::EXECUTABLE
+                                    | Flags::USER_ACCESS,
+                        )
+                        .map_err(|_| {
+                              unsafe { alloc::alloc::dealloc(alloc_ptr, layout) };
+                              "Paging error"
+                        })?;
+
+                  *tls = Some(layout);
+                  Some(init_func(base))
+            } else {
+                  None
+            };
+            Ok(ret)
+      }
+
+      pub fn dealloc_tls(&self) {
+            if let Some(layout) = self.tls.lock().take() {
+                  let base = LAddr::from(minfo::USER_TLS_BASE);
+                  let virt = base..LAddr::from(base.val() + layout.size());
+
+                  if let Ok(Some(phys)) = self.arch.unmaps(virt) {
+                        let alloc_ptr = *phys.to_laddr(minfo::ID_OFFSET);
+                        unsafe { alloc::alloc::dealloc(alloc_ptr, layout) };
+                  }
+            }
+      }
+
       fn alloc_stack(
             ty: task::Type,
             arch: &ArchSpace,
@@ -428,6 +498,8 @@ impl Space {
                         task::Type::User => BTreeMap::new(),
                         task::Type::Kernel => self.record.lock().clone(),
                   }),
+                  // TODO: Add an image field to `TaskInfo` to get TLS init block.
+                  tls: Mutex::new(None),
                   stack_blocks: Mutex::new(BTreeMap::new()),
             })
       }
@@ -437,6 +509,7 @@ impl Drop for Space {
       fn drop(&mut self) {
             unsafe { self.load() };
             let _ = self.clear_stack();
+            self.dealloc_tls();
 
             let mut record = self.record.lock();
             while let Some((base, layout)) = record.pop_first() {

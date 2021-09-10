@@ -149,13 +149,23 @@ impl Clone for Space {
                   let mut self_rt = self.root_table.lock();
                   rt.copy_from_slice(&self_rt[..]);
 
+                  let idx_tls =
+                        paging::Level::P4.addr_idx(LAddr::from(minfo::USER_TLS_BASE), false);
+                  let idx_stack =
+                        paging::Level::P4.addr_idx(LAddr::from(minfo::USER_STACK_BASE), false);
+                  debug_assert!(idx_tls == paging::NR_ENTRIES / 2 - 2);
+                  debug_assert!(idx_stack == paging::NR_ENTRIES / 2 - 1);
+
+                  rt[idx_tls].reset();
+                  rt[idx_stack].reset();
+
                   // Set all the user pages to read-only so as to avoid data races.
                   // TODO: Set up the page-fault handler for task cloning.
-                  let level = paging::Level::P4;
+                  let level = paging::Level::Pt;
                   for ent in rt
                         .iter_mut()
-                        .take(paging::NR_ENTRIES / 2)
-                        .chain(self_rt.iter_mut().take(paging::NR_ENTRIES / 2))
+                        .take(idx_tls)
+                        .chain(self_rt.iter_mut().take(idx_tls))
                   {
                         let (phys, attr) = (*ent).get(level);
                         *ent = paging::Entry::new(phys, attr & !paging::Attr::WRITABLE, level);

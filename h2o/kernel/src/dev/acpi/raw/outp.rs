@@ -6,10 +6,8 @@ use va_list::VaList;
 static PRINT_BUF: Mutex<String> = Mutex::new(String::new());
 
 extern "C" {
-      #[no_mangle]
       fn strlen(s: *const u8) -> usize;
 
-      #[no_mangle]
       fn vsnprintf(buf: *const u8, len: usize, fmt: *const u8, args: VaList) -> cty::c_int;
 }
 

@@ -19,7 +19,7 @@ pub unsafe trait PageAlloc {
             let virt = phys.to_laddr(id_off);
 
             let page = core::slice::from_raw_parts_mut(*virt, PAGE_SIZE);
-            page.copy_from_slice(&[0; PAGE_SIZE]);
+            page.fill(0);
 
             Some(phys)
       }

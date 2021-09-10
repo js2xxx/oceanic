@@ -10,7 +10,7 @@ use paging::LAddr;
 use alloc::boxed::Box;
 use core::fmt::Debug;
 
-pub const KSTACK_SIZE: usize = paging::PAGE_SIZE * 6;
+pub const KSTACK_SIZE: usize = paging::PAGE_SIZE * 16;
 
 #[derive(Debug)]
 pub struct Entry<'a> {

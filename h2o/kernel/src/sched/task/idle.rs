@@ -59,7 +59,7 @@ fn push_tinit() {
             )
       };
 
-      let (tinit, _) = task::from_elf(image, String::from("TINIT"), crate::cpu::all_mask(), &[])
+      let (tinit, _, _) = task::from_elf(image, String::from("TINIT"), crate::cpu::all_mask(), &[])
             .expect("Failed to initialize TINIT");
       SCHED.lock().push(tinit);
 }

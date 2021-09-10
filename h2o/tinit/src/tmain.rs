@@ -1,4 +1,5 @@
 #![no_std]
+#![feature(thread_local)]
 
 pub use solvent::rxx::*;
 
