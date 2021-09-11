@@ -9,8 +9,11 @@ pub struct WaitCell<T> {
 }
 
 impl<T> WaitCell<T> {
-      pub fn new() -> Self {
-            WaitCell { data: Mutex::new(None), wo: WaitObject::new() }
+      pub fn new() -> Arc<Self> {
+            Arc::new(WaitCell {
+                  data: Mutex::new(None),
+                  wo: WaitObject::new(),
+            })
       }
 
       pub fn take(&self, block_desc: &'static str) -> T {
@@ -25,6 +28,16 @@ impl<T> WaitCell<T> {
 
       pub fn try_take(&self) -> Option<T> {
             self.data.lock().take()
+      }
+
+      pub(in crate::sched) fn replace_locked(
+            &self,
+            obj: T,
+            sched: &mut crate::sched::Scheduler,
+      ) -> Option<T> {
+            let old = self.data.lock().replace(obj);
+            self.wo.notify_locked(None, sched);
+            old
       }
 
       pub fn replace(&self, obj: T) -> Option<T> {

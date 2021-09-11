@@ -3,6 +3,6 @@ where
       T: crate::SerdeReg,
 {
       let retval = crate::Error::encode(res.map(|o| o.encode()));
-      let _ = crate::call::exit(retval);
+      let _ = crate::call::task_exit(retval);
       unreachable!();
 }

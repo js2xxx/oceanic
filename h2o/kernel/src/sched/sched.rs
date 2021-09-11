@@ -131,7 +131,7 @@ impl Scheduler {
                               task::Ready::into_blocked(prev);
                         }
                         task::RunningState::Dying(..) => {
-                              task::destroy(task::Ready::into_dead(prev));
+                              task::destroy(task::Ready::into_dead(prev), self);
                         }
                         _ => unreachable!(),
                   }

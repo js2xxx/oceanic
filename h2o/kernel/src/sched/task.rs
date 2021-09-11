@@ -265,6 +265,14 @@ impl Ready {
             self.intr_stack.task_frame()
       }
 
+      pub unsafe fn load_intr(&self, reload_all: bool) -> *const ctx::arch::Frame {
+            if reload_all {
+                  crate::mem::space::set_current(self.space.clone());
+                  self.ext_frame.load();
+            }
+            self.intr_stack.task_frame()
+      }
+
       pub unsafe fn sync_syscall(
             &mut self,
             frame: *const ctx::arch::Frame,
@@ -274,15 +282,9 @@ impl Ready {
       }
 
       pub fn save_syscall_retval(&mut self, retval: usize) {
-            self.intr_stack.task_frame_mut().set_syscall_retval(retval);
-      }
-
-      pub unsafe fn load_intr(&self, reload_all: bool) -> *const ctx::arch::Frame {
-            if reload_all {
-                  crate::mem::space::set_current(self.space.clone());
-                  self.ext_frame.load();
-            }
-            self.intr_stack.task_frame()
+            self.syscall_stack
+                  .task_frame_mut()
+                  .set_syscall_retval(retval);
       }
 
       pub fn space(&self) -> &Arc<Space> {
@@ -413,22 +415,27 @@ pub fn create_fn(
       .map(|(task, ret_wo, _)| (task, ret_wo))
 }
 
-pub(super) fn destroy(task: Dead) {
-      let mut ti_map = tid::TI_MAP.lock();
-      let TaskInfo { from, .. } = ti_map.remove(&task.tid).unwrap();
-
-      if let Some(cell) = from.and_then(|(from_tid, ret_wo_hdl)| {
-            ti_map.get(&from_tid)
-                  .and_then(|parent| parent.user_handles.get::<WaitCell<usize>>(ret_wo_hdl))
-      }) {
-            let _ = cell.replace(task.retval);
+pub(super) fn destroy(task: Dead, sched: &mut super::sched::Scheduler) {
+      if let Some(cell) = {
+            let mut ti_map = tid::TI_MAP.lock();
+            let TaskInfo { from, .. } = ti_map.remove(&task.tid).unwrap();
+            from.and_then(|(from_tid, ret_wo_hdl)| {
+                  ti_map.get(&from_tid).and_then(|parent| {
+                        parent.user_handles
+                              .get::<Arc<WaitCell<usize>>>(ret_wo_hdl)
+                              .cloned()
+                  })
+            })
+      } {
+            let _ = cell.replace_locked(task.retval, sched);
       }
 }
 
 pub mod syscall {
       use solvent::*;
+
       #[syscall]
-      pub fn exit(retval: usize) {
+      pub fn task_exit(retval: usize) {
             {
                   let mut sched = crate::sched::SCHED.lock();
                   if let Some(cur) = sched.current_mut() {
@@ -462,10 +469,10 @@ pub mod syscall {
                   .map_err(|te| {
                         Error(match te {
                               super::TaskError::Permission => EPERM,
-                              super::TaskError::NotSupported(_) => ENOSPC,
+                              super::TaskError::NotSupported(_) => EPERM,
                               super::TaskError::InvalidFormat => EINVAL,
                               super::TaskError::Memory(_) => ENOMEM,
-                              super::TaskError::NoCurrentTask => EFAULT,
+                              super::TaskError::NoCurrentTask => ESRCH,
                               super::TaskError::TidExhausted => EFAULT,
                               super::TaskError::StackError(_) => ENOMEM,
                               super::TaskError::Other(_) => EFAULT,
@@ -473,5 +480,27 @@ pub mod syscall {
                   })?;
             crate::sched::SCHED.lock().push(task);
             Ok(ret_wo.raw())
+      }
+
+      #[syscall]
+      pub fn task_join(wc_raw: usize) -> usize {
+            use core::num::NonZeroUsize;
+            let wc_hdl = super::UserHandle::new(NonZeroUsize::new(wc_raw).ok_or(Error(EINVAL))?);
+
+            let cur_tid = {
+                  let sched = crate::sched::SCHED.lock();
+                  sched.current().ok_or(Error(ESRCH))?.tid
+            };
+
+            let wc = {
+                  let ti_map = super::tid::TI_MAP.lock();
+                  let ti = ti_map.get(&cur_tid).ok_or(Error(ESRCH))?;
+                  ti.user_handles
+                        .get::<alloc::sync::Arc<crate::sched::wait::WaitCell<usize>>>(wc_hdl)
+                        .ok_or(Error(ECHILD))?
+                        .clone()
+            };
+
+            Ok(wc.take("task_join"))
       }
 }
