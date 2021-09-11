@@ -3,7 +3,7 @@
 //! ## Adding a syscall (`fn cast_init(k: *mut K) -> *const L`)
 //!
 //! 1.  Add a prototype definition to the module [`solvent::call`]:
-//!     ```rust, no_run
+//!     ```rust,no_run
 //!     solvent_gen::syscall_stub!(0 => pub(crate) fn cast_init(k: *mut K) -> *const L);
 //!     ```
 //! 2.  In the kernel, create a private submodule `syscall` in a file and write the processing

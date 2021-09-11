@@ -28,4 +28,9 @@ SECTIONS
       {
             *(.tbss*)
       }
+
+      .got ALIGN (4K) :
+      {
+            *(.got*)
+      }
 }

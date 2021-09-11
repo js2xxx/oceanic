@@ -60,6 +60,12 @@ endstruc
 %%next:
 %endmacro
 
+%macro align_call 2
+      align_rsp   %2
+      call        %1
+      recover_rsp %2
+%endmacro
+
 %macro push_xs 1
       push  rcx
       mov   rcx, %1
@@ -206,9 +212,7 @@ extern %3
 
       mov   rdi, rsp
 
-      align_rsp   r12
-      call  %3
-      recover_rsp r12
+      align_call  %3, r12
 
       jmp   intr_exit
 
@@ -279,7 +283,7 @@ intr_entry:
 
       pop   r12
       mov   rdi, rsp
-      call  save_intr
+      align_call  save_intr, r13
       mov   rsp, rax
       lea   rbp, [rsp + 1]
       push  r12
@@ -291,14 +295,14 @@ intr_entry:
 
       pop   r12
       mov   rdi, rsp
-      call  save_intr
+      align_call  save_intr, r13
       push  r12
 .ret:
       ret
 
 intr_exit:
       mov   rdi, rsp
-      call  load_intr
+      align_call  load_intr, r13
       mov   rsp, rax
 
       bt    qword [rsp + Frame.cs], 2; Test if it's a reentrancy.
@@ -360,15 +364,13 @@ rout_syscall:
       wrmsr
 
       mov   rdi, rsp
-      call  sync_syscall
+      align_call  sync_syscall, r13
       mov   rsp, rax
       lea   rbp, [rsp + 1]
 
       mov   rdi, rsp
 
-      align_rsp   r12
-      call  hdl_syscall
-      recover_rsp r12
+      align_call  hdl_syscall, r12
 
       pop_regs    1
       add   rsp, 8            ; errc_vec
