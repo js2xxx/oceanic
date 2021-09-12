@@ -35,6 +35,10 @@ static SYSCALL_TABLE: &[Option<SyscallWrapper>] = &[
       Some(syscall_wrapper!(task_fn)),
       None,
       Some(syscall_wrapper!(task_join)),
+      None,
+      None,
+      Some(syscall_wrapper!(alloc_pages)),
+      Some(syscall_wrapper!(dealloc_pages)),
 ];
 
 pub fn handler(arg: &Arguments) -> solvent::Result<usize> {

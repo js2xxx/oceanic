@@ -29,6 +29,15 @@ static INIT: Lazy<Arc<Space>> = Lazy::new(|| Arc::new(Space::new(task::Type::Ker
 #[thread_local]
 static mut CURRENT: Option<Arc<Space>> = None;
 
+#[derive(Debug)]
+pub enum SpaceError {
+      OutOfMemory,
+      AddressBusy,
+      InvalidFormat,
+      PagingError(paging::Error),
+      Permission,
+}
+
 bitflags::bitflags! {
       /// Flags to describe a block of memory.
       pub struct Flags: u32 {
@@ -107,11 +116,11 @@ impl Space {
             ty: AllocType,
             phys: Option<PAddr>,
             flags: Flags,
-      ) -> Result<Pin<&mut [u8]>, &'static str> {
+      ) -> Result<Pin<&mut [u8]>, SpaceError> {
             self.canary.assert();
 
             if phys.map_or(false, |phys| phys.contains_bit(paging::PAGE_MASK)) {
-                  return Err("Physical address must be aligned");
+                  return Err(SpaceError::InvalidFormat);
             }
 
             // Get the virtual address.
@@ -139,14 +148,14 @@ impl Space {
                                           None
                                     }
                               });
-                              res.ok_or("No satisfactory virtual space")?
+                              res.ok_or(SpaceError::AddressBusy)?
                         };
                         (layout, size, prefix, virt, suffix)
                   }
                   AllocType::Virt(virt) => {
                         let size = unsafe { virt.end.offset_from(*virt.start) } as usize;
                         let layout = Layout::from_size_align(size, paging::PAGE_SIZE)
-                              .map_err(|_| "Address range must be aligned")?;
+                              .map_err(|_| SpaceError::InvalidFormat)?;
 
                         let (prefix, suffix) = {
                               let res = range.range_iter().find_map(|r| {
@@ -154,7 +163,7 @@ impl Space {
                                           .then_some((r.start..virt.start, virt.end..r.end))
                               });
 
-                              res.ok_or("No satisfactory virtual space")?
+                              res.ok_or(SpaceError::AddressBusy)?
                         };
                         (layout, size, prefix, virt, suffix)
                   }
@@ -173,7 +182,7 @@ impl Space {
                         };
 
                         if ptr.is_null() {
-                              return Err("Memory allocation failed");
+                              return Err(SpaceError::OutOfMemory);
                         }
 
                         (LAddr::new(ptr).to_paddr(minfo::ID_OFFSET), Some(ptr))
@@ -182,11 +191,11 @@ impl Space {
 
             // Map it.
             let ptr = *virt.start;
-            self.arch.maps(virt, phys, flags).map_err(|_| {
+            self.arch.maps(virt, phys, flags).map_err(|e| {
                   if let Some(alloc_ptr) = alloc_ptr {
                         unsafe { alloc::alloc::dealloc(alloc_ptr, layout) };
                   }
-                  "Paging error"
+                  SpaceError::PagingError(e)
             })?;
 
             range.remove(prefix.start);
@@ -218,7 +227,7 @@ impl Space {
             &self,
             mut b: Pin<&'b mut [u8]>,
             flags: Flags,
-      ) -> Result<Pin<&'b mut [u8]>, &'static str> {
+      ) -> Result<Pin<&'b mut [u8]>, SpaceError> {
             self.canary.assert();
 
             let virt = {
@@ -228,7 +237,7 @@ impl Space {
 
             self.arch
                   .reprotect(virt, flags)
-                  .map_err(|_| "Paging error")?;
+                  .map_err(SpaceError::PagingError)?;
 
             Ok(b)
       }
@@ -243,7 +252,7 @@ impl Space {
             &self,
             mut b: Pin<&mut [u8]>,
             free_phys: bool,
-      ) -> Result<(), &'static str> {
+      ) -> Result<(), SpaceError> {
             self.canary.assert();
 
             let mut virt = {
@@ -252,21 +261,27 @@ impl Space {
             };
 
             // Get the virtual address range from the given memory block.
-            let layout = Layout::for_value(&*b);
+            let layout = Layout::for_value(&*b)
+                  .align_to(paging::PAGE_SIZE)
+                  .map_err(|_| SpaceError::InvalidFormat)?
+                  .pad_to_align();
             {
                   let mut record = self.record.lock();
                   match record.remove(&virt.start) {
-                        Some(l) if layout != l => {
+                        Some(l) if layout.size() != l.size() => {
                               record.insert(virt.start, l);
-                              return Err("Invalid memory block");
+                              return Err(SpaceError::InvalidFormat);
                         }
-                        None => return Err("Invalid memory block"),
+                        None => return Err(SpaceError::InvalidFormat),
                         _ => {}
                   }
             }
 
             // Unmap the virtual address & get the physical address.
-            let phys = self.arch.unmaps(virt.clone()).map_err(|_| "Paging error")?;
+            let phys = self
+                  .arch
+                  .unmaps(virt.clone())
+                  .map_err(SpaceError::PagingError)?;
             if free_phys {
                   if let Some(phys) = phys {
                         let alloc_ptr = phys.to_laddr(minfo::ID_OFFSET);
@@ -285,7 +300,7 @@ impl Space {
                   virt.end = suffix.end;
                   range.remove(suffix.start);
             }
-            range.insert(virt).map_err(|_| "Occupied range")
+            range.insert(virt).map_err(|_| SpaceError::AddressBusy)
       }
 
       /// # Safety
@@ -301,7 +316,7 @@ impl Space {
             layout: Layout,
             init_func: F,
             realloc: bool,
-      ) -> Result<Option<R>, &'static str>
+      ) -> Result<Option<R>, SpaceError>
       where
             F: FnOnce(LAddr) -> R,
       {
@@ -315,17 +330,17 @@ impl Space {
             let ret = if tls.is_none() {
                   let layout = layout
                         .align_to(paging::PAGE_SIZE)
-                        .map_err(|_| "Invalid layout")?
+                        .map_err(|_| SpaceError::InvalidFormat)?
                         .pad_to_align();
                   let size = layout.size();
 
                   if minfo::USER_TLS_BASE + size > minfo::USER_TLS_END {
-                        return Err("Too big TLS size");
+                        return Err(SpaceError::OutOfMemory);
                   }
 
                   let alloc_ptr = unsafe { alloc::alloc::alloc(layout) };
                   if alloc_ptr.is_null() {
-                        return Err("Memory allocation failed");
+                        return Err(SpaceError::OutOfMemory);
                   }
 
                   let virt = base..LAddr::from(base.val() + size);
@@ -339,9 +354,9 @@ impl Space {
                                     | Flags::EXECUTABLE
                                     | Flags::USER_ACCESS,
                         )
-                        .map_err(|_| {
+                        .map_err(|e| {
                               unsafe { alloc::alloc::dealloc(alloc_ptr, layout) };
-                              "Paging error"
+                              SpaceError::PagingError(e)
                         })?;
 
                   *tls = Some(layout);
@@ -370,7 +385,7 @@ impl Space {
             stack_blocks: &mut MutexGuard<BTreeMap<LAddr, Layout>>,
             base: LAddr,
             size: usize,
-      ) -> Result<LAddr, &'static str> {
+      ) -> Result<LAddr, SpaceError> {
             let layout = {
                   let n = size.div_ceil_bit(paging::PAGE_SHIFT);
                   paging::PAGE_LAYOUT
@@ -380,7 +395,7 @@ impl Space {
             };
 
             if base.val() < minfo::USER_STACK_BASE {
-                  return Err("Max allocation size exceeded");
+                  return Err(SpaceError::OutOfMemory);
             }
 
             match ty {
@@ -389,7 +404,7 @@ impl Space {
                               let ptr = alloc::alloc::alloc(layout);
 
                               if ptr.is_null() {
-                                    return Err("Memory allocation failed");
+                                    return Err(SpaceError::OutOfMemory);
                               }
 
                               (LAddr::new(ptr).to_paddr(minfo::ID_OFFSET), ptr)
@@ -401,9 +416,9 @@ impl Space {
                               phys,
                               Flags::READABLE | Flags::WRITABLE | Flags::USER_ACCESS,
                         )
-                        .map_err(|_| unsafe {
+                        .map_err(|e| unsafe {
                               alloc::alloc::dealloc(alloc_ptr, layout);
-                              "Paging error"
+                              SpaceError::PagingError(e)
                         })?;
 
                         if let Some(_) = stack_blocks.insert(base, layout) {
@@ -419,7 +434,7 @@ impl Space {
             }
       }
 
-      pub fn init_stack(&self, size: usize) -> Result<LAddr, &'static str> {
+      pub fn init_stack(&self, size: usize) -> Result<LAddr, SpaceError> {
             self.canary.assert();
             // if matches!(self.ty, task::Type::Kernel) {
             //       return Err("Stack allocation is not allowed in kernel");
@@ -438,10 +453,10 @@ impl Space {
             Ok(LAddr::from(base.val() + size))
       }
 
-      pub fn grow_stack(&self, addr: LAddr) -> Result<(), &'static str> {
+      pub fn grow_stack(&self, addr: LAddr) -> Result<(), SpaceError> {
             self.canary.assert();
             if matches!(self.ty, task::Type::Kernel) {
-                  return Err("Kernel-typed tasks cannot grow its stack");
+                  return Err(SpaceError::Permission);
             }
 
             let addr = LAddr::from(addr.val().round_down_bit(paging::PAGE_SHIFT));
@@ -460,7 +475,7 @@ impl Space {
             Ok(())
       }
 
-      pub fn clear_stack(&self) -> Result<(), &'static str> {
+      pub fn clear_stack(&self) -> Result<(), SpaceError> {
             self.canary.assert();
 
             let mut stack_blocks = self.stack_blocks.lock();

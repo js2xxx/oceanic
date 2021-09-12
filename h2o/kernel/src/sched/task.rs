@@ -10,7 +10,7 @@ pub use hdl::{UserHandle, UserHandles};
 
 use crate::cpu::time::Instant;
 use crate::cpu::CpuMask;
-use crate::mem::space::{with, Space};
+use crate::mem::space::{with, Space, SpaceError};
 use paging::LAddr;
 
 use alloc::boxed::Box;
@@ -49,10 +49,10 @@ pub enum TaskError {
       Permission,
       NotSupported(u32),
       InvalidFormat,
-      Memory(&'static str),
+      Memory(SpaceError),
       NoCurrentTask,
       TidExhausted,
-      StackError(&'static str),
+      StackError(SpaceError),
       Other(&'static str),
 }
 

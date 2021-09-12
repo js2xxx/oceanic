@@ -1,6 +1,6 @@
 use super::*;
 use crate::cpu::CpuMask;
-use crate::mem::space::{AllocType, Flags, Space};
+use crate::mem::space::{AllocType, Flags, Space, SpaceError};
 use bitop_ex::BitOpEx;
 use paging::{LAddr, PAddr};
 
@@ -59,7 +59,7 @@ fn load_tls(space: &Space, size: usize, align: usize, file_base: LAddr) -> Resul
 
       let (alloc_layout, off) = layout
             .extend(core::alloc::Layout::new::<*mut u8>())
-            .map_err(|_| TaskError::Memory("Invalid TLS layout"))?;
+            .map_err(|_| TaskError::Memory(SpaceError::InvalidFormat))?;
       assert_eq!(off, layout.size());
 
       log::trace!("Allocating TLS {:?}", alloc_layout);

@@ -1,6 +1,10 @@
 #[panic_handler]
-pub fn panic_handler(_info: &core::panic::PanicInfo) -> ! {
-      loop {}
+pub fn panic_handler(info: &core::panic::PanicInfo) -> ! {
+      #[cfg(debug_assertions)]
+      log::debug!("{:?}", info);
+      loop {
+            unsafe { asm!("pause") }
+      }
 }
 
 #[lang = "eh_personality"]
