@@ -10,6 +10,7 @@ path = "src/tmain.rs"
 
 [dependencies]
 # Local crates
+heap = {path = "../libs/heap"}
 solvent = {path = "../libs/syscall"}
 # External crates
 log = "0.4"

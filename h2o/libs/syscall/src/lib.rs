@@ -3,6 +3,8 @@
 #![feature(bool_to_option)]
 #![feature(lang_items)]
 #![feature(result_into_ok_or_err)]
+#![feature(slice_ptr_get)]
+#![feature(slice_ptr_len)]
 
 pub mod call;
 pub mod error;
@@ -12,6 +14,7 @@ cfg_if::cfg_if! {
             pub mod log;
             pub mod time;
             pub mod task;
+            pub mod mem;
       }
 }
 
