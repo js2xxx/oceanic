@@ -16,7 +16,7 @@ file(GLOB_RECURSE ASM_SRC entry/x86_64/*.asm)
 
 set(CMAKE_ASM_NASM_FLAGS "-f elf64")
 
-add_link_options(-T ${CMAKE_CURRENT_SOURCE_DIR}/tinit.ld)
+add_link_options(-T ${CMAKE_CURRENT_SOURCE_DIR}/tinit.ld  -lto-O2)
 
 add_executable(TINIT ${ASM_SRC})
 target_link_libraries(TINIT ${RS_LIB})

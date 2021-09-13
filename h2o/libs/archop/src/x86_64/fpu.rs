@@ -33,6 +33,9 @@ static FPU_TYPE: Lazy<FpuType> = Lazy::new(|| {
       }
 });
 
+/// # Safety
+///
+/// This function must be called only once from the bootstrap CPU.
 pub unsafe fn init() {
       Lazy::force(&FPU_TYPE);
 }

@@ -4,8 +4,13 @@ members = ["h2o/boot", "h2o/kernel", "h2o/libs/*", "h2o/tinit"]
 [profile.dev]
 lto = 'thin'
 panic = 'abort'
+incremental = true
 
 [profile.release]
 lto = 'thin'
 opt-level = 2
 panic = 'abort'
+incremental = true
+
+[profile.release.package.h2o_boot]
+opt-level = 1

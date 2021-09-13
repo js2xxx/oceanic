@@ -125,7 +125,7 @@ fn load_elf(space: &Space, file: &Elf, image: &[u8]) -> Result<(LAddr, Option<LA
                         )?)
                   }
 
-                  x @ _ => return Err(TaskError::NotSupported(x)),
+                  x => return Err(TaskError::NotSupported(x)),
             }
       }
       Ok((entry, tls, stack_size))

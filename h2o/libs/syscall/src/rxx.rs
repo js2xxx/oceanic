@@ -1,7 +1,7 @@
 #[panic_handler]
 pub fn panic_handler(info: &core::panic::PanicInfo) -> ! {
       #[cfg(debug_assertions)]
-      log::debug!("{:?}", info);
+      log::debug!("{}", info);
       loop {
             unsafe { asm!("pause") }
       }

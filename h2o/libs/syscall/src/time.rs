@@ -17,6 +17,9 @@ impl Instant {
             Self::now() - *self
       }
 
+      /// # Safety
+      ///
+      /// The underlying data can be inconsistent and should not be used with measurements.
       pub unsafe fn raw(&self) -> u128 {
             self.data
       }

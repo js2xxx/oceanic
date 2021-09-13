@@ -116,6 +116,7 @@ impl Page {
             self.link = RBTreeLink::new();
             self.objsize = sz;
             self.used = BitArray::zeroed();
+            self.used_count = 0;
 
             let hdrcnt = self.header_count();
             for i in 0..hdrcnt {

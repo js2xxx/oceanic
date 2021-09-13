@@ -87,8 +87,8 @@ pub unsafe fn init(max_level: log::Level) {
 mod syscall {
       use solvent::*;
       #[syscall]
-      fn log(rec: *const log::Record) {
-            let logger = unsafe { super::LOGGER.assume_init_ref() } as &dyn log::Log;
+      fn log(rec: *const ::log::Record) {
+            let logger = unsafe { super::LOGGER.assume_init_ref() } as &dyn ::log::Log;
             logger.log(unsafe { &*rec });
             Ok(())
       }
