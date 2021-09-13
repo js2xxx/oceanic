@@ -443,6 +443,3 @@ pub fn unmaps(
       Ok(())
 }
 
-pub fn set_logger(logger: &'static dyn log::Log) -> Result<(), log::SetLoggerError> {
-      log::set_logger(logger)
-}
