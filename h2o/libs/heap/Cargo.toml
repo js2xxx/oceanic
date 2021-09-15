@@ -4,6 +4,10 @@ edition = "2021"
 name = "heap"
 version = "0.1.0"
 
+[features]
+default = ["global"]
+global = []
+
 [dependencies]
 # Local crates
 bitop_ex = {path = "../bitop_ex"}

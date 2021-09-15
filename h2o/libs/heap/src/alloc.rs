@@ -3,13 +3,13 @@ use super::{page, pool};
 use bitop_ex::BitOpEx;
 use paging::LAddr;
 
-use core::alloc::{GlobalAlloc, Layout};
-use core::ptr::{null_mut, Unique};
+use core::alloc::{AllocError, Allocator as AllocTrait, GlobalAlloc, Layout};
+use core::ptr::{null_mut, NonNull};
 use spin::Mutex;
 
 /// The kinds of allocation errors.
 #[derive(Debug)]
-pub enum AllocError {
+pub enum Error {
       /// Internal error, including an description.
       ///
       /// Should not be exported to outer error handlers.
@@ -31,14 +31,47 @@ pub enum AllocError {
 ///
 /// All the members inside are encapsulated in [`Mutex`] because its functions are to be
 /// called globally (a.k.a. multi-CPU) so they must be locked to prevent data race.
-pub struct DefaultAlloc {
+pub struct Allocator {
       /// The main memory pool
       pub(super) pool: Mutex<pool::Pool>,
       /// The default pager
       pub(super) pager: Mutex<Pager>,
 }
 
-unsafe impl GlobalAlloc for DefaultAlloc {
+impl Allocator {
+      pub const fn new(alloc_pages: crate::AllocPages, dealloc_pages: crate::DeallocPages) -> Self {
+            Allocator {
+                  pool: Mutex::new(pool::Pool::new()),
+                  pager: Mutex::new(Pager::new(alloc_pages, dealloc_pages)),
+            }
+      }
+
+      pub const fn new_null() -> Self {
+            Self::new(null_alloc_pages, null_dealloc_pages)
+      }
+
+      pub fn stat(&self) -> crate::stat::Stat {
+            self.pool.lock().stat()
+      }
+
+      pub unsafe fn set_alloc(
+            &self,
+            alloc_pages: crate::AllocPages,
+            dealloc_pages: crate::DeallocPages,
+      ) {
+            let mut pager = self.pager.lock();
+            *pager = page::Pager::new(alloc_pages, dealloc_pages);
+      }
+
+      pub unsafe fn reset_alloc(&self) {
+            let mut pager = self.pager.lock();
+            *pager = page::Pager::new(null_alloc_pages, null_dealloc_pages);
+      }
+}
+
+unsafe impl Sync for Allocator {}
+
+unsafe impl GlobalAlloc for Allocator {
       unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
             // The actual size calculation
             let size = layout.pad_to_align().size();
@@ -54,7 +87,7 @@ unsafe impl GlobalAlloc for DefaultAlloc {
 
                         Err(e) => match e {
                               // Oops! The pool is full
-                              AllocError::NeedExt => {
+                              Error::NeedExt => {
                                     let page = {
                                           let mut pager = self.pager.lock();
                                           // Allocate a new page
@@ -95,20 +128,36 @@ unsafe impl GlobalAlloc for DefaultAlloc {
                   if let Some(page) = pool.dealloc(LAddr::new(ptr), layout).unwrap_or(None) {
                         // A page is totally empty, drop it
                         let mut pager = self.pager.lock();
-                        pager.dealloc_pages(Unique::from(core::slice::from_raw_parts_mut(
-                              page.as_ptr(),
-                              1,
-                        )));
+                        pager.dealloc_pages(NonNull::slice_from_raw_parts(page, 1));
                   }
             } else {
                   // The size is too big, call the pager directly
                   let n = size.div_ceil_bit(paging::PAGE_SHIFT);
-                  let page = Unique::new(ptr.cast::<page::Page>()).expect("Null pointer provided");
+                  let page = NonNull::new(ptr.cast::<page::Page>()).expect("Null pointer provided");
                   let mut pager = self.pager.lock();
-                  pager.dealloc_pages(Unique::from(core::slice::from_raw_parts_mut(
-                        page.as_ptr(),
-                        n,
-                  )));
+                  pager.dealloc_pages(NonNull::slice_from_raw_parts(page, n));
             }
       }
 }
+
+unsafe impl AllocTrait for Allocator {
+      fn allocate(&self, layout: Layout) -> Result<NonNull<[u8]>, AllocError> {
+            let size = layout.size();
+            let ptr = unsafe { (self as &dyn GlobalAlloc).alloc(layout) };
+            NonNull::new(ptr)
+                  .map(|ptr| NonNull::slice_from_raw_parts(ptr, size))
+                  .ok_or(AllocError)
+      }
+
+      unsafe fn deallocate(&self, ptr: NonNull<u8>, layout: Layout) {
+            (self as &dyn GlobalAlloc).dealloc(ptr.as_ptr(), layout)
+      }
+}
+
+#[inline(never)]
+fn null_alloc_pages(_n: usize) -> Option<NonNull<[page::Page]>> {
+      None
+}
+
+#[inline(never)]
+fn null_dealloc_pages(_pages: NonNull<[page::Page]>) {}

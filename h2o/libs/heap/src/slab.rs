@@ -4,12 +4,12 @@
 
 mod adapter;
 
-use super::alloc::AllocError;
+use super::alloc::Error;
 use super::page::*;
 use adapter::PageAdapter;
 use paging::{LAddr, PAGE_MASK};
 
-use core::ptr::Unique;
+use core::ptr::NonNull;
 use intrusive_collections::{Bound, RBTree};
 use spin::Mutex;
 
@@ -37,7 +37,7 @@ impl Slab {
       ///
       /// This will gain more allocation space, thus making it able to return available
       /// objects
-      pub fn extend(&mut self, page: Unique<Page>) {
+      pub fn extend(&mut self, page: NonNull<Page>) {
             let _lock = self.lock.lock();
             self.list.insert(page);
       }
@@ -51,7 +51,7 @@ impl Slab {
       /// # Errors
       ///
       /// If no slab page is free, it'll return an error in need of new pages.
-      pub fn pop(&mut self) -> Result<LAddr, AllocError> {
+      pub fn pop(&mut self) -> Result<LAddr, Error> {
             let _lock = self.lock.lock();
 
             let mut front = self.list.lower_bound_mut(Bound::Excluded(&0));
@@ -63,7 +63,7 @@ impl Slab {
                   self.list.insert(ptr);
                   Ok(ret)
             } else {
-                  Err(AllocError::NeedExt)
+                  Err(Error::NeedExt)
             }
       }
 
@@ -77,11 +77,11 @@ impl Slab {
       ///
       /// If the page is not valid or something else (see `Page::push` for more), it'll return
       /// an error.
-      pub fn push(&mut self, addr: LAddr) -> Result<Option<Unique<Page>>, AllocError> {
+      pub fn push(&mut self, addr: LAddr) -> Result<Option<NonNull<Page>>, Error> {
             let _lock = self.lock.lock();
 
-            let mut base = Unique::new((addr.val() & !PAGE_MASK) as *mut Page)
-                  .ok_or(AllocError::Internal("Null address"))?;
+            let mut base = NonNull::new((addr.val() & !PAGE_MASK) as *mut Page)
+                  .ok_or(Error::Internal("Null address"))?;
 
             let partially_free = {
                   let page = unsafe { base.as_mut() };

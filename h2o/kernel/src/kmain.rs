@@ -16,7 +16,6 @@
 #![feature(macro_attributes_in_derive_output)]
 #![feature(map_first_last)]
 #![feature(nonnull_slice_from_raw_parts)]
-#![feature(ptr_internals)]
 #![feature(slice_ptr_get)]
 #![feature(slice_ptr_len)]
 #![feature(thread_local)]

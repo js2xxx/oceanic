@@ -1,8 +1,9 @@
 #![no_std]
 #![feature(alloc_layout_extra)]
 #![feature(box_syntax)]
-#![feature(ptr_internals)]
+#![feature(nonnull_slice_from_raw_parts)]
 #![feature(slice_ptr_get)]
+#![feature(slice_ptr_len)]
 #![feature(thread_local)]
 
 mod mem;

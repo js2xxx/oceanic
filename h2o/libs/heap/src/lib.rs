@@ -42,51 +42,42 @@
 //! See [`alloc::DefaultAlloc`] for more.
 
 #![no_std]
+#![feature(allocator_api)]
 #![feature(const_fn_fn_ptr_basics)]
 #![feature(lang_items)]
 #![feature(nonnull_slice_from_raw_parts)]
 #![feature(result_into_ok_or_err)]
 #![feature(slice_ptr_get)]
-#![feature(ptr_internals)]
+#![feature(slice_ptr_len)]
 
 pub mod alloc;
 pub mod page;
-pub mod pool;
-pub mod slab;
 pub mod stat;
 
-pub use page::{AllocPages, DeallocPages, Page};
+mod pool;
+mod slab;
 
-use core::ptr::Unique;
+pub use alloc::Allocator;
+pub use page::{AllocPages, DeallocPages, Page};
+pub use stat::Stat;
+
+cfg_if::cfg_if! { if #[cfg(feature = "global")] {
 
 #[global_allocator]
-static GLOBAL_ALLOC: alloc::DefaultAlloc = alloc::DefaultAlloc {
-      pool: spin::Mutex::new(pool::Pool::new()),
-      pager: spin::Mutex::new(page::Pager::new(null_alloc_pages, null_dealloc_pages)),
-};
-
-#[inline(never)]
-fn null_alloc_pages(_n: usize) -> Option<Unique<[page::Page]>> {
-      None
-}
-
-#[inline(never)]
-fn null_dealloc_pages(_pages: Unique<[page::Page]>) {}
+static GLOBAL_ALLOC: Allocator = Allocator::new_null();
 
 /// Set the functions for allocating and deallocating pages.
-pub fn set_alloc(alloc_pages: AllocPages, dealloc_pages: DeallocPages) {
-      let mut pager = GLOBAL_ALLOC.pager.lock();
-      *pager = page::Pager::new(alloc_pages, dealloc_pages);
+pub unsafe fn set_alloc(alloc_pages: AllocPages, dealloc_pages: DeallocPages) {
+      GLOBAL_ALLOC.set_alloc(alloc_pages, dealloc_pages)
 }
 
 /// Reset the function for allocating and deallocating pages.
-pub fn reset_alloc() {
-      let mut pager = GLOBAL_ALLOC.pager.lock();
-      *pager = page::Pager::new(null_alloc_pages, null_dealloc_pages);
+pub unsafe fn reset_alloc() {
+      GLOBAL_ALLOC.reset_alloc()
 }
 
 pub fn stat() -> stat::Stat {
-      GLOBAL_ALLOC.pool.lock().stat()
+      GLOBAL_ALLOC.stat()
 }
 
 /// The test function for the module.
@@ -137,3 +128,5 @@ pub fn test(start_seed: usize) {
             }
       }
 }
+
+}}

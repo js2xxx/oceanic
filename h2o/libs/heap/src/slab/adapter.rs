@@ -1,5 +1,5 @@
 use core::marker::PhantomData;
-use core::ptr::Unique;
+use core::ptr::NonNull;
 use intrusive_collections::{Adapter, DefaultLinkOps, KeyAdapter, RBTreeLink};
 
 pub struct PagePointerOps(PhantomData<super::Page>);
@@ -7,10 +7,10 @@ pub struct PagePointerOps(PhantomData<super::Page>);
 unsafe impl intrusive_collections::PointerOps for PagePointerOps {
       type Value = super::Page;
 
-      type Pointer = Unique<super::Page>;
+      type Pointer = NonNull<super::Page>;
 
       unsafe fn from_raw(&self, value: *const Self::Value) -> Self::Pointer {
-            Unique::new_unchecked(value as *mut _)
+            NonNull::new_unchecked(value as *mut _)
       }
 
       #[allow(clippy::wrong_self_convention)]

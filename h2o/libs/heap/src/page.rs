@@ -14,17 +14,17 @@
 //! > NOTE: A slab page must be defined in a valid and factual (mapped to a valid physical
 //! > address) page!
 
-use super::alloc::AllocError;
+use super::alloc::Error;
 use paging::{LAddr, PAGE_SIZE};
 
 use bitvec::prelude::*;
 use core::mem::{align_of, size_of};
-use core::ptr::Unique;
+use core::ptr::NonNull;
 use intrusive_collections::RBTreeLink;
 use static_assertions::*;
 
-pub type AllocPages = unsafe fn(n: usize) -> Option<Unique<[Page]>>;
-pub type DeallocPages = unsafe fn(pages: Unique<[Page]>);
+pub type AllocPages = unsafe fn(n: usize) -> Option<NonNull<[Page]>>;
+pub type DeallocPages = unsafe fn(pages: NonNull<[Page]>);
 
 /// Defines the sizes of objects.
 ///
@@ -38,10 +38,10 @@ pub const OBJ_SIZES: &[usize] = &[
       256, 320, 384, 448, // |
       512, 640, 768, 896, // /
       1024, 1152, 1280, 1408, 1536, 1664, 1792, 1920, // \ - Class 3
-      // The last line is useless because their `max_count` is 1 and that block of memory is used
-      // for headers and no free memory for allocations.
-      // 2048, 2304, 2560, 2816, 3072, 3328, 3584, 3840, // /
 ];
+// The last line is useless because their `max_count` is 1 and that block of memory is used
+// for headers and no free memory for allocations.
+// 2048, 2304, 2560, 2816, 3072, 3328, 3584, 3840, // /
 
 /// The number of the items of [`OBJ_SIZES`].
 pub const NR_OBJ_SIZES: usize = OBJ_SIZES.len();
@@ -134,7 +134,7 @@ impl Page {
       ///
       /// The function won't be called if the page is fully occupied in normal conditions,
       /// or it'll throw an internal error.
-      pub fn pop(&mut self) -> Result<LAddr, AllocError> {
+      pub fn pop(&mut self) -> Result<LAddr, Error> {
             let cnt = self.max_count();
             let hdrcnt = self.header_count();
             for i in hdrcnt..cnt {
@@ -146,7 +146,7 @@ impl Page {
                         return Ok(LAddr::new(unsafe { base.add(self.objsize * i) }));
                   }
             }
-            Err(AllocError::Internal("Fully busy but popped from the slab"))
+            Err(Error::Internal("Fully busy but popped from the slab"))
       }
 
       /// Push an object to the slab page.
@@ -159,13 +159,13 @@ impl Page {
       ///
       /// If the address is invalid (out of range) or the object is already set free, the
       /// will return an error.
-      pub fn push(&mut self, addr: LAddr) -> Result<(), AllocError> {
+      pub fn push(&mut self, addr: LAddr) -> Result<(), Error> {
             let base = LAddr::new((self as *mut Page).cast());
             let idx = (addr.val() - base.val()) / self.objsize;
             if !(0..self.max_count()).contains(&idx) {
-                  Err(AllocError::Internal("Address out of range"))
+                  Err(Error::Internal("Address out of range"))
             } else if !self.used[idx] {
-                  Err(AllocError::Internal("Address already deallocated"))
+                  Err(Error::Internal("Address already deallocated"))
             } else {
                   self.used.set(idx, false);
                   self.used_count -= 1;
@@ -191,7 +191,7 @@ impl Pager {
       ///
       /// It'll always be safe **ONLY IF** it's called single-thread, and its components
       /// won't fail.
-      pub unsafe fn alloc_pages(&mut self, n: usize) -> Option<Unique<[Page]>> {
+      pub unsafe fn alloc_pages(&mut self, n: usize) -> Option<NonNull<[Page]>> {
             (self.alloc_pages)(n)
       }
 
@@ -199,7 +199,7 @@ impl Pager {
       ///
       /// It'll always be safe **ONLY IF** it's called single-thread, and its components
       /// won't fail.
-      pub unsafe fn dealloc_pages(&mut self, pages: Unique<[Page]>) {
+      pub unsafe fn dealloc_pages(&mut self, pages: NonNull<[Page]>) {
             (self.dealloc_pages)(pages)
       }
 }

@@ -2,19 +2,19 @@ pub mod space;
 
 use paging::LAddr;
 
-use core::ptr::Unique;
+use core::ptr::NonNull;
 
 #[inline(never)]
-unsafe fn alloc_pages(n: usize) -> Option<Unique<[heap::Page]>> {
+unsafe fn alloc_pages(n: usize) -> Option<NonNull<[heap::Page]>> {
       let laddr = pmm::alloc_pages_exact(n, None)?.to_laddr(minfo::ID_OFFSET);
-      let ptr = Unique::new(laddr.cast::<heap::Page>());
-      ptr.map(|ptr| Unique::from(core::slice::from_raw_parts_mut(ptr.as_ptr(), n)))
+      let ptr = NonNull::new(laddr.cast::<heap::Page>());
+      ptr.map(|ptr| NonNull::slice_from_raw_parts(ptr, n))
 }
 
 #[inline(never)]
-unsafe fn dealloc_pages(pages: Unique<[heap::Page]>) {
+unsafe fn dealloc_pages(pages: NonNull<[heap::Page]>) {
       let paddr = LAddr::new(pages.as_ptr().cast()).to_paddr(minfo::ID_OFFSET);
-      let n = pages.as_ref().len();
+      let n = pages.len();
       pmm::dealloc_pages_exact(n, paddr);
 }
 
@@ -31,7 +31,7 @@ pub fn init() {
             (all_available as f64) / 1073741824.0,
             all_available
       );
-      heap::set_alloc(alloc_pages, dealloc_pages);
+      unsafe { heap::set_alloc(alloc_pages, dealloc_pages) };
       heap::test(archop::rand::get() as usize);
 }
 
