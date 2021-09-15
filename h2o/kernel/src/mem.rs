@@ -79,7 +79,7 @@ mod syscall {
       }
 
       #[syscall]
-      fn dealloc_pages(ptr: *mut u8, size: usize, free_phys: u8) {
+      fn dealloc_pages(ptr: *mut u8, size: usize) {
             use super::space;
 
             if size.contains_bit(paging::PAGE_MASK) {
@@ -90,7 +90,7 @@ mod syscall {
             let ret = unsafe {
                   let b = core::pin::Pin::new_unchecked(core::slice::from_raw_parts_mut(ptr, size));
                   let _sched = crate::sched::SCHED.lock();
-                  space::current().dealloc(b, free_phys != 0)
+                  space::current().dealloc(b)
             };
             ret.map_err(|e| match e {
                   space::SpaceError::OutOfMemory => Error(ENOMEM),

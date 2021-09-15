@@ -19,4 +19,4 @@ syscall_stub!(5 => pub(crate) fn task_join(hdl: usize) -> usize);
 syscall_stub!(8 => 
       pub(crate) fn alloc_pages(virt: *mut u8, phys: usize, size: usize, align: usize, flags: u32) 
             -> *mut u8);
-syscall_stub!(9 => pub(crate) unsafe fn dealloc_pages(ptr: *mut u8, size: usize, free_phys: u8));
+syscall_stub!(9 => pub(crate) unsafe fn dealloc_pages(ptr: *mut u8, size: usize));

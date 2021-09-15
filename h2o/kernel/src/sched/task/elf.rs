@@ -152,6 +152,7 @@ pub fn from_elf<'a, 'b>(
             Type::User,
             affinity,
             prio::DEFAULT,
+            false,
             |space| load_elf(space, &file, image),
             args,
       )

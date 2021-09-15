@@ -146,7 +146,7 @@ impl Clone for Space {
             let mut rt = unsafe { Box::from_raw(cr3) };
 
             {
-                  let mut self_rt = self.root_table.lock();
+                  let self_rt = self.root_table.lock();
                   rt.copy_from_slice(&self_rt[..]);
 
                   let idx_tls =
@@ -158,18 +158,6 @@ impl Clone for Space {
 
                   rt[idx_tls].reset();
                   rt[idx_stack].reset();
-
-                  // Set all the user pages to read-only so as to avoid data races.
-                  // TODO: Set up the page-fault handler for task cloning.
-                  let level = paging::Level::Pt;
-                  for ent in rt
-                        .iter_mut()
-                        .take(idx_tls)
-                        .chain(self_rt.iter_mut().take(idx_tls))
-                  {
-                        let (phys, attr) = (*ent).get(level);
-                        *ent = paging::Entry::new(phys, attr & !paging::Attr::WRITABLE, level);
-                  }
             }
 
             Space {

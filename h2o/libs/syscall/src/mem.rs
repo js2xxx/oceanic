@@ -26,7 +26,7 @@ pub fn alloc_pages(
 /// # Safety
 ///
 /// The caller must ensure that `free_phys` is corresponding to `ptr`'s physical address type.
-pub unsafe fn dealloc_pages(ptr: *mut [u8], free_phys: bool) -> crate::Result<()> {
+pub unsafe fn dealloc_pages(ptr: *mut [u8]) -> crate::Result<()> {
       let size = ptr.len();
-      crate::call::dealloc_pages(ptr.as_mut_ptr(), size, free_phys as u8)
+      crate::call::dealloc_pages(ptr.as_mut_ptr(), size)
 }

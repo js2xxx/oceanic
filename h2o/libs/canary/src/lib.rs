@@ -1,4 +1,5 @@
 #![no_std]
+#![feature(const_type_id)]
 #![feature(core_intrinsics)]
 
 use core::any::{type_name, TypeId};
@@ -12,7 +13,7 @@ pub struct Canary<T> {
 }
 
 impl<T: 'static> Canary<T> {
-      pub fn new() -> Self {
+      pub const fn new() -> Self {
             Canary {
                   id: TypeId::of::<T>(),
                   _marker: PhantomData,

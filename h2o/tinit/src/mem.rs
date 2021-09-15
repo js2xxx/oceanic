@@ -21,7 +21,7 @@ unsafe fn dealloc_pages(pages: NonNull<[heap::Page]>) {
             let n = pages.len();
             core::slice::from_raw_parts_mut(ptr, n * size_of::<heap::Page>())
       };
-      let _ = solvent::mem::dealloc_pages(ptr, true);
+      let _ = solvent::mem::dealloc_pages(ptr);
 }
 
 pub fn init() {

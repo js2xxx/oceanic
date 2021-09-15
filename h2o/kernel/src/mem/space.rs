@@ -3,14 +3,17 @@
 //! This module is responsible for managing system memory and address space in a higher
 //! level, especially for large objects like APIC.
 
+mod alloc;
+
 use crate::sched::task;
-use alloc::collections::BTreeMap;
 use bitop_ex::BitOpEx;
 use canary::Canary;
 use collection_ex::RangeSet;
 use paging::{LAddr, PAddr};
 
-use alloc::sync::Arc;
+use ::alloc::alloc::{alloc as mem_alloc, dealloc as mem_dealloc};
+use ::alloc::collections::BTreeMap;
+use ::alloc::sync::Arc;
 use core::alloc::Layout;
 use core::ops::Range;
 use core::pin::Pin;
@@ -85,11 +88,11 @@ pub struct Space {
       /// The arch-specific part of the address space.
       arch: ArchSpace,
 
-      /// The free ranges in allocation.
-      free_range: Mutex<RangeSet<LAddr>>,
+      /// The general allocator.
+      allocator: Arc<alloc::Allocator>,
 
-      record: Mutex<BTreeMap<LAddr, Layout>>,
       tls: Mutex<Option<Layout>>,
+
       stack_blocks: Mutex<BTreeMap<LAddr, Layout>>,
 }
 
@@ -103,8 +106,7 @@ impl Space {
                   canary: Canary::new(),
                   ty,
                   arch: ArchSpace::new(),
-                  free_range: Mutex::new(ty_to_range_set(ty)),
-                  record: Mutex::new(BTreeMap::new()),
+                  allocator: Arc::new(alloc::Allocator::new(ty_to_range_set(ty))),
                   tls: Mutex::new(None),
                   stack_blocks: Mutex::new(BTreeMap::new()),
             }
@@ -119,102 +121,7 @@ impl Space {
       ) -> Result<Pin<&mut [u8]>, SpaceError> {
             self.canary.assert();
 
-            if phys.map_or(false, |phys| phys.contains_bit(paging::PAGE_MASK)) {
-                  return Err(SpaceError::InvalidFormat);
-            }
-
-            // Get the virtual address.
-            // `prefix` and `suffix` are the gaps beside the allocated address range.
-            let mut range = self.free_range.lock();
-
-            let (layout, size, prefix, virt, suffix) = match ty {
-                  AllocType::Layout(layout) => {
-                        // Calculate the real size used.
-                        let layout = layout.align_to(paging::PAGE_LAYOUT.align()).unwrap();
-                        let size = layout.pad_to_align().size();
-                        let (prefix, virt, suffix) = {
-                              let res = range.range_iter().find_map(|r| {
-                                    let mut start = r.start.val();
-                                    while start & (layout.align() - 1) != 0 {
-                                          start += 1 << start.trailing_zeros();
-                                    }
-                                    if start + size <= r.end.val() {
-                                          Some((
-                                                r.start..LAddr::from(start),
-                                                LAddr::from(start)..LAddr::from(start + size),
-                                                LAddr::from(start + size)..r.end,
-                                          ))
-                                    } else {
-                                          None
-                                    }
-                              });
-                              res.ok_or(SpaceError::AddressBusy)?
-                        };
-                        (layout, size, prefix, virt, suffix)
-                  }
-                  AllocType::Virt(virt) => {
-                        let size = unsafe { virt.end.offset_from(*virt.start) } as usize;
-                        let layout = Layout::from_size_align(size, paging::PAGE_SIZE)
-                              .map_err(|_| SpaceError::InvalidFormat)?;
-
-                        let (prefix, suffix) = {
-                              let res = range.range_iter().find_map(|r| {
-                                    (r.start <= virt.start && virt.end <= r.end)
-                                          .then_some((r.start..virt.start, virt.end..r.end))
-                              });
-
-                              res.ok_or(SpaceError::AddressBusy)?
-                        };
-                        (layout, size, prefix, virt, suffix)
-                  }
-            };
-
-            // Get the physical address mapped to.
-            let (phys, alloc_ptr) = match phys {
-                  Some(phys) => (phys, None),
-                  None => {
-                        let ptr = unsafe {
-                              if flags.contains(Flags::ZEROED) {
-                                    alloc::alloc::alloc_zeroed(layout)
-                              } else {
-                                    alloc::alloc::alloc(layout)
-                              }
-                        };
-
-                        if ptr.is_null() {
-                              return Err(SpaceError::OutOfMemory);
-                        }
-
-                        (LAddr::new(ptr).to_paddr(minfo::ID_OFFSET), Some(ptr))
-                  }
-            };
-
-            // Map it.
-            let ptr = *virt.start;
-            self.arch.maps(virt, phys, flags).map_err(|e| {
-                  if let Some(alloc_ptr) = alloc_ptr {
-                        unsafe { alloc::alloc::dealloc(alloc_ptr, layout) };
-                  }
-                  SpaceError::PagingError(e)
-            })?;
-
-            range.remove(prefix.start);
-            if !prefix.is_empty() {
-                  let _ = range.insert(prefix.clone());
-            }
-            if !suffix.is_empty() {
-                  let _ = range.insert(suffix.clone());
-            }
-            drop(range);
-
-            let ret = unsafe { Pin::new_unchecked(core::slice::from_raw_parts_mut(ptr, size)) };
-            let _ = self
-                  .record
-                  .lock()
-                  .insert(LAddr::new(ptr), layout)
-                  .map(|_| panic!("Duplicate allocation"));
-
-            Ok(ret)
+            self.allocator.alloc(ty, phys, flags, &self.arch)
       }
 
       /// Modify the access flags of an address range without a specific type.
@@ -224,83 +131,24 @@ impl Space {
       /// The caller must ensure that `b` was allocated by this `Space` and no pointers or
       /// references to the block are present (or influenced by the modification).
       pub unsafe fn modify<'b>(
-            &self,
-            mut b: Pin<&'b mut [u8]>,
+            &'b self,
+            b: Pin<&'b mut [u8]>,
             flags: Flags,
       ) -> Result<Pin<&'b mut [u8]>, SpaceError> {
             self.canary.assert();
 
-            let virt = {
-                  let ptr = b.as_mut_ptr_range();
-                  LAddr::new(ptr.start)..LAddr::new(ptr.end)
-            };
-
-            self.arch
-                  .reprotect(virt, flags)
-                  .map_err(SpaceError::PagingError)?;
-
-            Ok(b)
+            self.allocator.modify(b, flags, &self.arch)
       }
 
       /// Deallocate an address range in the space without a specific type.
       ///
       /// # Safety
       ///
-      /// The caller must ensure that `b` was allocated by this `Space` and `free_phys`
-      /// is only set if the physical address range is allocated within `b`'s allocation.
-      pub unsafe fn dealloc(
-            &self,
-            mut b: Pin<&mut [u8]>,
-            free_phys: bool,
-      ) -> Result<(), SpaceError> {
+      /// The caller must ensure that `b` was allocated by this `Space`.
+      pub unsafe fn dealloc(&self, b: Pin<&mut [u8]>) -> Result<(), SpaceError> {
             self.canary.assert();
 
-            let mut virt = {
-                  let ptr = b.as_mut_ptr_range();
-                  LAddr::new(ptr.start)..LAddr::new(ptr.end)
-            };
-
-            // Get the virtual address range from the given memory block.
-            let layout = Layout::for_value(&*b)
-                  .align_to(paging::PAGE_SIZE)
-                  .map_err(|_| SpaceError::InvalidFormat)?
-                  .pad_to_align();
-            {
-                  let mut record = self.record.lock();
-                  match record.remove(&virt.start) {
-                        Some(l) if layout.size() != l.size() => {
-                              record.insert(virt.start, l);
-                              return Err(SpaceError::InvalidFormat);
-                        }
-                        None => return Err(SpaceError::InvalidFormat),
-                        _ => {}
-                  }
-            }
-
-            // Unmap the virtual address & get the physical address.
-            let phys = self
-                  .arch
-                  .unmaps(virt.clone())
-                  .map_err(SpaceError::PagingError)?;
-            if free_phys {
-                  if let Some(phys) = phys {
-                        let alloc_ptr = phys.to_laddr(minfo::ID_OFFSET);
-                        alloc::alloc::dealloc(*alloc_ptr, layout);
-                  }
-            }
-
-            // Deallocate the virtual address range.
-            let mut range = self.free_range.lock();
-            let (prefix, suffix) = range.neighbors(virt.clone());
-            if let Some(prefix) = prefix {
-                  virt.start = prefix.start;
-                  range.remove(prefix.start);
-            }
-            if let Some(suffix) = suffix {
-                  virt.end = suffix.end;
-                  range.remove(suffix.start);
-            }
-            range.insert(virt).map_err(|_| SpaceError::AddressBusy)
+            self.allocator.dealloc(b, &self.arch)
       }
 
       /// # Safety
@@ -338,7 +186,7 @@ impl Space {
                         return Err(SpaceError::OutOfMemory);
                   }
 
-                  let alloc_ptr = unsafe { alloc::alloc::alloc(layout) };
+                  let alloc_ptr = unsafe { mem_alloc(layout) };
                   if alloc_ptr.is_null() {
                         return Err(SpaceError::OutOfMemory);
                   }
@@ -355,7 +203,7 @@ impl Space {
                                     | Flags::USER_ACCESS,
                         )
                         .map_err(|e| {
-                              unsafe { alloc::alloc::dealloc(alloc_ptr, layout) };
+                              unsafe { mem_dealloc(alloc_ptr, layout) };
                               SpaceError::PagingError(e)
                         })?;
 
@@ -374,7 +222,7 @@ impl Space {
 
                   if let Ok(Some(phys)) = self.arch.unmaps(virt) {
                         let alloc_ptr = *phys.to_laddr(minfo::ID_OFFSET);
-                        unsafe { alloc::alloc::dealloc(alloc_ptr, layout) };
+                        unsafe { mem_dealloc(alloc_ptr, layout) };
                   }
             }
       }
@@ -401,7 +249,7 @@ impl Space {
             match ty {
                   task::Type::User => {
                         let (phys, alloc_ptr) = unsafe {
-                              let ptr = alloc::alloc::alloc(layout);
+                              let ptr = mem_alloc(layout);
 
                               if ptr.is_null() {
                                     return Err(SpaceError::OutOfMemory);
@@ -417,7 +265,7 @@ impl Space {
                               Flags::READABLE | Flags::WRITABLE | Flags::USER_ACCESS,
                         )
                         .map_err(|e| unsafe {
-                              alloc::alloc::dealloc(alloc_ptr, layout);
+                              mem_dealloc(alloc_ptr, layout);
                               SpaceError::PagingError(e)
                         })?;
 
@@ -428,7 +276,7 @@ impl Space {
                         Ok(base)
                   }
                   task::Type::Kernel => {
-                        let ptr = unsafe { alloc::alloc::alloc(layout) };
+                        let ptr = unsafe { mem_alloc(layout) };
                         Ok(LAddr::new(ptr))
                   }
             }
@@ -481,13 +329,13 @@ impl Space {
             let mut stack_blocks = self.stack_blocks.lock();
             while let Some((base, layout)) = stack_blocks.pop_first() {
                   match self.ty {
-                        task::Type::Kernel => unsafe { alloc::alloc::dealloc(*base, layout) },
+                        task::Type::Kernel => unsafe { mem_dealloc(*base, layout) },
                         task::Type::User => {
                               let virt =
                                     base..LAddr::from(base.val() + layout.pad_to_align().size());
                               if let Ok(Some(phys)) = self.arch.unmaps(virt) {
                                     let ptr = phys.to_laddr(minfo::ID_OFFSET);
-                                    unsafe { alloc::alloc::dealloc(*ptr, layout) };
+                                    unsafe { mem_dealloc(*ptr, layout) };
                               }
                         }
                   }
@@ -505,14 +353,7 @@ impl Space {
                   canary: Canary::new(),
                   ty,
                   arch: self.arch.clone(),
-                  free_range: Mutex::new(match ty {
-                        task::Type::User => ty_to_range_set(ty),
-                        task::Type::Kernel => self.free_range.lock().clone(),
-                  }),
-                  record: Mutex::new(match ty {
-                        task::Type::User => BTreeMap::new(),
-                        task::Type::Kernel => self.record.lock().clone(),
-                  }),
+                  allocator: Arc::clone(&self.allocator),
                   // TODO: Add an image field to `TaskInfo` to get TLS init block.
                   tls: Mutex::new(None),
                   stack_blocks: Mutex::new(BTreeMap::new()),
@@ -523,17 +364,10 @@ impl Space {
 impl Drop for Space {
       fn drop(&mut self) {
             unsafe { self.load() };
+
             let _ = self.clear_stack();
             self.dealloc_tls();
-
-            let mut record = self.record.lock();
-            while let Some((base, layout)) = record.pop_first() {
-                  let virt = base..LAddr::from(base.val() + layout.pad_to_align().size());
-                  if let Ok(Some(phys)) = self.arch.unmaps(virt) {
-                        let ptr = phys.to_laddr(minfo::ID_OFFSET);
-                        unsafe { alloc::alloc::dealloc(*ptr, layout) };
-                  }
-            }
+            unsafe { self.allocator.dispose_mapping(&self.arch) };
 
             unsafe { current().load() };
       }

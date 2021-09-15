@@ -30,6 +30,11 @@ SECTIONS
             *(.tbss*)
       }
 
+      .got ALIGN (4K) :
+      {
+            *(.got*)
+      }
+
       .bss ALIGN (4K) :
       {
             *(.bss*)

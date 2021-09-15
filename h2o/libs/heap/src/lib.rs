@@ -36,10 +36,10 @@
 //!
 //! ### Global allocator implementation
 //!
-//! The global allocator links to the Rust [`alloc`] library for advanced use. It delegates its
+//! The global allocator links to the Rust [`::alloc`] library for advanced use. It delegates its
 //! memory pool or directly page allocator on request.
 //!
-//! See [`alloc::DefaultAlloc`] for more.
+//! See [`alloc::Allocator`] for more.
 
 #![no_std]
 #![feature(allocator_api)]

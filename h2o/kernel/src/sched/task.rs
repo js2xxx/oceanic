@@ -335,6 +335,7 @@ fn create_with_space<F>(
       ty: Type,
       affinity: CpuMask,
       prio: Priority,
+      dup_cur_space: bool,
       with_space: F,
       args: &[u64],
 ) -> Result<(Init, UserHandle, Option<&[u64]>)>
@@ -344,7 +345,14 @@ where
       let (cur_tid, space) = {
             let sched = super::SCHED.lock();
             let cur = sched.current().ok_or(TaskError::NoCurrentTask)?;
-            (cur.tid, cur.space.duplicate(ty))
+            (
+                  cur.tid,
+                  if dup_cur_space {
+                        cur.space.duplicate(ty)
+                  } else {
+                        Arc::new(Space::new(ty))
+                  },
+            )
       };
 
       let (entry, tls, stack_size) = unsafe { with(&space, with_space) }?;
@@ -409,6 +417,7 @@ pub fn create_fn(
             ty,
             affinity,
             prio,
+            true,
             |_| Ok((func, None, stack_size)),
             &[arg as u64],
       )
