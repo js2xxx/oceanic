@@ -68,14 +68,7 @@ mod syscall {
                   let _sched = crate::sched::SCHED.lock();
                   space::current().alloc(ty, phys, flags)
             };
-            ret.map_err(|e| match e {
-                  space::SpaceError::OutOfMemory => Error(ENOMEM),
-                  space::SpaceError::AddressBusy => Error(EBUSY),
-                  space::SpaceError::InvalidFormat => Error(EINVAL),
-                  space::SpaceError::PagingError(_) => Error(EFAULT),
-                  space::SpaceError::Permission => Error(EPERM),
-            })
-            .map(|mut b| b.as_mut_ptr())
+            ret.map_err(Into::into).map(|mut b| b.as_mut_ptr())
       }
 
       #[syscall]
@@ -86,18 +79,29 @@ mod syscall {
                   return Err(Error(EINVAL));
             }
 
-            // TODO: Check whether the `free_phys` is permitted.
             let ret = unsafe {
                   let b = core::pin::Pin::new_unchecked(core::slice::from_raw_parts_mut(ptr, size));
                   let _sched = crate::sched::SCHED.lock();
                   space::current().dealloc(b)
             };
-            ret.map_err(|e| match e {
-                  space::SpaceError::OutOfMemory => Error(ENOMEM),
-                  space::SpaceError::AddressBusy => Error(EBUSY),
-                  space::SpaceError::InvalidFormat => Error(EINVAL),
-                  space::SpaceError::PagingError(_) => Error(EFAULT),
-                  space::SpaceError::Permission => Error(EPERM),
-            })
+            ret.map_err(Into::into)
+      }
+
+      #[syscall]
+      fn modify_pages(ptr: *mut u8, size: usize, flags: u32) {
+            use super::space;
+
+            if size.contains_bit(paging::PAGE_MASK) {
+                  return Err(Error(EINVAL));
+            }
+            let flags = space::Flags::from_bits(flags).ok_or(Error(EINVAL))?;
+
+            let ret = unsafe {
+                  let b = core::pin::Pin::new_unchecked(core::slice::from_raw_parts_mut(ptr, size));
+                  let _sched = crate::sched::SCHED.lock();
+                  space::current().modify(b, flags)
+            };
+            ret.map_err(Into::into)?;
+            Ok(())
       }
 }

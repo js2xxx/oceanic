@@ -56,6 +56,22 @@ pub enum TaskError {
       Other(&'static str),
 }
 
+impl Into<solvent::Error> for TaskError {
+      fn into(self) -> solvent::Error {
+            use solvent::*;
+            Error(match self {
+                  TaskError::Permission => EPERM,
+                  TaskError::NotSupported(_) => EPERM,
+                  TaskError::InvalidFormat => EINVAL,
+                  TaskError::Memory(_) => ENOMEM,
+                  TaskError::NoCurrentTask => ESRCH,
+                  TaskError::TidExhausted => EFAULT,
+                  TaskError::StackError(_) => ENOMEM,
+                  TaskError::Other(_) => EFAULT,
+            })
+      }
+}
+
 pub type Result<T> = core::result::Result<T, TaskError>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -475,18 +491,7 @@ pub mod syscall {
             };
 
             let (task, ret_wo) = super::create_fn(name, stack_size, paging::LAddr::new(func), arg)
-                  .map_err(|te| {
-                        Error(match te {
-                              super::TaskError::Permission => EPERM,
-                              super::TaskError::NotSupported(_) => EPERM,
-                              super::TaskError::InvalidFormat => EINVAL,
-                              super::TaskError::Memory(_) => ENOMEM,
-                              super::TaskError::NoCurrentTask => ESRCH,
-                              super::TaskError::TidExhausted => EFAULT,
-                              super::TaskError::StackError(_) => ENOMEM,
-                              super::TaskError::Other(_) => EFAULT,
-                        })
-                  })?;
+                  .map_err(Into::into)?;
             crate::sched::SCHED.lock().push(task);
             Ok(ret_wo.raw())
       }

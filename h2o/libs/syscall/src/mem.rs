@@ -23,10 +23,15 @@ pub fn alloc_pages(
             .map(|ptr| unsafe { core::slice::from_raw_parts_mut(ptr, size) as *mut _ })
 }
 
-/// # Safety
-///
-/// The caller must ensure that `free_phys` is corresponding to `ptr`'s physical address type.
-pub unsafe fn dealloc_pages(ptr: *mut [u8]) -> crate::Result<()> {
+pub fn dealloc_pages(ptr: *mut [u8]) -> crate::Result<()> {
       let size = ptr.len();
       crate::call::dealloc_pages(ptr.as_mut_ptr(), size)
+}
+
+/// # Safety
+/// 
+/// The caller must ensure that `ptr` is only in the possession of current context.
+pub unsafe fn modify_pages(ptr: *mut [u8], flags: Flags) -> crate::Result<()> {
+      let size = ptr.len();
+      crate::call::modify_pages(ptr.as_mut_ptr(), size, flags.bits)
 }

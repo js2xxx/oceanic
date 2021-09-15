@@ -41,6 +41,19 @@ pub enum SpaceError {
       Permission,
 }
 
+impl Into<solvent::Error> for SpaceError {
+      fn into(self) -> solvent::Error {
+            use solvent::*;
+            Error(match self {
+                  SpaceError::OutOfMemory => ENOMEM,
+                  SpaceError::AddressBusy => EBUSY,
+                  SpaceError::InvalidFormat => EINVAL,
+                  SpaceError::PagingError(_) => EFAULT,
+                  SpaceError::Permission => EPERM,
+            })
+      }
+}
+
 bitflags::bitflags! {
       /// Flags to describe a block of memory.
       pub struct Flags: u32 {
