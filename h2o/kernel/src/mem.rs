@@ -32,7 +32,7 @@ pub fn init() {
             all_available
       );
       heap::set_alloc(alloc_pages, dealloc_pages);
-      heap::test();
+      heap::test(archop::rand::get() as usize);
 }
 
 mod syscall {

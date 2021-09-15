@@ -45,7 +45,7 @@ fn idle(cpu: usize) -> ! {
       }
 
       loop {
-            unsafe { archop::pause() }
+            core::hint::spin_loop()
       }
 }
 

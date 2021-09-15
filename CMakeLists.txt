@@ -2,11 +2,11 @@ cmake_minimum_required(VERSION 3.10)
 
 # set(CMAKE_VERBOSE_MAKEFILE on)
 
+set(CMAKE_C_COMPILER "clang" CACHE INTERNAL "None" FORCE)
+set(CMAKE_CXX_COMPILER "clang++" CACHE INTERNAL "None" FORCE)
+
 enable_language(ASM)
 enable_language(ASM_NASM)
-
-set(CMAKE_C_COMPILER "clang")
-set(CMAKE_CXX_COMPILER "clang++")
 
 set(CMAKE_C_CREATE_SHARED_LIBRARY "/usr/bin/ld.lld <CMAKE_C_LINK_FLAGS> <LINK_FLAGS> <OBJECTS> -o <TARGET> <LINK_LIBRARIES>")
 set(CMAKE_C_LINK_EXECUTABLE "/usr/bin/ld.lld <CMAKE_C_LINK_FLAGS> <LINK_FLAGS> <OBJECTS> -o <TARGET> <LINK_LIBRARIES>")

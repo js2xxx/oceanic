@@ -443,7 +443,7 @@ pub mod syscall {
                   }
             }
             loop {
-                  unsafe { archop::pause() };
+                  core::hint::spin_loop();
             }
       }
 

@@ -16,6 +16,6 @@ file(GLOB RS_EFI ${GLOB_PATH}/h2o_boot.efi)
 add_dependencies(GEN_IMG H2O_BOOT)
 add_custom_command(
     TARGET H2O_BOOT POST_BUILD
-    COMMAND objcopy -j .text -j .rdata -j .data -j .reloc --target=efi-app-x86_64 ${RS_EFI} BootX64.efi
+    COMMAND objcopy --target=efi-app-x86_64 ${RS_EFI} BootX64.efi
     COMMAND cp BootX64.efi ${CMAKE_SOURCE_DIR}/target/BootX64.efi
 )

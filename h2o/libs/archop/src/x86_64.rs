@@ -3,6 +3,7 @@ pub mod io;
 pub mod lock;
 pub mod msr;
 pub mod reg;
+pub mod rand;
 
 pub use lock::{IntrMutex, IntrMutexGuard};
 
@@ -38,21 +39,6 @@ pub fn fix_canonical(addr: LAddr) -> LAddr {
 #[inline]
 pub unsafe fn halt() {
       asm!("hlt");
-}
-
-/// # Safety
-///
-/// Invalid use of this function can cause CPU's unrecoverable fault.
-#[inline]
-pub unsafe fn pause() {
-      asm!("pause");
-}
-
-#[inline]
-pub fn delay_loop(mut loops: usize) {
-      while loops > 0 {
-            loops -= 1;
-      }
 }
 
 /// # Safety

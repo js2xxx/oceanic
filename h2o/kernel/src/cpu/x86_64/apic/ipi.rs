@@ -105,7 +105,7 @@ impl TramHeader {
             let limit = Duration::from_millis(50);
             let instant = Instant::now();
             while !self.booted.swap(false, Ordering::SeqCst) && instant.elapsed() < limit {
-                  archop::pause();
+                  core::hint::spin_loop();
             }
             instant.elapsed() < limit
       }

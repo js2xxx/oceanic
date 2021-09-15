@@ -26,5 +26,5 @@ unsafe fn dealloc_pages(pages: Unique<[heap::Page]>) {
 
 pub fn init() {
       heap::set_alloc(alloc_pages, dealloc_pages);
-      heap::test();
+      heap::test(unsafe { solvent::time::Instant::now().raw() } as usize);
 }

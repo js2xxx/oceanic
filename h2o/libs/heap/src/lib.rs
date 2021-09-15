@@ -90,22 +90,27 @@ pub fn stat() -> stat::Stat {
 }
 
 /// The test function for the module.
-pub fn test() {
+pub fn test(start_seed: usize) {
       if !cfg!(debug_assertions) {
             return;
       }
 
       use core::alloc::Layout;
-      fn random(seed: usize) -> usize {
-            (2357 * seed + 7631) >> paging::PAGE_SHIFT
+      fn random(mut seed: usize) -> usize {
+            let mut ret = ((seed % 0x100001).pow(3) >> 6) & paging::PAGE_MASK;
+            while ret == 0 {
+                  seed += 2;
+                  ret = ((seed % 0xFA53DCEB).pow(2) >> 5) & paging::PAGE_MASK
+            }
+            ret
       }
 
-      let mut seed = 324;
+      let mut seed = random(start_seed);
       let mut k = [(core::ptr::null_mut(), Layout::for_value(&0)); 100];
       let allocator = &GLOBAL_ALLOC as &dyn core::alloc::GlobalAlloc;
 
-      let n1 = 36;
-      let n2 = 78;
+      let n1 = k.len() / 3 + seed % (k.len() / 3);
+      let n2 = k.len() - n1;
 
       // Safety: All the allocations are paired and thus legal.
       unsafe {
@@ -116,7 +121,7 @@ pub fn test() {
                   seed = random(seed);
             }
 
-            for v in k.iter_mut().take(n1) {
+            for v in k.iter().take(n1) {
                   allocator.dealloc(v.0, v.1);
             }
 
@@ -127,7 +132,7 @@ pub fn test() {
                   seed = random(seed);
             }
 
-            for a in k.iter_mut().skip(n1) {
+            for a in k.iter().skip(n1) {
                   allocator.dealloc(a.0, a.1);
             }
       }

@@ -24,7 +24,7 @@ pub unsafe fn set_id(bsp: bool) -> usize {
       msr::write(msr::TSC_AUX, id as u64);
 
       while !bsp && count() == 0 {
-            archop::pause();
+            core::hint::spin_loop();
       }
       id
 }
