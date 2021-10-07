@@ -3,10 +3,10 @@ pub mod timer;
 
 use super::intr::def::ApicVec;
 use crate::dev::acpi;
-use alloc::collections::BTreeMap;
 use archop::msr;
 use paging::LAddr;
 
+use alloc::collections::BTreeMap;
 use modular_bitfield::prelude::*;
 
 pub static LAPIC_ID: spin::RwLock<BTreeMap<usize, u32>> = spin::RwLock::new(BTreeMap::new());

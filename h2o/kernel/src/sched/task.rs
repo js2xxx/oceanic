@@ -358,18 +358,18 @@ fn create_with_space<F>(
 where
       F: FnOnce(&Space) -> Result<(LAddr, Option<LAddr>, usize)>,
 {
-      let (cur_tid, space) = {
-            let sched = super::SCHED.lock();
-            let cur = sched.current().ok_or(TaskError::NoCurrentTask)?;
-            (
-                  cur.tid,
-                  if dup_cur_space {
-                        cur.space.duplicate(ty)
-                  } else {
-                        Arc::new(Space::new(ty))
-                  },
-            )
-      };
+      let (cur_tid, space) = super::SCHED
+            .with_current(|cur| {
+                  (
+                        cur.tid,
+                        if dup_cur_space {
+                              cur.space.duplicate(ty)
+                        } else {
+                              Arc::new(Space::new(ty))
+                        },
+                  )
+            })
+            .ok_or(TaskError::NoCurrentTask)?;
 
       let (entry, tls, stack_size) = unsafe { with(&space, with_space) }?;
 
@@ -415,10 +415,8 @@ pub fn create_fn(
 ) -> Result<(Init, UserHandle)> {
       let (name, ty, affinity, prio) = {
             let cur_tid = super::SCHED
-                  .lock()
-                  .current()
-                  .ok_or(TaskError::NoCurrentTask)?
-                  .tid;
+                  .with_current(|cur| cur.tid)
+                  .ok_or(TaskError::NoCurrentTask)?;
             let ti_map = tid::TI_MAP.lock();
             let ti = ti_map.get(&cur_tid).unwrap();
             (
@@ -440,7 +438,7 @@ pub fn create_fn(
       .map(|(task, ret_wo, _)| (task, ret_wo))
 }
 
-pub(super) fn destroy(task: Dead, sched: &mut super::sched::Scheduler) {
+pub(super) fn destroy(task: Dead) {
       if let Some(cell) = {
             let mut ti_map = tid::TI_MAP.lock();
             let TaskInfo { from, .. } = ti_map.remove(&task.tid).unwrap();
@@ -452,7 +450,7 @@ pub(super) fn destroy(task: Dead, sched: &mut super::sched::Scheduler) {
                   })
             })
       } {
-            let _ = cell.replace_locked(task.retval, sched);
+            let _ = cell.replace(task.retval);
       }
 }
 
@@ -461,12 +459,10 @@ pub mod syscall {
 
       #[syscall]
       pub fn task_exit(retval: usize) {
-            {
-                  let mut sched = crate::sched::SCHED.lock();
-                  if let Some(cur) = sched.current_mut() {
-                        cur.running_state = super::RunningState::Dying(retval);
-                  }
-            }
+            crate::sched::SCHED.with_current(|cur| {
+                  cur.running_state = super::RunningState::Dying(retval);
+            });
+
             loop {
                   core::hint::spin_loop();
             }
@@ -492,7 +488,7 @@ pub mod syscall {
 
             let (task, ret_wo) = super::create_fn(name, stack_size, paging::LAddr::new(func), arg)
                   .map_err(Into::into)?;
-            crate::sched::SCHED.lock().push(task);
+            crate::sched::SCHED.push(task);
             Ok(ret_wo.raw())
       }
 
@@ -501,10 +497,9 @@ pub mod syscall {
             use core::num::NonZeroUsize;
             let wc_hdl = super::UserHandle::new(NonZeroUsize::new(wc_raw).ok_or(Error(EINVAL))?);
 
-            let cur_tid = {
-                  let sched = crate::sched::SCHED.lock();
-                  sched.current().ok_or(Error(ESRCH))?.tid
-            };
+            let cur_tid = crate::sched::SCHED
+                  .with_current(|cur| cur.tid)
+                  .ok_or(Error(ESRCH))?;
 
             let wc = {
                   let ti_map = super::tid::TI_MAP.lock();

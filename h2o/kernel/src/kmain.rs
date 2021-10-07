@@ -13,7 +13,6 @@
 #![feature(default_alloc_error_handler)]
 #![feature(lang_items)]
 #![feature(linked_list_remove)]
-#![feature(macro_attributes_in_derive_output)]
 #![feature(map_first_last)]
 #![feature(nonnull_slice_from_raw_parts)]
 #![feature(slice_ptr_get)]
@@ -29,6 +28,7 @@ pub mod mem;
 pub mod rxx;
 pub mod sched;
 pub mod syscall;
+pub mod kdb;
 
 use ::log as l;
 use spin::Lazy;

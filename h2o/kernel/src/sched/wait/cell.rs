@@ -30,16 +30,6 @@ impl<T> WaitCell<T> {
             self.data.lock().take()
       }
 
-      pub(in crate::sched) fn replace_locked(
-            &self,
-            obj: T,
-            sched: &mut crate::sched::Scheduler,
-      ) -> Option<T> {
-            let old = self.data.lock().replace(obj);
-            self.wo.notify_locked(None, sched);
-            old
-      }
-
       pub fn replace(&self, obj: T) -> Option<T> {
             let old = self.data.lock().replace(obj);
             self.wo.notify(None);

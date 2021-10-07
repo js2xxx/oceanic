@@ -406,9 +406,23 @@ pub unsafe fn init() {
       CURRENT = Some(space);
 }
 
-/// Get the reference of the per-CPU current space.
-pub fn current() -> &'static Arc<Space> {
+/// Get the reference of the per-CPU current space without lock.
+///
+/// # Safety
+///
+/// The caller must ensure that [`CURRENT`] will not be modified where the reference is alive.
+pub unsafe fn current() -> &'static Arc<Space> {
       unsafe { CURRENT.as_ref().expect("No current space available") }
+}
+
+/// Get the reference of the per-CPU current space.
+pub fn with_current<'a, F, R>(func: F) -> R
+where
+      F: FnOnce(&'a Arc<Space>) -> R,
+      R: 'a,
+{
+      let cur = unsafe { CURRENT.as_ref().expect("No current space available") };
+      crate::sched::SCHED.with_current(|_| func(cur)).unwrap()
 }
 
 /// Set the current memory space of the current CPU.

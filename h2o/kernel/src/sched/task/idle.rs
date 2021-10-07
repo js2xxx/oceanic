@@ -31,9 +31,7 @@ pub(super) static IDLE: Lazy<Tid> = Lazy::new(|| {
       .expect("Failed to initialize IDLE");
       let tid = init.tid;
 
-      let mut sched = crate::sched::SCHED.lock();
-      sched.push(init);
-
+      crate::sched::SCHED.push(init);
       tid
 });
 
@@ -61,5 +59,5 @@ fn push_tinit() {
 
       let (tinit, _, _) = task::from_elf(image, String::from("TINIT"), crate::cpu::all_mask(), &[])
             .expect("Failed to initialize TINIT");
-      SCHED.lock().push(tinit);
+      SCHED.push(tinit);
 }

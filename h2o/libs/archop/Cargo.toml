@@ -13,5 +13,5 @@ paging = {path = "../paging"}
 # External crates
 cfg-if = "1.0"
 num-traits = {version = "0.2", default-features = false}
-raw-cpuid = "9.0"
+raw-cpuid = "10"
 spin = {version = "0.9", features = ["use_ticket_mutex"]}

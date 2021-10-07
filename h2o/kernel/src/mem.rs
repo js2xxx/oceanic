@@ -64,10 +64,7 @@ mod syscall {
 
             let flags = space::Flags::from_bits(flags).ok_or(Error(EINVAL))?;
 
-            let ret = {
-                  let _sched = crate::sched::SCHED.lock();
-                  space::current().alloc(ty, phys, flags)
-            };
+            let ret = space::with_current(|cur| cur.alloc(ty, phys, flags));
             ret.map_err(Into::into).map(|mut b| b.as_mut_ptr())
       }
 
@@ -81,8 +78,7 @@ mod syscall {
 
             let ret = unsafe {
                   let b = core::pin::Pin::new_unchecked(core::slice::from_raw_parts_mut(ptr, size));
-                  let _sched = crate::sched::SCHED.lock();
-                  space::current().dealloc(b)
+                  space::with_current(|cur| cur.dealloc(b))
             };
             ret.map_err(Into::into)
       }
@@ -98,8 +94,7 @@ mod syscall {
 
             let ret = unsafe {
                   let b = core::pin::Pin::new_unchecked(core::slice::from_raw_parts_mut(ptr, size));
-                  let _sched = crate::sched::SCHED.lock();
-                  space::current().modify(b, flags)
+                  space::with_current(|cur| cur.modify(b, flags))
             };
             ret.map_err(Into::into)?;
             Ok(())

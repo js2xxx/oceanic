@@ -43,9 +43,6 @@ unsafe extern "C" fn hdl_syscall(frame: *const Frame) {
 
       if !matches!(res, Err(solvent::Error(0))) {
             let val = solvent::Error::encode(res);
-            let mut sched = crate::sched::SCHED.lock();
-            if let Some(cur) = sched.current_mut() {
-                  cur.save_syscall_retval(val);
-            }
+            crate::sched::SCHED.with_current(|cur| cur.save_syscall_retval(val));
       }
 }

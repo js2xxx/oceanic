@@ -1,6 +1,6 @@
 macro_rules! rw_simple {
-      ($name:ident {$($cons:ident = $bit:expr),*}) => {
-            #[doc = concat!("The operations of", stringify!($name), ".")]
+      ($name:ident {$($cons:ident = $bit:expr),*; $($cons0:ident: $tty:ty = $bit0:expr),*}) => {
+            #[doc = concat!("The operations of ", stringify!($name), ".")]
             pub mod $name {
                   /// # Safety
                   ///
@@ -20,9 +20,27 @@ macro_rules! rw_simple {
                         asm!(concat!("mov ", concat!(stringify!($name), ", {}")), in(reg) val);
                   }
 
-                  $(
-                        pub const $cons: u64 = 1 << $bit;
-                  )*
+                  /// # Safety
+                  ///
+                  /// The caller must ensure the value is valid.
+                  #[inline]
+                  pub unsafe fn set(bits: u64) {
+                        let reg = read();
+                        write(reg | bits);
+                  }
+
+                  /// # Safety
+                  ///
+                  /// The caller must ensure the value is valid.
+                  #[inline]
+                  pub unsafe fn unset(bits: u64) {
+                        let reg = read();
+                        write(reg & !bits);
+                  }
+
+                  $(pub const $cons: u64 = 1 << $bit;)*
+
+                  $(pub const $cons0: $tty = $bit0;)*
             }
       }
 }
@@ -38,10 +56,10 @@ rw_simple!(cr0 {
       AM = 18,
       NW = 29,
       CD = 30,
-      PG = 31
+      PG = 31;
 });
-rw_simple!(cr2 {});
-rw_simple!(cr3 { PWT = 3, PCD = 4});
+rw_simple!(cr2 {; });
+rw_simple!(cr3 { PWT = 3, PCD = 4; });
 rw_simple!(cr4 {
       VME = 0,
       PVI = 1,
@@ -65,9 +83,42 @@ rw_simple!(cr4 {
       SMAP = 21,
       PKE = 22,
       CET = 23,
-      PKS = 24
+      PKS = 24;
 });
-rw_simple!(cr8 {});
+rw_simple!(cr8 {; });
+
+rw_simple!(dr0 {; });
+rw_simple!(dr1 {; });
+rw_simple!(dr2 {; });
+rw_simple!(dr3 {; });
+
+rw_simple!(dr6 {
+      B0 = 0,
+      B1 = 1,
+      B2 = 2,
+      B3 = 3,
+      BD = 13,
+      BS = 14,
+      BT = 15,
+      RTM = 16;
+});
+
+rw_simple!(dr7 {
+      L0 = 0,
+      G0 = 1,
+      L1 = 2,
+      G1 = 3,
+      L2 = 4,
+      G2 = 5,
+      L3 = 6,
+      G3 = 7,
+      LE = 8,
+      GE = 9,
+      RTM = 11,
+      GD = 13;
+      RW: [u64; 4] = [3 << 16, 3 << 20, 3 << 24, 3 << 28],
+      LEN: [u64; 4] = [3 << 18, 3 << 22, 3 << 26, 3 << 30]
+});
 
 pub mod rflags {
       /// Read RFLAGS of the current CPU.

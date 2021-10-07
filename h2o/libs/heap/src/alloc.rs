@@ -54,6 +54,11 @@ impl Allocator {
             self.pool.lock().stat()
       }
 
+      /// # Safety
+      ///
+      /// This function resets the allocation and deallocation provider for the heap which is 
+      /// extremely dangerous for all that stuff that is pre-allocated in the heap will fail to be
+      /// deallocated correctly and cause undefined behaviors.
       pub unsafe fn set_alloc(
             &self,
             alloc_pages: crate::AllocPages,
@@ -63,6 +68,11 @@ impl Allocator {
             *pager = page::Pager::new(alloc_pages, dealloc_pages);
       }
 
+      /// # Safety
+      ///
+      /// This function resets the allocation and deallocation provider for the heap which is 
+      /// extremely dangerous for all that stuff that is pre-allocated in the heap will fail to be
+      /// deallocated correctly and cause undefined behaviors.
       pub unsafe fn reset_alloc(&self) {
             let mut pager = self.pager.lock();
             *pager = page::Pager::new(null_alloc_pages, null_dealloc_pages);

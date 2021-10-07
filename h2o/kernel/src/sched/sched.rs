@@ -1,41 +1,48 @@
+mod deque;
+pub mod epoch;
+pub use deque::{Injector, Steal, Stealer, Worker};
+
 use super::task;
 use crate::cpu::time::Instant;
 use alloc::vec::Vec;
-use archop::IntrMutex;
+use archop::{IntrMutex, IntrMutexGuard};
 use canary::Canary;
 
-use alloc::collections::LinkedList;
 use core::time::Duration;
-use spin::{Lazy, Mutex};
+use spin::Lazy;
 
 const MINIMUM_TIME_GRANULARITY: Duration = Duration::from_millis(30);
 
-pub static MIGRATION_QUEUE: Lazy<Vec<Mutex<LinkedList<task::Init>>>> = Lazy::new(|| {
-      let cnt = crate::cpu::count();
-      (0..cnt).map(|_| Mutex::new(LinkedList::new())).collect()
+pub static MIGRATION_QUEUE: Lazy<Vec<Injector<task::Ready>>> = Lazy::new(|| {
+      let count = crate::cpu::count();
+      core::iter::repeat_with(Injector::new).take(count).collect()
 });
 
 #[thread_local]
-pub static SCHED: Lazy<IntrMutex<Scheduler>> = Lazy::new(|| {
-      IntrMutex::new(Scheduler {
-            canary: Canary::new(),
-            cpu: unsafe { crate::cpu::id() },
-            running: None,
+pub static SCHED: Lazy<Scheduler> = Lazy::new(|| Scheduler {
+      canary: Canary::new(),
+      cpu: unsafe { crate::cpu::id() },
+      run_state: IntrMutex::new(RunState {
+            current: None,
             need_reload: true,
-            run_queue: LinkedList::new(),
-      })
+      }),
+      run_queue: Worker::new_fifo(),
 });
+
+pub struct RunState {
+      pub(in crate::sched) current: Option<task::Ready>,
+      pub(in crate::sched) need_reload: bool,
+}
 
 pub struct Scheduler {
       canary: Canary<Scheduler>,
       cpu: usize,
-      running: Option<task::Ready>,
-      pub(in crate::sched) need_reload: bool,
-      run_queue: LinkedList<task::Ready>,
+      run_queue: Worker<task::Ready>,
+      pub(in crate::sched) run_state: IntrMutex<RunState>,
 }
 
 impl Scheduler {
-      pub fn push(&mut self, task: task::Init) {
+      pub fn push(&self, task: task::Init) {
             self.canary.assert();
 
             let affinity = {
@@ -44,43 +51,40 @@ impl Scheduler {
                   ti.affinity()
             };
 
+            let time_slice = MINIMUM_TIME_GRANULARITY;
             if !affinity.get(self.cpu).map_or(false, |r| *r) {
                   let cpu = select_cpu(&affinity).expect("Zero affinity");
-                  MIGRATION_QUEUE[cpu].lock().push_back(task);
+                  let task = task::Ready::from_init(task, cpu, time_slice);
+                  MIGRATION_QUEUE[cpu].push(task);
 
                   unsafe { crate::cpu::arch::apic::ipi::task_migrate(cpu) };
             } else {
-                  let time_slice = MINIMUM_TIME_GRANULARITY;
                   let task = task::Ready::from_init(task, self.cpu, time_slice);
-                  self.run_queue.push_back(task);
+                  self.run_queue.push(task);
             }
       }
 
-      pub fn current(&self) -> Option<&task::Ready> {
-            self.canary.assert();
-
-            self.running.as_ref()
+      pub fn with_current<F, R>(&self, func: F) -> Option<R>
+      where
+            F: FnOnce(&mut task::Ready) -> R,
+      {
+            let mut rs = self.run_state.lock();
+            rs.current.as_mut().map(func)
       }
 
-      pub fn current_mut(&mut self) -> Option<&mut task::Ready> {
-            self.canary.assert();
-
-            self.running.as_mut()
-      }
-
-      pub fn unblock(&mut self, task: task::Blocked) {
+      pub fn unblock(&self, task: task::Blocked) {
             self.canary.assert();
 
             let time_slice = MINIMUM_TIME_GRANULARITY;
             let task = task::Ready::from_blocked(task, time_slice);
-            self.run_queue.push_back(task);
+            self.run_queue.push(task);
       }
 
-      fn update(&mut self, cur_time: Instant) -> bool {
+      fn update(&self, cur_time: Instant, rs: &mut IntrMutexGuard<RunState>) -> bool {
             self.canary.assert();
 
             let sole = self.run_queue.is_empty();
-            let cur = match self.current_mut() {
+            let cur = match rs.current.as_mut() {
                   Some(task) => task,
                   None => return !sole,
             };
@@ -101,15 +105,16 @@ impl Scheduler {
             }
       }
 
-      pub fn tick(&mut self, cur_time: Instant) {
-            let need_resched = self.update(cur_time);
+      pub fn tick(&self, cur_time: Instant) {
+            let mut rs = self.run_state.lock();
+            let need_resched = self.update(cur_time, &mut rs);
 
             if need_resched {
-                  self.schedule(cur_time);
+                  self.schedule(cur_time, &mut rs);
             }
       }
 
-      fn schedule(&mut self, cur_time: Instant) -> bool {
+      fn schedule(&self, cur_time: Instant, rs: &mut IntrMutexGuard<RunState>) -> bool {
             self.canary.assert();
 
             let cur_cpu = self.cpu;
@@ -117,27 +122,27 @@ impl Scheduler {
                   return false;
             }
 
-            let mut next = self.run_queue.pop_front().unwrap();
+            let mut next = self.run_queue.pop().unwrap();
             next.running_state = task::RunningState::Running(cur_time);
             next.cpu = cur_cpu;
 
-            if let Some(mut prev) = self.running.replace(next) {
+            if let Some(mut prev) = rs.current.replace(next) {
                   match &prev.running_state {
                         task::RunningState::NeedResched => {
                               prev.running_state = task::RunningState::NotRunning;
-                              self.run_queue.push_back(prev);
+                              self.run_queue.push(prev);
                         }
                         task::RunningState::Drowsy(..) => {
                               task::Ready::into_blocked(prev);
                         }
                         task::RunningState::Dying(..) => {
-                              task::destroy(task::Ready::into_dead(prev), self);
+                              task::destroy(task::Ready::into_dead(prev));
                         }
                         _ => unreachable!(),
                   }
             }
 
-            self.need_reload = true;
+            rs.need_reload = true;
             true
       }
 }
@@ -150,9 +155,10 @@ fn select_cpu(affinity: &crate::cpu::CpuMask) -> Option<usize> {
 ///
 /// This function must be called only in task-migrate IPI handlers.
 pub unsafe fn task_migrate_handler() {
-      let mut sched = SCHED.lock();
-      let mut mq = MIGRATION_QUEUE[sched.cpu].lock();
-      while let Some(task) = mq.pop_front() {
-            sched.push(task);
+      loop {
+            match MIGRATION_QUEUE[SCHED.cpu].steal_batch(&SCHED.run_queue) {
+                  Steal::Empty | Steal::Success(_) => break,
+                  Steal::Retry => {}
+            }
       }
 }

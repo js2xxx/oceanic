@@ -11,22 +11,21 @@ enum FpuType {
 
 static FPU_TYPE: Lazy<FpuType> = Lazy::new(|| {
       let cpuid = raw_cpuid::CpuId::new();
-      let cr4 = unsafe { cr4::read() };
       match cpuid.get_feature_info() {
             Some(e) if e.has_xsave() => {
-                  unsafe { cr4::write(cr4 | cr4::OSXSAVE | cr4::OSFXSR | cr4::OSXMMEXCPT) };
+                  unsafe { cr4::set(cr4::OSXSAVE | cr4::OSFXSR | cr4::OSXMMEXCPT) };
 
                   let res1 = raw_cpuid::native_cpuid::cpuid_count(0xD, 0);
                   let res2 = raw_cpuid::native_cpuid::cpuid_count(0xD, 1);
                   FpuType::X(res1.eax | res2.ecx, res1.edx | res2.edx)
             }
             Some(e) if e.has_fxsave_fxstor() => {
-                  unsafe { cr4::write(cr4 | cr4::OSFXSR | cr4::OSXMMEXCPT) };
+                  unsafe { cr4::set(cr4::OSFXSR | cr4::OSXMMEXCPT) };
 
                   FpuType::Fx
             }
             _ => {
-                  unsafe { cr4::write(cr4 | cr4::OSXMMEXCPT) };
+                  unsafe { cr4::set(cr4::OSXMMEXCPT) };
 
                   FpuType::Fn
             }
