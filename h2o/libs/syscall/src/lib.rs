@@ -32,7 +32,6 @@ pub type SyscallWrapper = unsafe extern "C" fn(usize, usize, usize, usize, usize
 
 // #[cfg(feature = "call")]
 // pub fn test_task() {
-//       use core::ptr::null_mut;
 //       extern "C" fn func(arg: *mut u8) {
 //             ::log::debug!("New task here: {:?}", arg);
 //             crate::task::exit(Ok(12345));

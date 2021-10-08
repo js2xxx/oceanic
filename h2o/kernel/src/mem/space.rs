@@ -72,7 +72,7 @@ bitflags::bitflags! {
 fn ty_to_range_set(ty: task::Type) -> RangeSet<LAddr> {
       let range = match ty {
             task::Type::Kernel => minfo::KERNEL_ALLOCABLE_RANGE,
-            task::Type::User => LAddr::from(minfo::USER_BASE)..LAddr::from(minfo::USER_STACK_BASE),
+            task::Type::User => LAddr::from(minfo::USER_BASE)..LAddr::from(minfo::USER_TLS_BASE),
       };
 
       let mut range_set = RangeSet::new();
@@ -432,7 +432,8 @@ where
 /// The function must be called only from the epilogue of context switching.
 pub unsafe fn set_current(space: Arc<Space>) {
       space.load();
-      CURRENT = Some(space);
+      // let _ = core::mem::replace(&mut CURRENT, Some(space));
+      let _old = CURRENT.replace(space);
 }
 
 /// # Safety

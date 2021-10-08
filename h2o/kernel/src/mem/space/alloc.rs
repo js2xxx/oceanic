@@ -202,12 +202,14 @@ impl Allocator {
             range.insert(virt).map_err(|_| SpaceError::AddressBusy)
       }
 
-      pub unsafe fn dispose_mapping(&self, arch: &ArchSpace) {
-            let record = self.record.lock();
-            for (&base, (layout, _)) in record.iter() {
-                  let virt = base..LAddr::from(base.val() + layout.pad_to_align().size());
-                  let _ = arch.unmaps(virt);
-            }
+      pub unsafe fn dispose_mapping(&self, _arch: &ArchSpace) {
+            // TODO: Be aware of shared page tables.
+            
+            // let record = self.record.lock();
+            // for (&base, (layout, _)) in record.iter() {
+            //       let virt = base..LAddr::from(base.val() + layout.pad_to_align().size());
+            //       let _ = arch.unmaps(virt);
+            // }
       }
 }
 

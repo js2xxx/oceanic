@@ -1,5 +1,7 @@
 //! This module started its life as crossbeam-deque.
 
+use super::epoch;
+
 use alloc::boxed::Box;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
@@ -11,7 +13,6 @@ use core::marker::PhantomData;
 use core::mem::{self, MaybeUninit};
 use core::ptr;
 use core::sync::atomic::{self, AtomicIsize, AtomicPtr, AtomicUsize, Ordering};
-use crossbeam_epoch as epoch;
 use crossbeam_utils as utils;
 use epoch::{Atomic, Owned};
 use utils::{Backoff, CachePadded};

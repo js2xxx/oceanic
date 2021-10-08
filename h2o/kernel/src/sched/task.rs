@@ -245,7 +245,7 @@ impl Ready {
                   cpu,
                   block_desc,
             };
-            wo.wait_queue.lock().push_back(blocked);
+            wo.wait_queue.push(blocked);
       }
 
       pub(in crate::sched) fn into_dead(this: Self) -> Dead {
@@ -276,12 +276,24 @@ impl Ready {
             &mut self,
             frame: *const ctx::arch::Frame,
       ) -> *const ctx::arch::Frame {
+            assert!(
+                  !matches!(self.running_state, RunningState::NotRunning),
+                  "{:?}",
+                  self.running_state
+            );
+
             frame.copy_to(self.intr_stack.task_frame_mut(), 1);
             self.ext_frame.save();
             self.intr_stack.task_frame()
       }
 
       pub unsafe fn load_intr(&self, reload_all: bool) -> *const ctx::arch::Frame {
+            assert!(
+                  !matches!(self.running_state, RunningState::NotRunning),
+                  "{:?}",
+                  self.running_state
+            );
+
             if reload_all {
                   crate::mem::space::set_current(self.space.clone());
                   self.ext_frame.load();
@@ -293,11 +305,19 @@ impl Ready {
             &mut self,
             frame: *const ctx::arch::Frame,
       ) -> *const ctx::arch::Frame {
+            assert!(
+                  !matches!(self.running_state, RunningState::NotRunning),
+                  "{:?}",
+                  self.running_state
+            );
+
             frame.copy_to(self.syscall_stack.task_frame_mut(), 1);
             self.syscall_stack.task_frame()
       }
 
       pub fn save_syscall_retval(&mut self, retval: usize) {
+            assert!(matches!(self.running_state, RunningState::Running(..)));
+
             self.syscall_stack
                   .task_frame_mut()
                   .set_syscall_retval(retval);

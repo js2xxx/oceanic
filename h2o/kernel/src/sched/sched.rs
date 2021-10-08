@@ -1,12 +1,12 @@
-mod deque;
+pub mod deque;
 pub mod epoch;
-pub use deque::{Injector, Steal, Stealer, Worker};
 
 use super::task;
 use crate::cpu::time::Instant;
 use alloc::vec::Vec;
 use archop::{IntrMutex, IntrMutexGuard};
 use canary::Canary;
+use deque::{Injector, Steal, Worker};
 
 use core::time::Duration;
 use spin::Lazy;
@@ -77,7 +77,13 @@ impl Scheduler {
 
             let time_slice = MINIMUM_TIME_GRANULARITY;
             let task = task::Ready::from_blocked(task, time_slice);
-            self.run_queue.push(task);
+            if task.cpu == self.cpu {
+                  self.run_queue.push(task);
+            } else {
+                  let cpu = task.cpu;
+                  MIGRATION_QUEUE[cpu].push(task);
+                  unsafe { crate::cpu::arch::apic::ipi::task_migrate(cpu) };
+            }
       }
 
       fn update(&self, cur_time: Instant, rs: &mut IntrMutexGuard<RunState>) -> bool {

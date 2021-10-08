@@ -1,23 +1,20 @@
 pub mod cell;
-// pub mod queue;
 
 pub use cell::WaitCell;
 
 use super::*;
 
-use alloc::collections::LinkedList;
 use alloc::sync::Arc;
-use spin::Mutex;
 
 #[derive(Debug)]
 pub struct WaitObject {
-      pub(super) wait_queue: Mutex<LinkedList<task::Blocked>>,
+      pub(super) wait_queue: deque::Injector<task::Blocked>,
 }
 
 impl WaitObject {
       pub fn new() -> Arc<Self> {
             Arc::new(WaitObject {
-                  wait_queue: Mutex::new(LinkedList::new()),
+                  wait_queue: deque::Injector::new(),
             })
       }
 
@@ -32,15 +29,16 @@ impl WaitObject {
 
       pub fn notify(self: &Arc<Self>, num: Option<usize>) -> usize {
             let num = num.unwrap_or(usize::MAX);
-            let mut wait_queue = self.wait_queue.lock();
 
             let mut cnt = 0;
             while cnt < num {
-                  if let Some(task) = wait_queue.pop_front() {
-                        super::SCHED.unblock(task);
-                        cnt += 1;
-                  } else {
-                        break;
+                  match self.wait_queue.steal() {
+                        deque::Steal::Success(task) => {
+                              super::SCHED.unblock(task);
+                              cnt += 1;
+                        }
+                        deque::Steal::Retry => {}
+                        deque::Steal::Empty => break,
                   }
             }
             cnt

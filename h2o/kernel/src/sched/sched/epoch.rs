@@ -1,6 +1,7 @@
 //! This module started its life as crossbeam-epoch.
 
-use crossbeam_epoch::{Collector, Guard, LocalHandle};
+pub use crossbeam_epoch::*;
+
 use spin::Lazy;
 
 /// The global data for the default garbage collector.
