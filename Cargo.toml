@@ -6,6 +6,9 @@ lto = 'thin'
 panic = 'abort'
 incremental = true
 
+# [profile.dev.package.h2o_boot]
+# opt-level = 1
+
 [profile.release]
 lto = 'thin'
 opt-level = 2

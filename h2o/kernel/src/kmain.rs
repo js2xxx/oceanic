@@ -28,7 +28,6 @@ pub mod mem;
 pub mod rxx;
 pub mod sched;
 pub mod syscall;
-pub mod kdb;
 
 use ::log as l;
 use spin::Lazy;
