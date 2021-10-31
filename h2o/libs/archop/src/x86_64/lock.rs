@@ -1,10 +1,10 @@
 use core::ops::{Deref, DerefMut};
 use spin::{Mutex, MutexGuard};
 
-struct IntrState(u64);
+pub struct IntrState(u64);
 
 impl IntrState {
-      fn lock() -> Self {
+      pub fn lock() -> Self {
             IntrState(unsafe { crate::pause_intr() })
       }
 }

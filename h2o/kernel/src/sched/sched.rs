@@ -45,11 +45,9 @@ impl Scheduler {
       pub fn push(&self, task: task::Init) {
             self.canary.assert();
 
-            let affinity = {
-                  let ti_map = task::tid::TI_MAP.lock();
-                  let ti = ti_map.get(&task.tid()).expect("Invalid init");
-                  ti.affinity()
-            };
+            let affinity = task::tid::get(&task.tid())
+                  .expect("Invalid init")
+                  .affinity();
 
             let time_slice = MINIMUM_TIME_GRANULARITY;
             if !affinity.get(self.cpu).map_or(false, |r| *r) {
@@ -106,7 +104,7 @@ impl Scheduler {
                   }
                   task::RunningState::NotRunning => panic!("Not running"),
                   task::RunningState::NeedResched
-                  | task::RunningState::Dying(_)
+                  | task::RunningState::Dying(..)
                   | task::RunningState::Drowsy(..) => true,
             }
       }

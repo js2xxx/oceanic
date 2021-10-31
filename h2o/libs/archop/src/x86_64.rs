@@ -5,7 +5,7 @@ pub mod msr;
 pub mod reg;
 pub mod rand;
 
-pub use lock::{IntrMutex, IntrMutexGuard};
+pub use lock::{IntrState, IntrMutex, IntrMutexGuard};
 
 use bitop_ex::BitOpEx;
 use paging::LAddr;

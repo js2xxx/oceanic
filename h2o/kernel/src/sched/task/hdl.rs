@@ -16,10 +16,6 @@ impl UserHandle {
       pub fn raw(&self) -> usize {
             self.0
       }
-
-      pub fn into_checked(self) -> Option<UserHandle> {
-            (self == Self::NULL).then_some(self)
-      }
 }
 
 #[derive(Debug)]
@@ -29,6 +25,7 @@ pub struct UserHandles {
 }
 
 unsafe impl Send for UserHandles {}
+unsafe impl Sync for UserHandles {}
 
 impl UserHandles {
       pub const fn new() -> Self {
@@ -55,9 +52,13 @@ impl UserHandles {
       }
 
       pub fn remove<T: 'static>(&mut self, hdl: UserHandle) -> Option<T> {
-            self.map
-                  .remove(&hdl.0)
-                  .and_then(|k| k.downcast().ok())
-                  .map(|obj| Box::into_inner(obj))
+            match self.map.entry(hdl.0) {
+                  alloc::collections::btree_map::Entry::Occupied(ent)
+                        if ent.get().downcast_ref::<T>().is_some() =>
+                  {
+                        Some(Box::into_inner(ent.remove().downcast().unwrap()))
+                  }
+                  _ => None,
+            }
       }
 }

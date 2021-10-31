@@ -5,4 +5,7 @@ authors = ["徐启航 <akucxy@163.com>"]
 edition = "2021"
 
 [dependencies]
+# Local crates
 iter_ex = { path = "../iter_ex"}
+# External crates
+spin = "0.9"

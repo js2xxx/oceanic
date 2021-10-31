@@ -37,11 +37,7 @@ static ROOT: Lazy<Tid> = Lazy::new(|| {
             user_handles: UserHandles::new(),
       };
 
-      let mut ti_map = tid::TI_MAP.lock();
-      let tid = tid::next(&ti_map).expect("Failed to acquire a valid TID");
-      ti_map.insert(tid, ti);
-
-      tid
+      tid::alloc_insert(ti).expect("Failed to acquire a valid TID")
 });
 
 #[derive(Debug)]
@@ -131,16 +127,10 @@ impl Init {
 
             let (intr_stack, rem) = ctx::Kstack::new(entry, ti.ty);
 
-            let mut ti_map = tid::TI_MAP.lock();
-            let tid = tid::next(&ti_map).map_or_else(
-                  || {
-                        let _ = space.clear_stack();
-                        Err(TaskError::TidExhausted)
-                  },
-                  Ok,
-            )?;
-            ti_map.insert(tid, ti);
-            drop(ti_map);
+            let tid = tid::alloc_insert_or(ti, |_ti| {
+                  let _ = space.clear_stack();
+                  TaskError::TidExhausted
+            })?;
 
             Ok((
                   Init {
@@ -363,6 +353,7 @@ impl Dead {
 }
 
 pub(super) fn init() {
+      tid::init();
       Lazy::force(&idle::IDLE);
 }
 
@@ -394,8 +385,7 @@ where
       let (entry, tls, stack_size) = unsafe { with(&space, with_space) }?;
 
       let (ti, ret_wo) = {
-            let mut ti_map = tid::TI_MAP.lock();
-            let cur_ti = ti_map.get_mut(&cur_tid).unwrap();
+            let mut cur_ti = tid::get_mut(&cur_tid).unwrap();
 
             let ret_wo = cur_ti.user_handles.insert(WaitCell::<usize>::new());
 
@@ -437,8 +427,7 @@ pub fn create_fn(
             let cur_tid = super::SCHED
                   .with_current(|cur| cur.tid)
                   .ok_or(TaskError::NoCurrentTask)?;
-            let ti_map = tid::TI_MAP.lock();
-            let ti = ti_map.get(&cur_tid).unwrap();
+            let ti = tid::get(&cur_tid).unwrap();
             (
                   name.unwrap_or(format!("{}.func{:?}", ti.name, *func)),
                   ti.ty,
@@ -460,10 +449,9 @@ pub fn create_fn(
 
 pub(super) fn destroy(task: Dead) {
       if let Some(cell) = {
-            let mut ti_map = tid::TI_MAP.lock();
-            let TaskInfo { from, .. } = ti_map.remove(&task.tid).unwrap();
+            let TaskInfo { from, .. } = tid::remove(&task.tid).unwrap();
             from.and_then(|(from_tid, ret_wo_hdl)| {
-                  ti_map.get(&from_tid).and_then(|parent| {
+                  tid::get(&from_tid).and_then(|parent| {
                         parent.user_handles
                               .get::<Arc<WaitCell<usize>>>(ret_wo_hdl)
                               .cloned()
@@ -514,6 +502,7 @@ pub mod syscall {
 
       #[syscall]
       pub fn task_join(wc_raw: usize) -> usize {
+            use crate::sched::wait::WaitCell;
             use core::num::NonZeroUsize;
             let wc_hdl = super::UserHandle::new(NonZeroUsize::new(wc_raw).ok_or(Error(EINVAL))?);
 
@@ -522,10 +511,9 @@ pub mod syscall {
                   .ok_or(Error(ESRCH))?;
 
             let wc = {
-                  let ti_map = super::tid::TI_MAP.lock();
-                  let ti = ti_map.get(&cur_tid).ok_or(Error(ESRCH))?;
+                  let ti = super::tid::get(&cur_tid).ok_or(Error(ESRCH))?;
                   ti.user_handles
-                        .get::<alloc::sync::Arc<crate::sched::wait::WaitCell<usize>>>(wc_hdl)
+                        .get::<alloc::sync::Arc<WaitCell<usize>>>(wc_hdl)
                         .ok_or(Error(ECHILD))?
                         .clone()
             };

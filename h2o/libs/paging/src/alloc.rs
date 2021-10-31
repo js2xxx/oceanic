@@ -1,5 +1,8 @@
 use crate::{PAddr, PAGE_SIZE};
 
+/// # Safety
+///
+/// The page allocator is responsible for maintaining the infrastructure of the system.
 pub unsafe trait PageAlloc {
       /// # Safety
       ///
