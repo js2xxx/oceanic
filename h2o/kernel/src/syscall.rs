@@ -4,10 +4,10 @@
 //!
 //! 1.  Add a prototype definition to the module [`solvent::call`]:
 //!     ```rust,no_run
-//!     solvent_gen::syscall_stub!(0 => pub(crate) fn cast_init(k: *mut K) -> *const L);
-//!     ```
-//! 2.  In the kernel, create a private submodule `syscall` in a file and write the processing
-//!     code:
+//!     solvent_gen::syscall_stub!(0 => pub(crate) fn cast_init(k: *mut K) ->
+//! *const L);     ```
+//! 2.  In the kernel, create a private submodule `syscall` in a file and write
+//! the processing     code:
 //!     ```rust,no_run
 //!     mod syscall {
 //!           use solvent::*;
@@ -29,34 +29,34 @@
 use solvent::*;
 
 static SYSCALL_TABLE: &[Option<SyscallWrapper>] = &[
-      Some(syscall_wrapper!(get_time)),
-      Some(syscall_wrapper!(log)),
-      Some(syscall_wrapper!(task_exit)),
-      Some(syscall_wrapper!(task_fn)),
-      None,
-      Some(syscall_wrapper!(task_join)),
-      None,
-      None,
-      Some(syscall_wrapper!(alloc_pages)),
-      Some(syscall_wrapper!(dealloc_pages)),
-      Some(syscall_wrapper!(modify_pages)),
+    Some(syscall_wrapper!(get_time)),
+    Some(syscall_wrapper!(log)),
+    Some(syscall_wrapper!(task_exit)),
+    Some(syscall_wrapper!(task_fn)),
+    None, // Reserved for future use of `task_file`.
+    Some(syscall_wrapper!(task_join)),
+    None,
+    None,
+    Some(syscall_wrapper!(alloc_pages)),
+    Some(syscall_wrapper!(dealloc_pages)),
+    Some(syscall_wrapper!(modify_pages)),
 ];
 
 pub fn handler(arg: &Arguments) -> solvent::Result<usize> {
-      let h = if (0..SYSCALL_TABLE.len()).contains(&arg.fn_num) {
-            SYSCALL_TABLE[arg.fn_num].ok_or(Error(EINVAL))?
-      } else {
-            return Err(Error(EINVAL));
-      };
+    let h = if (0..SYSCALL_TABLE.len()).contains(&arg.fn_num) {
+        SYSCALL_TABLE[arg.fn_num].ok_or(Error(EINVAL))?
+    } else {
+        return Err(Error(EINVAL));
+    };
 
-      let ret = unsafe {
-            h(
-                  arg.args[0],
-                  arg.args[1],
-                  arg.args[2],
-                  arg.args[3],
-                  arg.args[4],
-            )
-      };
-      solvent::Error::decode(ret)
+    let ret = unsafe {
+        h(
+            arg.args[0],
+            arg.args[1],
+            arg.args[2],
+            arg.args[3],
+            arg.args[4],
+        )
+    };
+    Error::decode(ret)
 }

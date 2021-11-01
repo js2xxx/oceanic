@@ -10,11 +10,10 @@ pub mod entry;
 mod inner;
 pub mod level;
 
-use core::ops::Range;
-use core::ptr::NonNull;
+pub use alloc::PageAlloc;
+use core::{ops::Range, ptr::NonNull};
 
 pub use addr::{LAddr, PAddr};
-pub use alloc::PageAlloc;
 pub use consts::*;
 pub use entry::{Attr, Entry, Table};
 pub use level::Level;
@@ -23,178 +22,177 @@ pub const PAGE_LAYOUT: core::alloc::Layout = core::alloc::Layout::new::<Table>()
 
 #[derive(Clone, Debug)]
 pub struct MapInfo {
-      pub virt: Range<LAddr>,
-      pub phys: PAddr,
-      pub attr: Attr,
-      pub id_off: usize,
+    pub virt: Range<LAddr>,
+    pub phys: PAddr,
+    pub attr: Attr,
+    pub id_off: usize,
 }
 
 impl MapInfo {
-      fn advance(&mut self, offset: usize) {
-            self.virt.start.advance(offset);
-            self.phys = PAddr::new(*self.phys + offset);
-      }
+    fn advance(&mut self, offset: usize) {
+        self.virt.start.advance(offset);
+        self.phys = PAddr::new(*self.phys + offset);
+    }
 
-      fn distance(&self, other: &MapInfo) -> Range<LAddr> {
-            self.virt.start..other.virt.start
-      }
+    fn distance(&self, other: &MapInfo) -> Range<LAddr> {
+        self.virt.start..other.virt.start
+    }
 }
 
 #[derive(Clone, Debug)]
 pub struct ReprotectInfo {
-      pub virt: Range<LAddr>,
-      pub attr: Attr,
-      pub id_off: usize,
+    pub virt: Range<LAddr>,
+    pub attr: Attr,
+    pub id_off: usize,
 }
 
 impl ReprotectInfo {
-      fn advance(&mut self, offset: usize) {
-            self.virt.start.advance(offset);
-      }
+    fn advance(&mut self, offset: usize) {
+        self.virt.start.advance(offset);
+    }
 }
 
 pub fn maps(
-      root_table: &mut Table,
-      info: &MapInfo,
-      allocator: &mut impl PageAlloc,
+    root_table: &mut Table,
+    info: &MapInfo,
+    allocator: &mut impl PageAlloc,
 ) -> Result<(), Error> {
-      log::trace!(
-            "paging::maps: root table = {:?}, info = {:?}, allocator = {:?}",
-            root_table as *mut _,
-            info,
-            allocator as *mut _
-      );
+    log::trace!(
+        "paging::maps: root table = {:?}, info = {:?}, allocator = {:?}",
+        root_table as *mut _,
+        info,
+        allocator as *mut _
+    );
 
-      inner::check(&info.virt, Some(info.phys))?;
+    inner::check(&info.virt, Some(info.phys))?;
 
-      let mut ret = Ok(());
-      let mut rem_info = info.clone();
-      log::trace!("paging::maps: Begin spliting pages");
-      while !rem_info.virt.is_empty() {
-            let level = core::cmp::min(
-                  core::cmp::min(
-                        Level::fit(rem_info.virt.start.val()).expect("Misaligned start address"),
-                        Level::fit(rem_info.virt.end.val() - rem_info.virt.start.val())
-                              .expect("Misaligned start address"),
-                  ),
-                  Level::fit(*rem_info.phys).expect("Misaligned start address"),
-            );
+    let mut ret = Ok(());
+    let mut rem_info = info.clone();
+    log::trace!("paging::maps: Begin spliting pages");
+    while !rem_info.virt.is_empty() {
+        let level = core::cmp::min(
+            core::cmp::min(
+                Level::fit(rem_info.virt.start.val()).expect("Misaligned start address"),
+                Level::fit(rem_info.virt.end.val() - rem_info.virt.start.val())
+                    .expect("Misaligned start address"),
+            ),
+            Level::fit(*rem_info.phys).expect("Misaligned start address"),
+        );
 
-            ret = inner::new_page(
-                  root_table,
-                  rem_info.virt.start,
-                  rem_info.phys,
-                  info.attr,
-                  level,
-                  info.id_off,
-                  allocator,
-            );
-            if ret.is_err() {
-                  break;
-            }
+        ret = inner::new_page(
+            root_table,
+            rem_info.virt.start,
+            rem_info.phys,
+            info.attr,
+            level,
+            info.id_off,
+            allocator,
+        );
+        if ret.is_err() {
+            break;
+        }
 
-            let ps = level.page_size();
-            rem_info.advance(ps);
+        let ps = level.page_size();
+        rem_info.advance(ps);
 
-            log::trace!("paging::maps: Done new_page. rem = {:?}", &rem_info);
-      }
+        log::trace!("paging::maps: Done new_page. rem = {:?}", &rem_info);
+    }
 
-      if ret.is_ok() {
-            log::trace!("paging::maps: mapping succeeded");
-      } else {
-            let done_virt = info.distance(&rem_info);
-            if !done_virt.is_empty() {
-                  let _ = unmaps(root_table, done_virt, info.id_off, allocator);
-            }
-      }
-      ret
+    if ret.is_ok() {
+        log::trace!("paging::maps: mapping succeeded");
+    } else {
+        let done_virt = info.distance(&rem_info);
+        if !done_virt.is_empty() {
+            let _ = unmaps(root_table, done_virt, info.id_off, allocator);
+        }
+    }
+    ret
 }
 
 pub fn reprotect(
-      root_table: &mut Table,
-      info: &ReprotectInfo,
-      allocator: &mut impl PageAlloc,
+    root_table: &mut Table,
+    info: &ReprotectInfo,
+    allocator: &mut impl PageAlloc,
 ) -> Result<(), Error> {
-      log::trace!(
-            "paging::reprotect: root table = {:?}, info = {:?}, allocator = {:?}",
-            root_table as *mut _,
-            info,
-            allocator as *mut _
-      );
+    log::trace!(
+        "paging::reprotect: root table = {:?}, info = {:?}, allocator = {:?}",
+        root_table as *mut _,
+        info,
+        allocator as *mut _
+    );
 
-      inner::check(&info.virt, None)?;
+    inner::check(&info.virt, None)?;
 
-      let mut rem_info = info.clone();
-      while !rem_info.virt.is_empty() {
-            let phys = query(root_table, rem_info.virt.start, rem_info.id_off)
-                  .unwrap_or_else(|_| PAddr::new(0));
-            let level = core::cmp::min(
-                  core::cmp::min(
-                        Level::fit(rem_info.virt.start.val()).expect("Misaligned start address"),
-                        Level::fit(rem_info.virt.end.val() - rem_info.virt.start.val())
-                              .expect("Misaligned start address"),
-                  ),
-                  Level::fit(*phys).expect("Misaligned start address"),
-            );
+    let mut rem_info = info.clone();
+    while !rem_info.virt.is_empty() {
+        let phys = query(root_table, rem_info.virt.start, rem_info.id_off)
+            .unwrap_or_else(|_| PAddr::new(0));
+        let level = core::cmp::min(
+            core::cmp::min(
+                Level::fit(rem_info.virt.start.val()).expect("Misaligned start address"),
+                Level::fit(rem_info.virt.end.val() - rem_info.virt.start.val())
+                    .expect("Misaligned start address"),
+            ),
+            Level::fit(*phys).expect("Misaligned start address"),
+        );
 
-            match inner::modify_page(
-                  root_table,
-                  rem_info.virt.start,
-                  rem_info.attr,
-                  level,
-                  rem_info.id_off,
-                  allocator,
-            ) {
-                  Ok(()) | Err(Error::EntryExistent(false)) => {}
-                  Err(e) => panic!("{:?}", e),
-            }
+        match inner::modify_page(
+            root_table,
+            rem_info.virt.start,
+            rem_info.attr,
+            level,
+            rem_info.id_off,
+            allocator,
+        ) {
+            Ok(()) | Err(Error::EntryExistent(false)) => {}
+            Err(e) => panic!("{:?}", e),
+        }
 
-            let ps = level.page_size();
-            rem_info.advance(ps);
-      }
+        let ps = level.page_size();
+        rem_info.advance(ps);
+    }
 
-      Ok(())
+    Ok(())
 }
 
 pub fn query(root_table: &Table, virt: LAddr, id_off: usize) -> Result<PAddr, Error> {
-      let offset = virt.val() & PAGE_MASK;
-      let virt = LAddr::from(virt.val() & !PAGE_MASK);
+    let offset = virt.val() & PAGE_MASK;
+    let virt = LAddr::from(virt.val() & !PAGE_MASK);
 
-      inner::get_page(root_table, virt, id_off).map(|phys| PAddr::new(*phys + offset))
+    inner::get_page(root_table, virt, id_off).map(|phys| PAddr::new(*phys + offset))
 }
 
 pub fn unmaps(
-      root_table: &mut Table,
-      mut virt: Range<LAddr>,
-      id_off: usize,
-      allocator: &mut impl PageAlloc,
+    root_table: &mut Table,
+    mut virt: Range<LAddr>,
+    id_off: usize,
+    allocator: &mut impl PageAlloc,
 ) -> Result<(), Error> {
-      log::trace!(
-            "paging::unmaps: root table = {:?}, virt = {:?}, id_off = {:?}, allocator = {:?}",
-            root_table as *mut _,
-            virt,
-            id_off,
-            allocator as *mut _
-      );
+    log::trace!(
+        "paging::unmaps: root table = {:?}, virt = {:?}, id_off = {:?}, allocator = {:?}",
+        root_table as *mut _,
+        virt,
+        id_off,
+        allocator as *mut _
+    );
 
-      inner::check(&virt, None)?;
+    inner::check(&virt, None)?;
 
-      while !virt.is_empty() {
-            let phys = query(root_table, virt.start, id_off).unwrap_or_else(|_| PAddr::new(0));
-            let level = core::cmp::min(
-                  core::cmp::min(
-                        Level::fit(virt.start.val()).expect("Misaligned start address"),
-                        Level::fit(virt.end.val() - virt.start.val())
-                              .expect("Misaligned start address"),
-                  ),
-                  Level::fit(*phys).expect("Misaligned start address"),
-            );
+    while !virt.is_empty() {
+        let phys = query(root_table, virt.start, id_off).unwrap_or_else(|_| PAddr::new(0));
+        let level = core::cmp::min(
+            core::cmp::min(
+                Level::fit(virt.start.val()).expect("Misaligned start address"),
+                Level::fit(virt.end.val() - virt.start.val()).expect("Misaligned start address"),
+            ),
+            Level::fit(*phys).expect("Misaligned start address"),
+        );
 
-            let _ = inner::drop_page(root_table, virt.start, level, id_off, allocator);
+        let _ = inner::drop_page(root_table, virt.start, level, id_off, allocator);
 
-            let ps = level.page_size();
-            virt.start.advance(ps);
-      }
+        let ps = level.page_size();
+        virt.start.advance(ps);
+    }
 
-      Ok(())
+    Ok(())
 }

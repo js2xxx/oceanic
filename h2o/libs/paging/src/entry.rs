@@ -1,10 +1,12 @@
-use crate::{level::Level, NR_ENTRIES};
-use crate::{PAddr, ENTRY_SIZE_SHIFT};
+use core::{
+    ops::{Deref, DerefMut},
+    ptr::NonNull,
+};
 
 use bitflags::bitflags;
-use core::ops::{Deref, DerefMut};
-use core::ptr::NonNull;
 use static_assertions::*;
+
+use crate::{level::Level, PAddr, ENTRY_SIZE_SHIFT, NR_ENTRIES};
 
 const LOCK_SHIFT: usize = 9;
 const MUT_LOCK_SHIFT: usize = 10;
@@ -41,83 +43,83 @@ bitflags! {
 }
 
 impl Attr {
-      pub fn builder() -> AttrBuilder {
-            AttrBuilder::new()
-      }
+    pub fn builder() -> AttrBuilder {
+        AttrBuilder::new()
+    }
 
-      pub fn merge(&mut self, other: &Attr) {
-            *self |= *other & Self::USER_RW;
-            *self &= !Self::ACCESSED;
-            *self &= *other & Self::EXE_DISABLE;
-      }
+    pub fn merge(&mut self, other: &Attr) {
+        *self |= *other & Self::USER_RW;
+        *self &= !Self::ACCESSED;
+        *self &= *other & Self::EXE_DISABLE;
+    }
 
-      #[inline]
-      pub fn has_table(&self, level: Level) -> bool {
-            !(level == Level::Pt || self.contains(Attr::LARGE_PAGE))
-      }
+    #[inline]
+    pub fn has_table(&self, level: Level) -> bool {
+        !(level == Level::Pt || self.contains(Attr::LARGE_PAGE))
+    }
 }
 
 impl From<Entry> for Attr {
-      fn from(e: Entry) -> Self {
-            Attr::from_bits_truncate(e.0)
-      }
+    fn from(e: Entry) -> Self {
+        Attr::from_bits_truncate(e.0)
+    }
 }
 
 pub struct AttrBuilder {
-      attr: Attr,
+    attr: Attr,
 }
 
 impl AttrBuilder {
-      pub fn new() -> AttrBuilder {
-            AttrBuilder {
-                  attr: Attr::empty(),
-            }
-      }
+    pub fn new() -> AttrBuilder {
+        AttrBuilder {
+            attr: Attr::empty(),
+        }
+    }
 
-      #[inline]
-      pub fn writable(mut self, writable: bool) -> Self {
-            if writable {
-                  self.attr |= Attr::WRITABLE;
-            }
-            self
-      }
+    #[inline]
+    pub fn writable(mut self, writable: bool) -> Self {
+        if writable {
+            self.attr |= Attr::WRITABLE;
+        }
+        self
+    }
 
-      #[inline]
-      pub fn user_access(mut self, user_access: bool) -> Self {
-            if user_access {
-                  self.attr |= Attr::USER_ACCESS;
-            }
-            self
-      }
+    #[inline]
+    pub fn user_access(mut self, user_access: bool) -> Self {
+        if user_access {
+            self.attr |= Attr::USER_ACCESS;
+        }
+        self
+    }
 
-      #[inline]
-      pub fn executable(mut self, executable: bool) -> Self {
-            if !executable {
-                  self.attr |= Attr::EXE_DISABLE;
-            }
-            self
-      }
+    #[inline]
+    pub fn executable(mut self, executable: bool) -> Self {
+        if !executable {
+            self.attr |= Attr::EXE_DISABLE;
+        }
+        self
+    }
 
-      #[inline]
-      pub fn cache(mut self, write_thru: bool, disable: bool) -> Self {
-            if write_thru {
-                  self.attr |= Attr::WRITE_THRU;
-            }
-            if disable {
-                  self.attr |= Attr::CACHE_DISABLE;
-            }
-            self
-      }
+    #[inline]
+    pub fn cache(mut self, write_thru: bool, disable: bool) -> Self {
+        if write_thru {
+            self.attr |= Attr::WRITE_THRU;
+        }
+        if disable {
+            self.attr |= Attr::CACHE_DISABLE;
+        }
+        self
+    }
 
-      pub fn build(self) -> Attr {
-            self.attr
-      }
+    pub fn build(self) -> Attr {
+        self.attr
+    }
 }
 
 impl Default for AttrBuilder {
-      fn default() -> Self {
-            Self::new()
-      }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[derive(Copy, Clone)]
@@ -125,42 +127,42 @@ pub struct Entry(u64);
 const_assert!(core::mem::size_of::<Entry>() == 1 << ENTRY_SIZE_SHIFT);
 
 impl Entry {
-      pub fn get(self, level: Level) -> (PAddr, Attr) {
-            let attr = Attr::from(self);
-            let phys = PAddr::new((self.0 & level.addr_mask()) as usize);
-            (phys, attr)
-      }
+    pub fn get(self, level: Level) -> (PAddr, Attr) {
+        let attr = Attr::from(self);
+        let phys = PAddr::new((self.0 & level.addr_mask()) as usize);
+        (phys, attr)
+    }
 
-      pub fn new(phys: PAddr, attr: Attr, level: Level) -> Self {
-            let phys = *phys as u64 & level.addr_mask();
-            Entry(phys | attr.bits)
-      }
+    pub fn new(phys: PAddr, attr: Attr, level: Level) -> Self {
+        let phys = *phys as u64 & level.addr_mask();
+        Entry(phys | attr.bits)
+    }
 
-      pub fn reset(&mut self) {
-            self.0 = 0;
-      }
+    pub fn reset(&mut self) {
+        self.0 = 0;
+    }
 
-      pub(crate) fn get_table(&self, id_off: usize, level: Level) -> Option<NonNull<[Entry]>> {
-            let (phys, attr) = self.get(Level::Pt);
-            if attr.contains(Attr::PRESENT) && attr.has_table(level) {
-                  log::trace!("paging::Entry::get_table: There is a table: {:?}", *self);
-                  NonNull::new(phys.to_laddr(id_off).cast())
-                        .map(|r| NonNull::slice_from_raw_parts(r, NR_ENTRIES))
-            } else {
-                  None
-            }
-      }
+    pub(crate) fn get_table(&self, id_off: usize, level: Level) -> Option<NonNull<[Entry]>> {
+        let (phys, attr) = self.get(Level::Pt);
+        if attr.contains(Attr::PRESENT) && attr.has_table(level) {
+            log::trace!("paging::Entry::get_table: There is a table: {:?}", *self);
+            NonNull::new(phys.to_laddr(id_off).cast())
+                .map(|r| NonNull::slice_from_raw_parts(r, NR_ENTRIES))
+        } else {
+            None
+        }
+    }
 
-      pub fn is_leaf(&self, level: Level) -> bool {
-            let (_, attr) = self.get(level);
-            attr.contains(level.leaf_attr(Attr::empty()))
-      }
+    pub fn is_leaf(&self, level: Level) -> bool {
+        let (_, attr) = self.get(level);
+        attr.contains(level.leaf_attr(Attr::empty()))
+    }
 }
 
 impl core::fmt::Debug for Entry {
-      fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-            write!(f, "Entry({:#x})", self.0)
-      }
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "Entry({:#x})", self.0)
+    }
 }
 
 #[derive(Debug)]
@@ -169,21 +171,21 @@ pub struct Table([Entry; crate::NR_ENTRIES]);
 const_assert!(core::mem::size_of::<Table>() == crate::PAGE_SIZE);
 
 impl Table {
-      pub fn zeroed() -> Self {
-            unsafe { core::mem::zeroed() }
-      }
+    pub fn zeroed() -> Self {
+        unsafe { core::mem::zeroed() }
+    }
 }
 
 impl Deref for Table {
-      type Target = [Entry; crate::NR_ENTRIES];
+    type Target = [Entry; crate::NR_ENTRIES];
 
-      fn deref(&self) -> &Self::Target {
-            &self.0
-      }
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }
 
 impl DerefMut for Table {
-      fn deref_mut(&mut self) -> &mut Self::Target {
-            &mut self.0
-      }
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
 }

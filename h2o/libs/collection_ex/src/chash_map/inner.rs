@@ -1,8 +1,10 @@
-use core::borrow::Borrow;
-use core::hash::{BuildHasher, Hash};
-use core::iter;
-
 use alloc::vec::Vec;
+use core::{
+    borrow::Borrow,
+    hash::{BuildHasher, Hash},
+    iter,
+};
+
 use spin::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 pub enum Entry<T> {
@@ -150,7 +152,7 @@ impl<K, V, S: BuildHasher> Buckets<K, V, S> {
             match &*entry {
                 Entry::Empty => return free.unwrap_or(entry),
                 Entry::Data((ref k, _)) if k.borrow() == key => return entry,
-                Entry::Data(_) => {},
+                Entry::Data(_) => {}
                 Entry::Removed => free = free.or(Some(entry)),
             }
         }

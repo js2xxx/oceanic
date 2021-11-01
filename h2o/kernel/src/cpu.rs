@@ -12,15 +12,15 @@ cfg_if::cfg_if! {
 }
 
 pub fn all_mask() -> CpuMask {
-      let mut arr = bitarr![0; MAX_CPU];
-      arr[0..count()].set_all(true);
-      arr
+    let mut arr = bitarr![0; MAX_CPU];
+    arr[0..count()].set_all(true);
+    arr
 }
 
 pub fn current_mask() -> CpuMask {
-      let mut arr = bitarr![0; MAX_CPU];
-      arr.set(unsafe { id() }, true);
-      arr
+    let mut arr = bitarr![0; MAX_CPU];
+    arr.set(unsafe { id() }, true);
+    arr
 }
 
 pub type CpuMask = BitArr!(for MAX_CPU);

@@ -1,43 +1,43 @@
 //! # Oceanic's kernel heap module
 //!
-//! This module mainly deals with usual memory allocations for use inside the kernel. We want
-//! readily accessible memory blocks of small sizes so we use a flexible allocator for this
-//! purpose.
+//! This module mainly deals with usual memory allocations for use inside the
+//! kernel. We want readily accessible memory blocks of small sizes so we use a
+//! flexible allocator for this purpose.
 //!
 //! ## The global allocator
 //!
-//! The global allocator imitates the ideas of Linux's slab allocator. It caches multiple slabs
-//! of different sizes and allocates them if requested.
+//! The global allocator imitates the ideas of Linux's slab allocator. It caches
+//! multiple slabs of different sizes and allocates them if requested.
 //!
 //! ### Slab pages
 //!
-//! Each slab page is a headered list sized [`paging::PAGE_SIZE`], whose header contains a bitmap
-//! recording the uses of items of the list. When an item is allocated (popped), the
-//! corresponding bit will be set `true`.
+//! Each slab page is a headered list sized [`paging::PAGE_SIZE`], whose header
+//! contains a bitmap recording the uses of items of the list. When an item is
+//! allocated (popped), the corresponding bit will be set `true`.
 //!
 //! See module [`page`] for more.
 //!
 //! ### Slab lists
 //!
-//! It'll usually not enough for massive allocations for the same size to only one slab page,
-//! so there're lists (implemented with red-black trees) to hold slab pages with the same
-//! object size. On request, the list picks a free (both partially and wholly) slab page and
-//! hands the task over.
+//! It'll usually not enough for massive allocations for the same size to only
+//! one slab page, so there're lists (implemented with red-black trees) to hold
+//! slab pages with the same object size. On request, the list picks a free
+//! (both partially and wholly) slab page and hands the task over.
 //!
 //! See module [`slab`] for more.
 //!
 //! ### Memory pools
 //!
-//! A memory pool holds slab lists of different object sizes (see [`page::OBJ_SIZES`]). When
-//! requested, it looks for a correct index for the requested size and hands the task to the
-//! slab list of that idx.
+//! A memory pool holds slab lists of different object sizes (see
+//! [`page::OBJ_SIZES`]). When requested, it looks for a correct index for the
+//! requested size and hands the task to the slab list of that idx.
 //!
 //! See module [`pool`] for more.
 //!
 //! ### Global allocator implementation
 //!
-//! The global allocator links to the Rust [`::alloc`] library for advanced use. It delegates its
-//! memory pool or directly page allocator on request.
+//! The global allocator links to the Rust [`::alloc`] library for advanced use.
+//! It delegates its memory pool or directly page allocator on request.
 //!
 //! See [`alloc::Allocator`] for more.
 
@@ -58,6 +58,7 @@ mod pool;
 mod slab;
 
 pub use alloc::Allocator;
+
 pub use page::{AllocPages, DeallocPages, Page};
 pub use stat::Stat;
 

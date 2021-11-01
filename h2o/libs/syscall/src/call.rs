@@ -2,9 +2,10 @@
 pub mod raw;
 pub mod reg;
 
+use solvent_gen::syscall_stub;
+
 #[allow(unused_imports)]
 use crate::{Arguments, SerdeReg};
-use solvent_gen::syscall_stub;
 
 syscall_stub!(0 => pub(crate) fn get_time(ptr: *mut u128));
 #[cfg(debug_assertions)]

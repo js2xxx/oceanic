@@ -14,25 +14,25 @@ pub const RECURSIVE_IDX: usize = 510;
 
 #[derive(Copy, Clone, Debug)]
 pub enum Error {
-      OutOfMemory,
-      AddrMisaligned {
-            vstart: Option<LAddr>,
-            vend: Option<LAddr>,
-            phys: Option<PAddr>,
-      },
-      RangeEmpty,
-      EntryExistent(bool),
+    OutOfMemory,
+    AddrMisaligned {
+        vstart: Option<LAddr>,
+        vend: Option<LAddr>,
+        phys: Option<PAddr>,
+    },
+    RangeEmpty,
+    EntryExistent(bool),
 }
 
 impl Error {
-      pub(crate) fn is_misaligned_invalid(&self) -> bool {
-            matches!(
-                  *self,
-                  Error::AddrMisaligned {
-                        vstart: None,
-                        vend: None,
-                        phys: None,
-                  }
-            )
-      }
+    pub(crate) fn is_misaligned_invalid(&self) -> bool {
+        matches!(
+            *self,
+            Error::AddrMisaligned {
+                vstart: None,
+                vend: None,
+                phys: None,
+            }
+        )
+    }
 }

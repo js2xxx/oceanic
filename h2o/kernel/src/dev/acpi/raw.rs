@@ -27,158 +27,158 @@ pub(super) static mut RSDP: usize = 0;
 
 #[no_mangle]
 unsafe extern "C" fn AcpiOsGetRootPointer() -> ACPI_PHYSICAL_ADDRESS {
-      RSDP as ACPI_PHYSICAL_ADDRESS
+    RSDP as ACPI_PHYSICAL_ADDRESS
 }
 
 #[no_mangle]
 extern "C" fn AcpiOsInitialize() -> ACPI_STATUS {
-      AE_OK
+    AE_OK
 }
 
 #[no_mangle]
 extern "C" fn AcpiOsTerminate() -> ACPI_STATUS {
-      AE_OK
+    AE_OK
 }
 
 #[no_mangle]
 unsafe extern "C" fn AcpiOsGetTimer() -> UINT64 {
-      crate::cpu::time::Instant::now().raw() as u64
+    crate::cpu::time::Instant::now().raw() as u64
 }
 
 #[no_mangle]
 unsafe extern "C" fn AcpiOsCreateLock(OutHandle: *mut *mut u8) -> ACPI_STATUS {
-      unimplemented!()
+    unimplemented!()
 }
 
 #[no_mangle]
 unsafe extern "C" fn AcpiOsDeleteLock(Handle: *mut u8) {
-      unimplemented!()
+    unimplemented!()
 }
 
 #[no_mangle]
 unsafe extern "C" fn AcpiOsAcquireLock(Handle: *mut u8) -> u64 {
-      unimplemented!()
+    unimplemented!()
 }
 
 #[no_mangle]
 unsafe extern "C" fn AcpiOsReleaseLock(Handle: *mut u8, Flags: u64) {
-      unimplemented!()
+    unimplemented!()
 }
 
 #[no_mangle]
 unsafe extern "C" fn AcpiOsCreateSemaphore(
-      MaxUnits: UINT32,
-      InitialUnits: UINT32,
-      OutHandle: *mut *mut cty::c_void,
+    MaxUnits: UINT32,
+    InitialUnits: UINT32,
+    OutHandle: *mut *mut cty::c_void,
 ) -> ACPI_STATUS {
-      unimplemented!()
+    unimplemented!()
 }
 
 #[no_mangle]
 unsafe extern "C" fn AcpiOsDeleteSemaphore(Handle: *mut cty::c_void) -> ACPI_STATUS {
-      unimplemented!()
+    unimplemented!()
 }
 
 #[no_mangle]
 unsafe extern "C" fn AcpiOsWaitSemaphore(
-      Handle: *mut cty::c_void,
-      Units: UINT32,
-      Timeout: UINT16,
+    Handle: *mut cty::c_void,
+    Units: UINT32,
+    Timeout: UINT16,
 ) -> ACPI_STATUS {
-      if AcpiSubsystemStatus() != AE_OK {
-            AE_OK
-      } else {
-            unimplemented!()
-      }
+    if AcpiSubsystemStatus() != AE_OK {
+        AE_OK
+    } else {
+        unimplemented!()
+    }
 }
 
 #[no_mangle]
 unsafe extern "C" fn AcpiOsSignalSemaphore(Handle: *mut cty::c_void, Units: UINT32) -> ACPI_STATUS {
-      if AcpiSubsystemStatus() != AE_OK {
-            AE_OK
-      } else {
-            unimplemented!()
-      }
+    if AcpiSubsystemStatus() != AE_OK {
+        AE_OK
+    } else {
+        unimplemented!()
+    }
 }
 
 #[no_mangle]
 unsafe extern "C" fn AcpiOsInstallInterruptHandler(
-      InterruptNumber: UINT32,
-      ServiceRoutine: ACPI_OSD_HANDLER,
-      Context: *mut cty::c_void,
+    InterruptNumber: UINT32,
+    ServiceRoutine: ACPI_OSD_HANDLER,
+    Context: *mut cty::c_void,
 ) -> ACPI_STATUS {
-      unimplemented!();
+    unimplemented!();
 }
 #[no_mangle]
 unsafe extern "C" fn AcpiOsRemoveInterruptHandler(
-      InterruptNumber: UINT32,
-      ServiceRoutine: ACPI_OSD_HANDLER,
+    InterruptNumber: UINT32,
+    ServiceRoutine: ACPI_OSD_HANDLER,
 ) -> ACPI_STATUS {
-      unimplemented!();
+    unimplemented!();
 }
 
 #[no_mangle]
 unsafe extern "C" fn AcpiOsGetThreadId() -> UINT64 {
-      0
+    0
 }
 #[no_mangle]
 unsafe extern "C" fn AcpiOsExecute(
-      Type: ACPI_EXECUTE_TYPE,
-      Function: ACPI_OSD_EXEC_CALLBACK,
-      Context: *mut cty::c_void,
+    Type: ACPI_EXECUTE_TYPE,
+    Function: ACPI_OSD_EXEC_CALLBACK,
+    Context: *mut cty::c_void,
 ) -> ACPI_STATUS {
-      unimplemented!();
+    unimplemented!();
 }
 #[no_mangle]
 unsafe extern "C" fn AcpiOsWaitEventsComplete() {
-      unimplemented!();
+    unimplemented!();
 }
 #[no_mangle]
 unsafe extern "C" fn AcpiOsSleep(Milliseconds: UINT64) {
-      unimplemented!();
+    unimplemented!();
 }
 #[no_mangle]
 unsafe extern "C" fn AcpiOsStall(micros: UINT32) {
-      crate::cpu::time::delay(core::time::Duration::from_micros(micros as u64))
+    crate::cpu::time::delay(core::time::Duration::from_micros(micros as u64))
 }
 
 #[no_mangle]
 unsafe extern "C" fn AcpiOsReadPort(
-      Address: ACPI_IO_ADDRESS,
-      Value: *mut UINT32,
-      Width: UINT32,
+    Address: ACPI_IO_ADDRESS,
+    Value: *mut UINT32,
+    Width: UINT32,
 ) -> ACPI_STATUS {
-      unimplemented!();
+    unimplemented!();
 }
 
 #[no_mangle]
 unsafe extern "C" fn AcpiOsWritePort(
-      Address: ACPI_IO_ADDRESS,
-      Value: UINT32,
-      Width: UINT32,
+    Address: ACPI_IO_ADDRESS,
+    Value: UINT32,
+    Width: UINT32,
 ) -> ACPI_STATUS {
-      unimplemented!();
+    unimplemented!();
 }
 
 #[no_mangle]
 unsafe extern "C" fn AcpiOsReadPciConfiguration(
-      PciId: *mut ACPI_PCI_ID,
-      Reg: UINT32,
-      Value: *mut UINT64,
-      Width: UINT32,
+    PciId: *mut ACPI_PCI_ID,
+    Reg: UINT32,
+    Value: *mut UINT64,
+    Width: UINT32,
 ) -> ACPI_STATUS {
-      unimplemented!();
+    unimplemented!();
 }
 #[no_mangle]
 unsafe extern "C" fn AcpiOsWritePciConfiguration(
-      PciId: *mut ACPI_PCI_ID,
-      Reg: UINT32,
-      Value: UINT64,
-      Width: UINT32,
+    PciId: *mut ACPI_PCI_ID,
+    Reg: UINT32,
+    Value: UINT64,
+    Width: UINT32,
 ) -> ACPI_STATUS {
-      unimplemented!();
+    unimplemented!();
 }
 #[no_mangle]
 unsafe extern "C" fn AcpiOsSignal(Function: UINT32, Info: *mut cty::c_void) -> ACPI_STATUS {
-      unimplemented!()
+    unimplemented!()
 }

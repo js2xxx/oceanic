@@ -121,46 +121,46 @@ rw_simple!(dr7 {
 });
 
 pub mod rflags {
-      /// Read RFLAGS of the current CPU.
-      ///
-      /// # Safety
-      ///
-      /// The caller must ensure the stack is normal.
-      #[inline]
-      pub unsafe fn read() -> u64 {
-            let mut ret;
-            asm!("pushfq; pop {}", out(reg) ret);
-            ret
-      }
+    /// Read RFLAGS of the current CPU.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure the stack is normal.
+    #[inline]
+    pub unsafe fn read() -> u64 {
+        let mut ret;
+        asm!("pushfq; pop {}", out(reg) ret);
+        ret
+    }
 
-      /// Write RFLAGS of the current CPU.
-      ///
-      /// # Safety
-      ///
-      /// The caller must ensure the stack is normal and the operation won't influence other
-      /// modules.
-      #[inline]
-      pub unsafe fn write(val: u64) {
-            asm!("push {}; popfq", in(reg) val);
-      }
+    /// Write RFLAGS of the current CPU.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure the stack is normal and the operation won't
+    /// influence other modules.
+    #[inline]
+    pub unsafe fn write(val: u64) {
+        asm!("push {}; popfq", in(reg) val);
+    }
 
-      pub const CF: u64 = 1 << 0;
-      pub const _RSVD1: u64 = 1 << 1;
-      pub const PF: u64 = 1 << 2;
-      pub const AF: u64 = 1 << 4;
-      pub const ZF: u64 = 1 << 6;
-      pub const SF: u64 = 1 << 7;
-      pub const TF: u64 = 1 << 8;
-      pub const IF: u64 = 1 << 9;
-      pub const DF: u64 = 1 << 10;
-      pub const OF: u64 = 1 << 11;
-      pub const IOPLL: u64 = 1 << 12;
-      pub const IOPLH: u64 = 1 << 13;
-      pub const NT: u64 = 1 << 14;
-      pub const RF: u64 = 1 << 16;
-      pub const VM: u64 = 1 << 17;
-      pub const AC: u64 = 1 << 18;
-      pub const VIF: u64 = 1 << 19;
-      pub const VIP: u64 = 1 << 20;
-      pub const ID: u64 = 1 << 21;
+    pub const CF: u64 = 1 << 0;
+    pub const _RSVD1: u64 = 1 << 1;
+    pub const PF: u64 = 1 << 2;
+    pub const AF: u64 = 1 << 4;
+    pub const ZF: u64 = 1 << 6;
+    pub const SF: u64 = 1 << 7;
+    pub const TF: u64 = 1 << 8;
+    pub const IF: u64 = 1 << 9;
+    pub const DF: u64 = 1 << 10;
+    pub const OF: u64 = 1 << 11;
+    pub const IOPLL: u64 = 1 << 12;
+    pub const IOPLH: u64 = 1 << 13;
+    pub const NT: u64 = 1 << 14;
+    pub const RF: u64 = 1 << 16;
+    pub const VM: u64 = 1 << 17;
+    pub const AC: u64 = 1 << 18;
+    pub const VIF: u64 = 1 << 19;
+    pub const VIP: u64 = 1 << 20;
+    pub const ID: u64 = 1 << 21;
 }

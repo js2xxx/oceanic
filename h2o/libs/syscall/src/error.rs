@@ -1,5 +1,4 @@
-use core::fmt::Debug;
-use core::ops::Range;
+use core::{fmt::Debug, ops::Range};
 
 pub const ERRC_RANGE: Range<i32> = 1..35;
 
@@ -9,26 +8,26 @@ pub type Result<T> = core::result::Result<T, Error>;
 pub struct Error(pub i32);
 
 impl Error {
-      pub fn encode(res: Result<usize>) -> usize {
-            res.map_err(|err| -err.0 as usize).into_ok_or_err()
-      }
+    pub fn encode(res: Result<usize>) -> usize {
+        res.map_err(|err| -err.0 as usize).into_ok_or_err()
+    }
 
-      pub fn decode(val: usize) -> Result<usize> {
-            let errc = -(val as i32);
-            (!ERRC_RANGE.contains(&errc))
-                  .then_some(val)
-                  .ok_or(Error(errc))
-      }
+    pub fn decode(val: usize) -> Result<usize> {
+        let errc = -(val as i32);
+        (!ERRC_RANGE.contains(&errc))
+            .then_some(val)
+            .ok_or(Error(errc))
+    }
 
-      pub fn desc(&self) -> &'static str {
-            ERRC_DESC[self.0 as usize]
-      }
+    pub fn desc(&self) -> &'static str {
+        ERRC_DESC[self.0 as usize]
+    }
 }
 
 impl Debug for Error {
-      fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-            write!(f, "Error: {}", self.desc())
-      }
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "Error: {}", self.desc())
+    }
 }
 
 /// Operation not permitted
@@ -101,39 +100,39 @@ pub const EDOM: i32 = 33;
 pub const ERANGE: i32 = 34;
 
 const ERRC_DESC: [&str; ERRC_RANGE.end as usize] = [
-      "OK",
-      "Operation not permitted",
-      "No such file or directory",
-      "No such process",
-      "Interrupted system call",
-      "I/O error",
-      "No such device or address",
-      "Argument list too long",
-      "Exec format error",
-      "Bad file number",
-      "No child processes",
-      "Try again",
-      "Out of memory",
-      "Permission denied",
-      "Bad address",
-      "Block device required",
-      "Device or resource busy",
-      "File exists",
-      "Cross-device link",
-      "No such device",
-      "Not a directory",
-      "Is a directory",
-      "Invalid argument",
-      "File table overflow",
-      "Too many open files",
-      "Not a typewriter",
-      "Text file busy",
-      "File too large",
-      "No space left on device",
-      "Illegal seek",
-      "Read-only file system",
-      "Too many links",
-      "Broken pipe",
-      "Math argument out of domain of func",
-      "Math result not representable",
+    "OK",
+    "Operation not permitted",
+    "No such file or directory",
+    "No such process",
+    "Interrupted system call",
+    "I/O error",
+    "No such device or address",
+    "Argument list too long",
+    "Exec format error",
+    "Bad file number",
+    "No child processes",
+    "Try again",
+    "Out of memory",
+    "Permission denied",
+    "Bad address",
+    "Block device required",
+    "Device or resource busy",
+    "File exists",
+    "Cross-device link",
+    "No such device",
+    "Not a directory",
+    "Is a directory",
+    "Invalid argument",
+    "File table overflow",
+    "Too many open files",
+    "Not a typewriter",
+    "Text file busy",
+    "File too large",
+    "No space left on device",
+    "Illegal seek",
+    "Read-only file system",
+    "Too many links",
+    "Broken pipe",
+    "Math argument out of domain of func",
+    "Math result not representable",
 ];

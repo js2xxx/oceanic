@@ -24,8 +24,8 @@ pub use solvent_gen::*;
 
 #[derive(Debug, Copy, Clone)]
 pub struct Arguments {
-      pub fn_num: usize,
-      pub args: [usize; 5],
+    pub fn_num: usize,
+    pub args: [usize; 5],
 }
 
 pub type SyscallWrapper = unsafe extern "C" fn(usize, usize, usize, usize, usize) -> usize;
@@ -33,19 +33,19 @@ pub type SyscallWrapper = unsafe extern "C" fn(usize, usize, usize, usize, usize
 #[allow(dead_code)]
 #[cfg(feature = "call")]
 pub fn test_task() {
-      extern "C" fn func(arg: *mut u8) {
-            ::log::debug!("New task here: {:?}", arg);
-            crate::task::exit(Ok(12345));
-      }
-      ::log::debug!("Creating a task");
-      let task = crate::call::task_fn(
-            core::ptr::null_mut(),
-            crate::task::DEFAULT_STACK_SIZE,
-            func as *mut u8,
-            test_task as *mut u8,
-      )
-      .expect("Failed to create task");
-      ::log::debug!("Waiting a task");
-      let ret = crate::call::task_join(task).expect("Failed to join task");
-      ::log::debug!("Return value = {}", ret);
+    extern "C" fn func(arg: *mut u8) {
+        ::log::debug!("New task here: {:?}", arg);
+        crate::task::exit(Ok(12345));
+    }
+    ::log::debug!("Creating a task");
+    let task = crate::call::task_fn(
+        core::ptr::null_mut(),
+        crate::task::DEFAULT_STACK_SIZE,
+        func as *mut u8,
+        test_task as *mut u8,
+    )
+    .expect("Failed to create task");
+    ::log::debug!("Waiting a task");
+    let ret = crate::call::task_join(task).expect("Failed to join task");
+    ::log::debug!("Return value = {}", ret);
 }
