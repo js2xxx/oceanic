@@ -381,7 +381,7 @@ impl Drop for Space {
 
         let _ = self.clear_stack();
         self.dealloc_tls();
-        unsafe { self.allocator.dispose_mapping(&self.arch) };
+        unsafe { self.allocator.dispose(&self.arch) };
 
         unsafe { current().load() };
     }

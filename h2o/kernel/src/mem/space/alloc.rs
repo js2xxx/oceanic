@@ -202,24 +202,36 @@ impl Allocator {
         range.insert(virt).map_err(|_| SpaceError::AddressBusy)
     }
 
-    pub unsafe fn dispose_mapping(&self, _arch: &ArchSpace) {
-        // TODO: Be aware of shared page tables.
-
-        // let record = self.record.lock();
-        // for (&base, (layout, _)) in record.iter() {
-        //       let virt = base..LAddr::from(base.val() +
-        // layout.pad_to_align().size());       let _ =
-        // arch.unmaps(virt); }
-    }
-}
-
-impl Drop for Allocator {
-    fn drop(&mut self) {
-        let mut record = self.record.lock();
-        while let Some((_base, (layout, phys))) = record.pop_first() {
-            if let Some(phys) = phys {
-                let ptr = phys.to_laddr(minfo::ID_OFFSET);
-                unsafe { alloc::alloc::dealloc(*ptr, layout) };
+    /// The manual dropping function, replacing `Drop::drop` with `arch`.
+    ///
+    /// # Safety
+    ///
+    /// This function is called only inside `<space::Space as Drop>::drop`.
+    pub unsafe fn dispose(self: &alloc::sync::Arc<Self>, arch: &ArchSpace) {
+        // SAFE: This expression ensures the memory safety of page tables and will not
+        // cause any double-free faults.
+        //
+        // This is called only inside `<space::Space as Drop>::drop`, which means that:
+        //
+        // 1. If at that point there's only one `Space` referring to the allocator,
+        // there is, and will always be only one `Space` until that one is dropped, and
+        // the reference count will not be incremented to any value greater than 1.
+        // That's because cloning operations are unavailable after the variable starts
+        // the dropping process.
+        //
+        // 2. If at that point there's more than one `Space` referring to the allocator,
+        // no page tables or mappings will be disposed until other `Space`s are dropped,
+        // reaching condition 1.
+        if alloc::sync::Arc::strong_count(self) == 1 {
+            // The actual dropping process.
+            let mut record = self.record.lock();
+            while let Some((base, (layout, phys))) = record.pop_first() {
+                let virt = base..LAddr::from(base.val() + layout.pad_to_align().size());
+                let _ = arch.unmaps(virt);
+                if let Some(phys) = phys {
+                    let ptr = phys.to_laddr(minfo::ID_OFFSET);
+                    unsafe { alloc::alloc::dealloc(*ptr, layout) };
+                }
             }
         }
     }
