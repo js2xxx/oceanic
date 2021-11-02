@@ -53,13 +53,10 @@ pub static GDT: Lazy<DescTable<10>> = Lazy::new(|| {
 #[thread_local]
 static TSS: Lazy<TssStruct> = Lazy::new(|| {
     // SAFE: No physical address specified.
-    let alloc_stack = || unsafe {
-        let (layout, k) = paging::PAGE_LAYOUT
-            .repeat(4)
-            .expect("Failed to calculate the layout");
-        assert!(k == paging::PAGE_SIZE);
-        let memory = alloc::alloc::alloc(layout);
-        memory.add(layout.size())
+    let alloc_stack = || {
+        crate::mem::alloc_system_stack()
+            .expect("System memory allocation failed")
+            .as_ptr()
     };
 
     let rsp0 = alloc_stack();

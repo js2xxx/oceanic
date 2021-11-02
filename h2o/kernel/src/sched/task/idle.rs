@@ -1,5 +1,7 @@
 use spin::Lazy;
 
+use crate::mem::space::{self, Space};
+
 use super::*;
 
 #[thread_local]
@@ -15,7 +17,7 @@ pub(super) static IDLE: Lazy<Tid> = Lazy::new(|| {
         user_handles: UserHandles::new(),
     };
 
-    let space = unsafe { crate::mem::space::current().duplicate(Type::Kernel) };
+    let space = Space::clone(unsafe { space::current() }, Type::Kernel);
     let entry = LAddr::new(idle as *mut u8);
 
     let (init, _) = Init::new(

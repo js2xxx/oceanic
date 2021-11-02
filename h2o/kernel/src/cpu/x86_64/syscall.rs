@@ -14,14 +14,9 @@ extern "C" {
 ///
 /// This function should only be called once per CPU.
 pub unsafe fn init() -> Option<LAddr> {
-    let stack = {
-        let layout = crate::sched::task::DEFAULT_STACK_LAYOUT;
-        let base = alloc::alloc::alloc(layout);
-        if base.is_null() {
-            return None;
-        }
-        base.add(layout.size() - size_of::<usize>())
-    };
+    let stack = crate::mem::alloc_system_stack()?
+        .as_ptr()
+        .sub(size_of::<usize>());
 
     let star = (USR_CODE_X86.into_val() as u64) << 48 | (KRL_CODE_X64.into_val() as u64) << 32;
     msr::write(msr::STAR, star);

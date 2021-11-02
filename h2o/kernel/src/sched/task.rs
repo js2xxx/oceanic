@@ -348,7 +348,6 @@ impl Dead {
 }
 
 pub(super) fn init() {
-    tid::init();
     Lazy::force(&idle::IDLE);
 }
 
@@ -369,9 +368,9 @@ where
             (
                 cur.tid,
                 if dup_cur_space {
-                    cur.space.duplicate(ty)
+                    Space::clone(&cur.space, ty)
                 } else {
-                    Arc::new(Space::new(ty))
+                    Space::new(ty)
                 },
             )
         })

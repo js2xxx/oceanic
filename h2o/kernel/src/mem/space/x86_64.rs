@@ -3,8 +3,8 @@
 //! This module is specific for x86_64 mode. It wraps the cr3's root page table
 //! and the methods of x86_64 paging.
 
-use alloc::boxed::Box;
-use core::ops::Range;
+use alloc::{alloc::Global, boxed::Box};
+use core::{alloc::Allocator, ops::Range};
 
 use canary::Canary;
 use paging::{LAddr, PAddr, Table};
@@ -52,8 +52,7 @@ impl Space {
         };
 
         {
-            // So far we only copy the higher half kernel mappings. In the future, we'll set
-            // ranges and customize the behavior.
+            // Only copying the higher half kernel mappings.
             let mut dst_rt = space.root_table.lock();
             let dst_kernel_half = &mut dst_rt[(paging::NR_ENTRIES / 2)..];
 
@@ -63,6 +62,32 @@ impl Space {
         }
 
         space
+    }
+
+    pub fn clone(this: &Self) -> Self {
+
+        let rt = box Table::zeroed();
+        let cr3 = Box::into_raw(rt);
+        let mut rt = unsafe { Box::from_raw(cr3) };
+
+        {
+            let self_rt = this.root_table.lock();
+            rt.copy_from_slice(&self_rt[..]);
+
+            let idx_tls = paging::Level::P4.addr_idx(LAddr::from(minfo::USER_TLS_BASE), false);
+            let idx_stack = paging::Level::P4.addr_idx(LAddr::from(minfo::USER_STACK_BASE), false);
+            debug_assert!(idx_tls == paging::NR_ENTRIES / 2 - 2);
+            debug_assert!(idx_stack == paging::NR_ENTRIES / 2 - 1);
+
+            rt[idx_tls].reset();
+            rt[idx_stack].reset();
+        }
+
+        Space {
+            canary: Canary::new(),
+            root_table: Mutex::new(rt),
+            cr3: LAddr::new(cr3.cast()).to_paddr(minfo::ID_OFFSET),
+        }
     }
 
     pub(in crate::mem) fn maps(
@@ -141,47 +166,20 @@ impl Space {
     }
 }
 
-impl Clone for Space {
-    fn clone(&self) -> Self {
-        let rt = box Table::zeroed();
-        let cr3 = Box::into_raw(rt);
-        let mut rt = unsafe { Box::from_raw(cr3) };
-
-        {
-            let self_rt = self.root_table.lock();
-            rt.copy_from_slice(&self_rt[..]);
-
-            let idx_tls = paging::Level::P4.addr_idx(LAddr::from(minfo::USER_TLS_BASE), false);
-            let idx_stack = paging::Level::P4.addr_idx(LAddr::from(minfo::USER_STACK_BASE), false);
-            debug_assert!(idx_tls == paging::NR_ENTRIES / 2 - 2);
-            debug_assert!(idx_stack == paging::NR_ENTRIES / 2 - 1);
-
-            rt[idx_tls].reset();
-            rt[idx_stack].reset();
-        }
-
-        Space {
-            canary: Canary::new(),
-            root_table: Mutex::new(rt),
-            cr3: LAddr::new(cr3.cast()).to_paddr(minfo::ID_OFFSET),
-        }
-    }
-}
-
 struct PageAlloc;
 
 unsafe impl paging::PageAlloc for PageAlloc {
     unsafe fn alloc(&mut self) -> Option<PAddr> {
-        let ptr = alloc::alloc::alloc(core::alloc::Layout::new::<paging::Table>());
-        if !ptr.is_null() {
-            Some(LAddr::new(ptr).to_paddr(minfo::ID_OFFSET))
-        } else {
-            None
-        }
+        Global
+            .allocate(core::alloc::Layout::new::<paging::Table>())
+            .map_or(None, |ptr| {
+                Some(LAddr::new(ptr.as_mut_ptr()).to_paddr(minfo::ID_OFFSET))
+            })
     }
 
     unsafe fn dealloc(&mut self, addr: PAddr) {
-        let ptr = *addr.to_laddr(minfo::ID_OFFSET);
-        alloc::alloc::dealloc(ptr, core::alloc::Layout::new::<paging::Table>());
+        if let Some(ptr) = addr.to_laddr(minfo::ID_OFFSET).as_non_null() {
+            Global.deallocate(ptr, core::alloc::Layout::new::<paging::Table>());
+        }
     }
 }

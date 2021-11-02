@@ -8,11 +8,12 @@
 pub mod idt;
 pub mod ndt;
 
+use alloc::alloc::Global;
 use core::{
-    alloc::Layout,
+    alloc::{Allocator, Layout},
     mem::{size_of, transmute},
     ops::Range,
-    ptr::null_mut,
+    ptr::{null_mut, NonNull},
 };
 
 use modular_bitfield::prelude::*;
@@ -142,7 +143,7 @@ pub unsafe fn reload_pls() -> LAddr {
 }
 
 /// Allocate and initialize a new PLS for application CPU.
-pub fn alloc_pls() -> *mut u8 {
+pub fn alloc_pls() -> Option<NonNull<u8>> {
     extern "C" {
         static TDATA_START: u8;
         static TBSS_START: u8;
@@ -150,28 +151,26 @@ pub fn alloc_pls() -> *mut u8 {
 
     let pls_layout = match crate::KARGS.pls_layout {
         Some(layout) => layout,
-        None => return null_mut(),
+        None => return None,
     };
 
-    unsafe {
-        let base = alloc::alloc::alloc_zeroed(
+    let base = Global
+        .allocate_zeroed(
             pls_layout
                 .extend(Layout::new::<*mut u8>())
                 .expect("Failed to get the allocation layout")
                 .0,
-        );
-
-        if base.is_null() {
-            return null_mut();
-        }
-
+        )
+        .map(NonNull::as_non_null_ptr)
+        .ok()?;
+    unsafe {
         let size = (&TBSS_START as *const u8).offset_from(&TDATA_START) as usize;
-        base.copy_from_nonoverlapping(&TDATA_START, size);
+        base.as_ptr().copy_from_nonoverlapping(&TDATA_START, size);
 
-        let self_ptr = base.add(pls_layout.size());
+        let self_ptr = base.as_ptr().add(pls_layout.size());
         self_ptr.cast::<*mut u8>().write(self_ptr);
 
-        self_ptr
+        NonNull::new(self_ptr)
     }
 }
 

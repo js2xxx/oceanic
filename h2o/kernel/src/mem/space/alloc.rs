@@ -1,5 +1,8 @@
-use alloc::collections::BTreeMap;
-use core::{alloc::Layout, pin::Pin};
+use alloc::{alloc::Global, collections::BTreeMap};
+use core::{
+    alloc::{Allocator as AllocTrait, Layout},
+    pin::Pin,
+};
 
 use bitop_ex::BitOpEx;
 use canary::Canary;
@@ -88,19 +91,19 @@ impl Allocator {
         let (phys, alloc_ptr) = match phys {
             Some(phys) => (phys, None),
             None => {
-                let ptr = unsafe {
+                let ptr = {
                     if flags.contains(Flags::ZEROED) {
-                        alloc::alloc::alloc_zeroed(layout)
+                        Global.allocate(layout)
                     } else {
-                        alloc::alloc::alloc(layout)
+                        Global.allocate_zeroed(layout)
                     }
-                };
-
-                if ptr.is_null() {
-                    return Err(SpaceError::OutOfMemory);
                 }
+                .map_err(|_| SpaceError::OutOfMemory)?;
 
-                (LAddr::new(ptr).to_paddr(minfo::ID_OFFSET), Some(ptr))
+                (
+                    LAddr::new(ptr.as_mut_ptr()).to_paddr(minfo::ID_OFFSET),
+                    Some(ptr.as_non_null_ptr()),
+                )
             }
         };
 
@@ -108,7 +111,7 @@ impl Allocator {
         let ptr = *virt.start;
         arch.maps(virt, phys, flags).map_err(|e| {
             if let Some(alloc_ptr) = alloc_ptr {
-                unsafe { alloc::alloc::dealloc(alloc_ptr, layout) };
+                unsafe { Global.deallocate(alloc_ptr, layout) };
             }
             SpaceError::PagingError(e)
         })?;
@@ -183,9 +186,9 @@ impl Allocator {
         // Unmap the virtual address & get the physical address.
         let _ = arch.unmaps(virt.clone()).map_err(SpaceError::PagingError)?;
 
-        if let Some(phys) = phys {
-            let alloc_ptr = phys.to_laddr(minfo::ID_OFFSET);
-            alloc::alloc::dealloc(*alloc_ptr, layout);
+        if let Some(alloc_ptr) = phys.and_then(|phys| phys.to_laddr(minfo::ID_OFFSET).as_non_null())
+        {
+            Global.deallocate(alloc_ptr, layout);
         }
 
         // Deallocate the virtual address range.
@@ -228,9 +231,10 @@ impl Allocator {
             while let Some((base, (layout, phys))) = record.pop_first() {
                 let virt = base..LAddr::from(base.val() + layout.pad_to_align().size());
                 let _ = arch.unmaps(virt);
-                if let Some(phys) = phys {
-                    let ptr = phys.to_laddr(minfo::ID_OFFSET);
-                    unsafe { alloc::alloc::dealloc(*ptr, layout) };
+                if let Some(alloc_ptr) =
+                    phys.and_then(|phys| phys.to_laddr(minfo::ID_OFFSET).as_non_null())
+                {
+                    Global.deallocate(alloc_ptr, layout);
                 }
             }
         }

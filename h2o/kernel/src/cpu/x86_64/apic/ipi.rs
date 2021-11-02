@@ -1,6 +1,7 @@
 use alloc::vec::Vec;
 use core::{
     cell::UnsafeCell,
+    ptr::null_mut,
     sync::atomic::{AtomicBool, Ordering},
     time::Duration,
 };
@@ -119,13 +120,11 @@ impl TramHeader {
     }
 
     pub unsafe fn reset_subheader(&self) {
-        let stack = unsafe {
-            let layout = crate::sched::task::DEFAULT_STACK_LAYOUT;
-            let memory = alloc::alloc::alloc(layout);
-            memory.add(layout.size())
-        } as u64;
+        let stack = crate::mem::alloc_system_stack()
+            .expect("System memory allocation failed")
+            .as_ptr() as u64;
 
-        let pls = alloc_pls() as u64;
+        let pls = alloc_pls().map_or(null_mut(), |ptr| ptr.as_ptr()) as u64;
 
         let ptr = self.subheader.get();
         ptr.write(TramSubheader { stack, pls });

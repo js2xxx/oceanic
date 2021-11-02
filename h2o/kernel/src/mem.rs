@@ -1,6 +1,7 @@
 pub mod space;
 
-use core::ptr::NonNull;
+use alloc::alloc::Global;
+use core::{alloc::Allocator, ptr::NonNull};
 
 use paging::LAddr;
 
@@ -16,6 +17,14 @@ unsafe fn dealloc_pages(pages: NonNull<[heap::Page]>) {
     let paddr = LAddr::new(pages.as_ptr().cast()).to_paddr(minfo::ID_OFFSET);
     let n = pages.len();
     pmm::dealloc_pages_exact(n, paddr);
+}
+
+pub fn alloc_system_stack() -> Option<NonNull<u8>> {
+    let layout = crate::sched::task::DEFAULT_STACK_LAYOUT;
+    Global
+        .allocate(layout)
+        .ok()
+        .and_then(|ptr| NonNull::new(unsafe { ptr.as_mut_ptr().add(layout.size()) }))
 }
 
 /// Initialize the PMM and the kernel heap (Rust global allocator).

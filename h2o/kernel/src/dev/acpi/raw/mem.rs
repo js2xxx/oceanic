@@ -1,5 +1,9 @@
-use alloc::collections::BTreeMap;
-use core::{alloc::Layout, ops::Range, ptr::null_mut};
+use alloc::{alloc::Global, collections::BTreeMap};
+use core::{
+    alloc::{Allocator, Layout},
+    ops::Range,
+    ptr::{null_mut, NonNull},
+};
 
 use paging::{LAddr, PAddr};
 use spin::Mutex;
@@ -61,14 +65,19 @@ unsafe extern "C" fn AcpiOsWriteMemory(
 #[no_mangle]
 unsafe extern "C" fn AcpiOsAllocate(size: ACPI_SIZE) -> *mut u8 {
     let size = size as usize;
-    Layout::from_size_align(size, size.next_power_of_two()).map_or(null_mut(), |layout| {
-        let ptr = alloc::alloc::alloc(layout);
-        if !ptr.is_null() {
-            let mut rec = ALLOC_REC.lock();
-            rec.insert(ptr as usize, layout);
-        }
-        ptr
-    })
+    Layout::from_size_align(size, size.next_power_of_two())
+        .ok()
+        .and_then(|layout| {
+            Global.allocate(layout).map_or(None, |ptr| {
+                let ptr = ptr.as_mut_ptr();
+                if !ptr.is_null() {
+                    let mut rec = ALLOC_REC.lock();
+                    rec.insert(ptr as usize, layout);
+                }
+                Some(ptr)
+            })
+        })
+        .unwrap_or(null_mut())
 }
 
 #[no_mangle]
@@ -78,7 +87,7 @@ unsafe extern "C" fn AcpiOsFree(ptr: *mut u8) {
         rec.remove(&(ptr as usize))
     };
 
-    if let Some(layout) = layout {
-        alloc::alloc::dealloc(ptr, layout);
+    if let Some((layout, ptr)) = layout.zip(NonNull::new(ptr)) {
+        Global.deallocate(ptr, layout);
     }
 }

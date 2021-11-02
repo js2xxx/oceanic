@@ -51,6 +51,7 @@ pub extern "C" fn kmain() {
 
     l::debug!("Creating the kernel space");
     unsafe { mem::space::init_bsp_early() };
+    sched::task::tid::init();
 
     l::debug!("Initializing ACPI tables");
     unsafe { dev::acpi::init_tables(*KARGS.rsdp) };

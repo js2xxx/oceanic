@@ -28,7 +28,7 @@ cfg_if::cfg_if! {
       }
 }
 
-static INIT: Lazy<Arc<Space>> = Lazy::new(|| Arc::new(Space::new(task::Type::Kernel)));
+static INIT: Lazy<Arc<Space>> = Lazy::new(|| Space::new(task::Type::Kernel));
 
 #[thread_local]
 static mut CURRENT: Option<Arc<Space>> = None;
@@ -117,15 +117,15 @@ unsafe impl Sync for Space {}
 
 impl Space {
     /// Create a new address space.
-    pub fn new(ty: task::Type) -> Self {
-        Space {
+    pub fn new(ty: task::Type) -> Arc<Self> {
+        Arc::new(Space {
             canary: Canary::new(),
             ty,
             arch: ArchSpace::new(),
             allocator: Arc::new(alloc::Allocator::new(ty_to_range_set(ty))),
             tls: Mutex::new(None),
             stack_blocks: Mutex::new(BTreeMap::new()),
-        }
+        })
     }
 
     /// Allocate an address range in the space.
@@ -357,8 +357,8 @@ impl Space {
         Ok(())
     }
 
-    pub fn duplicate(&self, ty: task::Type) -> Arc<Self> {
-        let ty = match self.ty {
+    pub fn clone(this: &Arc<Self>, ty: task::Type) -> Arc<Self> {
+        let ty = match this.ty {
             task::Type::Kernel => ty,
             task::Type::User => task::Type::User,
         };
@@ -366,8 +366,8 @@ impl Space {
         Arc::new(Space {
             canary: Canary::new(),
             ty,
-            arch: self.arch.clone(),
-            allocator: Arc::clone(&self.allocator),
+            arch: ArchSpace::clone(&this.arch),
+            allocator: Arc::clone(&this.allocator),
             // TODO: Add an image field to `TaskInfo` to get TLS init block.
             tls: Mutex::new(None),
             stack_blocks: Mutex::new(BTreeMap::new()),
@@ -413,7 +413,7 @@ pub unsafe fn init() {
 ///
 /// The caller must ensure that [`CURRENT`] will not be modified where the
 /// reference is alive.
-pub unsafe fn current() -> &'static Arc<Space> {
+pub unsafe fn current<'a>() -> &'a Arc<Space> {
     unsafe { CURRENT.as_ref().expect("No current space available") }
 }
 
