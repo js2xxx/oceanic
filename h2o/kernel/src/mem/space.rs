@@ -95,7 +95,7 @@ pub enum AllocType {
 /// real (physical) address in RAM. This structure is used to allocate & reserve
 /// address space ranges for various requests.
 ///
-/// >TODO: Support the requests for reserving address ranges.
+/// TODO: Support the requests for reserving address ranges.
 #[derive(Debug)]
 pub struct Space {
     canary: Canary<Space>,

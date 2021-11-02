@@ -65,7 +65,6 @@ impl Space {
     }
 
     pub fn clone(this: &Self) -> Self {
-
         let rt = box Table::zeroed();
         let cr3 = Box::into_raw(rt);
         let mut rt = unsafe { Box::from_raw(cr3) };

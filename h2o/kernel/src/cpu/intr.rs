@@ -121,9 +121,6 @@ impl Interrupt {
     }
 }
 
-// TODO: Write different types of interrupt handling routines, such as EDGE,
-// LEVEL, FASTEOI, etc.
-
 fn handle_event(intr: Arc<Interrupt>) -> IrqReturn {
     todo!()
     // let state = self.state.load(Ordering::SeqCst);

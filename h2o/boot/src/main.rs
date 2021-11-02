@@ -5,8 +5,6 @@
 //!
 //! In order to properly boot H2O, a kernel file and its binary data - initial
 //! memory FS is needed.
-//!
-//! TODO: Add more explanation
 
 #![no_std]
 #![no_main]

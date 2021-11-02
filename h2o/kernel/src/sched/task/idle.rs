@@ -1,8 +1,7 @@
 use spin::Lazy;
 
-use crate::mem::space::{self, Space};
-
 use super::*;
+use crate::mem::space::{self, Space};
 
 #[thread_local]
 pub(super) static IDLE: Lazy<Tid> = Lazy::new(|| {
