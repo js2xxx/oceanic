@@ -73,6 +73,9 @@ pub struct Buckets<K, V, S> {
     data: Vec<RwLock<Entry<(K, V)>>>,
 }
 
+unsafe impl<K: Send, V: Send, S: Send> Send for Buckets<K, V, S> {}
+unsafe impl<K: Sync + Send, V: Sync + Send, S> Sync for Buckets<K, V, S> {}
+
 impl<K, V, S> Buckets<K, V, S> {
     pub fn with_capacity(hasher: S, capacity: usize) -> Self {
         let data = iter::repeat_with(|| RwLock::new(Entry::Empty))

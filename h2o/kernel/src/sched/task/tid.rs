@@ -4,7 +4,7 @@ use core::{
 };
 
 use archop::IntrState;
-use collection_ex::{CHashMap, FnvHasher};
+use collection_ex::{CHashMap, FnvHasher, IdAllocator};
 use spin::Lazy;
 
 use super::TaskInfo;
@@ -13,6 +13,8 @@ pub const NR_TASKS: usize = 65536;
 
 type BH = BuildHasherDefault<FnvHasher>;
 static TI_MAP: Lazy<CHashMap<Tid, TaskInfo, BH>> = Lazy::new(|| CHashMap::new(BH::default()));
+static TID_ALLOC: Lazy<spin::Mutex<IdAllocator>> =
+    Lazy::new(|| spin::Mutex::new(IdAllocator::new(0..=(NR_TASKS as u64 - 1))));
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Tid(u32);
@@ -50,15 +52,8 @@ impl<'a> DerefMut for WriteGuard<'a> {
 }
 
 fn next() -> Option<Tid> {
-    static TID_LOCK: spin::Mutex<()> = spin::Mutex::new(());
-    let _lock = TID_LOCK.lock();
-    (1..=NR_TASKS as u32).find_map(|idx| {
-        if !TI_MAP.contains_key(&Tid(idx)) {
-            Some(Tid(idx))
-        } else {
-            None
-        }
-    })
+    let mut alloc = TID_ALLOC.lock();
+    alloc.alloc().map(|id| Tid(u32::try_from(id).unwrap()))
 }
 
 pub fn alloc_insert(ti: TaskInfo) -> Result<Tid, TaskInfo> {
@@ -87,7 +82,10 @@ pub fn insert(tid: Tid, ti: TaskInfo) -> Option<TaskInfo> {
 
 pub fn remove(tid: &Tid) -> Option<TaskInfo> {
     let _flags = IntrState::lock();
-    TI_MAP.remove(tid)
+    TI_MAP.remove(tid).map(|ret| {
+        TID_ALLOC.lock().dealloc(u64::from(tid.0));
+        ret
+    })
 }
 
 pub fn get<'a>(tid: &'a Tid) -> Option<ReadGuard<'a>> {

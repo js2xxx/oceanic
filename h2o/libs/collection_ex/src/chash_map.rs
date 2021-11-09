@@ -64,7 +64,7 @@ pub struct CHashMap<K, V, S> {
     len: AtomicUsize,
 }
 
-unsafe impl<K: Send, V: Send, S> Send for CHashMap<K, V, S> {}
+unsafe impl<K: Send, V: Send, S: Send> Send for CHashMap<K, V, S> {}
 unsafe impl<K: Sync + Send, V: Sync + Send, S> Sync for CHashMap<K, V, S> {}
 
 impl<K, V, S> CHashMap<K, V, S> {

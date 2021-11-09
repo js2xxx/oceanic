@@ -37,7 +37,7 @@ impl Default for PageAdapter {
     }
 }
 
-unsafe impl Send for PageAdapter {}
+// unsafe impl Send for PageAdapter {}
 unsafe impl Sync for PageAdapter {}
 
 unsafe impl Adapter for PageAdapter {

@@ -108,7 +108,10 @@ struct PageFrame {
     order: Cell<usize>,
 }
 
-intrusive_adapter!(PFAdapter = &'static PageFrame: PageFrame { link: LinkedListLink });
+intrusive_adapter!(
+    #[allow(clippy::non_send_fields_in_send_ty)]
+    PFAdapter = &'static PageFrame: PageFrame { link: LinkedListLink }
+);
 
 /// The free list type.
 type PfList = LinkedList<PFAdapter>;
