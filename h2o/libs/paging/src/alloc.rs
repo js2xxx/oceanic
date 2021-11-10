@@ -8,18 +8,18 @@ pub unsafe trait PageAlloc {
     /// # Safety
     ///
     /// This function may directly call the allocator unlockedly.
-    unsafe fn alloc(&mut self) -> Option<PAddr>;
+    unsafe fn allocate(&mut self) -> Option<PAddr>;
 
     /// # Safety
     ///
     /// This function may directly call the allocator unlockedly.
-    unsafe fn dealloc(&mut self, addr: PAddr);
+    unsafe fn deallocate(&mut self, addr: PAddr);
 
     /// # Safety
     ///
     /// This function may directly call the allocator unlockedly.
-    unsafe fn alloc_zeroed(&mut self, id_off: usize) -> Option<PAddr> {
-        let phys = self.alloc()?;
+    unsafe fn allocate_zeroed(&mut self, id_off: usize) -> Option<PAddr> {
+        let phys = self.allocate()?;
         let virt = phys.to_laddr(id_off);
 
         let page = core::slice::from_raw_parts_mut(*virt, PAGE_SIZE);

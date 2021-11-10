@@ -10,7 +10,7 @@ use canary::Canary;
 use paging::{LAddr, PAddr, Table};
 use spin::{Lazy, Mutex};
 
-use super::Flags;
+use super::{Flags, Id};
 
 /// The root page table at initialization time.
 static KERNEL_ROOT: Lazy<(Box<Table>, u64)> = Lazy::new(|| {
@@ -64,7 +64,14 @@ impl Space {
         space
     }
 
+    pub fn id(&self) -> Id {
+        self.canary.assert();
+        Id(u64::try_from(*self.cr3).unwrap())
+    }
+
     pub fn clone(this: &Self) -> Self {
+        this.canary.assert();
+
         let rt = box Table::zeroed();
         let cr3 = Box::into_raw(rt);
         let mut rt = unsafe { Box::from_raw(cr3) };
@@ -168,7 +175,7 @@ impl Space {
 struct PageAlloc;
 
 unsafe impl paging::PageAlloc for PageAlloc {
-    unsafe fn alloc(&mut self) -> Option<PAddr> {
+    unsafe fn allocate(&mut self) -> Option<PAddr> {
         Global
             .allocate(core::alloc::Layout::new::<paging::Table>())
             .map_or(None, |ptr| {
@@ -176,7 +183,7 @@ unsafe impl paging::PageAlloc for PageAlloc {
             })
     }
 
-    unsafe fn dealloc(&mut self, addr: PAddr) {
+    unsafe fn deallocate(&mut self, addr: PAddr) {
         if let Some(ptr) = addr.to_laddr(minfo::ID_OFFSET).as_non_null() {
             Global.deallocate(ptr, core::alloc::Layout::new::<paging::Table>());
         }

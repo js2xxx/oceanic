@@ -34,7 +34,7 @@ impl Allocator {
         chip: Arc<Mutex<dyn IntrChip>>,
         affinity: CpuMask,
     ) -> Result<Arc<Interrupt>, AllocError> {
-        let arch_reg = self.arch.alloc(&affinity).map_err(AllocError::ArchReg)?;
+        let arch_reg = self.arch.allocate(&affinity).map_err(AllocError::ArchReg)?;
 
         let handler = unsafe {
             chip.lock()
@@ -75,7 +75,9 @@ impl Allocator {
         unsafe { intr.chip.lock().remove(intr.clone()) }.map_err(AllocError::Chip)?;
 
         let arch_reg = intr.arch_reg.lock().clone();
-        self.arch.dealloc(arch_reg).map_err(AllocError::ArchReg)?;
+        self.arch
+            .deallocate(arch_reg)
+            .map_err(AllocError::ArchReg)?;
 
         Ok(())
     }

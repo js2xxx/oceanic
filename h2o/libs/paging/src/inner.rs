@@ -22,7 +22,8 @@ fn create_table(
             if entry.is_leaf(level) {
                 Err(Error::EntryExistent(true))
             } else {
-                let phys = unsafe { allocator.alloc_zeroed(id_off) }.ok_or(Error::OutOfMemory)?;
+                let phys =
+                    unsafe { allocator.allocate_zeroed(id_off) }.ok_or(Error::OutOfMemory)?;
                 let attr = Attr::INTERMEDIATE;
                 *entry = Entry::new(phys, attr, Level::Pt);
                 log::trace!(

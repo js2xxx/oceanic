@@ -46,7 +46,7 @@ fn load_prog(
     if fsize > 0 {
         let virt = LAddr::from(vstart)..LAddr::from(vend);
         log::trace!("Mapping {:?}", virt);
-        unsafe { space.alloc(AllocType::Virt(virt), Some(phys), flags) }
+        unsafe { space.allocate(AllocType::Virt(virt), Some(phys), flags) }
             .map_err(TaskError::Memory)?;
     }
 
@@ -55,7 +55,7 @@ fn load_prog(
 
         let virt = LAddr::from(vend)..LAddr::from(vend + extra);
         log::trace!("Allocating {:?}", virt);
-        unsafe { space.alloc(AllocType::Virt(virt), None, flags | Flags::ZEROED) }
+        unsafe { space.allocate(AllocType::Virt(virt), None, flags | Flags::ZEROED) }
             .map_err(TaskError::Memory)?;
     }
 

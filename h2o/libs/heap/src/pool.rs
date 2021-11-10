@@ -76,10 +76,10 @@ impl Pool {
     ///
     /// 1. The memory layout doesn't match all the available [`OBJ_SIZES`].
     /// 2. There's no free slab page.
-    pub fn alloc(&mut self, layout: Layout) -> Result<LAddr, Error> {
+    pub fn allocate(&mut self, layout: Layout) -> Result<LAddr, Error> {
         let idx = Self::unwrap_layout(layout)?;
         self.slabs[idx].pop().map(|ret| {
-            self.stat.alloc(layout.pad_to_align().size());
+            self.stat.allocate(layout.pad_to_align().size());
             ret
         })
     }
@@ -93,10 +93,14 @@ impl Pool {
     ///
     /// 1. The memory layout doesn't match all the available [`OBJ_SIZES`].
     /// 2. There's an internal logic fault.
-    pub fn dealloc(&mut self, addr: LAddr, layout: Layout) -> Result<Option<NonNull<Page>>, Error> {
+    pub fn deallocate(
+        &mut self,
+        addr: LAddr,
+        layout: Layout,
+    ) -> Result<Option<NonNull<Page>>, Error> {
         let idx = Self::unwrap_layout(layout)?;
         self.slabs[idx].push(addr).map(|ret| {
-            self.stat.dealloc(layout.pad_to_align().size());
+            self.stat.deallocate(layout.pad_to_align().size());
             ret
         })
     }

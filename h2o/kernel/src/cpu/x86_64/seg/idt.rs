@@ -213,7 +213,7 @@ impl IntDescTable {
     // }
 
     // /// Allocate a free slot (position of gate descriptor) in the IDT.
-    // pub fn alloc(&self) -> Option<usize> {
+    // pub fn allocate(&self) -> Option<usize> {
     //       self.iter()
     //             .enumerate()
     //             .find(|x| !x.1.is_valid() && ALLOCABLE_INTRS.contains(&x.0))
@@ -221,7 +221,7 @@ impl IntDescTable {
     // }
 
     // /// Deallocate (destroy) a gate descriptor in the IDT.
-    // pub fn dealloc(&mut self, idx: usize) -> Result<(), &'static str> {
+    // pub fn deallocate(&mut self, idx: usize) -> Result<(), &'static str> {
     //       if !(0..NR_VECTORS).contains(&idx) {
     //             return Err("Index out of range");
     //       }

@@ -50,9 +50,9 @@ mod syscall {
 
     #[syscall]
     fn alloc_pages(virt: *mut u8, phys: usize, size: usize, align: usize, flags: u32) -> *mut u8 {
-        use super::space;
-
         use core::ptr::NonNull;
+
+        use super::space;
 
         if size.contains_bit(paging::PAGE_MASK) || !align.is_power_of_two() {
             return Err(Error(EINVAL));
@@ -74,15 +74,15 @@ mod syscall {
 
         let flags = space::Flags::from_bits(flags).ok_or(Error(EINVAL))?;
 
-        let ret = space::with_current(|cur| cur.alloc(ty, phys, flags));
+        let ret = space::with_current(|cur| cur.allocate(ty, phys, flags));
         ret.map_err(Into::into).map(NonNull::as_mut_ptr)
     }
 
     #[syscall]
     fn dealloc_pages(ptr: *mut u8, size: usize) {
-        use super::space;
-
         use core::ptr::NonNull;
+
+        use super::space;
 
         if size.contains_bit(paging::PAGE_MASK) {
             return Err(Error(EINVAL));
@@ -90,16 +90,16 @@ mod syscall {
 
         let ret = unsafe {
             let ptr = NonNull::new(ptr).ok_or(Error(EINVAL))?;
-            space::with_current(|cur| cur.dealloc(ptr))
+            space::with_current(|cur| cur.deallocate(ptr))
         };
         ret.map_err(Into::into)
     }
 
     #[syscall]
     fn modify_pages(ptr: *mut u8, size: usize, flags: u32) {
-        use super::space;
-
         use core::ptr::NonNull;
+
+        use super::space;
 
         if size.contains_bit(paging::PAGE_MASK) {
             return Err(Error(EINVAL));

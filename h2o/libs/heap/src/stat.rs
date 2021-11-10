@@ -35,12 +35,12 @@ impl Stat {
         self.capacity += size;
     }
 
-    pub fn alloc(&mut self, size: usize) {
+    pub fn allocate(&mut self, size: usize) {
         self.out_cnt += size;
         self.current_used += size;
     }
 
-    pub fn dealloc(&mut self, size: usize) {
+    pub fn deallocate(&mut self, size: usize) {
         self.in_cnt += size;
         self.current_used -= size;
     }

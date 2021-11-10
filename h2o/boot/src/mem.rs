@@ -75,11 +75,11 @@ impl<'a> BootAlloc<'a> {
 }
 
 unsafe impl<'a> paging::alloc::PageAlloc for BootAlloc<'a> {
-    unsafe fn alloc(&mut self) -> Option<paging::PAddr> {
+    unsafe fn allocate(&mut self) -> Option<paging::PAddr> {
         self.alloc_n(1)
     }
 
-    unsafe fn dealloc(&mut self, addr: paging::PAddr) {
+    unsafe fn deallocate(&mut self, addr: paging::PAddr) {
         self.dealloc_n(addr, 1)
     }
 }
@@ -88,7 +88,7 @@ pub fn init(syst: &SystemTable<Boot>) {
     log::trace!("mem::init: syst = {:?}", syst as *const _);
 
     let rt_addr =
-        unsafe { alloc(syst).alloc_zeroed(EFI_ID_OFFSET) }.expect("Failed to allocate a page");
+        unsafe { alloc(syst).allocate_zeroed(EFI_ID_OFFSET) }.expect("Failed to allocate a page");
     let mut rt = unsafe { NonNull::new_unchecked(*rt_addr as *mut paging::Table) };
 
     unsafe { ROOT_TABLE.as_mut_ptr().write(rt) };
@@ -99,8 +99,8 @@ pub fn init(syst: &SystemTable<Boot>) {
     let pg_attr = paging::Attr::KERNEL_RW;
 
     for i in (paging::NR_ENTRIES / 2)..paging::NR_ENTRIES {
-        let phys =
-            unsafe { alloc(syst).alloc_zeroed(EFI_ID_OFFSET) }.expect("Failed to allocate a page");
+        let phys = unsafe { alloc(syst).allocate_zeroed(EFI_ID_OFFSET) }
+            .expect("Failed to allocate a page");
         let attr = paging::Attr::INTERMEDIATE;
         unsafe { rt.as_mut()[i] = paging::Entry::new(phys, attr, paging::Level::Pt) };
     }

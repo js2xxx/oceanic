@@ -96,7 +96,7 @@ impl From<usize> for LAddr {
     }
 }
 
-impl<T> From<NonNull<T>> for LAddr {
+impl<T: ?Sized> From<NonNull<T>> for LAddr {
     fn from(ptr: NonNull<T>) -> Self {
         LAddr(ptr.as_ptr().cast())
     }

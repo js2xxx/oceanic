@@ -42,7 +42,7 @@ impl IdAllocator {
         }
     }
 
-    pub fn alloc(&mut self) -> Option<u64> {
+    pub fn allocate(&mut self) -> Option<u64> {
         let (prim, sec) = into_idx(self.secondary_bits, self.next);
 
         let mut insert_bvec = |bvec: &mut BitVec, prim: u64, sec: usize| {
@@ -86,7 +86,7 @@ impl IdAllocator {
         }
     }
 
-    pub fn dealloc(&mut self, id: u64) {
+    pub fn deallocate(&mut self, id: u64) {
         let (prim, sec) = into_idx(self.secondary_bits, id);
         let bvec = match self.inner.get_mut(&prim) {
             Some(bvec) => bvec,

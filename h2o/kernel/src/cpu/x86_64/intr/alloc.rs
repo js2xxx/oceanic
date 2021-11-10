@@ -60,7 +60,7 @@ impl Allocator {
         Ok((pos as u8, cpu))
     }
 
-    pub fn alloc(&mut self, alloc_cpu: &CpuMask) -> Result<ArchReg, AllocError> {
+    pub fn allocate(&mut self, alloc_cpu: &CpuMask) -> Result<ArchReg, AllocError> {
         self.alloc_idx(alloc_cpu)
             .map(|(vec, cpu)| ArchReg { vec, cpu })
     }
@@ -84,7 +84,7 @@ impl Allocator {
         }
     }
 
-    pub fn dealloc(&mut self, intr: ArchReg) -> Result<(), AllocError> {
+    pub fn deallocate(&mut self, intr: ArchReg) -> Result<(), AllocError> {
         self.dealloc_idx(intr.vec, intr.cpu)
     }
 }

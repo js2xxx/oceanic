@@ -22,11 +22,12 @@ use crate::sched::task;
 
 cfg_if::cfg_if! {
     if #[cfg(target_arch = "x86_64")] {
-        mod x86_64;
-        type ArchSpace = x86_64::Space;
-        pub use x86_64::init_pgc;
+        #[path = "space/x86_64/mod.rs"]
+        mod arch;
     }
 }
+type ArchSpace = arch::Space;
+pub use arch::init_pgc;
 
 static INIT: Lazy<Arc<Space>> = Lazy::new(|| Space::new(task::Type::Kernel));
 
@@ -112,7 +113,6 @@ pub struct Space {
     stack_blocks: Mutex<BTreeMap<LAddr, Layout>>,
 }
 
-unsafe impl Send for Space {}
 unsafe impl Sync for Space {}
 
 impl Space {
@@ -129,7 +129,7 @@ impl Space {
     }
 
     /// Allocate an address range in the space.
-    pub fn alloc(
+    pub fn allocate(
         &self,
         ty: AllocType,
         phys: Option<PAddr>,
@@ -137,7 +137,7 @@ impl Space {
     ) -> Result<NonNull<[u8]>, SpaceError> {
         self.canary.assert();
 
-        self.allocator.alloc(ty, phys, flags, &self.arch)
+        self.allocator.allocate(ty, phys, flags, &self.arch)
     }
 
     /// Modify the access flags of an address range without a specific type.
@@ -158,10 +158,10 @@ impl Space {
     /// # Safety
     ///
     /// The caller must ensure that `ptr` was allocated by this `Space`.
-    pub unsafe fn dealloc(&self, ptr: NonNull<u8>) -> Result<(), SpaceError> {
+    pub unsafe fn deallocate(&self, ptr: NonNull<u8>) -> Result<(), SpaceError> {
         self.canary.assert();
 
-        self.allocator.dealloc(ptr, &self.arch)
+        self.allocator.deallocate(ptr, &self.arch)
     }
 
     /// # Safety

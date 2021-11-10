@@ -381,7 +381,10 @@ where
     let (ti, ret_wo) = {
         let mut cur_ti = tid::get_mut(&cur_tid).unwrap();
 
-        let ret_wo = cur_ti.user_handles.insert(WaitCell::<usize>::new()).unwrap();
+        let ret_wo = cur_ti
+            .user_handles
+            .insert(WaitCell::<usize>::new())
+            .unwrap();
 
         let ty = match ty {
             Type::Kernel => cur_ti.ty,

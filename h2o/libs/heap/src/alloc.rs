@@ -97,7 +97,7 @@ unsafe impl GlobalAlloc for Allocator {
             let mut pool = self.pool.lock();
 
             // The first allocation (assuming something available)
-            match pool.alloc(layout).map(|x| *x) {
+            match pool.allocate(layout).map(|x| *x) {
                 // Whoosh! Returning
                 Ok(x) => x,
 
@@ -113,7 +113,7 @@ unsafe impl GlobalAlloc for Allocator {
                         if let Some(page) = page {
                             pool.extend(layout, page.cast()).unwrap();
                             // The second allocation
-                            pool.alloc(layout).map_or(null_mut(), |x| *x)
+                            pool.allocate(layout).map_or(null_mut(), |x| *x)
                         } else {
                             // A-o! Out of memory
                             null_mut()
@@ -142,7 +142,7 @@ unsafe impl GlobalAlloc for Allocator {
             let mut pool = self.pool.lock();
 
             // Deallocate it
-            if let Some(page) = pool.dealloc(LAddr::new(ptr), layout).unwrap_or(None) {
+            if let Some(page) = pool.deallocate(LAddr::new(ptr), layout).unwrap_or(None) {
                 // A page is totally empty, drop it
                 let mut pager = self.pager.lock();
                 pager.dealloc_pages(NonNull::slice_from_raw_parts(page, 1));

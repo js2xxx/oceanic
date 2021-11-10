@@ -53,7 +53,7 @@ impl<'a> DerefMut for WriteGuard<'a> {
 
 fn next() -> Option<Tid> {
     let mut alloc = TID_ALLOC.lock();
-    alloc.alloc().map(|id| Tid(u32::try_from(id).unwrap()))
+    alloc.allocate().map(|id| Tid(u32::try_from(id).unwrap()))
 }
 
 pub fn alloc_insert(ti: TaskInfo) -> Result<Tid, TaskInfo> {
@@ -83,7 +83,7 @@ pub fn insert(tid: Tid, ti: TaskInfo) -> Option<TaskInfo> {
 pub fn remove(tid: &Tid) -> Option<TaskInfo> {
     let _flags = IntrState::lock();
     TI_MAP.remove(tid).map(|ret| {
-        TID_ALLOC.lock().dealloc(u64::from(tid.0));
+        TID_ALLOC.lock().deallocate(u64::from(tid.0));
         ret
     })
 }

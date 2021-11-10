@@ -28,7 +28,7 @@ impl Allocator {
         }
     }
 
-    pub fn alloc<'a, 'b>(
+    pub fn allocate<'a, 'b>(
         &'a self,
         ty: AllocType,
         phys: Option<PAddr>,
@@ -36,10 +36,6 @@ impl Allocator {
         arch: &'b ArchSpace,
     ) -> Result<NonNull<[u8]>, SpaceError> {
         self.canary.assert();
-
-        if phys.map_or(false, |phys| phys.contains_bit(paging::PAGE_MASK)) {
-            return Err(SpaceError::InvalidFormat);
-        }
 
         // Get the virtual address.
         // `prefix` and `suffix` are the gaps beside the allocated address range.
@@ -49,6 +45,9 @@ impl Allocator {
             AllocType::Layout(layout) => {
                 // Calculate the real size used.
                 let layout = layout.align_to(paging::PAGE_LAYOUT.align()).unwrap();
+                if phys.map_or(false, |phys| phys.contains_bit(layout.align() - 1)) {
+                    return Err(SpaceError::InvalidFormat);
+                }
                 let size = layout.pad_to_align().size();
                 let (prefix, virt, suffix) = {
                     let res = range.range_iter().find_map(|r| {
@@ -154,7 +153,7 @@ impl Allocator {
         Ok(())
     }
 
-    pub unsafe fn dealloc(&self, ptr: NonNull<u8>, arch: &ArchSpace) -> Result<(), SpaceError> {
+    pub unsafe fn deallocate(&self, ptr: NonNull<u8>, arch: &ArchSpace) -> Result<(), SpaceError> {
         self.canary.assert();
 
         // Get the virtual address range from the given memory block.
