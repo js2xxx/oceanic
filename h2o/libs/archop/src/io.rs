@@ -1,7 +1,7 @@
 cfg_if::cfg_if! {
-      if #[cfg(target_arch = "x86_64")] {
-            pub use crate::x86_64::io::*;
-      }
+    if #[cfg(target_arch = "x86_64")] {
+        pub use crate::x86_64::io::*;
+    }
 }
 
 pub trait Io {

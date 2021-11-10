@@ -14,8 +14,8 @@ syscall_stub!(1 => pub(crate) fn log(args: *const ::log::Record));
 syscall_stub!(2 => pub(crate) fn task_exit(retval: usize));
 syscall_stub!(3 => 
       pub(crate) fn task_fn(name: *mut u8, stack_size: usize, func: *mut u8, arg: *mut u8) 
-            -> usize);
-syscall_stub!(5 => pub(crate) fn task_join(hdl: usize) -> usize);
+            -> u32);
+syscall_stub!(5 => pub(crate) fn task_join(hdl: u32) -> usize);
 
 syscall_stub!(8 => 
       pub(crate) fn alloc_pages(virt: *mut u8, phys: usize, size: usize, align: usize, flags: u32) 

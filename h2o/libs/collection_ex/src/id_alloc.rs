@@ -4,6 +4,7 @@ use core::ops::RangeInclusive;
 use bitop_ex::BitOpEx;
 use bitvec::prelude::*;
 
+#[derive(Debug)]
 pub struct IdAllocator {
     inner: BTreeMap<u64, BitVec>,
     secondary_bits: u64,
@@ -78,7 +79,8 @@ impl IdAllocator {
                 self.inner
                     .range_mut(*self.range.start()..prim)
                     .find_map(|(&prim, bvec)| {
-                        bvec.first_zero().map(|sec| (&mut insert_bvec)(bvec, prim, sec))
+                        bvec.first_zero()
+                            .map(|sec| (&mut insert_bvec)(bvec, prim, sec))
                     })
             })
         }

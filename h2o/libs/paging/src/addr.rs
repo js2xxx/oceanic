@@ -95,3 +95,9 @@ impl From<usize> for LAddr {
         LAddr(val as *mut u8)
     }
 }
+
+impl<T> From<NonNull<T>> for LAddr {
+    fn from(ptr: NonNull<T>) -> Self {
+        LAddr(ptr.as_ptr().cast())
+    }
+}

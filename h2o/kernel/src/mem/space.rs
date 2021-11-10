@@ -5,7 +5,7 @@
 
 mod alloc;
 
-use core::{alloc::Layout, ops::Range, pin::Pin};
+use core::{alloc::Layout, ops::Range, ptr::NonNull};
 
 use ::alloc::{
     alloc::{alloc as mem_alloc, dealloc as mem_dealloc},
@@ -21,11 +21,11 @@ use spin::{Lazy, Mutex, MutexGuard};
 use crate::sched::task;
 
 cfg_if::cfg_if! {
-      if #[cfg(target_arch = "x86_64")] {
-            mod x86_64;
-            type ArchSpace = x86_64::Space;
-            pub use x86_64::init_pgc;
-      }
+    if #[cfg(target_arch = "x86_64")] {
+        mod x86_64;
+        type ArchSpace = x86_64::Space;
+        pub use x86_64::init_pgc;
+    }
 }
 
 static INIT: Lazy<Arc<Space>> = Lazy::new(|| Space::new(task::Type::Kernel));
@@ -134,7 +134,7 @@ impl Space {
         ty: AllocType,
         phys: Option<PAddr>,
         flags: Flags,
-    ) -> Result<Pin<&mut [u8]>, SpaceError> {
+    ) -> Result<NonNull<[u8]>, SpaceError> {
         self.canary.assert();
 
         self.allocator.alloc(ty, phys, flags, &self.arch)
@@ -144,28 +144,24 @@ impl Space {
     ///
     /// # Safety
     ///
-    /// The caller must ensure that `b` was allocated by this `Space` and no
-    /// pointers or references to the block are present (or influenced by
-    /// the modification).
-    pub unsafe fn modify<'b>(
-        &'b self,
-        b: Pin<&'b mut [u8]>,
-        flags: Flags,
-    ) -> Result<Pin<&'b mut [u8]>, SpaceError> {
+    /// The caller must ensure that `ptr` was allocated by this `Space` and no
+    /// pointers or references within the address range are present (or will be
+    /// influenced by the modification).
+    pub unsafe fn modify(&self, ptr: NonNull<[u8]>, flags: Flags) -> Result<(), SpaceError> {
         self.canary.assert();
 
-        self.allocator.modify(b, flags, &self.arch)
+        self.allocator.modify(ptr, flags, &self.arch)
     }
 
     /// Deallocate an address range in the space without a specific type.
     ///
     /// # Safety
     ///
-    /// The caller must ensure that `b` was allocated by this `Space`.
-    pub unsafe fn dealloc(&self, b: Pin<&mut [u8]>) -> Result<(), SpaceError> {
+    /// The caller must ensure that `ptr` was allocated by this `Space`.
+    pub unsafe fn dealloc(&self, ptr: NonNull<u8>) -> Result<(), SpaceError> {
         self.canary.assert();
 
-        self.allocator.dealloc(b, &self.arch)
+        self.allocator.dealloc(ptr, &self.arch)
     }
 
     /// # Safety
@@ -442,13 +438,15 @@ pub unsafe fn set_current(space: Arc<Space>) {
 ///
 /// The caller must ensure that [`set_current`] won't be called during the
 /// execution of `f`.
-pub unsafe fn with<S, F, R>(space: S, f: F) -> R
+pub unsafe fn with<S, F, R>(space: S, func: F) -> R
 where
     S: AsRef<Space>,
     F: FnOnce(&Space) -> R,
 {
     space.as_ref().load();
-    let ret = f(space.as_ref());
+    let ret = crate::sched::SCHED
+        .with_current(|_| func(space.as_ref()))
+        .unwrap();
     current().load();
 
     ret

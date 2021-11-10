@@ -1,56 +1,59 @@
 use alloc::{boxed::Box, collections::BTreeMap};
-use core::{any::Any, num::NonZeroUsize};
+use core::{any::Any, num::NonZeroU32};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct UserHandle(usize);
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct UserHandle(u32);
 
 impl UserHandle {
     pub const NULL: Self = UserHandle(0);
 
-    pub const fn new(raw: NonZeroUsize) -> UserHandle {
+    pub const fn new(raw: NonZeroU32) -> UserHandle {
         UserHandle(raw.get())
     }
 
-    pub fn raw(&self) -> usize {
+    pub fn raw(&self) -> u32 {
         self.0
     }
 }
 
 #[derive(Debug)]
 pub struct UserHandles {
-    next_id: usize,
-    map: BTreeMap<usize, Box<dyn Any>>,
+    next_id: u32,
+    map: BTreeMap<UserHandle, Box<dyn Any>>,
 }
 
 unsafe impl Send for UserHandles {}
 unsafe impl Sync for UserHandles {}
 
 impl UserHandles {
-    pub const fn new() -> Self {
+    pub fn new() -> Self {
         UserHandles {
             next_id: 1,
             map: BTreeMap::new(),
         }
     }
 
-    pub fn insert<T: 'static>(&mut self, obj: T) -> UserHandle {
+    pub fn insert<T: 'static>(&mut self, obj: T) -> Option<UserHandle> {
         let k = box obj;
-        let id = self.next_id;
-        self.next_id += 1;
+        let id = {
+            let new = self.next_id;
+            self.next_id += 1;
+            UserHandle(new)
+        };
         self.map.insert(id, k);
-        UserHandle(id)
+        Some(id)
     }
 
     pub fn get<T: 'static>(&self, hdl: UserHandle) -> Option<&T> {
-        self.map.get(&hdl.0).and_then(|k| k.downcast_ref())
+        self.map.get(&hdl).and_then(|k| k.downcast_ref())
     }
 
     pub fn get_mut<T: 'static>(&mut self, hdl: UserHandle) -> Option<&mut T> {
-        self.map.get_mut(&hdl.0).and_then(|k| k.downcast_mut())
+        self.map.get_mut(&hdl).and_then(|k| k.downcast_mut())
     }
 
     pub fn remove<T: 'static>(&mut self, hdl: UserHandle) -> Option<T> {
-        match self.map.entry(hdl.0) {
+        match self.map.entry(hdl) {
             alloc::collections::btree_map::Entry::Occupied(ent)
                 if ent.get().downcast_ref::<T>().is_some() =>
             {

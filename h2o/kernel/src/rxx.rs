@@ -4,8 +4,8 @@ fn panic_handler(info: &core::panic::PanicInfo) -> ! {
     unsafe { archop::halt_loop(Some(true)) }
 }
 
-#[lang = "eh_personality"]
-pub extern "C" fn rust_eh_personality() {}
+// #[lang = "eh_personality"]
+// pub extern "C" fn rust_eh_personality() {}
 
 #[allow(non_snake_case)]
 #[no_mangle]
@@ -15,7 +15,7 @@ pub extern "C" fn _Unwind_Resume() -> ! {
 }
 
 /// The function indicating memory runs out.
-#[lang = "oom"]
+#[alloc_error_handler]
 fn out_of_memory(layout: core::alloc::Layout) -> ! {
     log::error!("!!!! ALLOCATION ERROR !!!!");
     log::error!("Request: {:?}", layout);

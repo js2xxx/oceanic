@@ -1,7 +1,7 @@
 use alloc::{alloc::Global, collections::BTreeMap};
 use core::{
     alloc::{Allocator as AllocTrait, Layout},
-    pin::Pin,
+    ptr::NonNull,
 };
 
 use bitop_ex::BitOpEx;
@@ -34,7 +34,7 @@ impl Allocator {
         phys: Option<PAddr>,
         flags: Flags,
         arch: &'b ArchSpace,
-    ) -> Result<Pin<&'a mut [u8]>, SpaceError> {
+    ) -> Result<NonNull<[u8]>, SpaceError> {
         self.canary.assert();
 
         if phys.map_or(false, |phys| phys.contains_bit(paging::PAGE_MASK)) {
@@ -45,7 +45,7 @@ impl Allocator {
         // `prefix` and `suffix` are the gaps beside the allocated address range.
         let mut range = self.free_range.lock();
 
-        let (layout, size, prefix, virt, suffix) = match ty {
+        let (layout, prefix, virt, suffix) = match ty {
             AllocType::Layout(layout) => {
                 // Calculate the real size used.
                 let layout = layout.align_to(paging::PAGE_LAYOUT.align()).unwrap();
@@ -68,7 +68,7 @@ impl Allocator {
                     });
                     res.ok_or(SpaceError::AddressBusy)?
                 };
-                (layout, size, prefix, virt, suffix)
+                (layout, prefix, virt, suffix)
             }
             AllocType::Virt(virt) => {
                 let size = unsafe { virt.end.offset_from(*virt.start) } as usize;
@@ -83,7 +83,7 @@ impl Allocator {
 
                     res.ok_or(SpaceError::AddressBusy)?
                 };
-                (layout, size, prefix, virt, suffix)
+                (layout, prefix, virt, suffix)
             }
         };
 
@@ -108,7 +108,7 @@ impl Allocator {
         };
 
         // Map it.
-        let ptr = *virt.start;
+        let ptr = virt.start.as_non_null().unwrap();
         arch.maps(virt, phys, flags).map_err(|e| {
             if let Some(alloc_ptr) = alloc_ptr {
                 unsafe { Global.deallocate(alloc_ptr, layout) };
@@ -125,63 +125,48 @@ impl Allocator {
         }
         drop(range);
 
-        let ret = unsafe { Pin::new_unchecked(core::slice::from_raw_parts_mut(ptr, size)) };
+        let ret = unsafe { NonNull::slice_from_raw_parts(ptr, layout.size()) };
         let _ = self
             .record
             .lock()
-            .insert(LAddr::new(ptr), (layout, alloc_ptr.map(|_| phys)))
+            .insert(LAddr::from(ptr), (layout, alloc_ptr.map(|_| phys)))
             .map(|_| panic!("Duplicate allocation"));
 
         Ok(ret)
     }
 
-    pub unsafe fn modify<'a, 'b>(
-        &'a self,
-        mut b: Pin<&'a mut [u8]>,
+    pub unsafe fn modify(
+        &self,
+        mut ptr: NonNull<[u8]>,
         flags: Flags,
-        arch: &'b ArchSpace,
-    ) -> Result<Pin<&'a mut [u8]>, SpaceError> {
+        arch: &ArchSpace,
+    ) -> Result<(), SpaceError> {
         self.canary.assert();
 
         let virt = {
-            let ptr = b.as_mut_ptr_range();
+            let ptr = ptr.as_mut().as_mut_ptr_range();
             LAddr::new(ptr.start)..LAddr::new(ptr.end)
         };
 
         arch.reprotect(virt, flags)
             .map_err(SpaceError::PagingError)?;
 
-        Ok(b)
+        Ok(())
     }
 
-    pub unsafe fn dealloc<'a, 'b>(
-        &'a self,
-        mut b: Pin<&'a mut [u8]>,
-        arch: &'b ArchSpace,
-    ) -> Result<(), SpaceError> {
+    pub unsafe fn dealloc(&self, ptr: NonNull<u8>, arch: &ArchSpace) -> Result<(), SpaceError> {
         self.canary.assert();
 
-        let mut virt = {
-            let ptr = b.as_mut_ptr_range();
-            LAddr::new(ptr.start)..LAddr::new(ptr.end)
-        };
-
         // Get the virtual address range from the given memory block.
-        let layout = Layout::for_value(&*b)
-            .align_to(paging::PAGE_SIZE)
-            .map_err(|_| SpaceError::InvalidFormat)?
-            .pad_to_align();
-        let phys = {
+        let virt_start = LAddr::from(ptr);
+        let (layout, phys) = {
             let mut record = self.record.lock();
-            match record.remove(&virt.start) {
-                Some((l, p)) if layout.size() != l.size() => {
-                    record.insert(virt.start, (l, p));
-                    return Err(SpaceError::InvalidFormat);
-                }
+            match record.remove(&virt_start) {
+                Some((l, p)) => (l, p),
                 None => return Err(SpaceError::InvalidFormat),
-                Some((_, p)) => p,
             }
         };
+        let mut virt = virt_start..LAddr::new(virt_start.add(layout.pad_to_align().size()));
 
         // Unmap the virtual address & get the physical address.
         let _ = arch.unmaps(virt.clone()).map_err(SpaceError::PagingError)?;

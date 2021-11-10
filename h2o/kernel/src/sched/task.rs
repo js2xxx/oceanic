@@ -381,7 +381,7 @@ where
     let (ti, ret_wo) = {
         let mut cur_ti = tid::get_mut(&cur_tid).unwrap();
 
-        let ret_wo = cur_ti.user_handles.insert(WaitCell::<usize>::new());
+        let ret_wo = cur_ti.user_handles.insert(WaitCell::<usize>::new()).unwrap();
 
         let ty = match ty {
             Type::Kernel => cur_ti.ty,
@@ -472,7 +472,7 @@ pub mod syscall {
     }
 
     #[syscall]
-    pub fn task_fn(name: *mut u8, stack_size: usize, func: *mut u8, arg: *mut u8) -> usize {
+    pub fn task_fn(name: *mut u8, stack_size: usize, func: *mut u8, arg: *mut u8) -> u32 {
         extern "C" {
             fn strlen(s: *const u8) -> usize;
         }
@@ -498,11 +498,11 @@ pub mod syscall {
     }
 
     #[syscall]
-    pub fn task_join(wc_raw: usize) -> usize {
-        use core::num::NonZeroUsize;
+    pub fn task_join(wc_raw: u32) -> usize {
+        use core::num::NonZeroU32;
 
         use crate::sched::wait::WaitCell;
-        let wc_hdl = super::UserHandle::new(NonZeroUsize::new(wc_raw).ok_or(Error(EINVAL))?);
+        let wc_hdl = super::UserHandle::new(NonZeroU32::new(wc_raw).ok_or(Error(EINVAL))?);
 
         let cur_tid = crate::sched::SCHED
             .with_current(|cur| cur.tid)
