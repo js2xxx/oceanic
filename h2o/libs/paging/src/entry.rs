@@ -142,12 +142,11 @@ impl Entry {
         self.0 = 0;
     }
 
-    pub(crate) fn get_table(&self, id_off: usize, level: Level) -> Option<NonNull<[Entry]>> {
+    pub(crate) fn get_table(&self, id_off: usize, level: Level) -> Option<NonNull<Table>> {
         let (phys, attr) = self.get(Level::Pt);
         if attr.contains(Attr::PRESENT) && attr.has_table(level) {
             log::trace!("paging::Entry::get_table: There is a table: {:?}", *self);
             NonNull::new(phys.to_laddr(id_off).cast())
-                .map(|r| NonNull::slice_from_raw_parts(r, NR_ENTRIES))
         } else {
             None
         }
@@ -167,12 +166,21 @@ impl core::fmt::Debug for Entry {
 
 #[derive(Debug)]
 #[repr(align(4096))]
-pub struct Table([Entry; crate::NR_ENTRIES]);
+pub struct Table([Entry; NR_ENTRIES]);
 const_assert!(core::mem::size_of::<Table>() == crate::PAGE_SIZE);
 
 impl Table {
     pub fn zeroed() -> Self {
         unsafe { core::mem::zeroed() }
+    }
+
+    pub fn is_empty(&self, except_idx: Option<usize>, lvl: Level) -> bool {
+        for (i, item) in self.0.iter().enumerate() {
+            if Some(i) != except_idx && item.get(lvl).1.contains(Attr::PRESENT) {
+                return false;
+            }
+        }
+        true
     }
 }
 

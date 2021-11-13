@@ -168,42 +168,49 @@ pub fn unmaps(syst: &SystemTable<Boot>, virt: Range<paging::LAddr>) -> Result<()
 }
 
 pub fn init_pf(syst: &SystemTable<Boot>) -> (usize, usize) {
-    let size = syst.boot_services().memory_map_size();
-    let mut buffer = alloc::vec![0; size];
+    let mmap_size = syst.boot_services().memory_map_size();
+    let mut buffer = alloc::vec![0; mmap_size];
     let (_key, mmap) = syst
         .boot_services()
         .memory_map(&mut buffer)
         .expect_success("Failed to get the memory map");
 
-    let mut addr_max = 0;
+    // Get the size of the memory map entries.
+    let (entry_size, addr_max) = {
+        let mut addr_max = 0;
+        let mut last = None::<*const u8>;
+        let mut size = None;
+        for block in mmap {
+            addr_max = addr_max.max(block.phys_start + (block.page_count << paging::PAGE_SHIFT));
 
-    let mut b1 = None;
-    let mut b2 = None;
-    for block in mmap {
-        addr_max = core::cmp::max(
-            addr_max,
-            block.phys_start + (block.page_count << paging::PAGE_SHIFT),
-        );
-        b2 = b1;
-        b1 = Some(block as *const boot::MemoryDescriptor);
-    }
-    assert!(addr_max > 0);
-    let entry_size = unsafe {
-        b1.unwrap()
-            .cast::<u8>()
-            .offset_from(b2.unwrap().cast::<u8>())
+            let cur = block as *const boot::MemoryDescriptor as *const u8;
+            size = size.or(last.map(|last| unsafe { last.cast::<u8>().offset_from(cur).abs() }));
+            last.get_or_insert(cur);
+        }
+        debug_assert!(addr_max > 0);
+        (size.unwrap().abs_diff(0), addr_max)
     };
 
-    let pf_buffer_size = (PF_SIZE * (addr_max as usize).div_ceil_bit(paging::PAGE_SHIFT))
-        .round_up_bit(paging::PAGE_SHIFT);
-    let pf_buffer = alloc(syst)
-        .alloc_n(pf_buffer_size >> paging::PAGE_SHIFT)
-        .expect("Failed to allocate the page frame buffer");
+    // Allocate memory for the PMM.
+    let (pf_virt, pf_phys) = {
+        let size = (PF_SIZE * (addr_max as usize).div_ceil_bit(paging::PAGE_SHIFT))
+            .round_up_bit(paging::PAGE_SHIFT);
+        let buffer = alloc(syst)
+            .alloc_n(size >> paging::PAGE_SHIFT)
+            .expect("Failed to allocate the page frame buffer");
 
-    let pf_virt =
-        paging::LAddr::from(KMEM_PHYS_BASE)..paging::LAddr::from(KMEM_PHYS_BASE + pf_buffer_size);
-    maps(syst, pf_virt, pf_buffer, paging::Attr::KERNEL_RWNE).expect("Failed to map page frames");
+        // Clear the physical memory area for the PMM in case of dirty bytes.
+        unsafe {
+            let pf_ptr = buffer.to_laddr(EFI_ID_OFFSET);
+            pf_ptr.write_bytes(0, size);
+        }
 
+        let virt = paging::LAddr::from(KMEM_PHYS_BASE)..paging::LAddr::from(KMEM_PHYS_BASE + size);
+        (virt, buffer)
+    };
+    maps(syst, pf_virt, pf_phys, paging::Attr::KERNEL_RWNE).expect("Failed to map page frames");
+
+    // Create the identical mapping for the kernel.
     {
         let phys = paging::PAddr::new(0);
         let virt = paging::LAddr::from(KERNEL_ID_OFFSET)
@@ -212,7 +219,7 @@ pub fn init_pf(syst: &SystemTable<Boot>) -> (usize, usize) {
             .expect("Failed to map physical pages identically");
     }
 
-    (entry_size as usize, size)
+    (entry_size, mmap_size)
 }
 
 pub fn commit_mapping() {
