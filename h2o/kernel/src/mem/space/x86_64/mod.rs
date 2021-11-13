@@ -10,7 +10,7 @@ use canary::Canary;
 use paging::{LAddr, PAddr, Table};
 use spin::{Lazy, Mutex};
 
-use super::{Flags, Id};
+use super::Flags;
 
 /// The root page table at initialization time.
 static KERNEL_ROOT: Lazy<(Box<Table>, u64)> = Lazy::new(|| {
@@ -62,11 +62,6 @@ impl Space {
         }
 
         space
-    }
-
-    pub fn id(&self) -> Id {
-        self.canary.assert();
-        Id(u64::try_from(*self.cr3).unwrap())
     }
 
     pub fn clone(this: &Self) -> Self {

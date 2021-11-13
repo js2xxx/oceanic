@@ -5,10 +5,7 @@ use goblin::elf::*;
 use paging::{LAddr, PAddr};
 
 use super::*;
-use crate::{
-    cpu::CpuMask,
-    mem::space::{AllocType, Flags, Space, SpaceError},
-};
+use crate::{cpu::CpuMask, mem::space::{AllocType, Flags, Phys, Space, SpaceError}};
 
 fn load_prog(
     space: &Space,
@@ -46,6 +43,7 @@ fn load_prog(
     if fsize > 0 {
         let virt = LAddr::from(vstart)..LAddr::from(vend);
         log::trace!("Mapping {:?}", virt);
+        let phys = Phys::new(phys, paging::PAGE_LAYOUT, flags);
         unsafe { space.allocate(AllocType::Virt(virt), Some(phys), flags) }
             .map_err(TaskError::Memory)?;
     }

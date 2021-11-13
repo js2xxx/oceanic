@@ -1,6 +1,7 @@
 use core::{
+    alloc::Layout,
     num::NonZeroUsize,
-    ops::{Deref, DerefMut},
+    ops::{Deref, DerefMut, Range},
     ptr::NonNull,
 };
 
@@ -73,6 +74,10 @@ impl LAddr {
 
     pub(crate) fn advance(&mut self, offset: usize) {
         self.0 = unsafe { self.0.add(offset) };
+    }
+    
+    pub fn to_range(self, layout: Layout) -> Range<Self> {
+        self..Self(self.wrapping_add(layout.size()))
     }
 }
 

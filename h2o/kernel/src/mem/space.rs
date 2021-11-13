@@ -4,6 +4,7 @@
 //! higher level, especially for large objects like APIC.
 
 mod alloc;
+pub mod obj;
 
 use core::{alloc::Layout, ops::Range, ptr::NonNull};
 
@@ -15,7 +16,7 @@ use ::alloc::{
 use bitop_ex::BitOpEx;
 use canary::Canary;
 use collection_ex::RangeSet;
-use paging::{LAddr, PAddr};
+use paging::LAddr;
 use spin::{Lazy, Mutex, MutexGuard};
 
 use crate::sched::task;
@@ -28,6 +29,7 @@ cfg_if::cfg_if! {
 }
 type ArchSpace = arch::Space;
 pub use arch::init_pgc;
+pub use obj::Phys;
 
 static INIT: Lazy<Arc<Space>> = Lazy::new(|| Space::new(task::Type::Kernel));
 
@@ -57,14 +59,14 @@ impl Into<solvent::Error> for SpaceError {
 }
 
 bitflags::bitflags! {
-      /// Flags to describe a block of memory.
-      pub struct Flags: u32 {
-            const USER_ACCESS = 1;
-            const READABLE    = 1 << 1;
-            const WRITABLE    = 1 << 2;
-            const EXECUTABLE  = 1 << 3;
-            const ZEROED      = 1 << 4;
-      }
+    /// Flags to describe a block of memory.
+    pub struct Flags: u32 {
+        const USER_ACCESS = 1;
+        const READABLE    = 1 << 1;
+        const WRITABLE    = 1 << 2;
+        const EXECUTABLE  = 1 << 3;
+        const ZEROED      = 1 << 4;
+    }
 }
 
 /// The total available range of address space for the create type.
@@ -113,6 +115,7 @@ pub struct Space {
     stack_blocks: Mutex<BTreeMap<LAddr, Layout>>,
 }
 
+unsafe impl Send for Space {}
 unsafe impl Sync for Space {}
 
 impl Space {
@@ -132,7 +135,7 @@ impl Space {
     pub fn allocate(
         &self,
         ty: AllocType,
-        phys: Option<PAddr>,
+        phys: Option<Arc<Phys>>,
         flags: Flags,
     ) -> Result<NonNull<[u8]>, SpaceError> {
         self.canary.assert();
@@ -158,7 +161,7 @@ impl Space {
     /// # Safety
     ///
     /// The caller must ensure that `ptr` was allocated by this `Space`.
-    pub unsafe fn deallocate(&self, ptr: NonNull<u8>) -> Result<(), SpaceError> {
+    pub unsafe fn deallocate(&self, ptr: NonNull<u8>) -> Result<Arc<Phys>, SpaceError> {
         self.canary.assert();
 
         self.allocator.deallocate(ptr, &self.arch)

@@ -79,16 +79,17 @@ mod syscall {
     }
 
     #[syscall]
-    fn dealloc_pages(ptr: *mut u8) {
+    fn dealloc_pages(ptr: *mut u8) -> usize {
         use core::ptr::NonNull;
 
         use super::space;
+        use crate::mem::space::Phys;
 
         let ret = unsafe {
             let ptr = NonNull::new(ptr).ok_or(Error(EINVAL))?;
             space::with_current(|cur| cur.deallocate(ptr))
         };
-        ret.map_err(Into::into)
+        ret.map_err(Into::into).map(|phys| *Phys::consume(phys))
     }
 
     #[syscall]

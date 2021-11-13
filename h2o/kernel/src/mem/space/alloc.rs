@@ -1,22 +1,20 @@
-use alloc::{alloc::Global, collections::BTreeMap};
-use core::{
-    alloc::{Allocator as AllocTrait, Layout},
-    ptr::NonNull,
-};
+use alloc::{collections::BTreeMap, sync::Arc};
+use core::{alloc::Layout, ptr::NonNull};
 
 use bitop_ex::BitOpEx;
 use canary::Canary;
 use collection_ex::RangeSet;
-use paging::{LAddr, PAddr};
+use paging::LAddr;
 use spin::Mutex;
 
 use super::{AllocType, ArchSpace, Flags, SpaceError};
+use crate::mem::space::Phys;
 
 #[derive(Debug)]
 pub struct Allocator {
     canary: Canary<Allocator>,
     free_range: Mutex<RangeSet<LAddr>>,
-    record: Mutex<BTreeMap<LAddr, (Layout, Option<PAddr>)>>,
+    record: Mutex<BTreeMap<LAddr, Arc<Phys>>>,
 }
 
 impl Allocator {
@@ -31,7 +29,7 @@ impl Allocator {
     pub fn allocate<'a, 'b>(
         &'a self,
         ty: AllocType,
-        phys: Option<PAddr>,
+        phys: Option<Arc<Phys>>,
         flags: Flags,
         arch: &'b ArchSpace,
     ) -> Result<NonNull<[u8]>, SpaceError> {
@@ -45,11 +43,18 @@ impl Allocator {
             AllocType::Layout(layout) => {
                 // Calculate the real size used.
                 let layout = layout.align_to(paging::PAGE_LAYOUT.align()).unwrap();
-                if phys.map_or(false, |phys| phys.contains_bit(layout.align() - 1)) {
+                debug_assert!(!matches!(&phys, Some(phys) if phys.layout() != layout));
+
+                if phys
+                    .as_ref()
+                    .map_or(false, |phys| phys.base().contains_bit(layout.align() - 1))
+                {
                     return Err(SpaceError::InvalidFormat);
                 }
-                let size = layout.pad_to_align().size();
+
                 let (prefix, virt, suffix) = {
+                    let size = layout.pad_to_align().size();
+
                     let res = range.range_iter().find_map(|r| {
                         let mut start = r.start.val();
                         while start & (layout.align() - 1) != 0 {
@@ -87,33 +92,15 @@ impl Allocator {
         };
 
         // Get the physical address mapped to.
-        let (phys, alloc_ptr) = match phys {
-            Some(phys) => (phys, None),
-            None => {
-                let ptr = {
-                    if flags.contains(Flags::ZEROED) {
-                        Global.allocate(layout)
-                    } else {
-                        Global.allocate_zeroed(layout)
-                    }
-                }
-                .map_err(|_| SpaceError::OutOfMemory)?;
-
-                (
-                    LAddr::new(ptr.as_mut_ptr()).to_paddr(minfo::ID_OFFSET),
-                    Some(ptr.as_non_null_ptr()),
-                )
-            }
+        let phys = match phys {
+            Some(phys) => phys,
+            None => Phys::allocate(layout, flags).map_err(|_| SpaceError::OutOfMemory)?,
         };
 
         // Map it.
-        let ptr = virt.start.as_non_null().unwrap();
-        arch.maps(virt, phys, flags).map_err(|e| {
-            if let Some(alloc_ptr) = alloc_ptr {
-                unsafe { Global.deallocate(alloc_ptr, layout) };
-            }
-            SpaceError::PagingError(e)
-        })?;
+        let base = virt.start;
+        arch.maps(virt, phys.base(), flags)
+            .map_err(SpaceError::PagingError)?;
 
         range.remove(prefix.start);
         if !prefix.is_empty() {
@@ -124,13 +111,9 @@ impl Allocator {
         }
         drop(range);
 
-        let ret = unsafe { NonNull::slice_from_raw_parts(ptr, layout.size()) };
-        let _ = self
-            .record
-            .lock()
-            .insert(LAddr::from(ptr), (layout, alloc_ptr.map(|_| phys)))
-            .map(|_| panic!("Duplicate allocation"));
-
+        let ret =
+            unsafe { NonNull::slice_from_raw_parts(base.as_non_null().unwrap(), layout.size()) };
+        self.record.lock().insert(base, phys);
         Ok(ret)
     }
 
@@ -153,27 +136,26 @@ impl Allocator {
         Ok(())
     }
 
-    pub unsafe fn deallocate(&self, ptr: NonNull<u8>, arch: &ArchSpace) -> Result<(), SpaceError> {
+    pub unsafe fn deallocate(
+        &self,
+        ptr: NonNull<u8>,
+        arch: &ArchSpace,
+    ) -> Result<Arc<Phys>, SpaceError> {
         self.canary.assert();
 
         // Get the virtual address range from the given memory block.
         let virt_start = LAddr::from(ptr);
-        let (layout, phys) = {
+        let phys = {
             let mut record = self.record.lock();
             match record.remove(&virt_start) {
-                Some((l, p)) => (l, p),
+                Some(phys) => phys,
                 None => return Err(SpaceError::InvalidFormat),
             }
         };
-        let mut virt = virt_start..LAddr::new(virt_start.add(layout.pad_to_align().size()));
+        let mut virt = virt_start..LAddr::new(virt_start.add(phys.layout().pad_to_align().size()));
 
         // Unmap the virtual address & get the physical address.
         let _ = arch.unmaps(virt.clone()).map_err(SpaceError::PagingError)?;
-
-        if let Some(alloc_ptr) = phys.and_then(|phys| phys.to_laddr(minfo::ID_OFFSET).as_non_null())
-        {
-            Global.deallocate(alloc_ptr, layout);
-        }
 
         // Deallocate the virtual address range.
         let mut range = self.free_range.lock();
@@ -186,7 +168,9 @@ impl Allocator {
             virt.end = suffix.end;
             range.remove(suffix.start);
         }
-        range.insert(virt).map_err(|_| SpaceError::AddressBusy)
+        range
+            .insert(virt)
+            .map_or(Err(SpaceError::AddressBusy), |_| Ok(phys))
     }
 
     /// The manual dropping function, replacing `Drop::drop` with `arch`.
@@ -212,14 +196,9 @@ impl Allocator {
         if alloc::sync::Arc::strong_count(self) == 1 {
             // The actual dropping process.
             let mut record = self.record.lock();
-            while let Some((base, (layout, phys))) = record.pop_first() {
-                let virt = base..LAddr::from(base.val() + layout.pad_to_align().size());
+            while let Some((base, phys)) = record.pop_first() {
+                let virt = base.to_range(phys.layout());
                 let _ = arch.unmaps(virt);
-                if let Some(alloc_ptr) =
-                    phys.and_then(|phys| phys.to_laddr(minfo::ID_OFFSET).as_non_null())
-                {
-                    Global.deallocate(alloc_ptr, layout);
-                }
             }
         }
     }
