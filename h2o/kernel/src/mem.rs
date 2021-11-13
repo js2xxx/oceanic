@@ -50,18 +50,23 @@ mod syscall {
 
     #[syscall]
     fn alloc_pages(virt: *mut u8, phys: usize, size: usize, align: usize, flags: u32) -> *mut u8 {
-        use core::ptr::NonNull;
+        use core::{alloc::Layout, ptr::NonNull};
 
         use super::space;
 
         if size.contains_bit(paging::PAGE_MASK) || !align.is_power_of_two() {
             return Err(Error(EINVAL));
         }
+        let layout = Layout::from_size_align(size, align).map_err(|_| Error(EINVAL))?;
+
+        let flags = space::Flags::from_bits(flags).ok_or(Error(EINVAL))?;
+
+        // TODO: Check whether the physical address is permitted.
+        let phys = (phys != 0).then_some(paging::PAddr::new(phys));
+        let phys = phys.map(|phys| space::Phys::new(phys, layout, flags));
 
         let ty = if virt.is_null() {
-            space::AllocType::Layout(
-                core::alloc::Layout::from_size_align(size, align).map_err(|_| Error(EINVAL))?,
-            )
+            space::AllocType::Layout(layout)
         } else {
             // TODO: Check whether the virtual address is permitted.
             space::AllocType::Virt(
@@ -69,24 +74,15 @@ mod syscall {
             )
         };
 
-        // TODO: Check whether the physical address is permitted.
-        let phys = (phys != 0).then_some(paging::PAddr::new(phys));
-
-        let flags = space::Flags::from_bits(flags).ok_or(Error(EINVAL))?;
-
         let ret = space::with_current(|cur| cur.allocate(ty, phys, flags));
         ret.map_err(Into::into).map(NonNull::as_mut_ptr)
     }
 
     #[syscall]
-    fn dealloc_pages(ptr: *mut u8, size: usize) {
+    fn dealloc_pages(ptr: *mut u8) {
         use core::ptr::NonNull;
 
         use super::space;
-
-        if size.contains_bit(paging::PAGE_MASK) {
-            return Err(Error(EINVAL));
-        }
 
         let ret = unsafe {
             let ptr = NonNull::new(ptr).ok_or(Error(EINVAL))?;

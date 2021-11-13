@@ -1,6 +1,5 @@
 use core::{
     alloc::Layout,
-    mem::size_of,
     ptr::{null_mut, NonNull},
 };
 
@@ -18,11 +17,7 @@ unsafe fn alloc_pages(n: usize) -> Option<NonNull<[heap::Page]>> {
 
 #[inline(never)]
 unsafe fn dealloc_pages(pages: NonNull<[heap::Page]>) {
-    let ptr = {
-        let ptr = pages.as_ptr().cast::<u8>();
-        let n = pages.len();
-        core::slice::from_raw_parts_mut(ptr, n * size_of::<heap::Page>())
-    };
+    let ptr = pages.as_ptr().cast::<u8>();
     let _ = solvent::mem::dealloc_pages(ptr);
 }
 

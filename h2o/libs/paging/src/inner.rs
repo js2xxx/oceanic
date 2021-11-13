@@ -84,6 +84,26 @@ fn get_or_split_table(
     )
 }
 
+fn destroy_tables<A>(tables: A, id_off: usize, allocator: &mut impl PageAlloc)
+where
+    A: IntoIterator<Item = Option<(NonNull<Entry>, Level)>>,
+{
+    for (mut item, elvl) in tables.into_iter().flatten().fuse() {
+        let lvl = elvl.increase().unwrap();
+        unsafe {
+            let item = item.as_mut();
+            let table = item.get_table(id_off, lvl).unwrap();
+            if table.as_ref().is_empty(None, elvl) {
+                let (addr, _) = item.get(Level::Pt);
+                item.reset();
+                allocator.deallocate(addr);
+            } else {
+                break;
+            }
+        }
+    }
+}
+
 pub(crate) unsafe fn invalidate_page(virt: LAddr) {
     asm!("invlpg [{}]", in(reg) *virt);
 }
@@ -98,37 +118,35 @@ pub(crate) fn new_page(
     allocator: &mut impl PageAlloc,
 ) -> Result<(), Error> {
     log::trace!(
-            "paging::new_page: root table = {:?}, virt = {:?}, phys = {:?}, attr = {:?}, level = {:?}, id_off = {:?}, allocator = {:?}",
-            root_table as *mut _,
-            virt,
-            phys,
-            attr,
-            level,
-            id_off,
-            allocator as *mut _
-      );
+        "paging::new_page: root table = {:?}, virt = {:?}, phys = {:?}, attr = {:?}, level = {:?}, id_off = {:?}, allocator = {:?}",
+        root_table as *mut _,
+        virt,
+        phys,
+        attr,
+        level,
+        id_off,
+        allocator as *mut _
+    );
 
     let mut table: NonNull<Table> = NonNull::from(root_table);
     let mut lvl = Level::P4;
-    while lvl != level {
-        let idx = lvl.addr_idx(virt, false);
-        let table_mut = unsafe { table.as_mut() };
-        let item = &mut table_mut[idx];
+    loop {
+        let item = unsafe { &mut table.as_mut()[lvl.addr_idx(virt, false)] };
+
+        if lvl == level {
+            break if item.is_leaf(level) {
+                Err(Error::EntryExistent(true))
+            } else {
+                let attr = level.leaf_attr(attr);
+                *item = Entry::new(phys, attr, level);
+
+                unsafe { invalidate_page(virt) };
+                Ok(())
+            };
+        }
+
         table = create_table(item, lvl, id_off, allocator)?;
         lvl = lvl.decrease().expect("Too low level");
-    }
-
-    let idx = level.addr_idx(virt, false);
-    let table_mut = unsafe { table.as_mut() };
-
-    if table_mut[idx].is_leaf(level) {
-        Err(Error::EntryExistent(true))
-    } else {
-        let attr = level.leaf_attr(attr);
-        table_mut[idx] = Entry::new(phys, attr, level);
-
-        unsafe { invalidate_page(virt) };
-        Ok(())
     }
 }
 
@@ -142,56 +160,32 @@ pub(crate) fn modify_page(
 ) -> Result<(), Error> {
     let mut table: NonNull<Table> = NonNull::from(root_table);
     let mut lvl = Level::P4;
-    while lvl != level {
-        let idx = lvl.addr_idx(virt, false);
-        let table_mut = unsafe { table.as_mut() };
-        let item = &mut table_mut[idx];
+    loop {
+        let item = unsafe { &mut table.as_mut()[lvl.addr_idx(virt, false)] };
+
+        if lvl == level {
+            break if item.is_leaf(level) {
+                let attr = level.leaf_attr(attr);
+                let (phys, _) = item.get(level);
+                *item = Entry::new(phys, attr, level);
+
+                unsafe { invalidate_page(virt) };
+                Ok(())
+            } else {
+                Err(Error::EntryExistent(false))
+            };
+        }
+
         table = get_or_split_table(item, lvl, id_off, allocator)?;
         lvl = lvl.decrease().expect("Too low level");
     }
-
-    let idx = level.addr_idx(virt, false);
-    let table_mut = unsafe { table.as_mut() };
-
-    if table_mut[idx].is_leaf(level) {
-        let attr = level.leaf_attr(attr);
-        let (phys, _) = table_mut[idx].get(level);
-        table_mut[idx] = Entry::new(phys, attr, level);
-
-        unsafe { invalidate_page(virt) };
-        Ok(())
-    } else {
-        Err(Error::EntryExistent(false))
-    }
-    // loop {
-    //     let idx = lvl.addr_idx(virt, false);
-    //     let table_mut = unsafe { table.as_mut() };
-    //     let item = &mut table_mut[idx];
-    //     if lvl != level {
-    //         table = get_or_split_table(item, lvl, id_off, allocator)?;
-    //         lvl = lvl.decrease().expect("Too low level");
-    //     } else {
-    //         if table_mut[idx].is_leaf(level) {
-    //             let attr = level.leaf_attr(attr);
-    //             let (phys, _) = table_mut[idx].get(level);
-    //             table_mut[idx] = Entry::new(phys, attr, level);
-
-    //             unsafe { invalidate_page(virt) };
-    //             break Ok(());
-    //         } else {
-    //             break Err(Error::EntryExistent(false));
-    //         }
-    //     }
-    // }
 }
 
 pub(crate) fn get_page(root_table: &Table, virt: LAddr, id_off: usize) -> Result<PAddr, Error> {
     let mut table: NonNull<Table> = NonNull::from(root_table);
     let mut lvl = Level::P4;
     loop {
-        let idx = lvl.addr_idx(virt, false);
-        let table_ref = unsafe { table.as_ref() };
-        let item = &table_ref[idx];
+        let item = unsafe { &table.as_ref()[lvl.addr_idx(virt, false)] };
 
         if item.is_leaf(lvl) {
             break Ok(item.get(lvl).0);
@@ -217,47 +211,33 @@ pub(crate) fn drop_page(
     let mut parent = None;
     // Contains page tables that have only one entry which may be dropped, and its
     // entry's level.
-    let mut empty_tables = [None; 5];
+    let mut empty_tables = [None::<(NonNull<Entry>, Level)>; 5];
 
-    while lvl != level {
-        let idx = lvl.addr_idx(virt, false);
-        let table_mut = unsafe { table.as_mut() };
-        if table_mut.is_empty(Some(idx), lvl) {
-            empty_tables[lvl as usize] = parent.map(|p| (NonNull::from(p), lvl));
+    loop {
+        let item = {
+            let idx = lvl.addr_idx(virt, false);
+            let table_mut = unsafe { table.as_mut() };
+            if table_mut.is_empty(Some(idx), lvl) {
+                empty_tables[lvl as usize] = parent.map(|p| (NonNull::from(p), lvl));
+            }
+            &mut table_mut[idx]
+        };
+
+        if lvl == level {
+            break if item.is_leaf(level) {
+                item.reset();
+
+                unsafe { invalidate_page(virt) };
+                destroy_tables(empty_tables, id_off, allocator);
+                Ok(())
+            } else {
+                Err(Error::EntryExistent(false))
+            };
         }
-        let item = &mut table_mut[idx];
+
         table = get_or_split_table(item, lvl, id_off, allocator)?;
         lvl = lvl.decrease().expect("Too low level");
         parent = Some(item);
-    }
-
-    let idx = level.addr_idx(virt, false);
-    let table_mut = unsafe { table.as_mut() };
-    if table_mut.is_empty(Some(idx), lvl) {
-        empty_tables[lvl as usize] = parent.map(|p| (NonNull::from(p), lvl));
-    }
-
-    if table_mut[idx].is_leaf(level) {
-        table_mut[idx].reset();
-        unsafe { invalidate_page(virt) };
-
-        for (mut item, elvl) in empty_tables.into_iter().flatten().fuse() {
-            let lvl = elvl.increase().unwrap();
-            unsafe {
-                let item = item.as_mut();
-                let table = item.get_table(id_off, lvl).unwrap();
-                if table.as_ref().is_empty(None, elvl) {
-                    let (addr, _) = item.get(Level::Pt);
-                    item.reset();
-                    allocator.deallocate(addr);
-                } else {
-                    break;
-                }
-            }
-        }
-        Ok(())
-    } else {
-        Err(Error::EntryExistent(false))
     }
 }
 
