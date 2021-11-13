@@ -70,14 +70,7 @@ pub fn maps(
     let mut rem_info = info.clone();
     log::trace!("paging::maps: Begin spliting pages");
     while !rem_info.virt.is_empty() {
-        let level = core::cmp::min(
-            core::cmp::min(
-                Level::fit(rem_info.virt.start.val()).expect("Misaligned start address"),
-                Level::fit(rem_info.virt.end.val() - rem_info.virt.start.val())
-                    .expect("Misaligned start address"),
-            ),
-            Level::fit(*rem_info.phys).expect("Misaligned start address"),
-        );
+        let level = Level::fit_all(&rem_info.virt, rem_info.phys);
 
         ret = inner::new_page(
             root_table,
@@ -127,14 +120,7 @@ pub fn reprotect(
     while !rem_info.virt.is_empty() {
         let phys = query(root_table, rem_info.virt.start, rem_info.id_off)
             .unwrap_or_else(|_| PAddr::new(0));
-        let level = core::cmp::min(
-            core::cmp::min(
-                Level::fit(rem_info.virt.start.val()).expect("Misaligned start address"),
-                Level::fit(rem_info.virt.end.val() - rem_info.virt.start.val())
-                    .expect("Misaligned start address"),
-            ),
-            Level::fit(*phys).expect("Misaligned start address"),
-        );
+        let level = Level::fit_all(&rem_info.virt, phys);
 
         match inner::modify_page(
             root_table,
@@ -180,13 +166,7 @@ pub fn unmaps(
 
     while !virt.is_empty() {
         let phys = query(root_table, virt.start, id_off).unwrap_or_else(|_| PAddr::new(0));
-        let level = core::cmp::min(
-            core::cmp::min(
-                Level::fit(virt.start.val()).expect("Misaligned start address"),
-                Level::fit(virt.end.val() - virt.start.val()).expect("Misaligned start address"),
-            ),
-            Level::fit(*phys).expect("Misaligned start address"),
-        );
+        let level = Level::fit_all(&virt, phys);
 
         let _ = inner::drop_page(root_table, virt.start, level, id_off, allocator);
 

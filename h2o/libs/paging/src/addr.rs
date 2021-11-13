@@ -4,7 +4,7 @@ use core::{
     ptr::NonNull,
 };
 
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Default)]
 #[repr(transparent)]
 pub struct PAddr(usize);
 

@@ -8,11 +8,11 @@
 
 pub mod call;
 pub mod error;
+pub mod time;
 cfg_if::cfg_if! {
     if #[cfg(feature = "call")] {
         pub mod rxx;
         pub mod log;
-        pub mod time;
         pub mod task;
         pub mod mem;
     }

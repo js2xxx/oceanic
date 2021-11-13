@@ -20,5 +20,5 @@ syscall_stub!(5 => pub(crate) fn task_join(hdl: u32) -> usize);
 syscall_stub!(8 => 
     pub(crate) fn alloc_pages(virt: *mut u8, phys: usize, size: usize, align: usize, flags: u32) 
         -> *mut u8);
-syscall_stub!(9 => pub(crate) fn dealloc_pages(ptr: *mut u8));
+syscall_stub!(9 => pub(crate) fn dealloc_pages(ptr: *mut u8) -> usize);
 syscall_stub!(10 => pub(crate) unsafe fn modify_pages(ptr: *mut u8, size: usize, flags: u32));

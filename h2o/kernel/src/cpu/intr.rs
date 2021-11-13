@@ -10,12 +10,12 @@ use self::arch::ArchReg;
 pub use super::arch::intr as arch;
 
 bitflags::bitflags! {
-      pub struct IrqReturn: u8 {
-            const SUCCESS = 0b0000_0001;
-            const WAKE_TASK = 0b0000_0010;
-            const DISABLED = 0b0000_0100;
-            const UNMASK = 0b0000_1000;
-      }
+    pub struct IrqReturn: u8 {
+        const SUCCESS = 0b0000_0001;
+        const WAKE_TASK = 0b0000_0010;
+        const DISABLED = 0b0000_0100;
+        const UNMASK = 0b0000_1000;
+    }
 }
 
 pub type TypeHandler = unsafe fn(Arc<Interrupt>);

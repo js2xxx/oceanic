@@ -1,6 +1,8 @@
-use core::convert::TryFrom;
+use core::{convert::TryFrom, ops::Range};
 
-use crate::{LAddr, CANONICAL_PREFIX, NR_ENTRIES, NR_ENTRIES_SHIFT, PAGE_SHIFT, RECURSIVE_IDX};
+use crate::{
+    LAddr, PAddr, CANONICAL_PREFIX, NR_ENTRIES, NR_ENTRIES_SHIFT, PAGE_SHIFT, RECURSIVE_IDX,
+};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(usize)]
@@ -26,6 +28,16 @@ impl Level {
         }
         log::warn!("paging::Level::fit: unknown level");
         None
+    }
+
+    pub fn fit_all(virt: &Range<LAddr>, phys: PAddr) -> Level {
+        Level::fit(virt.start.val())
+            .expect("Misaligned start virtual address")
+            .min(
+                Level::fit(virt.end.val() - virt.start.val())
+                    .expect("Misaligned end virtual address"),
+            )
+            .min(Level::fit(*phys).expect("Misaligned start physical address"))
     }
 
     #[inline]

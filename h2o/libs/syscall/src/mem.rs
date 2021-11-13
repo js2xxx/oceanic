@@ -1,14 +1,14 @@
 use core::alloc::Layout;
 
 bitflags::bitflags! {
-      /// Flags to describe a block of memory.
-      pub struct Flags: u32 {
-            const USER_ACCESS = 1;
-            const READABLE    = 1 << 1;
-            const WRITABLE    = 1 << 2;
-            const EXECUTABLE  = 1 << 3;
-            const ZEROED      = 1 << 4;
-      }
+    /// Flags to describe a block of memory.
+    pub struct Flags: u32 {
+        const USER_ACCESS = 1;
+        const READABLE    = 1 << 1;
+        const WRITABLE    = 1 << 2;
+        const EXECUTABLE  = 1 << 3;
+        const ZEROED      = 1 << 4;
+    }
 }
 
 pub fn alloc_pages(
@@ -23,7 +23,7 @@ pub fn alloc_pages(
         .map(|ptr| unsafe { core::slice::from_raw_parts_mut(ptr, size) as *mut _ })
 }
 
-pub fn dealloc_pages(ptr: *mut u8) -> crate::Result<()> {
+pub fn dealloc_pages(ptr: *mut u8) -> crate::Result<usize> {
     crate::call::dealloc_pages(ptr)
 }
 
