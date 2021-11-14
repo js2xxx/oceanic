@@ -1,7 +1,7 @@
 use alloc::{string::String, vec::Vec};
+use core::ffi::VaList;
 
 use spin::Mutex;
-use va_list::VaList;
 
 static PRINT_BUF: Mutex<String> = Mutex::new(String::new());
 

@@ -1,11 +1,10 @@
 [package]
 authors = ["徐启航 <akucxy@163.com>"]
 edition = "2021"
-name = "kernel"
+name = "h2o_kernel"
 version = "0.1.0"
 
-[lib]
-crate-type = ["staticlib"]
+[[bin]]
 name = "h2o"
 path = "src/kmain.rs"
 
@@ -36,7 +35,7 @@ paste = "1.0"
 raw-cpuid = "10"
 spin = {version = "0.9", features = ["use_ticket_mutex"]}
 static_assertions = "1.1"
-va_list = {version = "0.1", default-features = false, features = ["no_std"]}
 
 [build-dependencies]
 bindgen = {version = "0.58", default-features = false, features = ["which-rustfmt"]}
+cc = {version = "1.0", features = ["parallel"]}

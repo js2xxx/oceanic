@@ -1,4 +1,5 @@
 #![no_std]
+#![no_main]
 #![allow(unused_unsafe)]
 #![warn(clippy::missing_errors_doc)]
 #![warn(clippy::missing_panics_doc)]
@@ -9,6 +10,7 @@
 #![feature(bool_to_option)]
 #![feature(box_into_inner)]
 #![feature(box_syntax)]
+#![feature(c_variadic)]
 #![feature(concat_idents)]
 #![feature(const_btree_new)]
 #![feature(const_fn_fn_ptr_basics)]

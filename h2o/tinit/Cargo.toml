@@ -1,10 +1,9 @@
 [package]
 edition = "2021"
-name = "tinit"
+name = "h2o_tinit"
 version = "0.1.0"
 
-[lib]
-crate-type = ["staticlib"]
+[[bin]]
 name = "tinit"
 path = "src/tmain.rs"
 

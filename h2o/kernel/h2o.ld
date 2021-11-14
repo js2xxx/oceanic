@@ -9,6 +9,7 @@ SECTIONS
 
       .text :
       {
+            entry.asm.o
             *(.text*)
       }
 

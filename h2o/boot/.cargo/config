@@ -1,0 +1,17 @@
+[build]
+target = "x86_64-unknown-uefi"
+
+[unstable]
+build-std = ["core", "compiler_builtins", "alloc", "panic_abort"]
+build-std-features = ["compiler-builtins-mem"]
+
+[profile.dev]
+lto = 'thin'
+panic = 'abort'
+incremental = true
+
+[profile.release]
+lto = 'thin'
+opt-level = 0
+panic = 'abort'
+incremental = true

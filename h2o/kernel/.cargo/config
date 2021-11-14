@@ -1,0 +1,17 @@
+[build]
+target = ".cargo/x86_64-h2o-kernel.json"
+
+[unstable]
+build-std = ["core", "compiler_builtins", "alloc", "panic_abort"]
+build-std-features = ["compiler-builtins-mem"]
+
+[profile.dev]
+lto = 'thin'
+panic = 'abort'
+incremental = true
+
+[profile.release]
+lto = 'thin'
+opt-level = 2
+panic = 'abort'
+incremental = true

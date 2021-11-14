@@ -1,4 +1,5 @@
 #![no_std]
+#![no_main]
 #![feature(alloc_layout_extra)]
 #![feature(box_syntax)]
 #![feature(nonnull_slice_from_raw_parts)]

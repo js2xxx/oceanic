@@ -1,0 +1,9 @@
+[package]
+edition = "2021"
+name = "xtask"
+version = "0.1.0"
+
+[dependencies]
+bindgen = "0.58"
+cc = "1.0"
+structopt = "0.3"

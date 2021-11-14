@@ -1,6 +1,7 @@
 use alloc::{alloc::Global, collections::BTreeMap};
 use core::{
     alloc::{Allocator, Layout},
+    mem,
     ops::Range,
     ptr::{null_mut, NonNull},
 };
@@ -90,4 +91,59 @@ unsafe extern "C" fn AcpiOsFree(ptr: *mut u8) {
     if let Some((layout, ptr)) = layout.zip(NonNull::new(ptr)) {
         Global.deallocate(ptr, layout);
     }
+}
+
+#[no_mangle]
+unsafe extern "C" fn strlen(ptr: *const u8) -> usize {
+    if (ptr as usize) & (mem::size_of::<u32>() - 1) == 0 {
+        let mut len = 0;
+        let mut ptr = ptr as *const u32;
+        loop {
+            match (*ptr).to_ne_bytes() {
+                [0, ..] => return len,
+                [_, 0, ..] => return len + 1,
+                [_, _, 0, ..] => return len + 2,
+                [_, _, _, 0] => return len + 3,
+                _ => {
+                    len += mem::size_of::<u32>();
+                    ptr = ptr.add(1);
+                }
+            }
+        }
+    } else {
+        let mut len = 0;
+        let mut ptr = ptr;
+        while *ptr != 0 {
+            len += 1;
+            ptr = ptr.add(1);
+        }
+        len
+    }
+}
+
+#[no_mangle]
+unsafe extern "C" fn strncmp(a: *const u8, b: *const u8, num: c_int) -> c_int {
+    let la = strlen(a);
+    let lb = strlen(b);
+    {
+        let n = (num as usize).min(la).min(lb);
+        for i in 0..n {
+            if *a.add(i) < *b.add(i) {
+                return -(i as i32);
+            } else if *a.add(i) > *b.add(i) {
+                return (i as i32);
+            }
+        }
+        return 0;
+    }
+}
+
+#[no_mangle]
+unsafe extern "C" fn isdigit(c: c_int) -> c_int {
+    (c as u8).is_ascii_digit() as c_int
+}
+
+#[no_mangle]
+unsafe extern "C" fn isprint(c: c_int) -> c_int {
+    !(c as u8).is_ascii_control() as c_int
 }

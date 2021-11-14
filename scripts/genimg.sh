@@ -1,5 +1,6 @@
 #!/bin/bash
 
+mkdir -p target/img/mnt
 cd target
 
 tar vcf H2O.k KERNEL TINIT
