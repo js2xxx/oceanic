@@ -1,8 +1,9 @@
 [package]
+authors = ["Js2xxx"]
+edition = "2021"
+license = "MIT OR Apache-2.0"
 name = "minfo"
 version = "0.1.0"
-authors = ["徐启航 <akucxy@163.com>"]
-edition = "2021"
 
 [dependencies]
-pmm = { path = "../pmm" }
+pmm = {path = "../pmm"}

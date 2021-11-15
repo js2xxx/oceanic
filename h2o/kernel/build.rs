@@ -32,9 +32,9 @@ const TARGET_DIR: &str = "../../build/h2o";
 fn acpica_build() -> Result<(), Box<dyn Error>> {
     let cd = env::current_dir()?;
     let path = cd.join(TARGET_DIR).into_os_string().into_string().unwrap();
+    env::set_var("CC", "ccache clang");
     let mut build = cc::Build::new();
     build
-        .compiler("clang")
         .include(Path::new(ACPICA_PATH).join("include"))
         .files(
             Path::new(ACPICA_PATH)

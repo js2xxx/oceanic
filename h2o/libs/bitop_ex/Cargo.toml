@@ -1,8 +1,9 @@
 [package]
+authors = ["Js2xxx"]
+edition = "2021"
+license = "MIT OR Apache-2.0"
 name = "bitop_ex"
 version = "0.1.0"
-authors = ["徐启航 <akucxy@163.com>"]
-edition = "2021"
 
 [dependencies]
-num-traits = { version = "0.2", default-features = false }
+num-traits = {version = "0.2", default-features = false}
