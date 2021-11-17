@@ -6,36 +6,41 @@ cfg_if::cfg_if! {
 }
 
 use alloc::boxed::Box;
-use core::fmt::Debug;
+use core::{fmt::Debug, ptr};
 
 use paging::LAddr;
 
 pub const KSTACK_SIZE: usize = paging::PAGE_SIZE * 16;
 
 #[derive(Debug)]
-pub struct Entry<'a> {
+pub struct Entry {
     pub entry: LAddr,
     pub stack: LAddr,
     pub tls: Option<LAddr>,
-    pub args: &'a [u64],
+    pub args: [u64; 2],
 }
 
 #[repr(align(4096))]
-pub struct Kstack([u8; KSTACK_SIZE]);
+pub struct Kstack([u8; KSTACK_SIZE], *mut u8);
+
+unsafe impl Send for Kstack {}
 
 impl Kstack {
-    pub fn new<'a>(entry: Entry<'a>, ty: super::Type) -> (Box<Self>, Option<&'a [u64]>) {
+    pub fn new(entry: Entry, ty: super::Type) -> Box<Self> {
         let mut kstack = box core::mem::MaybeUninit::<Self>::uninit();
-        let rem = unsafe {
-            let frame = kstack.assume_init_mut().task_frame_mut();
-            let rem = frame.set_entry(entry, ty);
-            rem
-        };
-        (unsafe { Box::from_raw(Box::into_raw(kstack).cast()) }, rem)
+        unsafe {
+            let this = kstack.assume_init_mut();
+            let frame = this.task_frame_mut();
+            frame.set_entry(entry, ty);
+            let kframe = (frame as *mut arch::Frame).cast::<arch::Kframe>().sub(1);
+            kframe.write(arch::Kframe::new((frame as *mut arch::Frame).cast()));
+            this.1 = kframe.cast();
+        }
+        unsafe { kstack.assume_init() }
     }
 
-    pub fn new_syscall() -> Box<Self> {
-        unsafe { Box::from_raw(Box::into_raw(box core::mem::MaybeUninit::<Self>::uninit()).cast()) }
+    pub fn top(&self) -> LAddr {
+        LAddr::new(self.0.as_ptr_range().end as *mut u8)
     }
 
     #[cfg(target_arch = "x86_64")]
@@ -51,6 +56,16 @@ impl Kstack {
 
         unsafe { &mut *ptr.sub(1) }
     }
+
+    #[cfg(target_arch = "x86_64")]
+    pub fn kframe_ptr(&self) -> *mut u8 {
+        self.1
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    pub fn kframe_ptr_mut(&mut self) -> *mut *mut u8 {
+        &mut self.1
+    }
 }
 
 impl Debug for Kstack {
@@ -64,6 +79,10 @@ impl Debug for Kstack {
 pub struct ExtendedFrame([u8; arch::EXTENDED_FRAME_SIZE]);
 
 impl ExtendedFrame {
+    pub fn zeroed() -> Box<Self> {
+        box ExtendedFrame([0; arch::EXTENDED_FRAME_SIZE])
+    }
+
     pub unsafe fn save(&mut self) {
         let ptr = self.0.as_mut_ptr();
         archop::fpu::save(ptr);
@@ -73,4 +92,9 @@ impl ExtendedFrame {
         let ptr = self.0.as_ptr();
         archop::fpu::load(ptr);
     }
+}
+
+pub unsafe fn switch_ctx(old: Option<*mut *mut u8>, new: *mut u8) {
+    arch::switch_kframe(old.unwrap_or(ptr::null_mut()), new);
+    arch::switch_finishing();
 }

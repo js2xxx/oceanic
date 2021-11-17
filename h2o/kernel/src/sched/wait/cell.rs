@@ -6,7 +6,7 @@ use super::WaitObject;
 
 pub struct WaitCell<T> {
     data: Mutex<Option<T>>,
-    wo: Arc<WaitObject>,
+    wo: WaitObject,
 }
 
 impl<T> WaitCell<T> {

@@ -46,8 +46,8 @@ endstruc
 
 %macro align_rsp 1
       mov   %1, 0
-      bt    rsp, 3
-      jnc   %%next
+      test  rsp, 0xF
+      jnz   %%next
       mov   %1, 1
       sub   rsp, 8
 %%next:
@@ -220,6 +220,45 @@ extern %3
 
 [section .text]
 
+global switch_kframe
+; Switch the kernel frame of the current thread.
+;
+; # Safety
+;
+; The layout in the stack must matches [`h2o::sched::task::ctx::x86_64::Kframe`].
+;
+; switch_kframe(rdi *old_kframe, rsi new_kframe)
+switch_kframe:
+      push  rbp
+      push  rbx
+      push  r12
+      push  r13
+      push  r14
+      push  r15
+
+      ; Save the current stack context.
+      cmp   rdi, 0
+      je    .next
+      mov   [rdi], rsp
+.next:
+      ; Switch the stack (a.k.a. the context).
+      mov   rsp, rsi
+
+      pop   r15
+      pop   r14
+      pop   r13
+      pop   r12
+      pop   rbx
+      pop   rbp
+      ret
+
+global task_fresh
+extern switch_finishing
+; The entry into the interrupt context of a new task.
+task_fresh:
+      align_call switch_finishing, r12
+      jmp   intr_exit
+
 ; define_intr(vec, asm_name, name, has_code)
 
 ; x86 exceptions
@@ -261,19 +300,35 @@ define_intr i, rout_name(i), common_interrupt, i
 %undef rout_name
 
 extern save_intr; Save the GPRs from the current stack and switch to the task's `intr_stack`.
-extern load_intr; Return `intr_stack` of the current task
-extern sync_syscall; Sync the GPRs from the cur stack and switch to the task's `syscall_stack`.
 
 intr_entry:
       cld
-      push_regs   1, 0; The routine has a return address, so we must preserve it.
-      lea   rbp, [rsp + 8 + 1]
 
-      bt    qword [rsp + (8 + Frame.cs)], 2; Test if it's a reentrancy.
+      bt    qword [rsp + 8 * 3], 2; Test if it's a reentrancy.
       jc    .reent
 
       swapgs
       lfence
+
+      ; If we came from a kernel task, manually switch to its kernel stack.
+      cmp   qword [rsp + 8 * 3], 0x8
+      jne   .push_regs
+
+      push  rdi
+      mov   rdi, rsp
+      mov   rsp, [gs:KernelGs.tss_rsp0]
+      push  qword [rdi + 8 * 7]
+      push  qword [rdi + 8 * 6]
+      push  qword [rdi + 8 * 5]
+      push  qword [rdi + 8 * 4]
+      push  qword [rdi + 8 * 3]
+      push  qword [rdi + 8 * 2]
+      push  qword [rdi + 8]
+      mov   rdi, [rdi]
+
+.push_regs:
+      push_regs   1, 1; The routine has a return address, so we must preserve it.
+      lea   rbp, [rsp + 8 + 1]
 
       mov   rcx, FS_BASE
       mov   rax, [gs:(KernelGs.kernel_fs)]
@@ -281,50 +336,31 @@ intr_entry:
       shr   rdx, 32
       wrmsr
 
-      pop   r12
-      mov   rdi, rsp
-      align_call  save_intr, r13
-      mov   rsp, rax
-      lea   rbp, [rsp + 1]
-      push  r12
+      align_call  save_intr, r12
 
       jmp   .ret
 .reent:
-      ; TODO: Handle some errors there because interrupts are not allowed to reenter.
+      ; A preemption happens.
       lfence
 
-      pop   r12
-      mov   rdi, rsp
-      align_call  save_intr, r13
-      push  r12
+      push_regs   1, 1; The routine has a return address, so we must preserve it.
+      lea   rbp, [rsp + 8 + 1]
 .ret:
       ret
 
 intr_exit:
-      mov   rdi, rsp
-      align_call  load_intr, r13
-      mov   rsp, rax
-
       bt    qword [rsp + Frame.cs], 2; Test if it's a reentrancy.
       jc    .reent
 
       pop_regs    1
 
       ; The stack now consists of errc and 'iretq stuff'
-      push  rdi
-      mov   rdi, rsp
-      mov   rsp, [gs:(KernelGs.tss_rsp0)]
-      push  qword [rdi + 8 * 6]     ; ss
-      push  qword [rdi + 8 * 5]     ; rsp
-      push  qword [rdi + 8 * 4]     ; rflags
-      push  qword [rdi + 8 * 3]     ; cs
-      push  qword [rdi + 8 * 2]     ; rip
-      mov   rdi, [rdi]
+      add   rsp, 8
 
       swapgs
       jmp   .ret
 .reent:
-      ; TODO: Handle some errors there because interrupts are not allowed to reenter.
+      ; A preemption happens.
       pop_regs    1
 
       add   rsp, 8
@@ -340,8 +376,9 @@ rout_syscall:
       swapgs
 
       mov   [gs:(KernelGs.syscall_user_stack)], rsp
-      mov   rsp, [gs:(KernelGs.syscall_stack)]
+      mov   rsp, [gs:(KernelGs.tss_rsp0)]
 
+      ; Fit the context to [`x86_64::Frame`]
       push  qword USR_DATA_X64                        ; ss
       push  qword [gs:(KernelGs.syscall_user_stack)]  ; rsp
       push  r11                                       ; rflags
@@ -363,10 +400,7 @@ rout_syscall:
       mov   rcx, KERNEL_GS_BASE
       wrmsr
 
-      mov   rdi, rsp
-      align_call  sync_syscall, r13
-      mov   rsp, rax
-      lea   rbp, [rsp + 1]
+      align_call  save_intr, r12
 
       mov   rdi, rsp
 

@@ -5,7 +5,10 @@ use goblin::elf::*;
 use paging::{LAddr, PAddr};
 
 use super::*;
-use crate::{cpu::CpuMask, mem::space::{AllocType, Flags, Phys, Space, SpaceError}};
+use crate::{
+    cpu::CpuMask,
+    mem::space::{AllocType, Flags, Phys, Space, SpaceError},
+};
 
 fn load_prog(
     space: &Space,
@@ -140,8 +143,8 @@ pub fn from_elf<'a, 'b>(
     image: &'b [u8],
     name: String,
     affinity: CpuMask,
-    args: &'a [u64],
-) -> Result<(Init, UserHandle, Option<&'a [u64]>)> {
+    args: [u64; 2],
+) -> Result<(Init, UserHandle)> {
     let file = Elf::parse(image)
         .map_err(|_| TaskError::InvalidFormat)
         .and_then(|file| {

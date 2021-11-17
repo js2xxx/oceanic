@@ -34,19 +34,17 @@ fn acpica_build() -> Result<(), Box<dyn Error>> {
     let path = cd.join(TARGET_DIR).into_os_string().into_string().unwrap();
     env::set_var("CC", "ccache clang");
     let mut build = cc::Build::new();
-    build
-        .include(Path::new(ACPICA_PATH).join("include"))
-        .files(
-            Path::new(ACPICA_PATH)
-                .read_dir()
-                .unwrap()
-                .flatten()
-                .filter(|e| e.file_name() != "include")
-                .map(|e| e.path().read_dir().map(|iter| iter.flatten()))
-                .flatten()
-                .flatten()
-                .map(|e| e.path()),
-        );
+    build.include(Path::new(ACPICA_PATH).join("include")).files(
+        Path::new(ACPICA_PATH)
+            .read_dir()
+            .unwrap()
+            .flatten()
+            .filter(|e| e.file_name() != "include")
+            .map(|e| e.path().read_dir().map(|iter| iter.flatten()))
+            .flatten()
+            .flatten()
+            .map(|e| e.path()),
+    );
     for flag in C_FLAGS {
         build.flag(flag);
     }

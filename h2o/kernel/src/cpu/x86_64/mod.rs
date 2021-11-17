@@ -4,8 +4,8 @@ pub mod seg;
 pub mod syscall;
 pub mod tsc;
 
-use alloc::boxed::Box;
 use core::{
+    mem::MaybeUninit,
     ptr::null_mut,
     sync::atomic::{AtomicUsize, Ordering},
 };
@@ -53,16 +53,19 @@ pub unsafe fn is_bsp() -> bool {
 
 #[repr(C)]
 pub struct KernelGs {
-    tss_rsp0: LAddr,
+    tss_rsp0: u64,
     syscall_user_stack: *mut u8,
     syscall_stack: LAddr,
     kernel_fs: LAddr,
 }
 
+#[thread_local]
+static mut KERNEL_GS: MaybeUninit<KernelGs> = MaybeUninit::uninit();
+
 impl KernelGs {
-    pub fn new(tss_rsp0: LAddr, syscall_stack: LAddr, kernel_fs: LAddr) -> Self {
+    pub fn new(syscall_stack: LAddr, kernel_fs: LAddr) -> Self {
         KernelGs {
-            tss_rsp0,
+            tss_rsp0: unsafe { seg::ndt::TSS.rsp0() },
             syscall_user_stack: null_mut(),
             syscall_stack,
             kernel_fs,
@@ -82,33 +85,24 @@ impl KernelGs {
     ///
     /// The caller must ensure that this function is called only if
     /// [`archop::msr::KERNEL_GS_BASE`] is uninitialized.
-    pub unsafe fn load(self) {
-        let ptr = Box::into_raw(box self);
+    pub unsafe fn load(this: Self) {
+        let ptr = KERNEL_GS.write(this) as *mut Self;
 
         use archop::msr;
         msr::write(msr::KERNEL_GS_BASE, ptr as u64);
     }
 
+    /// Update TSS's rsp0 a.k.a. task's interrupt frame pointer.
+    ///
+    /// This function both sets the rsp0 and its backup in the kernel GS.
+    ///
     /// # Safety
     ///
-    /// The caller must ensure that this function is called out of any interrupt
-    /// handler and there's an `KernelGs` object stored in
-    /// [`archop::msr::KERNEL_GS_BASE`].
-    pub unsafe fn access<'b>() -> &'b KernelGs {
-        use archop::msr;
-        let ptr = msr::read(msr::KERNEL_GS_BASE) as *const KernelGs;
-        &*ptr
-    }
-
-    /// # Safety
-    ///
-    /// The caller must ensure that this function is called inside an interrupt
-    /// handler and there's an `KernelGs` object stored in
-    /// [`archop::msr::GS_BASE`].
-    pub unsafe fn access_in_intr<'b>() -> &'b mut KernelGs {
-        use archop::msr;
-        let ptr = msr::read(msr::GS_BASE) as *mut KernelGs;
-        &mut *ptr
+    /// `rsp0` must be a valid pointer to a task's interrupt frame.
+    pub unsafe fn update_tss_rsp0(rsp0: u64) {
+        let this = KERNEL_GS.assume_init_mut();
+        seg::ndt::TSS.set_rsp0(rsp0);
+        this.tss_rsp0 = rsp0;
     }
 }
 
@@ -121,7 +115,7 @@ impl KernelGs {
 pub unsafe fn init(lapic_data: acpi::table::madt::LapicData) {
     archop::fpu::init();
 
-    let (tss_rsp0, kernel_fs) = seg::init();
+    let kernel_fs = seg::init();
 
     unsafe { tsc::init() };
 
@@ -133,9 +127,9 @@ pub unsafe fn init(lapic_data: acpi::table::madt::LapicData) {
 
     let syscall_stack = syscall::init().expect("Memory allocation failed");
 
-    let kernel_gs = KernelGs::new(tss_rsp0, syscall_stack, kernel_fs);
+    let kernel_gs = KernelGs::new(syscall_stack, kernel_fs);
     // SAFE: During bootstrap initialization.
-    unsafe { kernel_gs.load() };
+    unsafe { KernelGs::load(kernel_gs) };
 
     let cnt = apic::ipi::start_cpus(lapics);
     CPU_COUNT.store(cnt, Ordering::SeqCst);
@@ -148,13 +142,13 @@ pub unsafe fn init(lapic_data: acpi::table::madt::LapicData) {
 /// The caller must ensure that this function should only be called once from
 /// each application CPU.
 pub unsafe fn init_ap(lapic_data: acpi::table::madt::LapicData) {
-    let (tss_rsp0, kernel_fs) = seg::init_ap();
+    let kernel_fs = seg::init_ap();
 
     apic::init(lapic_data.ty);
 
     let syscall_stack = syscall::init().expect("Memory allocation failed");
 
-    let kernel_gs = KernelGs::new(tss_rsp0, syscall_stack, kernel_fs);
+    let kernel_gs = KernelGs::new(syscall_stack, kernel_fs);
     // SAFE: During bootstrap initialization.
-    unsafe { kernel_gs.load() };
+    unsafe { KernelGs::load(kernel_gs) };
 }

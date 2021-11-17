@@ -21,7 +21,7 @@ pub use self::{
 };
 use super::wait::{WaitCell, WaitObject};
 use crate::{
-    cpu::{time::Instant, CpuMask},
+    cpu::{arch::KernelGs, time::Instant, CpuMask},
     mem::space::{with, Space, SpaceError},
 };
 
@@ -89,12 +89,16 @@ impl TaskInfo {
         &self.name
     }
 
+    pub fn ty(&self) -> Type {
+        self.ty
+    }
+
     pub fn affinity(&self) -> crate::cpu::CpuMask {
         self.affinity.clone()
     }
 
-    pub fn ty(&self) -> Type {
-        self.ty
+    pub fn prio(&self) -> Priority {
+        self.prio
     }
 }
 
@@ -102,7 +106,7 @@ impl TaskInfo {
 pub struct Init {
     tid: Tid,
     space: Arc<Space>,
-    intr_stack: Box<ctx::Kstack>,
+    kstack: Box<ctx::Kstack>,
 }
 
 impl Init {
@@ -112,8 +116,8 @@ impl Init {
         entry: LAddr,
         stack_size: usize,
         tls: Option<LAddr>,
-        args: &[u64],
-    ) -> Result<(Self, Option<&[u64]>)> {
+        args: [u64; 2],
+    ) -> Result<Self> {
         let entry = ctx::Entry {
             entry,
             stack: space
@@ -123,21 +127,14 @@ impl Init {
             args,
         };
 
-        let (intr_stack, rem) = ctx::Kstack::new(entry, ti.ty);
+        let kstack = ctx::Kstack::new(entry, ti.ty);
 
         let tid = tid::alloc_insert_or(ti, |_ti| {
             let _ = space.clear_stack();
             TaskError::TidExhausted
         })?;
 
-        Ok((
-            Init {
-                tid,
-                space,
-                intr_stack,
-            },
-            rem,
-        ))
+        Ok(Init { tid, space, kstack })
     }
 
     pub fn tid(&self) -> Tid {
@@ -150,8 +147,6 @@ pub enum RunningState {
     NotRunning,
     NeedResched,
     Running(Instant),
-    Drowsy(Arc<WaitObject>, &'static str),
-    Dying(usize),
 }
 
 #[derive(Debug)]
@@ -160,91 +155,78 @@ pub struct Ready {
     time_slice: Duration,
 
     space: Arc<Space>,
-    intr_stack: Box<ctx::Kstack>,
-    syscall_stack: Box<ctx::Kstack>,
+    kstack: Box<ctx::Kstack>,
     ext_frame: Box<ctx::ExtendedFrame>,
 
     pub(super) cpu: usize,
     pub(super) running_state: RunningState,
+    pub(super) preempt_count: usize,
 }
 
 impl Ready {
     pub(in crate::sched) fn from_init(init: Init, cpu: usize, time_slice: Duration) -> Self {
-        let Init {
-            tid,
-            space,
-            intr_stack,
-        } = init;
+        let Init { tid, space, kstack } = init;
         Ready {
             tid,
             time_slice,
             space,
-            intr_stack,
-            syscall_stack: ctx::Kstack::new_syscall(),
-            ext_frame: box unsafe { core::mem::zeroed() },
+            kstack,
+            ext_frame: ctx::ExtendedFrame::zeroed(),
             cpu,
             running_state: RunningState::NotRunning,
+            preempt_count: 0,
         }
     }
 
-    pub(in crate::sched) fn from_blocked(blocked: Blocked, time_slice: Duration) -> Self {
+    pub(in crate::sched) fn unblock(blocked: Blocked, time_slice: Duration) -> Self {
         let Blocked {
             tid,
             space,
-            intr_stack,
-            syscall_stack,
+            kstack,
             ext_frame,
             cpu,
+            preempt_count,
             ..
         } = blocked;
         Ready {
             tid,
             time_slice,
             space,
-            intr_stack,
-            syscall_stack,
+            kstack,
             ext_frame,
             cpu,
             running_state: RunningState::NotRunning,
+            preempt_count,
         }
     }
 
-    pub(in crate::sched) fn into_blocked(this: Self) {
+    pub(in crate::sched) fn block(this: Self, wo: &WaitObject, block_desc: &'static str) {
         let Ready {
             tid,
             space,
-            intr_stack,
-            syscall_stack,
+            kstack,
             ext_frame,
             cpu,
-            running_state,
+            preempt_count,
             ..
         } = this;
-        let (wo, block_desc) = match running_state {
-            RunningState::Drowsy(wo, block_desc) => (wo, block_desc),
-            _ => unreachable!("Blocked task unblockable"),
-        };
         let blocked = Blocked {
             tid,
             space,
-            intr_stack,
-            syscall_stack,
+            kstack,
             ext_frame,
             cpu,
+            preempt_count,
             block_desc,
         };
         wo.wait_queue.push(blocked);
     }
 
-    pub(in crate::sched) fn into_dead(this: Self) -> Dead {
-        let Ready {
-            tid, running_state, ..
-        } = this;
-        let retval = match running_state {
-            RunningState::Dying(retval) => retval,
-            _ => unreachable!("Dead task not dying"),
-        };
-        Dead { tid, retval }
+    pub(in crate::sched) fn exit(this: Self, retval: usize) {
+        let Ready { tid, kstack, .. } = this;
+        let dead = Dead { tid, retval };
+        destroy(dead);
+        idle::CTX_DROPPER.push(kstack);
     }
 
     pub fn tid(&self) -> Tid {
@@ -260,52 +242,33 @@ impl Ready {
     /// # Safety
     ///
     /// The caller must ensure that `frame` points to a valid frame.
-    pub unsafe fn save_intr(&mut self, frame: *const ctx::arch::Frame) -> *const ctx::arch::Frame {
-        assert!(
-            !matches!(self.running_state, RunningState::NotRunning),
-            "{:?}",
-            self.running_state
-        );
+    pub unsafe fn save_intr(&mut self) {
+        debug_assert!(!matches!(self.running_state, RunningState::NotRunning));
 
-        frame.copy_to(self.intr_stack.task_frame_mut(), 1);
         self.ext_frame.save();
-        self.intr_stack.task_frame()
     }
 
-    pub unsafe fn load_intr(&self, reload_all: bool) -> *const ctx::arch::Frame {
-        assert!(
-            !matches!(self.running_state, RunningState::NotRunning),
-            "{:?}",
-            self.running_state
-        );
+    pub unsafe fn load_intr(&self) {
+        debug_assert!(!matches!(self.running_state, RunningState::NotRunning));
 
-        if reload_all {
-            crate::mem::space::set_current(self.space.clone());
-            self.ext_frame.load();
-        }
-        self.intr_stack.task_frame()
-    }
-
-    pub unsafe fn sync_syscall(
-        &mut self,
-        frame: *const ctx::arch::Frame,
-    ) -> *const ctx::arch::Frame {
-        assert!(
-            !matches!(self.running_state, RunningState::NotRunning),
-            "{:?}",
-            self.running_state
-        );
-
-        frame.copy_to(self.syscall_stack.task_frame_mut(), 1);
-        self.syscall_stack.task_frame()
+        let tss_rsp0 = self.kstack.top().val() as u64;
+        KernelGs::update_tss_rsp0(tss_rsp0);
+        crate::mem::space::set_current(self.space.clone());
+        self.ext_frame.load();
     }
 
     pub fn save_syscall_retval(&mut self, retval: usize) {
-        assert!(matches!(self.running_state, RunningState::Running(..)));
+        debug_assert!(matches!(self.running_state, RunningState::Running(..)));
 
-        self.syscall_stack
-            .task_frame_mut()
-            .set_syscall_retval(retval);
+        self.kstack.task_frame_mut().set_syscall_retval(retval);
+    }
+
+    pub fn kframe(&self) -> *mut u8 {
+        self.kstack.kframe_ptr()
+    }
+
+    pub fn kframe_mut(&mut self) -> *mut *mut u8 {
+        self.kstack.kframe_ptr_mut()
     }
 
     pub fn space(&self) -> &Arc<Space> {
@@ -318,18 +281,18 @@ pub struct Blocked {
     tid: Tid,
 
     space: Arc<Space>,
-    intr_stack: Box<ctx::Kstack>,
-    syscall_stack: Box<ctx::Kstack>,
+    kstack: Box<ctx::Kstack>,
     ext_frame: Box<ctx::ExtendedFrame>,
 
     cpu: usize,
     block_desc: &'static str,
+    preempt_count: usize,
 }
 
-#[derive(Debug)]
-pub struct Killed {
-    tid: Tid,
-}
+// #[derive(Debug)]
+// pub struct Killed {
+//     tid: Tid,
+// }
 
 #[derive(Debug)]
 pub struct Dead {
@@ -358,8 +321,8 @@ fn create_with_space<F>(
     prio: Priority,
     dup_cur_space: bool,
     with_space: F,
-    args: &[u64],
-) -> Result<(Init, UserHandle, Option<&[u64]>)>
+    args: [u64; 2],
+) -> Result<(Init, UserHandle)>
 where
     F: FnOnce(&Space) -> Result<(LAddr, Option<LAddr>, usize)>,
 {
@@ -411,7 +374,7 @@ where
         )
     };
 
-    Init::new(ti, space, entry, stack_size, tls, args).map(|(task, rem)| (task, ret_wo, rem))
+    Init::new(ti, space, entry, stack_size, tls, args).map(|task| (task, ret_wo))
 }
 
 pub fn create_fn(
@@ -439,9 +402,8 @@ pub fn create_fn(
         prio,
         true,
         |_| Ok((func, None, stack_size)),
-        &[arg as u64],
+        [arg as u64, 0],
     )
-    .map(|(task, ret_wo, _)| (task, ret_wo))
 }
 
 pub(super) fn destroy(task: Dead) {
@@ -465,9 +427,7 @@ pub mod syscall {
 
     #[syscall]
     pub fn task_exit(retval: usize) {
-        crate::sched::SCHED.with_current(|cur| {
-            cur.running_state = super::RunningState::Dying(retval);
-        });
+        crate::sched::SCHED.exit_current(retval);
 
         loop {
             core::hint::spin_loop();

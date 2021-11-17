@@ -1,4 +1,4 @@
-use core::mem::size_of;
+use core::{cell::UnsafeCell, mem::size_of, ptr::addr_of};
 
 use paging::LAddr;
 use spin::Lazy;
@@ -51,7 +51,7 @@ pub static GDT: Lazy<DescTable<10>> = Lazy::new(|| {
 });
 
 #[thread_local]
-static TSS: Lazy<TssStruct> = Lazy::new(|| {
+pub(in crate::cpu::arch) static TSS: Lazy<TssStruct> = Lazy::new(|| {
     // SAFE: No physical address specified.
     let alloc_stack = || {
         crate::mem::alloc_system_stack()
@@ -63,18 +63,17 @@ static TSS: Lazy<TssStruct> = Lazy::new(|| {
     let ist1 = alloc_stack();
 
     TssStruct {
-        _rsvd1: 0,
         // The legacy RSPs of different privilege levels.
-        rsp: [rsp0 as u64, 0, 0],
-        _rsvd2: 0,
+        rsp0: UnsafeCell::new(rsp0 as u64),
         // The Interrupt Stack Tables.
         ist: [ist1 as u64, 0, 0, 0, 0, 0, 0],
-        _rsvd3: 0,
-        _rsvd4: 0,
         // The IO base mappings.
         io_base: 0,
+        ..Default::default()
     }
 });
+
+unsafe impl Sync for TssStruct {}
 
 /// All the segment descriptor that consumes a quadword.
 #[repr(C, packed)]
@@ -90,11 +89,14 @@ pub struct Segment {
 const_assert_eq!(size_of::<Segment>(), size_of::<u64>());
 
 /// The Task State Segment.
+#[derive(Default)]
 #[repr(C, packed)]
 pub struct TssStruct {
     _rsvd1: u32,
     /// The legacy RSPs of different privilege levels.
-    rsp: [u64; 3],
+    rsp0: UnsafeCell<u64>,
+    rsp1: u64,
+    rsp2: u64,
     _rsvd2: u64,
     /// The Interrupt Stack Tables.
     ist: [u64; 7],
@@ -105,8 +107,16 @@ pub struct TssStruct {
 }
 
 impl TssStruct {
-    pub fn rsp0(&self) -> LAddr {
-        LAddr::from(self.rsp[0] as usize)
+    pub unsafe fn rsp0(&self) -> u64 {
+        let addr = addr_of!(self.rsp0);
+        addr.read_unaligned().into_inner()
+    }
+
+    pub unsafe fn set_rsp0(&self, rsp0: u64) -> u64 {
+        let ret = self.rsp0();
+        let addr = addr_of!(self.rsp0);
+        (addr as *mut u64).write_unaligned(rsp0.into());
+        ret
     }
 
     pub fn io_base(&self) -> u16 {
@@ -244,12 +254,10 @@ unsafe fn load_tss(tr: SegSelector) {
 ///
 /// The caller must ensure that this function is called only once from the
 /// bootstrap CPU.
-pub unsafe fn init() -> LAddr {
+pub unsafe fn init() {
     unsafe {
         load_gdt();
         load_ldt(GDT_LDTR);
         load_tss(GDT_TR);
     }
-
-    TSS.rsp0()
 }

@@ -95,8 +95,9 @@ unsafe extern "C" fn common_interrupt(frame: *mut Frame) {
         }
     } else {
         log::warn!(
-            "The interrupt for vector {:#x} is already firing without block next ones",
+            "The interrupt for vector {:#x} is already firing without blocking next ones",
             vec
         );
     }
+    crate::sched::SCHED.try_preempt();
 }

@@ -18,11 +18,13 @@
 #![feature(default_alloc_error_handler)]
 #![feature(linked_list_remove)]
 #![feature(map_first_last)]
+#![feature(new_uninit)]
 #![feature(nonnull_slice_from_raw_parts)]
 #![feature(slice_ptr_get)]
 #![feature(slice_ptr_len)]
 #![feature(thread_local)]
 #![feature(trace_macros)]
+#![feature(unzip_option)]
 #![feature(vec_into_raw_parts)]
 
 pub mod cpu;

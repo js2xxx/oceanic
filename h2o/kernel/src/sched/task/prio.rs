@@ -6,3 +6,9 @@ pub const DEFAULT: Priority = Priority(20);
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Priority(u16);
+
+impl Priority {
+    pub fn new(val: u16) -> Priority {
+        Priority(val)
+    }
+}

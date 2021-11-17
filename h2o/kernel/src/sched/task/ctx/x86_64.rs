@@ -15,6 +15,28 @@ pub const DEFAULT_STACK_LAYOUT: Layout =
 
 pub const EXTENDED_FRAME_SIZE: usize = 768;
 
+#[derive(Debug, Default)]
+#[repr(C)]
+pub struct Kframe {
+    r15: u64,
+    r14: u64,
+    r13: u64,
+    r12: u64,
+    rbx: u64,
+    rbp: u64,
+    ret_addr: u64,
+}
+
+impl Kframe {
+    pub fn new(ptr: *const u8) -> Self {
+        Kframe {
+            ret_addr: task_fresh as u64,
+            rbp: ptr as u64 + 1,
+            ..Default::default()
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[repr(C)]
 pub struct Frame {
@@ -47,7 +69,7 @@ pub struct Frame {
 }
 
 impl Frame {
-    pub fn set_entry<'a>(&mut self, entry: Entry<'a>, ty: task::Type) -> Option<&'a [u64]> {
+    pub fn set_entry(&mut self, entry: Entry, ty: task::Type) {
         let (cs, ss) = match ty {
             task::Type::User => (USR_CODE_X64, USR_DATA_X64),
             task::Type::Kernel => (KRL_CODE_X64, KRL_DATA_X64),
@@ -63,21 +85,8 @@ impl Frame {
             self.fs_base = tls.val() as u64;
         }
 
-        {
-            let mut reg_args = [
-                &mut self.rdi,
-                &mut self.rsi,
-                &mut self.rdx,
-                &mut self.rcx,
-                &mut self.r8,
-                &mut self.r9,
-            ];
-            for (reg, &arg) in reg_args.iter_mut().zip(entry.args.iter()) {
-                **reg = arg;
-            }
-        }
-
-        (entry.args.len() > 6).then(|| &entry.args[6..])
+        self.rdi = entry.args[0];
+        self.rsi = entry.args[1];
     }
 
     pub fn syscall_args(&self) -> solvent::Arguments {
@@ -142,29 +151,23 @@ impl Frame {
 ///
 /// This function must be called only by assembly stubs.
 #[no_mangle]
-unsafe extern "C" fn save_intr(frame: *mut Frame) -> *const Frame {
-    let mut rs = crate::sched::SCHED.run_state.lock();
-    rs.need_reload = false;
-    rs.current
-        .as_mut()
-        .map_or(frame, |cur| cur.save_intr(frame))
-}
-
-/// # Safety
-///
-/// This function must be called only by assembly stubs.
-#[no_mangle]
-unsafe extern "C" fn load_intr(frame: *const Frame) -> *const Frame {
-    let rs = crate::sched::SCHED.run_state.lock();
-    rs.current
-        .as_ref()
-        .map_or(frame, |cur| cur.load_intr(rs.need_reload))
+unsafe extern "C" fn save_intr() {
+    let mut current = crate::sched::SCHED.current.lock();
+    if let Some(ref mut cur) = &mut *current {
+        cur.save_intr();
+    }
 }
 
 #[no_mangle]
-unsafe extern "C" fn sync_syscall(frame: *const Frame) -> *const Frame {
-    let mut rs = crate::sched::SCHED.run_state.lock();
-    rs.current
-        .as_mut()
-        .map_or(frame, |cur| cur.sync_syscall(frame))
+pub unsafe extern "C" fn switch_finishing() {
+    let current = crate::sched::SCHED.current.lock();
+    if let Some(ref cur) = &*current {
+        cur.load_intr();
+    }
+}
+
+extern "C" {
+    pub(super) fn switch_kframe(old: *mut *mut u8, new: *mut u8);
+
+    fn task_fresh();
 }

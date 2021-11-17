@@ -331,7 +331,7 @@ pub unsafe fn error_handler() {
 pub unsafe fn init(lapic_ty: acpi::table::madt::LapicType) {
     let mut lapic = Lapic::new(lapic_ty);
     lapic.enable();
-    lapic.activate_timer(timer::TimerMode::Periodic, 7, 256);
+    lapic.activate_timer(timer::TimerMode::Periodic, 7, 512);
 
     LAPIC = Some(lapic);
 }
