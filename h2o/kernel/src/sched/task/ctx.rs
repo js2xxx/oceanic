@@ -95,6 +95,7 @@ impl ExtendedFrame {
 }
 
 pub unsafe fn switch_ctx(old: Option<*mut *mut u8>, new: *mut u8) {
+    let _lock = archop::IntrState::lock();
     arch::switch_kframe(old.unwrap_or(ptr::null_mut()), new);
     arch::switch_finishing();
 }

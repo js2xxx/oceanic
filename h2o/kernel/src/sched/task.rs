@@ -160,6 +160,7 @@ pub struct Ready {
 
     pub(super) cpu: usize,
     pub(super) running_state: RunningState,
+    pub(super) runtime: Duration,
 }
 
 impl Ready {
@@ -173,6 +174,7 @@ impl Ready {
             ext_frame: ctx::ExtendedFrame::zeroed(),
             cpu,
             running_state: RunningState::NotRunning,
+            runtime: Duration::new(0, 0),
         }
     }
 
@@ -183,6 +185,7 @@ impl Ready {
             kstack,
             ext_frame,
             cpu,
+            runtime,
             ..
         } = blocked;
         Ready {
@@ -193,6 +196,7 @@ impl Ready {
             ext_frame,
             cpu,
             running_state: RunningState::NotRunning,
+            runtime,
         }
     }
 
@@ -203,6 +207,7 @@ impl Ready {
             kstack,
             ext_frame,
             cpu,
+            runtime,
             ..
         } = this;
         let blocked = Blocked {
@@ -212,6 +217,7 @@ impl Ready {
             ext_frame,
             cpu,
             block_desc,
+            runtime,
         };
         wo.wait_queue.push(blocked);
     }
@@ -280,6 +286,7 @@ pub struct Blocked {
 
     cpu: usize,
     block_desc: &'static str,
+    runtime: Duration,
 }
 
 // #[derive(Debug)]

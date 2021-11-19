@@ -14,6 +14,7 @@ use super::task;
 use crate::cpu::time::Instant;
 
 const MINIMUM_TIME_GRANULARITY: Duration = Duration::from_millis(30);
+const WAKE_TIME_GRANULARITY: Duration = Duration::from_millis(1);
 
 pub static MIGRATION_QUEUE: Lazy<Vec<Injector<task::Ready>>> = Lazy::new(|| {
     let count = crate::cpu::count();
@@ -52,6 +53,20 @@ impl Scheduler {
             unsafe { crate::cpu::arch::apic::ipi::task_migrate(cpu) };
         } else {
             let task = task::Ready::from_init(task, self.cpu, time_slice);
+
+            let cur = self.current.lock();
+            self.enqueue(task, cur);
+        }
+    }
+
+    fn enqueue(&self, task: task::Ready, cur: PreemptGuard) {
+        if Self::should_preempt(&cur, &task) {
+            self.schedule_impl(Instant::now(), cur, Some(task), |mut task| {
+                task.running_state = task::RunningState::NotRunning;
+                self.run_queue.push(task);
+            });
+        } else {
+            drop(cur);
             self.run_queue.push(task);
         }
     }
@@ -66,7 +81,7 @@ impl Scheduler {
         cur.as_mut().map(func)
     }
 
-    pub fn preempt_current(&self) {
+    pub unsafe fn preempt_current(&self) {
         self.canary.assert();
 
         if let Some(ref mut cur) = &mut *self.current.lock() {
@@ -84,7 +99,7 @@ impl Scheduler {
         self.canary.assert();
         let cur = self.current.lock();
 
-        self.schedule_impl(cur_time, cur, |task| {
+        self.schedule_impl(cur_time, cur, None, |task| {
             task::Ready::block(task, wo, block_desc);
             drop(guard);
         })
@@ -97,7 +112,8 @@ impl Scheduler {
         let time_slice = MINIMUM_TIME_GRANULARITY;
         let task = task::Ready::unblock(task, time_slice);
         if task.cpu == self.cpu {
-            self.run_queue.push(task);
+            let cur = self.current.lock();
+            self.enqueue(task, cur);
         } else {
             let cpu = task.cpu;
             MIGRATION_QUEUE[cpu].push(task);
@@ -105,11 +121,20 @@ impl Scheduler {
         }
     }
 
+    fn should_preempt(cur: &PreemptGuard, task: &task::Ready) -> bool {
+        match cur.as_ref() {
+            Some(cur) if cur.runtime > task.runtime + WAKE_TIME_GRANULARITY => true,
+            _ => false,
+        }
+    }
+
     pub fn exit_current(&self, retval: usize) {
         self.canary.assert();
         let cur = self.current.lock();
 
-        self.schedule_impl(Instant::now(), cur, |task| task::Ready::exit(task, retval));
+        self.schedule_impl(Instant::now(), cur, None, |task| {
+            task::Ready::exit(task, retval)
+        });
     }
 
     fn update(&self, cur_time: Instant, cur: &mut PreemptGuard) -> bool {
@@ -123,7 +148,9 @@ impl Scheduler {
 
         match &cur.running_state {
             task::RunningState::Running(start_time) => {
-                if cur.time_slice() < cur_time - *start_time && !sole {
+                let runtime_delta = cur_time - *start_time;
+                cur.runtime += runtime_delta;
+                if cur.time_slice() < runtime_delta && !sole {
                     cur.running_state = task::RunningState::NeedResched;
                     true
                 } else {
@@ -147,7 +174,7 @@ impl Scheduler {
     fn schedule(&self, cur_time: Instant, cur: PreemptGuard) -> bool {
         self.canary.assert();
 
-        self.schedule_impl(cur_time, cur, |mut task| {
+        self.schedule_impl(cur_time, cur, None, |mut task| {
             debug_assert!(matches!(
                 task.running_state,
                 task::RunningState::NeedResched
@@ -158,16 +185,25 @@ impl Scheduler {
         .is_some()
     }
 
-    fn schedule_impl<F, R>(&self, cur_time: Instant, mut cur: PreemptGuard, func: F) -> Option<R>
+    fn schedule_impl<F, R>(
+        &self,
+        cur_time: Instant,
+        mut cur: PreemptGuard,
+        next: Option<task::Ready>,
+        func: F,
+    ) -> Option<R>
     where
         F: FnOnce(task::Ready) -> R,
     {
         self.canary.assert();
 
         let cur_cpu = self.cpu;
-        let mut next = match self.run_queue.pop() {
-            Some(task) => task,
-            None => return None,
+        let mut next = match next {
+            Some(next) => next,
+            None => match self.run_queue.pop() {
+                Some(task) => task,
+                None => return None,
+            },
         };
 
         next.running_state = task::RunningState::Running(cur_time);

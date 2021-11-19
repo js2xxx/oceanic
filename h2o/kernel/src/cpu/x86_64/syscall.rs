@@ -33,9 +33,8 @@ pub unsafe fn init() -> Option<LAddr> {
 unsafe extern "C" fn hdl_syscall(frame: *const Frame) {
     let arg = (*frame).syscall_args();
 
-    archop::resume_intr(None);
     let res = crate::syscall::handler(&arg);
-    archop::pause_intr();
+    crate::sched::SCHED.tick(crate::cpu::time::Instant::now());
 
     if !matches!(res, Err(solvent::Error(0))) {
         let val = solvent::Error::encode(res);

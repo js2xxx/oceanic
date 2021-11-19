@@ -84,6 +84,10 @@ impl Frame {
         if let Some(tls) = entry.tls {
             self.fs_base = tls.val() as u64;
         }
+        if matches!(ty, task::Type::Kernel) {
+            // TODO: Check for permissions.
+            self.gs_base = unsafe { crate::cpu::arch::KernelGs::as_ptr() } as u64;
+        }
 
         self.rdi = entry.args[0];
         self.rsi = entry.args[1];

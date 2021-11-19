@@ -104,6 +104,10 @@ impl KernelGs {
         seg::ndt::TSS.set_rsp0(rsp0);
         this.tss_rsp0 = rsp0;
     }
+
+    pub unsafe fn as_ptr() -> *mut u8 {
+        KERNEL_GS.as_mut_ptr().cast()
+    }
 }
 
 /// Initialize x86_64 architecture.
