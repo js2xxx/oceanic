@@ -160,7 +160,6 @@ pub struct Ready {
 
     pub(super) cpu: usize,
     pub(super) running_state: RunningState,
-    pub(super) preempt_count: usize,
 }
 
 impl Ready {
@@ -174,7 +173,6 @@ impl Ready {
             ext_frame: ctx::ExtendedFrame::zeroed(),
             cpu,
             running_state: RunningState::NotRunning,
-            preempt_count: 0,
         }
     }
 
@@ -185,7 +183,6 @@ impl Ready {
             kstack,
             ext_frame,
             cpu,
-            preempt_count,
             ..
         } = blocked;
         Ready {
@@ -196,7 +193,6 @@ impl Ready {
             ext_frame,
             cpu,
             running_state: RunningState::NotRunning,
-            preempt_count,
         }
     }
 
@@ -207,7 +203,6 @@ impl Ready {
             kstack,
             ext_frame,
             cpu,
-            preempt_count,
             ..
         } = this;
         let blocked = Blocked {
@@ -216,7 +211,6 @@ impl Ready {
             kstack,
             ext_frame,
             cpu,
-            preempt_count,
             block_desc,
         };
         wo.wait_queue.push(blocked);
@@ -286,7 +280,6 @@ pub struct Blocked {
 
     cpu: usize,
     block_desc: &'static str,
-    preempt_count: usize,
 }
 
 // #[derive(Debug)]

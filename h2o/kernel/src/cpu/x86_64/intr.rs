@@ -6,7 +6,7 @@ use spin::Mutex;
 
 use self::def::NR_VECTORS;
 use crate::{
-    cpu::{arch::apic::lapic, intr::Interrupt},
+    cpu::{arch::apic::lapic, intr::Interrupt, time::Instant},
     sched::task::ctx::arch::Frame,
 };
 
@@ -99,5 +99,5 @@ unsafe extern "C" fn common_interrupt(frame: *mut Frame) {
             vec
         );
     }
-    crate::sched::SCHED.try_preempt();
+    crate::sched::SCHED.tick(Instant::now());
 }

@@ -60,22 +60,17 @@ impl Scheduler {
     where
         F: FnOnce(&mut task::Ready) -> R,
     {
+        self.canary.assert();
+
         let mut cur = self.current.lock();
         cur.as_mut().map(func)
     }
 
-    pub fn try_preempt(&self) {
+    pub fn preempt_current(&self) {
         self.canary.assert();
 
-        let cur = self.current.lock();
-        if let Some(ref cur_ref) = &*cur {
-            if cur_ref.preempt_count == 0 {
-                drop(cur_ref);
-                self.schedule_impl(Instant::now(), cur, |mut task| {
-                    task.running_state = task::RunningState::NotRunning;
-                    self.run_queue.push(task);
-                });
-            }
+        if let Some(ref mut cur) = &mut *self.current.lock() {
+            cur.running_state = task::RunningState::NeedResched;
         }
     }
 

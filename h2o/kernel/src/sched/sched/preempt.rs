@@ -24,7 +24,7 @@ pub struct PreemptGuard<'a> {
 }
 
 impl<'a> PreemptGuard<'a> {
-    pub(super) fn new(mut current: IntrMutexGuard<'a, Option<task::Ready>>) -> Self {
+    pub(super) fn new(current: IntrMutexGuard<'a, Option<task::Ready>>) -> Self {
         // if let Some(ref mut current) = &mut *current {
         //     current.preempt_count += 1;
         // }

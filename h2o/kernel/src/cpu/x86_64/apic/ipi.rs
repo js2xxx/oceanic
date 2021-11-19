@@ -195,11 +195,14 @@ pub unsafe fn start_cpus(lapics: Vec<LapicNode>) -> usize {
 /// the caller must ensure that `cpu` is valid.
 pub unsafe fn task_migrate(cpu: usize) {
     lapic(|lapic| {
-        lapic.send_ipi(
-            intr::def::ApicVec::IpiTaskMigrate as u8,
-            DelivMode::Fixed,
-            Shorthand::None,
-            *super::LAPIC_ID.read().get(&cpu).expect("CPU not present"),
-        )
+        match super::LAPIC_ID.read().get(&cpu) {
+            Some(&id) => lapic.send_ipi(
+                intr::def::ApicVec::IpiTaskMigrate as u8,
+                DelivMode::Fixed,
+                Shorthand::None,
+                id,
+            ),
+            None => log::warn!("CPU #{} not present", cpu),
+        };
     });
 }
