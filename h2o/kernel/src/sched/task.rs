@@ -1,9 +1,11 @@
+pub mod child;
 pub mod ctx;
 pub mod elf;
 pub mod hdl;
 pub mod idle;
 pub mod prio;
 pub mod sig;
+pub mod syscall;
 pub mod tid;
 
 use alloc::{boxed::Box, format, string::String, sync::Arc};
@@ -21,7 +23,7 @@ pub use self::{
     prio::Priority,
     tid::Tid,
 };
-use super::wait::{WaitCell, WaitObject};
+use super::wait::WaitObject;
 use crate::{
     cpu::{arch::KernelGs, time::Instant, CpuMask},
     mem::space::{with, Space, SpaceError},
@@ -38,7 +40,7 @@ static ROOT: Lazy<Tid> = Lazy::new(|| {
         signal: None,
     };
 
-    tid::alloc_insert(ti).expect("Failed to acquire a valid TID")
+    tid::allocate(ti).expect("Failed to acquire a valid TID")
 });
 
 #[derive(Debug)]
@@ -133,7 +135,7 @@ pub struct Init {
 
 impl Init {
     fn new(
-        ti: TaskInfo,
+        tid: Tid,
         space: Arc<Space>,
         entry: LAddr,
         stack_size: usize,
@@ -149,18 +151,13 @@ impl Init {
             args,
         };
 
-        let kstack = ctx::Kstack::new(entry, ti.ty);
-
-        let tid = tid::alloc_insert_or(ti, |_ti| {
-            let _ = space.clear_stack();
-            TaskError::TidExhausted
-        })?;
+        let kstack = ctx::Kstack::new(entry, tid.info().read().ty);
 
         Ok(Init { tid, space, kstack })
     }
 
-    pub fn tid(&self) -> Tid {
-        self.tid
+    pub fn tid(&self) -> &Tid {
+        &self.tid
     }
 }
 
@@ -251,8 +248,8 @@ impl Ready {
         idle::CTX_DROPPER.push(kstack);
     }
 
-    pub fn tid(&self) -> Tid {
-        self.tid
+    pub fn tid(&self) -> &Tid {
+        &self.tid
     }
 
     pub fn time_slice(&self) -> Duration {
@@ -311,11 +308,6 @@ pub struct Blocked {
     runtime: Duration,
 }
 
-// #[derive(Debug)]
-// pub struct Killed {
-//     tid: Tid,
-// }
-
 #[derive(Debug)]
 pub struct Dead {
     tid: Tid,
@@ -323,8 +315,8 @@ pub struct Dead {
 }
 
 impl Dead {
-    pub fn tid(&self) -> Tid {
-        self.tid
+    pub fn tid(&self) -> &Tid {
+        &self.tid
     }
 
     pub fn retval(&self) -> usize {
@@ -351,7 +343,7 @@ where
     let (cur_tid, space) = super::SCHED
         .with_current(|cur| {
             (
-                cur.tid,
+                cur.tid.clone(),
                 if dup_cur_space {
                     Space::clone(&cur.space, ty)
                 } else {
@@ -363,13 +355,8 @@ where
 
     let (entry, tls, stack_size) = unsafe { with(&space, with_space) }?;
 
-    let (ti, ret_wo) = {
-        let mut cur_ti = tid::get_mut(&cur_tid).unwrap();
-
-        let ret_wo = cur_ti
-            .user_handles
-            .insert(WaitCell::<usize>::new())
-            .unwrap();
+    let (tid, ret_wo) = {
+        let cur_ti = cur_tid.info().upgradable_read();
 
         let ty = match ty {
             Type::Kernel => cur_ti.ty,
@@ -383,21 +370,28 @@ where
         };
         let prio = prio.min(cur_ti.prio);
 
-        (
-            TaskInfo {
-                from: Some((cur_tid, ret_wo)),
-                name,
-                ty,
-                affinity,
-                prio,
-                user_handles: UserHandles::new(),
-                signal: None,
-            },
-            ret_wo,
-        )
+        let new_ti = TaskInfo {
+            from: None,
+            name,
+            ty,
+            affinity,
+            prio,
+            user_handles: UserHandles::new(),
+            signal: None,
+        };
+        let tid = tid::allocate(new_ti).map_err(|_| TaskError::TidExhausted)?;
+
+        let ret_wo = cur_ti
+            .upgrade()
+            .user_handles
+            .insert(Arc::new(child::Child::new(tid.clone())))
+            .unwrap();
+
+        tid.info().write().from = Some((cur_tid, ret_wo));
+        (tid, ret_wo)
     };
 
-    Init::new(ti, space, entry, stack_size, tls, args).map(|task| (task, ret_wo))
+    Init::new(tid, space, entry, stack_size, tls, args).map(|task| (task, ret_wo))
 }
 
 pub fn create_fn(
@@ -407,10 +401,10 @@ pub fn create_fn(
     arg: *mut u8,
 ) -> Result<(Init, UserHandle)> {
     let (name, ty, affinity, prio) = {
-        let cur_tid = super::SCHED
-            .with_current(|cur| cur.tid)
+        let tid = super::SCHED
+            .with_current(|cur| cur.tid.clone())
             .ok_or(TaskError::NoCurrentTask)?;
-        let ti = tid::get(&cur_tid).unwrap();
+        let ti = tid.info().read();
         (
             name.unwrap_or(format!("{}.func{:?}", ti.name, *func)),
             ti.ty,
@@ -430,102 +424,18 @@ pub fn create_fn(
 }
 
 pub(super) fn destroy(task: Dead) {
-    if let Some(cell) = {
-        let TaskInfo { from, .. } = tid::remove(&task.tid).unwrap();
-        from.and_then(|(from_tid, ret_wo_hdl)| {
-            tid::get(&from_tid).and_then(|parent| {
-                parent
-                    .user_handles
-                    .get::<Arc<WaitCell<usize>>>(ret_wo_hdl)
-                    .cloned()
-            })
+    if let Some(child) = {
+        tid::deallocate(&task.tid);
+        let ti = task.tid.info().read();
+        ti.from.as_ref().and_then(|(parent, ret_wo_hdl)| {
+            parent
+                .info()
+                .read()
+                .user_handles
+                .get::<Arc<child::Child>>(*ret_wo_hdl)
+                .cloned()
         })
     } {
-        let _ = cell.replace(task.retval);
-    }
-}
-
-pub mod syscall {
-    use solvent::*;
-
-    #[syscall]
-    pub fn task_exit(retval: usize) {
-        crate::sched::SCHED.exit_current(retval);
-
-        loop {
-            core::hint::spin_loop();
-        }
-    }
-
-    #[syscall]
-    pub fn task_fn(name: *mut u8, stack_size: usize, func: *mut u8, arg: *mut u8) -> u32 {
-        extern "C" {
-            fn strlen(s: *const u8) -> usize;
-        }
-        use crate::alloc::string::ToString;
-
-        let name = if !name.is_null() {
-            unsafe {
-                let slice = core::slice::from_raw_parts(name, strlen(name));
-                Some(
-                    core::str::from_utf8(slice)
-                        .map_err(|_| Error(EINVAL))?
-                        .to_string(),
-                )
-            }
-        } else {
-            None
-        };
-
-        let (task, ret_wo) = super::create_fn(name, stack_size, paging::LAddr::new(func), arg)
-            .map_err(Into::into)?;
-        crate::sched::SCHED.push(task);
-        Ok(ret_wo.raw())
-    }
-
-    #[syscall]
-    pub fn task_join(hdl: u32) -> usize {
-        use core::num::NonZeroU32;
-
-        let wc_hdl = super::UserHandle::new(NonZeroU32::new(hdl).ok_or(Error(EINVAL))?);
-
-        let cur_tid = crate::sched::SCHED
-            .with_current(|cur| cur.tid)
-            .ok_or(Error(ESRCH))?;
-
-        let wc = {
-            let ti = super::tid::get(&cur_tid).ok_or(Error(ESRCH))?;
-            ti.user_handles
-                .get::<alloc::sync::Arc<crate::sched::wait::WaitCell<usize>>>(wc_hdl)
-                .ok_or(Error(ECHILD))?
-                .clone()
-        };
-
-        Ok(wc.take("task_join"))
-    }
-
-    #[syscall]
-    pub fn task_ctl(hdl: u32, op: u32) {
-        match op {
-            // Kill
-            1 => {
-                use core::num::NonZeroU32;
-
-                let wc_hdl = super::UserHandle::new(NonZeroU32::new(hdl).ok_or(Error(EINVAL))?);
-
-                crate::sched::SCHED
-                    .with_current(|cur| {
-                        super::tid::get_mut(&cur.tid)
-                            .map(|mut ti| ti.set_signal(Some(super::Signal::Kill)))
-                    })
-                    .flatten()
-                    .ok_or(Error(ESRCH))?;
-
-                Ok(())
-            }
-            // Suspend
-            2 => todo!(),
-            _ => Err(Error(EINVAL)),
-        }
+        let _ = child.cell().replace(task.retval);
     }
 }

@@ -47,7 +47,7 @@ pub fn test_task() {
     )
     .expect("Failed to create task");
     // ::log::debug!("Killing a task");
-    // crate::call::task_ctl(3, 1).expect("Failed to kill a task");
+    // crate::call::task_ctl(task, 1).expect("Failed to kill a task");
     ::log::debug!("Waiting a task");
     let ret = crate::call::task_join(task).expect("Failed to join a task");
     ::log::debug!("Return value = {}", ret);

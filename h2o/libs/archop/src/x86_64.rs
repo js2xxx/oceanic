@@ -8,7 +8,7 @@ pub mod reg;
 use core::ops::Range;
 
 use bitop_ex::BitOpEx;
-pub use lock::{IntrMutex, IntrMutexGuard, IntrState};
+pub use lock::{mutex::*, rwlock::*, IntrState, PreemptLock, PreemptLockGuard};
 use paging::LAddr;
 
 /// The address space that should never be valid due to hardware constraints.

@@ -25,7 +25,7 @@ pub(super) static IDLE: Lazy<Tid> = Lazy::new(|| {
     let cpu = unsafe { crate::cpu::id() };
 
     let ti = TaskInfo {
-        from: Some((*ROOT, UserHandle::NULL)),
+        from: Some((ROOT.clone(), UserHandle::NULL)),
         name: format!("IDLE{}", cpu),
         ty: Type::Kernel,
         affinity: crate::cpu::current_mask(),
@@ -37,8 +37,9 @@ pub(super) static IDLE: Lazy<Tid> = Lazy::new(|| {
     let space = Space::clone(unsafe { space::current() }, Type::Kernel);
     let entry = LAddr::new(idle as *mut u8);
 
+    let tid = super::tid::allocate(ti).expect("Tid exhausted");
     let init = Init::new(
-        ti,
+        tid.clone(),
         space,
         entry,
         DEFAULT_STACK_SIZE,
@@ -48,7 +49,6 @@ pub(super) static IDLE: Lazy<Tid> = Lazy::new(|| {
         [cpu as u64, 0],
     )
     .expect("Failed to initialize IDLE");
-    let tid = init.tid;
 
     crate::sched::SCHED.push(init);
     tid
@@ -58,6 +58,7 @@ fn idle(cpu: usize) -> ! {
     use crate::sched::{task, SCHED};
     log::debug!("IDLE #{}", cpu);
 
+    let intr = archop::IntrState::lock();
     if cpu == 0 {
         let image = unsafe {
             core::slice::from_raw_parts(
@@ -79,6 +80,7 @@ fn idle(cpu: usize) -> ! {
     )
     .expect("Failed to create context dropper");
     SCHED.push(ctx_dropper);
+    drop(intr);
 
     unsafe { archop::halt_loop(None) };
 }

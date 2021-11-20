@@ -33,7 +33,7 @@ impl Kstack {
             let frame = this.task_frame_mut();
             frame.set_entry(entry, ty);
             let kframe = (frame as *mut arch::Frame).cast::<arch::Kframe>().sub(1);
-            kframe.write(arch::Kframe::new((frame as *mut arch::Frame).cast(), 0));
+            kframe.write(arch::Kframe::new((frame as *mut arch::Frame).cast()));
             this.1 = kframe.cast();
         }
         unsafe { kstack.assume_init() }

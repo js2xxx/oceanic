@@ -1,5 +1,3 @@
-use alloc::sync::Arc;
-
 use spin::Mutex;
 
 use super::WaitObject;
@@ -10,11 +8,11 @@ pub struct WaitCell<T> {
 }
 
 impl<T> WaitCell<T> {
-    pub fn new() -> Arc<Self> {
-        Arc::new(WaitCell {
+    pub fn new() -> Self {
+        WaitCell {
             data: Mutex::new(None),
             wo: WaitObject::new(),
-        })
+        }
     }
 
     pub fn take(&self, block_desc: &'static str) -> T {

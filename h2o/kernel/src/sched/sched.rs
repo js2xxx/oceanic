@@ -1,13 +1,12 @@
 pub mod deque;
 pub mod epoch;
-pub mod preempt;
 
 use alloc::vec::Vec;
 use core::time::Duration;
 
+use archop::{PreemptMutex, PreemptMutexGuard};
 use canary::Canary;
 use deque::{Injector, Steal, Worker};
-pub use preempt::{PreemptGuard, PreemptMutex};
 use spin::Lazy;
 
 use super::task;
@@ -25,24 +24,25 @@ pub static MIGRATION_QUEUE: Lazy<Vec<Injector<task::Ready>>> = Lazy::new(|| {
 pub static SCHED: Lazy<Scheduler> = Lazy::new(|| Scheduler {
     canary: Canary::new(),
     cpu: unsafe { crate::cpu::id() },
-    current: PreemptMutex::new(),
+    current: Current::new(None),
     run_queue: Worker::new_fifo(),
 });
+
+type Current = PreemptMutex<Option<task::Ready>>;
+type CurrentGuard<'a> = PreemptMutexGuard<'a, Option<task::Ready>>;
 
 pub struct Scheduler {
     canary: Canary<Scheduler>,
     cpu: usize,
     run_queue: Worker<task::Ready>,
-    pub(in crate::sched) current: PreemptMutex,
+    pub(in crate::sched) current: Current,
 }
 
 impl Scheduler {
     pub fn push(&self, task: task::Init) {
         self.canary.assert();
 
-        let affinity = task::tid::get(&task.tid())
-            .expect("Invalid init")
-            .affinity();
+        let affinity = task.tid().info().read().affinity();
 
         let time_slice = MINIMUM_TIME_GRANULARITY;
         if !affinity.get(self.cpu).map_or(false, |r| *r) {
@@ -59,7 +59,7 @@ impl Scheduler {
         }
     }
 
-    fn enqueue(&self, task: task::Ready, cur: PreemptGuard) {
+    fn enqueue(&self, task: task::Ready, cur: CurrentGuard) {
         if Self::should_preempt(&cur, &task) {
             self.schedule_impl(Instant::now(), cur, Some(task), |mut task| {
                 task.running_state = task::RunningState::NotRunning;
@@ -121,20 +121,21 @@ impl Scheduler {
         }
     }
 
-    fn should_preempt(cur: &PreemptGuard, task: &task::Ready) -> bool {
+    fn should_preempt(cur: &CurrentGuard, task: &task::Ready) -> bool {
         match cur.as_ref() {
             Some(cur) if cur.runtime > task.runtime + WAKE_TIME_GRANULARITY => true,
             _ => false,
         }
     }
 
-    pub fn exit_current(&self, retval: usize) {
+    pub fn exit_current(&self, retval: usize) -> ! {
         self.canary.assert();
         let cur = self.current.lock();
 
         self.schedule_impl(Instant::now(), cur, None, |task| {
             task::Ready::exit(task, retval)
         });
+        unreachable!("Dead task");
     }
 
     pub fn tick(&self, cur_time: Instant) {
@@ -150,34 +151,37 @@ impl Scheduler {
     fn check_signal<'a>(
         &'a self,
         cur_time: Instant,
-        cur_guard: PreemptGuard<'a>,
-    ) -> PreemptGuard<'a> {
+        cur_guard: CurrentGuard<'a>,
+    ) -> CurrentGuard<'a> {
         let cur = match &*cur_guard {
             Some(cur) => cur,
             None => return cur_guard,
         };
-        let cur_tid = cur.tid();
-        let ti = task::tid::get(&cur_tid).unwrap();
+        let ti = cur.tid().info().read();
         match ti.signal() {
             Some(task::sig::Signal::Kill) => {
                 drop(ti);
                 self.schedule_impl(cur_time, cur_guard, None, |task| {
                     task::Ready::exit(task, (-solvent::EKILLED) as usize)
                 });
-                self.current.lock()
+                unreachable!("Dead task");
             }
             Some(task::sig::Signal::Suspend) => {
                 // ti.set_signal(None);
                 drop(ti);
                 // TODO: Suspend the current task.
-                // self.schedule_impl(cur_time, cur_guard, None, |task| todo!())
+                // self.schedule_impl(cur_time, cur_guard, None, |task|
+                // todo!())
                 cur_guard
             }
-            None => cur_guard,
+            None => {
+                drop(ti);
+                cur_guard
+            }
         }
     }
 
-    fn update(&self, cur_time: Instant, cur: &mut PreemptGuard) -> bool {
+    fn update(&self, cur_time: Instant, cur: &mut CurrentGuard) -> bool {
         self.canary.assert();
 
         let sole = self.run_queue.is_empty();
@@ -188,6 +192,7 @@ impl Scheduler {
 
         match &cur.running_state {
             task::RunningState::Running(start_time) => {
+                debug_assert!(cur_time > *start_time);
                 let runtime_delta = cur_time - *start_time;
                 cur.runtime += runtime_delta;
                 if cur.time_slice() < runtime_delta && !sole {
@@ -202,7 +207,7 @@ impl Scheduler {
         }
     }
 
-    fn schedule(&self, cur_time: Instant, cur: PreemptGuard) -> bool {
+    fn schedule(&self, cur_time: Instant, cur: CurrentGuard) -> bool {
         self.canary.assert();
 
         self.schedule_impl(cur_time, cur, None, |mut task| {
@@ -219,7 +224,7 @@ impl Scheduler {
     fn schedule_impl<F, R>(
         &self,
         cur_time: Instant,
-        mut cur: PreemptGuard,
+        mut cur: CurrentGuard,
         next: Option<task::Ready>,
         func: F,
     ) -> Option<R>

@@ -29,7 +29,7 @@ pub struct Kframe {
 }
 
 impl Kframe {
-    pub fn new(ptr: *const u8, rflags: u64) -> Self {
+    pub fn new(ptr: *const u8) -> Self {
         Kframe {
             ret_addr: task_fresh as u64,
             rbp: ptr as u64 + 1,
