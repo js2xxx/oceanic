@@ -235,6 +235,7 @@ switch_kframe:
       push  r13
       push  r14
       push  r15
+      pushfq
 
       ; Save the current stack context.
       cmp   rdi, 0
@@ -244,6 +245,7 @@ switch_kframe:
       ; Switch the stack (a.k.a. the context).
       mov   rsp, rsi
 
+      popfq
       pop   r15
       pop   r14
       pop   r13

@@ -18,6 +18,7 @@ pub const EXTENDED_FRAME_SIZE: usize = 768;
 #[derive(Debug, Default)]
 #[repr(C)]
 pub struct Kframe {
+    rflags: u64,
     r15: u64,
     r14: u64,
     r13: u64,
@@ -28,7 +29,7 @@ pub struct Kframe {
 }
 
 impl Kframe {
-    pub fn new(ptr: *const u8) -> Self {
+    pub fn new(ptr: *const u8, rflags: u64) -> Self {
         Kframe {
             ret_addr: task_fresh as u64,
             rbp: ptr as u64 + 1,

@@ -33,7 +33,7 @@ impl Kstack {
             let frame = this.task_frame_mut();
             frame.set_entry(entry, ty);
             let kframe = (frame as *mut arch::Frame).cast::<arch::Kframe>().sub(1);
-            kframe.write(arch::Kframe::new((frame as *mut arch::Frame).cast()));
+            kframe.write(arch::Kframe::new((frame as *mut arch::Frame).cast(), 0));
             this.1 = kframe.cast();
         }
         unsafe { kstack.assume_init() }
@@ -95,7 +95,6 @@ impl ExtendedFrame {
 }
 
 pub unsafe fn switch_ctx(old: Option<*mut *mut u8>, new: *mut u8) {
-    let _lock = archop::IntrState::lock();
     arch::switch_kframe(old.unwrap_or(ptr::null_mut()), new);
     arch::switch_finishing();
 }

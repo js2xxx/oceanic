@@ -33,6 +33,7 @@ impl<'a, T> DerefMut for IntrMutexGuard<'a, T> {
     }
 }
 
+#[derive(Debug)]
 pub struct IntrMutex<T>(Mutex<T>);
 
 impl<T> IntrMutex<T> {

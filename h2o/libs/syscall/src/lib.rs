@@ -35,6 +35,7 @@ pub type SyscallWrapper = unsafe extern "C" fn(usize, usize, usize, usize, usize
 pub fn test_task() {
     extern "C" fn func(arg: *mut u8) {
         ::log::debug!("New task here: {:?}", arg);
+        // for _ in 0..10000000 {}
         crate::task::exit(Ok(12345));
     }
     ::log::debug!("Creating a task");
@@ -45,7 +46,9 @@ pub fn test_task() {
         test_task as *mut u8,
     )
     .expect("Failed to create task");
+    // ::log::debug!("Killing a task");
+    // crate::call::task_ctl(3, 1).expect("Failed to kill a task");
     ::log::debug!("Waiting a task");
-    let ret = crate::call::task_join(task).expect("Failed to join task");
+    let ret = crate::call::task_join(task).expect("Failed to join a task");
     ::log::debug!("Return value = {}", ret);
 }
