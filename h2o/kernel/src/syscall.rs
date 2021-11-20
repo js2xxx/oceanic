@@ -40,7 +40,7 @@ static SYSCALL_TABLE: &[Option<SyscallWrapper>] = &[
     Some(syscall_wrapper!(task_fn)),
     None, // Reserved for future use of `task_file`.
     Some(syscall_wrapper!(task_join)),
-    None,
+    Some(syscall_wrapper!(task_ctl)),
     None,
     Some(syscall_wrapper!(alloc_pages)),
     Some(syscall_wrapper!(dealloc_pages)),

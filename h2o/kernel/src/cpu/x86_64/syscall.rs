@@ -3,7 +3,7 @@ use core::mem::size_of;
 use archop::{msr, reg};
 use paging::LAddr;
 
-use super::seg::ndt::{KRL_CODE_X64, USR_CODE_X86};
+use super::seg::ndt::{INTR_CODE, USR_CODE_X86};
 use crate::sched::task::ctx::arch::Frame;
 
 extern "C" {
@@ -18,7 +18,7 @@ pub unsafe fn init() -> Option<LAddr> {
         .as_ptr()
         .sub(size_of::<usize>());
 
-    let star = (USR_CODE_X86.into_val() as u64) << 48 | (KRL_CODE_X64.into_val() as u64) << 32;
+    let star = (USR_CODE_X86.into_val() as u64) << 48 | (INTR_CODE.into_val() as u64) << 32;
     msr::write(msr::STAR, star);
     msr::write(msr::LSTAR, rout_syscall as u64);
     msr::write(msr::FMASK, reg::rflags::IF | reg::rflags::TF);
@@ -33,8 +33,9 @@ pub unsafe fn init() -> Option<LAddr> {
 unsafe extern "C" fn hdl_syscall(frame: *const Frame) {
     let arg = (*frame).syscall_args();
 
+    archop::resume_intr(None);
     let res = crate::syscall::handler(&arg);
-    crate::sched::SCHED.tick(crate::cpu::time::Instant::now());
+    archop::pause_intr();
 
     if !matches!(res, Err(solvent::Error(0))) {
         let val = solvent::Error::encode(res);

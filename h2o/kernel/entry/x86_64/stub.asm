@@ -201,7 +201,7 @@ ApicVec_Spurious        equ   0xFF
 ; define_intr(vec, asm_name, name, err_vec)
 %macro define_intr 4
 
-global %2
+global %2:function
 extern %3
 %2:
 %if %4 != 0
@@ -220,7 +220,7 @@ extern %3
 
 [section .text]
 
-global switch_kframe
+global switch_kframe:function
 ; Switch the kernel frame of the current thread.
 ;
 ; # Safety
@@ -252,7 +252,7 @@ switch_kframe:
       pop   rbp
       ret
 
-global task_fresh
+global task_fresh:function
 extern switch_finishing
 ; The entry into the interrupt context of a new task.
 task_fresh:
@@ -370,8 +370,8 @@ intr_exit:
 ; ---------------------------------------------------------------------------------------
 ; Syscalls
 
-global      rout_syscall
-extern      hdl_syscall
+global rout_syscall:function
+extern hdl_syscall
 rout_syscall:
       swapgs
 

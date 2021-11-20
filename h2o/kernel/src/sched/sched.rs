@@ -137,6 +137,46 @@ impl Scheduler {
         });
     }
 
+    pub fn tick(&self, cur_time: Instant) {
+        let cur = self.current.lock();
+        let mut cur = self.check_signal(cur_time, cur);
+        let need_resched = self.update(cur_time, &mut cur);
+
+        if need_resched {
+            self.schedule(cur_time, cur);
+        }
+    }
+
+    fn check_signal<'a>(
+        &'a self,
+        cur_time: Instant,
+        cur_guard: PreemptGuard<'a>,
+    ) -> PreemptGuard<'a> {
+        let cur = match &*cur_guard {
+            Some(cur) => cur,
+            None => return cur_guard,
+        };
+        let cur_tid = cur.tid();
+        let ti = task::tid::get(&cur_tid).unwrap();
+        match ti.signal() {
+            Some(task::sig::Signal::Kill) => {
+                drop(ti);
+                self.schedule_impl(cur_time, cur_guard, None, |task| {
+                    task::Ready::exit(task, (-solvent::EKILLED) as usize)
+                });
+                self.current.lock()
+            }
+            Some(task::sig::Signal::Suspend) => {
+                // ti.set_signal(None);
+                drop(ti);
+                // TODO: Suspend the current task.
+                // self.schedule_impl(cur_time, cur_guard, None, |task| todo!())
+                cur_guard
+            }
+            None => cur_guard,
+        }
+    }
+
     fn update(&self, cur_time: Instant, cur: &mut PreemptGuard) -> bool {
         self.canary.assert();
 
@@ -159,15 +199,6 @@ impl Scheduler {
             }
             task::RunningState::NotRunning => panic!("Not running"),
             task::RunningState::NeedResched => true,
-        }
-    }
-
-    pub fn tick(&self, cur_time: Instant) {
-        let mut cur = self.current.lock();
-        let need_resched = self.update(cur_time, &mut cur);
-
-        if need_resched {
-            self.schedule(cur_time, cur);
         }
     }
 

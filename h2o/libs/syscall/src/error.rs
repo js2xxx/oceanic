@@ -99,6 +99,8 @@ pub const EDOM: i32 = 33;
 /// Math result not representable
 pub const ERANGE: i32 = 34;
 
+pub const EKILLED: i32 = 1001;
+
 const ERRC_DESC: [&str; ERRC_RANGE.end as usize] = [
     "OK",
     "Operation not permitted",

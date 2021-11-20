@@ -31,6 +31,7 @@ pub(super) static IDLE: Lazy<Tid> = Lazy::new(|| {
         affinity: crate::cpu::current_mask(),
         prio: prio::IDLE,
         user_handles: UserHandles::new(),
+        signal: None,
     };
 
     let space = Space::clone(unsafe { space::current() }, Type::Kernel);

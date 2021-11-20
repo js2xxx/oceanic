@@ -3,6 +3,7 @@ pub mod elf;
 pub mod hdl;
 pub mod idle;
 pub mod prio;
+pub mod sig;
 pub mod tid;
 
 use alloc::{boxed::Box, format, string::String, sync::Arc};
@@ -13,6 +14,7 @@ use spin::Lazy;
 
 #[cfg(target_arch = "x86_64")]
 pub use self::ctx::arch::{DEFAULT_STACK_LAYOUT, DEFAULT_STACK_SIZE};
+use self::sig::Signal;
 pub use self::{
     elf::from_elf,
     hdl::{UserHandle, UserHandles},
@@ -33,6 +35,7 @@ static ROOT: Lazy<Tid> = Lazy::new(|| {
         affinity: crate::cpu::all_mask(),
         prio: prio::DEFAULT,
         user_handles: UserHandles::new(),
+        signal: None,
     };
 
     tid::alloc_insert(ti).expect("Failed to acquire a valid TID")
@@ -82,6 +85,7 @@ pub struct TaskInfo {
     affinity: CpuMask,
     prio: Priority,
     user_handles: UserHandles,
+    signal: Option<Signal>,
 }
 
 impl TaskInfo {
@@ -99,6 +103,24 @@ impl TaskInfo {
 
     pub fn prio(&self) -> Priority {
         self.prio
+    }
+
+    pub fn signal(&self) -> Option<Signal> {
+        self.signal
+    }
+
+    pub fn set_signal(&mut self, signal: Option<Signal>) -> Option<Signal> {
+        match (signal, &mut self.signal) {
+            (None, s) => {
+                *s = None;
+                None
+            }
+            (Some(signal), s) if s.is_none() => {
+                *s = Some(signal);
+                None
+            }
+            (Some(signal), s) => (s.unwrap() >= signal).then(|| s.replace(signal).unwrap()),
+        }
     }
 }
 
@@ -369,6 +391,7 @@ where
                 affinity,
                 prio,
                 user_handles: UserHandles::new(),
+                signal: None,
             },
             ret_wo,
         )
@@ -461,11 +484,10 @@ pub mod syscall {
     }
 
     #[syscall]
-    pub fn task_join(wc_raw: u32) -> usize {
+    pub fn task_join(hdl: u32) -> usize {
         use core::num::NonZeroU32;
 
-        use crate::sched::wait::WaitCell;
-        let wc_hdl = super::UserHandle::new(NonZeroU32::new(wc_raw).ok_or(Error(EINVAL))?);
+        let wc_hdl = super::UserHandle::new(NonZeroU32::new(hdl).ok_or(Error(EINVAL))?);
 
         let cur_tid = crate::sched::SCHED
             .with_current(|cur| cur.tid)
@@ -474,11 +496,36 @@ pub mod syscall {
         let wc = {
             let ti = super::tid::get(&cur_tid).ok_or(Error(ESRCH))?;
             ti.user_handles
-                .get::<alloc::sync::Arc<WaitCell<usize>>>(wc_hdl)
+                .get::<alloc::sync::Arc<crate::sched::wait::WaitCell<usize>>>(wc_hdl)
                 .ok_or(Error(ECHILD))?
                 .clone()
         };
 
         Ok(wc.take("task_join"))
+    }
+
+    #[syscall]
+    pub fn task_ctl(hdl: u32, op: u32) {
+        match op {
+            // Kill
+            1 => {
+                use core::num::NonZeroU32;
+
+                let wc_hdl = super::UserHandle::new(NonZeroU32::new(hdl).ok_or(Error(EINVAL))?);
+
+                crate::sched::SCHED
+                    .with_current(|cur| {
+                        super::tid::get_mut(&cur.tid)
+                            .map(|mut ti| ti.set_signal(Some(super::Signal::Kill)))
+                    })
+                    .flatten()
+                    .ok_or(Error(ESRCH))?;
+
+                Ok(())
+            }
+            // Suspend
+            2 => todo!(),
+            _ => Err(Error(EINVAL)),
+        }
     }
 }
