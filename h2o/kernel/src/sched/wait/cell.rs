@@ -9,6 +9,7 @@ pub struct WaitCell<T> {
 }
 
 impl<T> WaitCell<T> {
+    #[inline]
     pub fn new() -> Self {
         WaitCell {
             data: Mutex::new(None),
@@ -26,10 +27,12 @@ impl<T> WaitCell<T> {
         }
     }
 
+    #[inline]
     pub fn try_take(&self) -> Option<T> {
         self.data.lock().take()
     }
 
+    #[inline]
     pub fn replace(&self, obj: T) -> Option<T> {
         let old = self.data.lock().replace(obj);
         self.wo.notify(None);

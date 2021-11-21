@@ -33,4 +33,11 @@ SECTIONS
       {
             *(.got*)
       }
+
+	/DISCARD/ :
+	{
+		*(.note)
+		*(.comment)
+		*(.eh_frame)
+	}
 }

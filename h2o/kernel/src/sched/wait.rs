@@ -17,6 +17,7 @@ impl WaitObject {
         }
     }
 
+    #[inline]
     pub fn wait<T>(&self, guard: T, block_desc: &'static str) {
         SCHED.block_current(Instant::now(), guard, self, block_desc);
     }

@@ -61,6 +61,7 @@ impl Scheduler {
         }
     }
 
+    #[inline]
     fn enqueue(&self, task: task::Ready, cur: Option<CurrentGuard>) {
         match cur {
             Some(cur) if Self::should_preempt(&cur, &task) => {
@@ -84,6 +85,7 @@ impl Scheduler {
         cur.as_mut().map(func)
     }
 
+    #[inline]
     pub unsafe fn preempt_current(&self) {
         self.canary.assert();
 
@@ -126,6 +128,7 @@ impl Scheduler {
         }
     }
 
+    #[inline]
     fn should_preempt(cur: &CurrentGuard, task: &task::Ready) -> bool {
         match cur.as_ref() {
             Some(cur) if cur.runtime > task.runtime + WAKE_TIME_GRANULARITY => true,

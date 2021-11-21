@@ -8,7 +8,7 @@ use solvent_gen::syscall_stub;
 use crate::{Arguments, SerdeReg};
 
 syscall_stub!(0 => pub(crate) fn get_time(ptr: *mut u128));
-#[cfg(debug_assertions)]
+// #[cfg(debug_assertions)]
 syscall_stub!(1 => pub(crate) fn log(args: *const ::log::Record));
 
 syscall_stub!(2 => pub(crate) fn task_exit(retval: usize));

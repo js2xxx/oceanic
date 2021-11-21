@@ -6,12 +6,12 @@ build-std = ["core", "compiler_builtins", "alloc", "panic_abort"]
 build-std-features = ["compiler-builtins-mem"]
 
 [profile.dev]
+incremental = true
 lto = 'thin'
 panic = 'abort'
-incremental = true
 
 [profile.release]
+incremental = true
 lto = 'thin'
 opt-level = 0
 panic = 'abort'
-incremental = true
