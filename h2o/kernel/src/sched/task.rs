@@ -16,7 +16,7 @@ use spin::Lazy;
 
 #[cfg(target_arch = "x86_64")]
 pub use self::ctx::arch::{DEFAULT_STACK_LAYOUT, DEFAULT_STACK_SIZE};
-use self::sig::Signal;
+use self::{child::Child, sig::Signal};
 pub use self::{
     elf::from_elf,
     hdl::{UserHandle, UserHandles},
@@ -81,7 +81,7 @@ pub enum Type {
 
 #[derive(Debug)]
 pub struct TaskInfo {
-    from: Option<(Tid, UserHandle)>,
+    from: Option<(Tid, Option<Arc<Child>>)>,
     name: String,
     ty: Type,
     affinity: CpuMask,
@@ -365,6 +365,7 @@ where
     let (entry, tls, stack_size) = unsafe { with(&space, with_space) }?;
 
     let (tid, ret_wo) = {
+        let intr = archop::IntrState::lock();
         let cur_ti = cur_tid.info().upgradable_read();
 
         let ty = match ty {
@@ -390,13 +391,14 @@ where
         };
         let tid = tid::allocate(new_ti).map_err(|_| TaskError::TidExhausted)?;
 
-        let ret_wo = cur_ti
-            .upgrade()
-            .user_handles
-            .insert(Arc::new(child::Child::new(tid.clone())))
-            .unwrap();
+        let (ret_wo, child) = {
+            let mut cur_ti = cur_ti.upgrade();
+            let child = Arc::new(Child::new(tid.clone()));
+            (cur_ti.user_handles.insert(child.clone()).unwrap(), child)
+        };
+        drop(intr);
 
-        tid.info().write().from = Some((cur_tid, ret_wo));
+        tid.info().write().from = Some((cur_tid, Some(child)));
         (tid, ret_wo)
     };
 
@@ -409,18 +411,18 @@ pub fn create_fn(
     func: LAddr,
     arg: *mut u8,
 ) -> Result<(Init, UserHandle)> {
-    let (name, ty, affinity, prio) = {
-        let tid = super::SCHED
-            .with_current(|cur| cur.tid.clone())
-            .ok_or(TaskError::NoCurrentTask)?;
-        let ti = tid.info().read();
-        (
-            name.unwrap_or(format!("{}.func{:?}", ti.name, *func)),
-            ti.ty,
-            ti.affinity.clone(),
-            ti.prio,
-        )
-    };
+    let (name, ty, affinity, prio) = super::SCHED
+        .with_current(|cur| {
+            let ti = cur.tid.info().read();
+            (
+                name.unwrap_or(format!("{}.func{:?}", ti.name, *func)),
+                ti.ty,
+                ti.affinity.clone(),
+                ti.prio,
+            )
+        })
+        .ok_or(TaskError::NoCurrentTask)?;
+
     create_with_space(
         name,
         ty,
@@ -433,17 +435,10 @@ pub fn create_fn(
 }
 
 pub(super) fn destroy(task: Dead) {
-    if let Some(child) = {
+    if let Some((_, Some(child))) = {
         tid::deallocate(&task.tid);
         let ti = task.tid.info().read();
-        ti.from.as_ref().and_then(|(parent, ret_wo_hdl)| {
-            parent
-                .info()
-                .read()
-                .user_handles
-                .get::<Arc<child::Child>>(*ret_wo_hdl)
-                .cloned()
-        })
+        ti.from.clone()
     } {
         let _ = child.cell().replace(task.retval);
     }

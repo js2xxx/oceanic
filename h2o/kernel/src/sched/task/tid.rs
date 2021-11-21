@@ -5,7 +5,7 @@ use archop::{IntrRwLock, IntrState};
 use collection_ex::{CHashMap, FnvHasher, IdAllocator};
 use spin::Lazy;
 
-use super::TaskInfo;
+use super::{Child, TaskInfo};
 
 pub const NR_TASKS: usize = 65536;
 
@@ -25,6 +25,14 @@ impl Tid {
 
     pub fn info(&self) -> &IntrRwLock<TaskInfo> {
         &*self.1
+    }
+
+    pub fn child(&self, hdl: super::UserHandle) -> Option<Arc<Child>> {
+        self.info()
+            .read()
+            .user_handles
+            .get::<Arc<Child>>(hdl)
+            .cloned()
     }
 }
 

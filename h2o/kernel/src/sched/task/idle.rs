@@ -25,7 +25,7 @@ pub(super) static IDLE: Lazy<Tid> = Lazy::new(|| {
     let cpu = unsafe { crate::cpu::id() };
 
     let ti = TaskInfo {
-        from: Some((ROOT.clone(), UserHandle::NULL)),
+        from: Some((ROOT.clone(), None)),
         name: format!("IDLE{}", cpu),
         ty: Type::Kernel,
         affinity: crate::cpu::current_mask(),
@@ -58,7 +58,6 @@ fn idle(cpu: usize) -> ! {
     use crate::sched::{task, SCHED};
     log::debug!("IDLE #{}", cpu);
 
-    let intr = archop::IntrState::lock();
     if cpu == 0 {
         let image = unsafe {
             core::slice::from_raw_parts(
@@ -72,6 +71,7 @@ fn idle(cpu: usize) -> ! {
                 .expect("Failed to initialize TINIT");
         SCHED.push(tinit);
     }
+
     let (ctx_dropper, ..) = task::create_fn(
         Some(String::from("CTXD")),
         DEFAULT_STACK_SIZE,
@@ -80,7 +80,6 @@ fn idle(cpu: usize) -> ! {
     )
     .expect("Failed to create context dropper");
     SCHED.push(ctx_dropper);
-    drop(intr);
 
     unsafe { archop::halt_loop(None) };
 }

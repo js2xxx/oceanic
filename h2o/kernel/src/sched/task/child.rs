@@ -1,6 +1,7 @@
 use super::Tid;
 use crate::sched::wait::WaitCell;
 
+#[derive(Debug)]
 pub struct Child {
     cell: WaitCell<usize>,
     tid: Tid,

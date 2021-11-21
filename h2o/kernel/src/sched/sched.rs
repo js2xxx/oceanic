@@ -55,6 +55,7 @@ impl Scheduler {
         } else {
             let task = task::Ready::from_init(task, self.cpu, time_slice);
 
+            let _intr = archop::IntrState::lock();
             let cur = self.current.try_lock();
             self.enqueue(task, cur);
         }
@@ -165,6 +166,12 @@ impl Scheduler {
         };
         log::trace!("Checking task {:?}'s pending signal", cur.tid().raw());
         let ti = cur.tid().info().read();
+
+        if ti.ty() == task::Type::Kernel {
+            drop(ti);
+            return cur_guard;
+        }
+
         match ti.signal() {
             Some(task::sig::Signal::Kill) => {
                 drop(ti);

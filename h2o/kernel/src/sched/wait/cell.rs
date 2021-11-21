@@ -2,6 +2,7 @@ use spin::Mutex;
 
 use super::WaitObject;
 
+#[derive(Debug)]
 pub struct WaitCell<T> {
     data: Mutex<Option<T>>,
     wo: WaitObject,
