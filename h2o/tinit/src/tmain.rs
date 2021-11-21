@@ -18,8 +18,7 @@ extern "C" fn tmain() {
     solvent::log::init(log::Level::Debug);
     mem::init();
 
-    log::debug!("Testing solvent::task");
-    solvent::test_task();
+    solvent::test();
 
     log::debug!("Reaching end of TINIT");
 }

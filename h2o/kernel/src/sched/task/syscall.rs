@@ -48,7 +48,7 @@ pub fn task_join(hdl: u32) -> usize {
     };
 
     let _intr = archop::IntrState::lock();
-    Ok(child.cell().take("task_join"))
+    solvent::Error::decode(child.cell().take("task_join"))
 }
 
 #[syscall]

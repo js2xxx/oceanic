@@ -1,9 +1,11 @@
 use core::{fmt::Debug, ops::Range};
 
 pub const ERRC_RANGE: Range<i32> = 1..35;
+pub const CUSTOM_RANGE: Range<i32> = 1000..1005;
 
 pub type Result<T> = core::result::Result<T, Error>;
 
+#[derive(Copy, Clone, PartialEq, Eq)]
 #[repr(transparent)]
 pub struct Error(pub i32);
 
@@ -14,7 +16,7 @@ impl Error {
 
     pub fn decode(val: usize) -> Result<usize> {
         let errc = -(val as i32);
-        (!ERRC_RANGE.contains(&errc))
+        (!ERRC_RANGE.contains(&errc) && !(CUSTOM_RANGE.contains(&errc)))
             .then_some(val)
             .ok_or(Error(errc))
     }
