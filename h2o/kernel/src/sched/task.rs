@@ -25,7 +25,7 @@ pub use self::{
 };
 use super::wait::WaitObject;
 use crate::{
-    cpu::{arch::KernelGs, time::Instant, CpuMask},
+    cpu::{self, arch::KernelGs, time::Instant, CpuMask},
     mem::space::{with, Space, SpaceError},
 };
 
@@ -274,6 +274,9 @@ impl Ready {
         KernelGs::update_tss_rsp0(tss_rsp0);
         crate::mem::space::set_current(self.space.clone());
         self.ext_frame.load();
+        if !cpu::arch::in_intr() && self.tid.info().read().ty == Type::Kernel {
+            KernelGs::reload();
+        }
     }
 
     pub fn save_syscall_retval(&mut self, retval: usize) {
@@ -306,6 +309,12 @@ pub struct Blocked {
     cpu: usize,
     block_desc: &'static str,
     runtime: Duration,
+}
+
+impl Blocked {
+    pub fn tid(&self) -> &Tid {
+        &self.tid
+    }
 }
 
 #[derive(Debug)]

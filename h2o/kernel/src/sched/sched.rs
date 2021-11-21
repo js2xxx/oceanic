@@ -4,7 +4,7 @@ pub mod epoch;
 use alloc::vec::Vec;
 use core::time::Duration;
 
-use archop::{PreemptMutex, PreemptMutexGuard};
+use archop::{IntrMutex, IntrMutexGuard};
 use canary::Canary;
 use deque::{Injector, Steal, Worker};
 use spin::Lazy;
@@ -28,8 +28,8 @@ pub static SCHED: Lazy<Scheduler> = Lazy::new(|| Scheduler {
     run_queue: Worker::new_fifo(),
 });
 
-type Current = PreemptMutex<Option<task::Ready>>;
-type CurrentGuard<'a> = PreemptMutexGuard<'a, Option<task::Ready>>;
+type Current = IntrMutex<Option<task::Ready>>;
+type CurrentGuard<'a> = IntrMutexGuard<'a, Option<task::Ready>>;
 
 pub struct Scheduler {
     canary: Canary<Scheduler>,
@@ -41,6 +41,7 @@ pub struct Scheduler {
 impl Scheduler {
     pub fn push(&self, task: task::Init) {
         self.canary.assert();
+        log::trace!("Pushing new task {:?}", task.tid().raw());
 
         let affinity = task.tid().info().read().affinity();
 
@@ -54,20 +55,21 @@ impl Scheduler {
         } else {
             let task = task::Ready::from_init(task, self.cpu, time_slice);
 
-            let cur = self.current.lock();
+            let cur = self.current.try_lock();
             self.enqueue(task, cur);
         }
     }
 
-    fn enqueue(&self, task: task::Ready, cur: CurrentGuard) {
-        if Self::should_preempt(&cur, &task) {
-            self.schedule_impl(Instant::now(), cur, Some(task), |mut task| {
-                task.running_state = task::RunningState::NotRunning;
-                self.run_queue.push(task);
-            });
-        } else {
-            drop(cur);
-            self.run_queue.push(task);
+    fn enqueue(&self, task: task::Ready, cur: Option<CurrentGuard>) {
+        match cur {
+            Some(cur) if Self::should_preempt(&cur, &task) => {
+                log::trace!("Preempting to task {:?}", task.tid().raw());
+                self.schedule_impl(Instant::now(), cur, Some(task), |mut task| {
+                    task.running_state = task::RunningState::NotRunning;
+                    self.run_queue.push(task);
+                });
+            }
+            _ => self.run_queue.push(task),
         }
     }
 
@@ -98,6 +100,7 @@ impl Scheduler {
     ) -> bool {
         self.canary.assert();
         let cur = self.current.lock();
+        log::trace!("Blocking task {:?}", cur.as_ref().unwrap().tid().raw());
 
         self.schedule_impl(cur_time, cur, None, |task| {
             task::Ready::block(task, wo, block_desc);
@@ -108,11 +111,12 @@ impl Scheduler {
 
     pub fn unblock(&self, task: task::Blocked) {
         self.canary.assert();
+        log::trace!("Unblocking task {:?}", task.tid().raw());
 
         let time_slice = MINIMUM_TIME_GRANULARITY;
         let task = task::Ready::unblock(task, time_slice);
         if task.cpu == self.cpu {
-            let cur = self.current.lock();
+            let cur = self.current.try_lock();
             self.enqueue(task, cur);
         } else {
             let cpu = task.cpu;
@@ -131,6 +135,7 @@ impl Scheduler {
     pub fn exit_current(&self, retval: usize) -> ! {
         self.canary.assert();
         let cur = self.current.lock();
+        log::trace!("Exiting task {:?}", cur.as_ref().unwrap().tid().raw());
 
         self.schedule_impl(Instant::now(), cur, None, |task| {
             task::Ready::exit(task, retval)
@@ -139,6 +144,7 @@ impl Scheduler {
     }
 
     pub fn tick(&self, cur_time: Instant) {
+        log::trace!("Scheduler tick");
         let cur = self.current.lock();
         let mut cur = self.check_signal(cur_time, cur);
         let need_resched = self.update(cur_time, &mut cur);
@@ -157,10 +163,12 @@ impl Scheduler {
             Some(cur) => cur,
             None => return cur_guard,
         };
+        log::trace!("Checking task {:?}'s pending signal", cur.tid().raw());
         let ti = cur.tid().info().read();
         match ti.signal() {
             Some(task::sig::Signal::Kill) => {
                 drop(ti);
+                log::trace!("Killing task {:?}", cur.tid().raw());
                 self.schedule_impl(cur_time, cur_guard, None, |task| {
                     task::Ready::exit(task, (-solvent::EKILLED) as usize)
                 });
@@ -189,6 +197,7 @@ impl Scheduler {
             Some(task) => task,
             None => return !sole,
         };
+        log::trace!("Updating task {:?}'s timer slice", cur.tid().raw());
 
         match &cur.running_state {
             task::RunningState::Running(start_time) => {
@@ -209,6 +218,10 @@ impl Scheduler {
 
     fn schedule(&self, cur_time: Instant, cur: CurrentGuard) -> bool {
         self.canary.assert();
+        #[cfg(debug_assertions)]
+        if let Some(cur) = cur.as_ref() {
+            log::trace!("Scheduling task {:?}", cur.tid().raw());
+        }
 
         self.schedule_impl(cur_time, cur, None, |mut task| {
             debug_assert!(matches!(

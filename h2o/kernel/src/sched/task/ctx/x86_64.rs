@@ -18,6 +18,7 @@ pub const EXTENDED_FRAME_SIZE: usize = 768;
 #[derive(Debug, Default)]
 #[repr(C)]
 pub struct Kframe {
+    cs: u64,
     rflags: u64,
     r15: u64,
     r14: u64,
@@ -29,8 +30,9 @@ pub struct Kframe {
 }
 
 impl Kframe {
-    pub fn new(ptr: *const u8) -> Self {
+    pub fn new(ptr: *const u8, cs: u64) -> Self {
         Kframe {
+            cs,
             ret_addr: task_fresh as u64,
             rbp: ptr as u64 + 1,
             ..Default::default()
@@ -167,6 +169,7 @@ unsafe extern "C" fn save_intr() {
 pub unsafe extern "C" fn switch_finishing() {
     let current = crate::sched::SCHED.current.lock();
     if let Some(ref cur) = &*current {
+        log::trace!("Switched to task {:?}", cur.tid().raw());
         cur.load_intr();
     }
 }

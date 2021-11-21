@@ -10,6 +10,8 @@ use core::{fmt::Debug, ptr};
 
 use paging::LAddr;
 
+use crate::cpu::arch::seg::ndt::INTR_CODE;
+
 pub const KSTACK_SIZE: usize = paging::PAGE_SIZE * 16;
 
 #[derive(Debug)]
@@ -33,7 +35,10 @@ impl Kstack {
             let frame = this.task_frame_mut();
             frame.set_entry(entry, ty);
             let kframe = (frame as *mut arch::Frame).cast::<arch::Kframe>().sub(1);
-            kframe.write(arch::Kframe::new((frame as *mut arch::Frame).cast()));
+            kframe.write(arch::Kframe::new(
+                (frame as *mut arch::Frame).cast(),
+                INTR_CODE.into_val() as u64,
+            ));
             this.1 = kframe.cast();
         }
         unsafe { kstack.assume_init() }

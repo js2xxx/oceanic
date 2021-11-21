@@ -25,3 +25,16 @@ reset_seg:
       mov   ss, si
       
       ret
+
+global cpu_in_intr:function
+; u32 cpu_in_intr()
+cpu_in_intr:
+      mov   ax, cs
+      cmp   ax, 0xC
+      je    .true
+      mov   eax, 0
+      jmp   .ret
+.true:
+      mov   eax, 1
+.ret:
+      ret

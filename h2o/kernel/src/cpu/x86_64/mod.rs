@@ -44,6 +44,13 @@ pub fn count() -> usize {
     CPU_COUNT.load(Ordering::SeqCst)
 }
 
+pub fn in_intr() -> bool {
+    extern "C" {
+        fn cpu_in_intr() -> u32;
+    }
+    unsafe { cpu_in_intr() != 0 }
+}
+
 /// # Safety
 ///
 /// This function is only called after [`set_id`].
@@ -87,6 +94,13 @@ impl KernelGs {
     /// [`archop::msr::KERNEL_GS_BASE`] is uninitialized.
     pub unsafe fn load(this: Self) {
         let ptr = KERNEL_GS.write(this) as *mut Self;
+
+        use archop::msr;
+        msr::write(msr::KERNEL_GS_BASE, ptr as u64);
+    }
+
+    pub unsafe fn reload() {
+        let ptr = KERNEL_GS.as_mut_ptr();
 
         use archop::msr;
         msr::write(msr::KERNEL_GS_BASE, ptr as u64);

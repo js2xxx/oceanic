@@ -53,6 +53,7 @@ pub fn task_join(hdl: u32) -> usize {
             .clone()
     };
 
+    let _intr = archop::IntrState::lock();
     Ok(child.cell().take("task_join"))
 }
 

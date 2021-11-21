@@ -82,10 +82,10 @@ pub fn stat() -> stat::Stat {
 }
 
 /// The test function for the module.
+#[allow(dead_code)]
 pub fn test(start_seed: usize) {
-      if !cfg!(debug_assertions) {
-            return;
-      }
+      #[cfg(not(debug_assertions))]
+      return;
 
       use core::alloc::Layout;
       fn random(mut seed: usize) -> usize {

@@ -236,6 +236,9 @@ switch_kframe:
       push  r14
       push  r15
       pushfq
+      xor   rax, rax
+      mov   ax, cs
+      push  rax
 
       ; Save the current stack context.
       cmp   rdi, 0
@@ -245,6 +248,9 @@ switch_kframe:
       ; Switch the stack (a.k.a. the context).
       mov   rsp, rsi
 
+      push  .popcs
+      retfq
+.popcs:
       popfq
       pop   r15
       pop   r14
@@ -345,7 +351,7 @@ intr_entry:
       ; A preemption happens.
       lfence
 
-      push_regs   1, 1; The routine has a return address, so we must preserve it.
+      push_regs   1, 0; The routine has a return address, so we must preserve it.
       lea   rbp, [rsp + 8 + 1]
 .ret:
       ret
@@ -363,7 +369,7 @@ intr_exit:
       jmp   .ret
 .reent:
       ; A preemption happens.
-      pop_regs    1
+      pop_regs    0
 
       add   rsp, 8
 .ret:
