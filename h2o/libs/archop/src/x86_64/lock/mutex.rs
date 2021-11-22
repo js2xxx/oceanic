@@ -1,9 +1,8 @@
-use core::cell::UnsafeCell;
 use core::ops::{Deref, DerefMut};
 
 use spin::{Mutex, MutexGuard};
 
-use crate::{IntrState, PreemptLock, PreemptLockGuard};
+use crate::IntrState;
 
 pub struct IntrMutexGuard<'a, T>(MutexGuard<'a, T>, IntrState);
 
@@ -56,45 +55,5 @@ impl<T> IntrMutex<T> {
 
     pub fn is_locked(&self) -> bool {
         self.0.is_locked()
-    }
-}
-
-pub struct PreemptMutexGuard<'a, T> {
-    _inner: PreemptLockGuard<'a>,
-    ptr: *mut T,
-}
-
-impl<'a, T> Deref for PreemptMutexGuard<'a, T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        unsafe { &*self.ptr }
-    }
-}
-
-impl<'a, T> DerefMut for PreemptMutexGuard<'a, T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        unsafe { &mut *self.ptr }
-    }
-}
-
-pub struct PreemptMutex<T> {
-    lock: PreemptLock,
-    data: UnsafeCell<T>,
-}
-
-impl<T> PreemptMutex<T> {
-    pub const fn new(o: T) -> Self {
-        PreemptMutex {
-            lock: PreemptLock::new(),
-            data: UnsafeCell::new(o)
-        }
-    }
-
-    pub fn lock(&self) -> PreemptMutexGuard<T> {
-        PreemptMutexGuard {
-            _inner: self.lock.lock(),
-            ptr: self.data.get(),
-        }
     }
 }

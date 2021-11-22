@@ -23,7 +23,7 @@ pub use self::{
     prio::Priority,
     tid::Tid,
 };
-use super::wait::WaitObject;
+use super::{wait::WaitObject, PREEMPT};
 use crate::{
     cpu::{self, arch::KernelGs, time::Instant, CpuMask},
     mem::space::{with, Space, SpaceError},
@@ -365,8 +365,8 @@ where
     let (entry, tls, stack_size) = unsafe { with(&space, with_space) }?;
 
     let (tid, ret_wo) = {
-        let intr = archop::IntrState::lock();
-        let cur_ti = cur_tid.info().upgradable_read();
+        let pree = PREEMPT.lock();
+        let cur_ti = cur_tid.info().upgradeable_read();
 
         let ty = match ty {
             Type::Kernel => cur_ti.ty,
@@ -396,7 +396,7 @@ where
             let child = Arc::new(Child::new(tid.clone()));
             (cur_ti.user_handles.insert(child.clone()).unwrap(), child)
         };
-        drop(intr);
+        drop(pree);
 
         tid.info().write().from = Some((cur_tid, Some(child)));
         (tid, ret_wo)

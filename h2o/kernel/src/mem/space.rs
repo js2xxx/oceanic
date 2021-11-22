@@ -422,8 +422,9 @@ where
     F: FnOnce(&'a Arc<Space>) -> R,
     R: 'a,
 {
+    let _pree = crate::sched::PREEMPT.lock();
     let cur = unsafe { CURRENT.as_ref().expect("No current space available") };
-    crate::sched::SCHED.with_current(|_| func(cur)).unwrap()
+    func(cur)
 }
 
 /// Set the current memory space of the current CPU.
@@ -433,7 +434,6 @@ where
 /// The function must be called only from the epilogue of context switching.
 pub unsafe fn set_current(space: Arc<Space>) {
     space.load();
-    // let _ = core::mem::replace(&mut CURRENT, Some(space));
     let _old = CURRENT.replace(space);
 }
 
@@ -446,10 +446,10 @@ where
     S: AsRef<Space>,
     F: FnOnce(&Space) -> R,
 {
+    let _pree = crate::sched::PREEMPT.lock();
+
     space.as_ref().load();
-    let ret = crate::sched::SCHED
-        .with_current(|_| func(space.as_ref()))
-        .unwrap();
+    let ret = func(space.as_ref());
     current().load();
 
     ret

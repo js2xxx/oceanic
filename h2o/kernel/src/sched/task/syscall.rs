@@ -39,15 +39,14 @@ pub fn task_join(hdl: u32) -> usize {
     let wc_hdl = super::UserHandle::new(NonZeroU32::new(hdl).ok_or(Error(EINVAL))?);
 
     let child = {
-        let _intr = archop::IntrState::lock();
         let tid = crate::sched::SCHED
             .with_current(|cur| cur.tid.clone())
             .ok_or(Error(ESRCH))?;
 
+        let _pree = super::PREEMPT.lock();
         tid.child(wc_hdl).ok_or(Error(ECHILD))?
     };
 
-    let _intr = archop::IntrState::lock();
     solvent::Error::decode(child.cell().take("task_join"))
 }
 
@@ -59,16 +58,16 @@ pub fn task_ctl(hdl: u32, op: u32) {
         // Kill
         1 => {
             let child = {
-                let _intr = archop::IntrState::lock();
                 let tid = crate::sched::SCHED
                     .with_current(|cur| cur.tid.clone())
                     .ok_or(Error(ESRCH))?;
 
                 let wc_hdl = super::UserHandle::new(NonZeroU32::new(hdl).ok_or(Error(EINVAL))?);
+                let _pree = super::PREEMPT.lock();
                 tid.child(wc_hdl).ok_or(Error(ECHILD))?
             };
 
-            let _intr = archop::IntrState::lock();
+            let _pree = super::PREEMPT.lock();
             let mut ti = child.tid().info().write();
             ti.set_signal(Some(super::Signal::Kill));
 

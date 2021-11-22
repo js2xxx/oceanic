@@ -81,8 +81,8 @@ pub trait IntrChip {
     unsafe fn eoi(&mut self, intr: Arc<Interrupt>);
 }
 
-pub struct IntrState;
-impl IntrState {
+pub struct State;
+impl State {
     pub const ENABLED: u16 = 0b0000_0001;
     pub const ONESHOT: u16 = 0b0000_0010;
     pub const RUNNING: u16 = 0b0000_0100;
@@ -124,7 +124,7 @@ impl Interrupt {
 fn handle_event(intr: Arc<Interrupt>) -> IrqReturn {
     todo!()
     // let state = self.state.load(Ordering::SeqCst);
-    // if state.contains_bit(IntrState::ENABLED) {
+    // if state.contains_bit(State::ENABLED) {
     //       let mut ret = IrqReturn::empty();
     //       // for hdl in self.handler.iter() {
     //       //       let r = (hdl)(self.clone());
@@ -134,7 +134,7 @@ fn handle_event(intr: Arc<Interrupt>) -> IrqReturn {
     //       if self
     //             .state
     //             .load(Ordering::SeqCst)
-    //             .contains_bit(IntrState::ONESHOT)
+    //             .contains_bit(State::ONESHOT)
     //       {
     //             ret
     //       } else {
@@ -142,7 +142,7 @@ fn handle_event(intr: Arc<Interrupt>) -> IrqReturn {
     //       }
     // } else {
     //       self.state
-    //             .store(state | IntrState::PENDING, Ordering::SeqCst);
+    //             .store(state | State::PENDING, Ordering::SeqCst);
     //       IrqReturn::DISABLED
     // }
 }
@@ -182,10 +182,10 @@ pub unsafe fn fasteoi_handler(intr: Arc<Interrupt>) {
 ///
 /// This function must be called only from the interrupt handler.
 pub unsafe fn edge_handler(intr: Arc<Interrupt>) {
-    let state = intr.state.fetch_or(IntrState::RUNNING, Ordering::SeqCst);
-    if state.contains_bit(IntrState::RUNNING) {
+    let state = intr.state.fetch_or(State::RUNNING, Ordering::SeqCst);
+    if state.contains_bit(State::RUNNING) {
         intr.chip.lock().mask_ack(intr.clone());
-        intr.state.fetch_or(IntrState::PENDING, Ordering::SeqCst);
+        intr.state.fetch_or(State::PENDING, Ordering::SeqCst);
         return;
     }
 
@@ -193,15 +193,15 @@ pub unsafe fn edge_handler(intr: Arc<Interrupt>) {
 
     while {
         let state = intr.state.load(Ordering::SeqCst);
-        state.contains_bit(IntrState::PENDING) && state.contains_bit(IntrState::ENABLED)
+        state.contains_bit(State::PENDING) && state.contains_bit(State::ENABLED)
     } {
         intr.chip.lock().unmask(intr.clone());
 
-        intr.state.fetch_and(!IntrState::PENDING, Ordering::SeqCst);
+        intr.state.fetch_and(!State::PENDING, Ordering::SeqCst);
         let ret = handle_event(intr.clone());
         if ret.contains(IrqReturn::DISABLED) {
             break;
         }
     }
-    intr.state.fetch_and(!IntrState::RUNNING, Ordering::SeqCst);
+    intr.state.fetch_and(!State::RUNNING, Ordering::SeqCst);
 }

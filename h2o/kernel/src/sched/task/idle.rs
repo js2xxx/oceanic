@@ -81,7 +81,7 @@ fn idle(cpu: usize) -> ! {
     .expect("Failed to create context dropper");
     SCHED.push(ctx_dropper);
 
-    unsafe { archop::halt_loop(None) };
+    unsafe { archop::halt_loop(Some(true)) };
 }
 
 fn ctx_dropper(fs_base: u64) -> ! {

@@ -6,7 +6,7 @@ use crate::{
         ndt::{KRL_CODE_X64, KRL_DATA_X64, USR_CODE_X64, USR_DATA_X64},
         SegSelector,
     },
-    sched::task,
+    sched::{task, PREEMPT},
 };
 
 pub const DEFAULT_STACK_SIZE: usize = 64 * paging::PAGE_SIZE;
@@ -159,19 +159,18 @@ impl Frame {
 /// This function must be called only by assembly stubs.
 #[no_mangle]
 unsafe extern "C" fn save_intr() {
-    let mut current = crate::sched::SCHED.current.lock();
-    if let Some(ref mut cur) = &mut *current {
+    if let Some(ref mut cur) = &mut *crate::sched::SCHED.current() {
         cur.save_intr();
     }
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn switch_finishing() {
-    let current = crate::sched::SCHED.current.lock();
-    if let Some(ref cur) = &*current {
-        log::trace!("Switched to task {:?}", cur.tid().raw());
+    if let Some(ref cur) = *crate::sched::SCHED.current() {
+        log::trace!("Switched to task {:?}, P{}", cur.tid().raw(), PREEMPT.raw());
         cur.load_intr();
     }
+    PREEMPT.enable();
 }
 
 extern "C" {
