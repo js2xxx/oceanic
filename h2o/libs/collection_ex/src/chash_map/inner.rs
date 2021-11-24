@@ -142,7 +142,7 @@ impl<K, V, S: BuildHasher> Buckets<K, V, S> {
         None
     }
 
-    pub fn entry<Q>(&self, key: &Q) -> RwLockWriteGuard<Entry<(K, V)>>
+    pub fn entry<Q>(&self, key: &Q) -> Option<RwLockWriteGuard<Entry<(K, V)>>>
     where
         Q: ?Sized + Hash + PartialEq,
         K: Borrow<Q>,
@@ -153,13 +153,13 @@ impl<K, V, S: BuildHasher> Buckets<K, V, S> {
         for slot in self.data.iter().cycle().skip(hash % len).take(len) {
             let entry = slot.write();
             match &*entry {
-                Entry::Empty => return free.unwrap_or(entry),
-                Entry::Data((ref k, _)) if k.borrow() == key => return entry,
+                Entry::Empty => return Some(free.unwrap_or(entry)),
+                Entry::Data((ref k, _)) if k.borrow() == key => return Some(entry),
                 Entry::Data(_) => {}
                 Entry::Removed => free = free.or(Some(entry)),
             }
         }
-        unreachable!("The container is full!")
+        None
     }
 
     pub fn move_from(&mut self, other: Self)

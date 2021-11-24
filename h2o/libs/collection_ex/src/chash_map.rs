@@ -3,7 +3,7 @@ mod inner;
 use core::{
     borrow::Borrow,
     hash::{BuildHasher, Hash},
-    mem,
+    hint, mem,
     ops::{Deref, DerefMut},
     sync::atomic::{AtomicUsize, Ordering::*},
 };
@@ -150,19 +150,24 @@ impl<K, V, S: BuildHasher + Default> CHashMap<K, V, S> {
     where
         K: Hash + PartialEq,
     {
-        let buckets = self.inner.read();
-        let old = {
-            let mut entry = buckets.entry(&key);
-            mem::replace(&mut *entry, inner::Entry::Data((key, value)))
-        };
-        if old.is_free() {
-            let len = self.len.fetch_add(1, SeqCst) + 1;
-            if len * LOAD_FACTOR_D >= buckets.len() * LOAD_FACTOR_N {
-                drop(buckets);
-                self.grow(len);
+        loop {
+            let buckets = self.inner.read();
+            let old = match buckets.entry(&key) {
+                Some(mut entry) => mem::replace(&mut *entry, inner::Entry::Data((key, value))),
+                None => {
+                    hint::spin_loop();
+                    continue;
+                }
+            };
+            if old.is_free() {
+                let len = self.len.fetch_add(1, SeqCst) + 1;
+                if len * LOAD_FACTOR_D >= buckets.len() * LOAD_FACTOR_N {
+                    drop(buckets);
+                    self.grow(len);
+                }
             }
+            break old.into();
         }
-        old.into()
     }
 
     pub fn remove_entry<Q>(&self, key: &Q) -> Option<(K, V)>
@@ -171,9 +176,9 @@ impl<K, V, S: BuildHasher + Default> CHashMap<K, V, S> {
         K: Borrow<Q> + Hash,
     {
         let buckets = self.inner.read();
-        let ret = {
-            let mut entry = buckets.entry(key);
-            mem::replace(&mut *entry, inner::Entry::Removed)
+        let ret = match buckets.entry(key) {
+            Some(mut entry) => mem::replace(&mut *entry, inner::Entry::Removed),
+            None => return None,
         };
         if !ret.is_free() {
             let len = self.len.fetch_sub(1, SeqCst) - 1;
