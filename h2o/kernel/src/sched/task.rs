@@ -86,7 +86,7 @@ pub struct TaskInfo {
     ty: Type,
     affinity: CpuMask,
     prio: Priority,
-    user_handles: UserHandles,
+    pub(in crate::sched) user_handles: UserHandles,
     signal: Option<Signal>,
 }
 
@@ -107,11 +107,11 @@ impl TaskInfo {
         self.prio
     }
 
-    pub fn signal(&self) -> Option<Signal> {
-        self.signal
+    pub fn take_signal(&mut self) -> Option<Signal> {
+        self.signal.take()
     }
 
-    pub fn set_signal(&mut self, signal: Option<Signal>) -> Option<Signal> {
+    pub fn replace_signal(&mut self, signal: Option<Signal>) -> Option<Signal> {
         match (signal, &mut self.signal) {
             (None, s) => {
                 *s = None;
@@ -121,7 +121,9 @@ impl TaskInfo {
                 *s = Some(signal);
                 None
             }
-            (Some(signal), s) => (s.unwrap() >= signal).then(|| s.replace(signal).unwrap()),
+            (Some(signal), s) => {
+                (s.as_ref().unwrap() >= &signal).then(|| s.replace(signal).unwrap())
+            }
         }
     }
 }

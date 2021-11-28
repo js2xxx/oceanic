@@ -113,10 +113,12 @@ impl TramHeader {
     pub unsafe fn test_booted(&self) -> bool {
         let limit = Duration::from_millis(50);
         let instant = Instant::now();
-        while !self.booted.swap(false, Ordering::SeqCst) && instant.elapsed() < limit {
+        let mut elapsed = Duration::ZERO;
+        while !self.booted.swap(false, Ordering::SeqCst) && elapsed < limit {
             core::hint::spin_loop();
+            elapsed = instant.elapsed();
         }
-        instant.elapsed() < limit
+        elapsed < limit
     }
 
     pub unsafe fn reset_subheader(&self) {

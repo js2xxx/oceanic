@@ -15,7 +15,7 @@ use crate::cpu::time::Instant;
 const MINIMUM_TIME_GRANULARITY: Duration = Duration::from_millis(30);
 const WAKE_TIME_GRANULARITY: Duration = Duration::from_millis(1);
 
-pub static MIGRATION_QUEUE: Lazy<Vec<Injector<task::Ready>>> = Lazy::new(|| {
+static MIGRATION_QUEUE: Lazy<Vec<Injector<task::Ready>>> = Lazy::new(|| {
     let count = crate::cpu::count();
     core::iter::repeat_with(Injector::new).take(count).collect()
 });
@@ -180,11 +180,17 @@ impl Scheduler {
         unreachable!("Dead task");
     }
 
-    pub fn tick(&self, cur_time: Instant) {
+    pub fn tick(&self, mut cur_time: Instant) {
         // log::trace!("Scheduler tick");
 
         let pree = PREEMPT.lock();
-        let pree = self.check_signal(cur_time, pree);
+        let pree = match self.check_signal(cur_time, pree) {
+            Some(pree) => pree,
+            None => {
+                cur_time = Instant::now();
+                PREEMPT.lock()
+            }
+        };
 
         if unsafe { self.update(cur_time) } {
             self.schedule(cur_time, pree);
@@ -195,20 +201,20 @@ impl Scheduler {
         &'a self,
         cur_time: Instant,
         pree: PreemptStateGuard<'a>,
-    ) -> PreemptStateGuard<'a> {
+    ) -> Option<PreemptStateGuard<'a>> {
         // SAFE: We have `pree`, which means preemption is disabled.
         let cur = match unsafe { &*self.current.get() } {
             Some(ref cur) => cur,
-            None => return pree,
+            None => return Some(pree),
         };
         log::trace!("Checking task {:?}'s pending signal", cur.tid().raw());
-        let ti = cur.tid().info().read();
+        let mut ti = cur.tid().info().write();
 
         if ti.ty() == task::Type::Kernel {
-            return pree;
+            return Some(pree);
         }
 
-        match ti.signal() {
+        match ti.take_signal() {
             Some(task::sig::Signal::Kill) => {
                 drop(ti);
                 log::trace!("Killing task {:?}, P{}", cur.tid().raw(), PREEMPT.raw());
@@ -217,14 +223,17 @@ impl Scheduler {
                 });
                 unreachable!("Dead task");
             }
-            Some(task::sig::Signal::Suspend) => {
-                // ti.set_signal(None);
-                // TODO: Suspend the current task.
-                // self.schedule_impl(cur_time, cur_guard, None, |task|
-                // todo!())
-                pree
+            Some(task::sig::Signal::Suspend(wo)) => {
+                drop(ti);
+
+                log::trace!("Suspending task {:?}, P{}", cur.tid().raw(), PREEMPT.raw());
+                self.schedule_impl(cur_time, pree, None, |task| {
+                    task::Ready::block(task, &wo, "task_ctl_suspend");
+                });
+
+                None
             }
-            None => pree,
+            None => Some(pree),
         }
     }
 
@@ -286,7 +295,6 @@ impl Scheduler {
     {
         self.canary.assert();
 
-        let cur_cpu = self.cpu;
         let mut next = match next {
             Some(next) => next,
             None => match self.run_queue.pop() {
@@ -296,25 +304,25 @@ impl Scheduler {
         };
 
         next.running_state = task::RunningState::Running(cur_time);
-        next.cpu = cur_cpu;
-        let new_kframe = next.kframe();
+        next.cpu = self.cpu;
+        let new = next.kframe();
 
         // SAFE: We have `pree`, which means preemption is disabled.
         let cur_slot = unsafe { &mut *self.current.get() };
-        let (kframe, ret) = match cur_slot.replace(next) {
+        let (old, ret) = match cur_slot.replace(next) {
             Some(mut prev) => {
-                let prev_kframe = prev.kframe_mut();
+                let kframe_mut = prev.kframe_mut();
                 let ret = func(prev);
 
-                Some((prev_kframe, ret))
+                Some((kframe_mut, ret))
             }
             None => None,
         }
         .unzip();
 
-        // We will enable preemption in [`switch_finishing`].
+        // We will enable preemption in `switch_ctx`.
         mem::forget(pree);
-        unsafe { task::ctx::switch_ctx(kframe, new_kframe) };
+        unsafe { task::ctx::switch_ctx(old, new) };
         ret
     }
 }

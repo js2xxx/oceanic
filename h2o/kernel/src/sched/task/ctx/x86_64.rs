@@ -170,7 +170,7 @@ pub unsafe extern "C" fn switch_finishing() {
         log::trace!("Switched to task {:?}, P{}", cur.tid().raw(), PREEMPT.raw());
         cur.load_intr();
     }
-    PREEMPT.enable();
+    PREEMPT.enable(None);
 }
 
 extern "C" {

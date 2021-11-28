@@ -324,7 +324,7 @@ pub unsafe fn spurious_handler() {
 /// The caller must ensure that this function is only called by the error
 /// handler.
 pub unsafe fn error_handler() {
-    // SAFE: Inside the timer interrupt handler.
+    // SAFE: Inside the interrupt error handler.
     lapic(|lapic| lapic.handle_error());
 }
 

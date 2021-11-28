@@ -21,7 +21,7 @@ syscall_stub!(3 =>
     ) -> u32
 );
 syscall_stub!(5 => pub(crate) fn task_join(hdl: u32) -> usize);
-syscall_stub!(6 => pub(crate) fn task_ctl(hdl: u32, op: u32));
+syscall_stub!(6 => pub(crate) fn task_ctl(hdl: u32, op: u32, data: *mut u8));
 
 syscall_stub!(8 =>
     pub(crate) fn alloc_pages(
@@ -34,3 +34,6 @@ syscall_stub!(8 =>
 );
 syscall_stub!(9 => pub(crate) fn dealloc_pages(ptr: *mut u8) -> usize);
 syscall_stub!(10 => pub(crate) unsafe fn modify_pages(ptr: *mut u8, size: usize, flags: u32));
+
+syscall_stub!(13 => pub(crate) fn wo_create() -> u32);
+syscall_stub!(15 => pub(crate) fn wo_notify(hdl: u32, n: usize) -> usize);

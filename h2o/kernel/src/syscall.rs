@@ -45,6 +45,11 @@ static SYSCALL_TABLE: &[Option<SyscallWrapper>] = &[
     Some(syscall_wrapper!(alloc_pages)),
     Some(syscall_wrapper!(dealloc_pages)),
     Some(syscall_wrapper!(modify_pages)),
+    None,
+    None,
+    Some(syscall_wrapper!(wo_create)),
+    None,
+    Some(syscall_wrapper!(wo_notify)),
 ];
 
 pub fn handler(arg: &Arguments) -> solvent::Result<usize> {

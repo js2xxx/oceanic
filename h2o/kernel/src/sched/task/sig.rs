@@ -1,17 +1,30 @@
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+use alloc::sync::Arc;
+use core::ptr;
+
+use crate::sched::wait::WaitObject;
+
+#[derive(Debug, Clone)]
 pub enum Signal {
     Kill,
-    Suspend,
+    Suspend(Arc<WaitObject>),
 }
 
-impl TryFrom<u32> for Signal {
-    type Error = u32;
+impl PartialEq for Signal {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Suspend(l0), Self::Suspend(r0)) => ptr::eq(&l0, &r0),
+            _ => core::mem::discriminant(self) == core::mem::discriminant(other),
+        }
+    }
+}
 
-    fn try_from(value: u32) -> Result<Self, Self::Error> {
-        match value {
-            1 => Ok(Signal::Kill),
-            2 => Ok(Signal::Suspend),
-            _ => Err(value),
+impl PartialOrd for Signal {
+    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
+        match (self, other) {
+            (Signal::Kill, Signal::Kill) => Some(core::cmp::Ordering::Equal),
+            (Signal::Suspend(_), Signal::Kill) => Some(core::cmp::Ordering::Greater),
+            (Signal::Kill, Signal::Suspend(_)) => Some(core::cmp::Ordering::Less),
+            (Signal::Suspend(_), Signal::Suspend(_)) => None,
         }
     }
 }

@@ -57,13 +57,21 @@ impl PreemptState {
     ///
     /// [`forget`]: core::mem::forget
     /// [`disable`]: Self::disable
-    pub unsafe fn enable(&self) -> bool {
+    pub unsafe fn enable(&self, flags: Option<u64>) -> bool {
         let p = self.0.load(Acquire);
-        p > 0
+        if p > 0
             && self
                 .0
                 .compare_exchange_weak(p, p - 1, AcqRel, Acquire)
                 .is_ok()
+        {
+            if p == 1 {
+                crate::resume_intr(flags);
+            }
+            true
+        } else {
+            false
+        }
     }
 
     /// # Safety
@@ -71,7 +79,9 @@ impl PreemptState {
     /// This function must be called only if peered with [`enable`].
     ///
     /// [`enable`]: Self::enable
-    pub unsafe fn disable(&self) -> usize {
-        self.0.fetch_add(1, AcqRel)
+    pub unsafe fn disable(&self) -> (u64, usize) {
+        let flags = crate::pause_intr();
+        let old = self.0.fetch_add(1, AcqRel);
+        (flags, old)
     }
 }

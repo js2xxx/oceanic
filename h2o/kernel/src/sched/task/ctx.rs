@@ -12,7 +12,7 @@ use paging::LAddr;
 
 use crate::cpu::arch::seg::ndt::INTR_CODE;
 
-pub const KSTACK_SIZE: usize = paging::PAGE_SIZE * 16;
+pub const KSTACK_SIZE: usize = paging::PAGE_SIZE * 48;
 
 #[derive(Debug)]
 pub struct Entry {

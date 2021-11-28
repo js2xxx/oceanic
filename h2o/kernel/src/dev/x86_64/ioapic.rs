@@ -117,7 +117,7 @@ impl Ioapic {
 
     unsafe fn read_ioredtbl(&mut self, pin: u8) -> u64 {
         let reg: u32 = IoapicReg::IoRedirTable(pin).into();
-        self.read_reg(reg) as u64 | (self.read_reg(reg + 1) as u64) << 32
+        self.read_reg(reg) as u64 | ((self.read_reg(reg + 1) as u64) << 32)
     }
 
     unsafe fn write_ioredtbl(&mut self, pin: u8, val: u64) {
@@ -138,9 +138,9 @@ impl Ioapic {
             gsi_base,
         } = node;
 
-        let base = PAddr::new(paddr as usize).to_laddr(minfo::ID_OFFSET);
-        let base_ptr = base.cast::<u32>();
-
+        let base_ptr = PAddr::new(paddr as usize)
+            .to_laddr(minfo::ID_OFFSET)
+            .cast::<u32>();
         let mut ioapic = Ioapic {
             base_ptr,
             id,
