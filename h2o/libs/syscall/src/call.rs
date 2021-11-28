@@ -22,6 +22,7 @@ syscall_stub!(3 =>
 );
 syscall_stub!(5 => pub(crate) fn task_join(hdl: u32) -> usize);
 syscall_stub!(6 => pub(crate) fn task_ctl(hdl: u32, op: u32, data: *mut u8));
+syscall_stub!(7 => pub(crate) fn task_sleep(ms: u32));
 
 syscall_stub!(8 =>
     pub(crate) fn alloc_pages(

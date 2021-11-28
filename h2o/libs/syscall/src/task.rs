@@ -52,8 +52,8 @@ pub fn test() {
         let notify = || crate::call::wo_notify(wo, 0).expect("Failed to notify a wait object");
         let mut n = notify();
         while n == 0 {
+            crate::call::task_sleep(0);
             n = notify();
-            hint::spin_loop();
         }
         assert_eq!(n, 1);
 

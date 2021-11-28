@@ -2,11 +2,21 @@ use alloc::sync::Arc;
 
 use solvent::*;
 
-use crate::sched::wait::WaitObject;
+use crate::sched::{wait::WaitObject, SCHED};
 
 #[syscall]
 pub fn task_exit(retval: usize) {
-    crate::sched::SCHED.exit_current(retval);
+    SCHED.exit_current(retval);
+}
+
+#[syscall]
+fn task_sleep(ms: u32) {
+    if ms > 0 {
+        return Err(Error(EINVAL));
+    }
+    SCHED.with_current(|cur| cur.running_state = super::RunningState::NeedResched);
+    SCHED.tick(crate::cpu::time::Instant::now());
+    Ok(())
 }
 
 #[syscall]
@@ -31,7 +41,7 @@ pub fn task_fn(name: *mut u8, stack_size: usize, func: *mut u8, arg: *mut u8) ->
 
     let (task, ret_wo) =
         super::create_fn(name, stack_size, paging::LAddr::new(func), arg).map_err(Into::into)?;
-    crate::sched::SCHED.push(task);
+    SCHED.push(task);
 
     Ok(ret_wo.raw())
 }
@@ -43,7 +53,7 @@ pub fn task_join(hdl: u32) -> usize {
     let wc_hdl = super::UserHandle::new(NonZeroU32::new(hdl).ok_or(Error(EINVAL))?);
 
     let child = {
-        let tid = crate::sched::SCHED
+        let tid = SCHED
             .with_current(|cur| cur.tid.clone())
             .ok_or(Error(ESRCH))?;
 
@@ -60,7 +70,7 @@ pub fn task_ctl(hdl: u32, op: u32, data: *mut u8) {
 
     let wc_hdl = super::UserHandle::new(NonZeroU32::new(hdl).ok_or(Error(EINVAL))?);
 
-    let tid = crate::sched::SCHED
+    let tid = SCHED
         .with_current(|cur| cur.tid.clone())
         .ok_or(Error(ESRCH))?;
 
@@ -89,7 +99,7 @@ pub fn task_ctl(hdl: u32, op: u32, data: *mut u8) {
                 let info = &tid.info().read();
                 match info.user_handles.get::<Arc<WaitObject>>(data).cloned() {
                     Some(wo) => wo,
-                    None => return Err(Error(EINVAL))
+                    None => return Err(Error(EINVAL)),
                 }
             };
 
