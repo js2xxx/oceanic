@@ -1,7 +1,11 @@
+pub mod timer;
+
 use core::{
     ops::{Add, AddAssign, Sub, SubAssign},
     time::Duration,
 };
+
+pub use timer::{tick as timer_tick, Callback as TimerCallback, Timer};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Instant(solvent::time::Instant);

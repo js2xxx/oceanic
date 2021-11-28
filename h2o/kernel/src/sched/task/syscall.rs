@@ -1,8 +1,13 @@
-use alloc::sync::Arc;
+use alloc::{string::ToString, sync::Arc};
+use core::time::Duration;
 
 use solvent::*;
 
-use crate::sched::{wait::WaitObject, SCHED};
+use super::{RunningState, Signal, UserHandle};
+use crate::{
+    cpu::time::Instant,
+    sched::{wait::WaitObject, SCHED},
+};
 
 #[syscall]
 pub fn task_exit(retval: usize) {
@@ -11,11 +16,12 @@ pub fn task_exit(retval: usize) {
 
 #[syscall]
 fn task_sleep(ms: u32) {
-    if ms > 0 {
-        return Err(Error(EINVAL));
+    if ms == 0 {
+        SCHED.with_current(|cur| cur.running_state = RunningState::NeedResched);
+        SCHED.tick(Instant::now());
+    } else {
+        SCHED.sleep_current(Duration::from_millis(u64::from(ms)));
     }
-    SCHED.with_current(|cur| cur.running_state = super::RunningState::NeedResched);
-    SCHED.tick(crate::cpu::time::Instant::now());
     Ok(())
 }
 
@@ -24,7 +30,6 @@ pub fn task_fn(name: *mut u8, stack_size: usize, func: *mut u8, arg: *mut u8) ->
     extern "C" {
         fn strlen(s: *const u8) -> usize;
     }
-    use crate::alloc::string::ToString;
 
     let name = if !name.is_null() {
         unsafe {
@@ -50,7 +55,7 @@ pub fn task_fn(name: *mut u8, stack_size: usize, func: *mut u8, arg: *mut u8) ->
 pub fn task_join(hdl: u32) -> usize {
     use core::num::NonZeroU32;
 
-    let wc_hdl = super::UserHandle::new(NonZeroU32::new(hdl).ok_or(Error(EINVAL))?);
+    let wc_hdl = UserHandle::new(NonZeroU32::new(hdl).ok_or(Error(EINVAL))?);
 
     let child = {
         let tid = SCHED
@@ -61,14 +66,14 @@ pub fn task_join(hdl: u32) -> usize {
         tid.child(wc_hdl).ok_or(Error(ECHILD))?
     };
 
-    solvent::Error::decode(child.cell().take("task_join"))
+    Error::decode(child.cell().take("task_join"))
 }
 
 #[syscall]
 pub fn task_ctl(hdl: u32, op: u32, data: *mut u8) {
     use core::num::NonZeroU32;
 
-    let wc_hdl = super::UserHandle::new(NonZeroU32::new(hdl).ok_or(Error(EINVAL))?);
+    let wc_hdl = UserHandle::new(NonZeroU32::new(hdl).ok_or(Error(EINVAL))?);
 
     let tid = SCHED
         .with_current(|cur| cur.tid.clone())
@@ -83,7 +88,7 @@ pub fn task_ctl(hdl: u32, op: u32, data: *mut u8) {
 
             let _pree = super::PREEMPT.lock();
             let mut ti = child.tid().info().write();
-            ti.replace_signal(Some(super::Signal::Kill));
+            ti.replace_signal(Some(Signal::Kill));
 
             Ok(())
         }
@@ -92,7 +97,7 @@ pub fn task_ctl(hdl: u32, op: u32, data: *mut u8) {
                 let data = u32::try_from(data as u64)
                     .ok()
                     .and_then(NonZeroU32::new)
-                    .map(super::UserHandle::new)
+                    .map(UserHandle::new)
                     .ok_or(Error(EINVAL))?;
 
                 let _pree = super::PREEMPT.lock();
@@ -110,7 +115,7 @@ pub fn task_ctl(hdl: u32, op: u32, data: *mut u8) {
 
             let _pree = super::PREEMPT.lock();
             let mut ti = child.tid().info().write();
-            ti.replace_signal(Some(super::Signal::Suspend(wo)));
+            ti.replace_signal(Some(Signal::Suspend(wo)));
 
             Ok(())
         }

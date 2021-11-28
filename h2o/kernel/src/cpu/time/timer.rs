@@ -1,0 +1,75 @@
+use alloc::sync::Arc;
+use core::{
+    sync::atomic::{AtomicBool, Ordering::*},
+    time::Duration,
+};
+
+use canary::Canary;
+use spin::Lazy;
+
+use super::Instant;
+use crate::sched::deque::{Injector, Steal};
+
+#[thread_local]
+static TIMER_QUEUE: Lazy<Injector<Arc<Timer>>> = Lazy::new(|| Injector::new());
+
+pub struct Callback {
+    func: fn(Arc<Timer>, Instant, *mut u8),
+    arg: *mut u8,
+}
+
+impl Callback {
+    pub fn new(func: fn(Arc<Timer>, Instant, *mut u8), arg: *mut u8) -> Self {
+        Callback { func, arg }
+    }
+
+    pub fn call(&self, timer: Arc<Timer>, cur_time: Instant) {
+        (self.func)(timer, cur_time, self.arg)
+    }
+}
+
+pub struct Timer {
+    canary: Canary<Timer>,
+    callback: Callback,
+    deadline: Instant,
+    cancel: AtomicBool,
+}
+
+impl Timer {
+    pub fn cancel(&self) -> bool {
+        !self.cancel.swap(true, AcqRel)
+    }
+
+    pub fn activate(duration: Duration, callback: Callback) -> Arc<Self> {
+        let ret = Arc::new(Timer {
+            canary: Canary::new(),
+            callback,
+            deadline: Instant::now() + duration,
+            cancel: AtomicBool::new(false),
+        });
+        TIMER_QUEUE.push(ret.clone());
+        ret
+    }
+}
+
+pub unsafe fn tick() {
+    let mut cnt = TIMER_QUEUE.len();
+    while cnt > 0 {
+        match TIMER_QUEUE.steal() {
+            Steal::Empty => break,
+            Steal::Retry => continue,
+            Steal::Success(timer) => {
+                let cur_time = Instant::now();
+                timer.canary.assert();
+                if !timer.cancel.load(Acquire) {
+                    if cur_time >= timer.deadline {
+                        timer.callback.call(timer.clone(), cur_time);
+                    } else {
+                        TIMER_QUEUE.push(timer);
+                    }
+                }
+            }
+        }
+        cnt -= 1;
+    }
+}

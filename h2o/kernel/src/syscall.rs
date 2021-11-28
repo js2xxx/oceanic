@@ -48,7 +48,7 @@ static SYSCALL_TABLE: &[Option<SyscallWrapper>] = &[
     None,
     None,
     Some(syscall_wrapper!(wo_create)),
-    None,
+    None, // Reserved for future use of `wo_wait`.
     Some(syscall_wrapper!(wo_notify)),
 ];
 

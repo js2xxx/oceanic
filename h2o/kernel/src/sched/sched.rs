@@ -1,7 +1,7 @@
 pub mod deque;
 pub mod epoch;
 
-use alloc::vec::Vec;
+use alloc::{boxed::Box, sync::Arc, vec::Vec};
 use core::{cell::UnsafeCell, mem, time::Duration};
 
 use archop::{PreemptState, PreemptStateGuard};
@@ -10,7 +10,7 @@ use deque::{Injector, Steal, Worker};
 use spin::Lazy;
 
 use super::task;
-use crate::cpu::time::Instant;
+use crate::cpu::time::{Instant, Timer, TimerCallback};
 
 const MINIMUM_TIME_GRANULARITY: Duration = Duration::from_millis(30);
 const WAKE_TIME_GRANULARITY: Duration = Duration::from_millis(1);
@@ -133,10 +133,37 @@ impl Scheduler {
             PREEMPT.raw(),
         );
         self.schedule_impl(cur_time, pree, None, |task| {
-            task::Ready::block(task, wo, block_desc);
+            let blocked = task::Ready::block(task, block_desc);
+            wo.wait_queue.push(blocked);
             drop(guard);
         })
         .is_some()
+    }
+
+    pub fn sleep_current(&self, duration: Duration) {
+        self.canary.assert();
+
+        let pree = PREEMPT.lock();
+        log::trace!(
+            "Sleeping task {:?}, P{}",
+            unsafe { &*self.current.get() }
+                .as_ref()
+                .unwrap()
+                .tid()
+                .raw(),
+            PREEMPT.raw(),
+        );
+
+        let timer = self.schedule_impl(Instant::now(), pree, None, |task| {
+            let blocked = box task::Ready::block(task, "task_sleep");
+            Timer::activate(
+                duration,
+                TimerCallback::new(sleep_callback, Box::into_raw(blocked).cast()),
+            )
+        });
+        if let Some(timer) = timer {
+            timer.cancel();
+        }
     }
 
     pub fn unblock(&self, task: task::Blocked) {
@@ -228,7 +255,8 @@ impl Scheduler {
 
                 log::trace!("Suspending task {:?}, P{}", cur.tid().raw(), PREEMPT.raw());
                 self.schedule_impl(cur_time, pree, None, |task| {
-                    task::Ready::block(task, &wo, "task_ctl_suspend");
+                    let blocked = task::Ready::block(task, "task_ctl_suspend");
+                    wo.wait_queue.push(blocked);
                 });
 
                 None
@@ -329,6 +357,11 @@ impl Scheduler {
 
 fn select_cpu(affinity: &crate::cpu::CpuMask) -> Option<usize> {
     affinity.iter_ones().next()
+}
+
+fn sleep_callback(_: Arc<Timer>, _: Instant, arg: *mut u8) {
+    let blocked = unsafe { Box::from_raw(arg.cast::<task::Blocked>()) };
+    SCHED.unblock(Box::into_inner(blocked));
 }
 
 /// # Safety

@@ -63,5 +63,6 @@ pub unsafe fn timer_handler() {
     // SAFE: Inside the timer interrupt handler.
     super::lapic(|lapic| lapic.eoi());
 
+    crate::cpu::time::timer_tick();
     crate::sched::SCHED.tick(Instant::now());
 }

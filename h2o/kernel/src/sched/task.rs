@@ -23,7 +23,7 @@ pub use self::{
     prio::Priority,
     tid::Tid,
 };
-use super::{wait::WaitObject, PREEMPT};
+use super::PREEMPT;
 use crate::{
     cpu::{self, arch::KernelGs, time::Instant, CpuMask},
     mem::space::{with, Space, SpaceError},
@@ -221,7 +221,7 @@ impl Ready {
         }
     }
 
-    pub(in crate::sched) fn block(this: Self, wo: &WaitObject, block_desc: &'static str) {
+    pub(in crate::sched) fn block(this: Self, block_desc: &'static str) -> Blocked {
         let Ready {
             tid,
             space,
@@ -231,7 +231,7 @@ impl Ready {
             runtime,
             ..
         } = this;
-        let blocked = Blocked {
+        Blocked {
             tid,
             space,
             kstack,
@@ -239,8 +239,7 @@ impl Ready {
             cpu,
             block_desc,
             runtime,
-        };
-        wo.wait_queue.push(blocked);
+        }
     }
 
     pub(in crate::sched) fn exit(this: Self, retval: usize) {

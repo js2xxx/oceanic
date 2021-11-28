@@ -19,8 +19,6 @@ where
 #[cfg(feature = "call")]
 #[cfg(debug_assertions)]
 pub fn test() {
-    use core::hint;
-
     extern "C" fn func(arg: u32) {
         if arg == 0 {
             for _ in 0..10000000 {}
@@ -47,12 +45,11 @@ pub fn test() {
 
         crate::call::task_ctl(task, TASK_CTL_SUSPEND, wo as *mut u8)
             .expect("Failed to suspend a task");
-        hint::spin_loop();
 
         let notify = || crate::call::wo_notify(wo, 0).expect("Failed to notify a wait object");
         let mut n = notify();
         while n == 0 {
-            crate::call::task_sleep(0);
+            crate::call::task_sleep(50).expect("Failed to sleep");
             n = notify();
         }
         assert_eq!(n, 1);
