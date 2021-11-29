@@ -5,10 +5,10 @@ use alloc::collections::BTreeMap;
 
 use archop::msr;
 use modular_bitfield::prelude::*;
-use paging::LAddr;
+use paging::{LAddr, PAddr};
+use raw_cpuid::CpuId;
 
 use super::intr::def::ApicVec;
-use crate::dev::acpi;
 
 pub static LAPIC_ID: spin::RwLock<BTreeMap<usize, u32>> = spin::RwLock::new(BTreeMap::new());
 #[thread_local]
@@ -165,19 +165,20 @@ impl Lapic {
         }
     }
 
-    pub fn new(ty: acpi::table::madt::LapicType) -> Self {
-        let mut ty = match ty {
-            acpi::table::madt::LapicType::X2 => {
-                // SAFE: Enabling Local X2 APIC if possible.
-                unsafe {
-                    let val = msr::read(msr::APIC_BASE);
-                    msr::write(msr::APIC_BASE, val | (1 << 10));
-                }
-                LapicType::X2
+    pub fn new() -> Self {
+        let mut ty = if {
+            let cpuid = CpuId::new();
+            cpuid.get_feature_info().unwrap().has_x2apic()
+        } {
+            // SAFE: Enabling Local X2 APIC if possible.
+            unsafe {
+                let val = msr::read(msr::APIC_BASE);
+                msr::write(msr::APIC_BASE, val | (1 << 10));
             }
-            acpi::table::madt::LapicType::X1(phys) => {
-                LapicType::X1(phys.to_laddr(minfo::ID_OFFSET))
-            }
+            LapicType::X2
+        } else {
+            let phys = PAddr::new(0xFEE00000);
+            LapicType::X1(phys.to_laddr(minfo::ID_OFFSET))
         };
 
         // Get the LAPIC ID.
@@ -328,8 +329,8 @@ pub unsafe fn error_handler() {
     lapic(|lapic| lapic.handle_error());
 }
 
-pub unsafe fn init(lapic_ty: acpi::table::madt::LapicType) {
-    let mut lapic = Lapic::new(lapic_ty);
+pub unsafe fn init() {
+    let mut lapic = Lapic::new();
     lapic.enable();
     lapic.activate_timer(timer::TimerMode::Periodic, 7, 512);
 

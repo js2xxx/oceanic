@@ -29,6 +29,7 @@ pub fn test() {
     let creator = |arg: u32| {
         crate::call::task_fn(
             core::ptr::null_mut(),
+            0,
             crate::task::DEFAULT_STACK_SIZE,
             func as *mut u8,
             arg as *mut u8,

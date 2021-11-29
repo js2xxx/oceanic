@@ -26,14 +26,16 @@ fn task_sleep(ms: u32) {
 }
 
 #[syscall]
-pub fn task_fn(name: *mut u8, stack_size: usize, func: *mut u8, arg: *mut u8) -> u32 {
-    extern "C" {
-        fn strlen(s: *const u8) -> usize;
-    }
-
+pub fn task_fn(
+    name: *mut u8,
+    name_len: usize,
+    stack_size: usize,
+    func: *mut u8,
+    arg: *mut u8,
+) -> u32 {
     let name = if !name.is_null() {
         unsafe {
-            let slice = core::slice::from_raw_parts(name, strlen(name));
+            let slice = core::slice::from_raw_parts(name, name_len);
             Some(
                 core::str::from_utf8(slice)
                     .map_err(|_| Error(EINVAL))?

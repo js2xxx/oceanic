@@ -1,3 +1,4 @@
+use acpi::platform::interrupt::{Apic, IoApic as AcpiIoapic, Polarity as AcpiPolarity, TriggerMode as AcpiTriggerMode};
 use alloc::{sync::Arc, vec::Vec};
 use core::ops::Range;
 
@@ -12,10 +13,6 @@ use crate::{
             intr::ArchReg,
         },
         intr::{edge_handler, fasteoi_handler, Interrupt, IntrChip, TypeHandler},
-    },
-    dev::acpi::table::madt::{
-        ioapic::{IntrOvrPolarity, IntrOvrTrig},
-        IoapicData, IoapicNode,
     },
 };
 
@@ -131,19 +128,19 @@ impl Ioapic {
     ///
     /// The caller must ensure that this function is called only once per I/O
     /// APIC ID.
-    pub unsafe fn new(node: IoapicNode) -> Result<Self, &'static str> {
-        let IoapicNode {
+    pub unsafe fn new(node: &AcpiIoapic) -> Result<Self, &'static str> {
+        let AcpiIoapic {
             id,
-            paddr,
-            gsi_base,
+            address: paddr,
+            global_system_interrupt_base: gsi_base,
         } = node;
 
-        let base_ptr = PAddr::new(paddr as usize)
+        let base_ptr = PAddr::new(*paddr as usize)
             .to_laddr(minfo::ID_OFFSET)
             .cast::<u32>();
         let mut ioapic = Ioapic {
             base_ptr,
-            id,
+            id: *id,
             version: 0,
             gsi: 0..0,
         };
@@ -152,7 +149,7 @@ impl Ioapic {
             (val & 0xFF, ((val >> 16) & 0xFF) + 1)
         };
         ioapic.version = version;
-        ioapic.gsi = gsi_base..(gsi_base + size);
+        ioapic.gsi = *gsi_base..(*gsi_base + size);
 
         Ok(ioapic)
     }
@@ -175,10 +172,11 @@ pub struct Ioapics {
 }
 
 impl Ioapics {
-    pub unsafe fn new(ioapic_data: IoapicData) -> Self {
-        let IoapicData {
-            ioapic: acpi_ioapics,
-            intr_ovr: acpi_intr_ovr,
+    pub unsafe fn new(ioapic_data: &Apic) -> Self {
+        let Apic {
+            io_apics: acpi_ioapics,
+            interrupt_source_overrides: acpi_intr_ovr,
+            ..
         } = ioapic_data;
 
         let mut ioapic_data = Vec::new();
@@ -190,8 +188,8 @@ impl Ioapics {
 
         let mut intr_ovr = Vec::new();
         for acpi_io in acpi_intr_ovr {
-            let gsi = acpi_io.gsi;
-            let hw_irq = acpi_io.hw_irq;
+            let gsi = acpi_io.global_system_interrupt;
+            let hw_irq = acpi_io.isa_source;
 
             let isa = LEGACY_IRQ.contains(&gsi);
             if isa && gsi != hw_irq.into() {
@@ -199,26 +197,26 @@ impl Ioapics {
             }
 
             let polarity = match acpi_io.polarity {
-                IntrOvrPolarity::None => {
+                AcpiPolarity::SameAsBus => {
                     if isa {
                         Polarity::High
                     } else {
                         Polarity::Low
                     }
                 }
-                IntrOvrPolarity::High => Polarity::High,
-                IntrOvrPolarity::Low => Polarity::Low,
+                AcpiPolarity::ActiveHigh => Polarity::High,
+                AcpiPolarity::ActiveLow => Polarity::Low,
             };
             let trigger_mode = match acpi_io.trigger_mode {
-                IntrOvrTrig::None => {
+                AcpiTriggerMode::SameAsBus => {
                     if isa {
                         TriggerMode::Edge
                     } else {
                         TriggerMode::Level
                     }
                 }
-                IntrOvrTrig::Edge => TriggerMode::Edge,
-                IntrOvrTrig::Level => TriggerMode::Level,
+                AcpiTriggerMode::Edge => TriggerMode::Edge,
+                AcpiTriggerMode::Level => TriggerMode::Level,
             };
 
             intr_ovr.push(IntrOvr {
@@ -357,7 +355,7 @@ impl IntrChip for Ioapics {
     }
 }
 
-pub unsafe fn init(ioapic_data: IoapicData) {
+pub unsafe fn init(ioapic_data: &Apic) {
     let ioapics = Ioapics::new(ioapic_data);
     IOAPIC_CHIP = Some(Arc::new(Mutex::new(ioapics)));
 }

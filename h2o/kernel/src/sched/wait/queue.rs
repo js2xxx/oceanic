@@ -1,5 +1,3 @@
-use alloc::{boxed::Box, sync::Arc, vec::Vec};
-
 use crossbeam_queue::SegQueue;
 
 use super::WaitObject;

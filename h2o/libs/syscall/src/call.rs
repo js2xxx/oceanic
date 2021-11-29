@@ -15,6 +15,7 @@ syscall_stub!(2 => pub(crate) fn task_exit(retval: usize));
 syscall_stub!(3 =>
     pub(crate) fn task_fn(
         name: *mut u8,
+        name_len: usize,
         stack_size: usize,
         func: *mut u8,
         arg: *mut u8

@@ -12,8 +12,6 @@ use core::{
 
 use paging::LAddr;
 
-use crate::dev::acpi;
-
 pub const MAX_CPU: usize = 256;
 pub static CPU_INDEX: AtomicUsize = AtomicUsize::new(0);
 static CPU_COUNT: AtomicUsize = AtomicUsize::new(0);
@@ -130,18 +128,16 @@ impl KernelGs {
 ///
 /// The caller must ensure that this function should only be called once from
 /// bootstrap CPU.
-pub unsafe fn init(lapic_data: acpi::table::madt::LapicData) {
+pub unsafe fn init() {
     archop::fpu::init();
+
+    let platform_info = unsafe { crate::dev::acpi::platform_info() };
 
     let kernel_fs = seg::init();
 
     unsafe { tsc::init() };
 
-    let acpi::table::madt::LapicData {
-        ty: lapic_ty,
-        lapics,
-    } = lapic_data;
-    apic::init(lapic_ty);
+    apic::init();
 
     let syscall_stack = syscall::init().expect("Memory allocation failed");
 
@@ -149,8 +145,14 @@ pub unsafe fn init(lapic_data: acpi::table::madt::LapicData) {
     // SAFE: During bootstrap initialization.
     unsafe { KernelGs::load(kernel_gs) };
 
-    let cnt = apic::ipi::start_cpus(lapics);
-    CPU_COUNT.store(cnt, Ordering::SeqCst);
+    let cnt = {
+        let lapic_data = platform_info
+            .processor_info
+            .as_ref()
+            .expect("Failed to get LAPIC data");
+        apic::ipi::start_cpus(&lapic_data.application_processors)
+    };
+    CPU_COUNT.store(cnt + 1, Ordering::SeqCst);
 }
 
 /// Initialize x86_64 architecture.
@@ -159,10 +161,10 @@ pub unsafe fn init(lapic_data: acpi::table::madt::LapicData) {
 ///
 /// The caller must ensure that this function should only be called once from
 /// each application CPU.
-pub unsafe fn init_ap(lapic_data: acpi::table::madt::LapicData) {
+pub unsafe fn init_ap() {
     let kernel_fs = seg::init_ap();
 
-    apic::init(lapic_data.ty);
+    apic::init();
 
     let syscall_stack = syscall::init().expect("Memory allocation failed");
 

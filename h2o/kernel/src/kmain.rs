@@ -59,17 +59,13 @@ pub extern "C" fn kmain() {
 
     l::debug!("Initializing ACPI tables");
     unsafe { dev::acpi::init_tables(*KARGS.rsdp) };
-    let lapic_data =
-        unsafe { dev::acpi::table::get_lapic_data() }.expect("Failed to get LAPIC data");
-    let ioapic_data =
-        unsafe { dev::acpi::table::get_ioapic_data() }.expect("Failed to get IOAPIC data");
 
     l::debug!("Set up CPU architecture");
-    unsafe { cpu::arch::init(lapic_data) };
+    unsafe { cpu::arch::init() };
     unsafe { mem::space::init() };
 
     l::debug!("Set up Interrupt system");
-    unsafe { dev::init_intr_chip(ioapic_data) };
+    unsafe { dev::init_intr_chip() };
 
     l::debug!("Set up tasks");
     sched::init();
@@ -93,9 +89,7 @@ pub extern "C" fn kmain_ap() {
     unsafe { mem::space::init() };
 
     l::debug!("Set up CPU architecture");
-    let lapic_data =
-        unsafe { dev::acpi::table::get_lapic_data() }.expect("Failed to get LAPIC data");
-    unsafe { cpu::arch::init_ap(lapic_data) };
+    unsafe { cpu::arch::init_ap() };
 
     l::debug!("Set up tasks");
     sched::init();

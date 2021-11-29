@@ -1,4 +1,3 @@
-use alloc::vec::Vec;
 use core::{
     cell::UnsafeCell,
     ptr::null_mut,
@@ -19,7 +18,6 @@ use crate::{
         },
         time::{delay, Instant},
     },
-    dev::acpi::table::madt::LapicNode,
     mem::space::init_pgc,
 };
 
@@ -136,7 +134,7 @@ impl TramHeader {
 /// # Safety
 ///
 /// This function must be called after Local APIC initialization.
-pub unsafe fn start_cpus(lapics: Vec<LapicNode>) -> usize {
+pub unsafe fn start_cpus(aps: &[acpi::platform::Processor]) -> usize {
     static TRAM_DATA: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/tram"));
 
     let base_phys = PAddr::new(minfo::TRAMPOLINE_RANGE.start);
@@ -155,10 +153,12 @@ pub unsafe fn start_cpus(lapics: Vec<LapicNode>) -> usize {
         &*header
     };
 
-    let mut cnt = lapics.len();
+    let mut cnt = aps.len();
 
-    let self_id = lapic(|lapic| lapic.id);
-    for LapicNode { id, .. } in lapics.iter().filter(|node| node.id != self_id) {
+    for acpi::platform::Processor {
+        local_apic_id: id, ..
+    } in aps
+    {
         header.reset_subheader();
 
         lapic(|lapic| {
