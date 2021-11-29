@@ -8,10 +8,10 @@ use canary::Canary;
 use spin::Lazy;
 
 use super::Instant;
-use crate::sched::deque::{Injector, Steal};
+use crate::sched::deque::Worker;
 
 #[thread_local]
-static TIMER_QUEUE: Lazy<Injector<Arc<Timer>>> = Lazy::new(|| Injector::new());
+static TIMER_QUEUE: Lazy<Worker<Arc<Timer>>> = Lazy::new(|| Worker::new_fifo());
 
 pub struct Callback {
     func: fn(Arc<Timer>, Instant, *mut u8),
@@ -55,10 +55,8 @@ impl Timer {
 pub unsafe fn tick() {
     let mut cnt = TIMER_QUEUE.len();
     while cnt > 0 {
-        match TIMER_QUEUE.steal() {
-            Steal::Empty => break,
-            Steal::Retry => continue,
-            Steal::Success(timer) => {
+        match TIMER_QUEUE.pop() {
+            Some(timer) => {
                 let cur_time = Instant::now();
                 timer.canary.assert();
                 if !timer.cancel.load(Acquire) {
@@ -69,6 +67,7 @@ pub unsafe fn tick() {
                     }
                 }
             }
+            None => break,
         }
         cnt -= 1;
     }

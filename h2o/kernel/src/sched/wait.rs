@@ -1,4 +1,5 @@
 pub mod cell;
+pub mod queue;
 
 pub use cell::WaitCell;
 
