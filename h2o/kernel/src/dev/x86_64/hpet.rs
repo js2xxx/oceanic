@@ -1,82 +1,193 @@
-//! TODO: Add HPET device support.
-#![allow(dead_code)]
+use alloc::sync::Arc;
+use core::{mem, ptr::NonNull};
 
-use crate::dev::acpi::table::hpet::HpetData;
+// use core::ptr::addr_of_mut;
+use canary::Canary;
+use paging::{PAddr, PAGE_LAYOUT};
+use spin::{Lazy, RwLock};
 
-#[repr(usize)]
-enum HpetReg {
-    Id = 0x000,
-    Period = 0x004,
-    Config = 0x010,
-    Status = 0x020,
-    Counter = 0x0f0,
-    T0Config = 0x100,
-    T0Cmp = 0x108,
-    T0Route = 0x110,
-    T1Config = 0x120,
-    T1Cmp = 0x128,
-    T1Route = 0x130,
-    T2Config = 0x140,
-    T2Cmp = 0x148,
-    T2Route = 0x150,
+use crate::{
+    cpu::time::{
+        chip::{factor_from_freq, ClockChip},
+        Instant,
+    },
+    mem::space::{self, AllocType, Flags, Phys},
+};
+
+#[repr(C, packed)]
+struct HpetTimerReg {
+    caps: u64,
+    comparator: u64,
+    route: u64,
+    _rsvd: u64,
 }
 
-impl HpetReg {
-    fn tn_config(n: usize) -> HpetReg {
-        match n {
-            0 => Self::T0Config,
-            1 => Self::T1Config,
-            2 => Self::T2Config,
-            _ => panic!("HPET only have 3 sets"),
-        }
-    }
-    fn tn_cmp(n: usize) -> HpetReg {
-        match n {
-            0 => Self::T0Cmp,
-            1 => Self::T1Cmp,
-            2 => Self::T2Cmp,
-            _ => panic!("HPET only have 3 sets"),
-        }
-    }
-    fn tn_route(n: usize) -> HpetReg {
-        match n {
-            0 => Self::T0Route,
-            1 => Self::T1Route,
-            2 => Self::T2Route,
-            _ => panic!("HPET only have 3 sets"),
-        }
-    }
+#[repr(C, packed)]
+struct HpetReg {
+    caps: u64,
+    _rsvd1: u64,
+    config: u64,
+    _rsvd2: u64,
+    status: u64,
+    _rsvd3: [u8; 0xf0 - 0x28],
+    counter: u64,
+    _rsvd4: u64,
+    timers: [HpetTimerReg; 3],
 }
+const HPET_REG_CFG_ENABLE: u64 = 1;
+
+static HPET: Lazy<Option<Arc<RwLock<Hpet>>>> = Lazy::new(|| {
+    acpi::HpetInfo::new(unsafe { crate::dev::acpi::tables() })
+        .ok()
+        .and_then(|info| unsafe { Hpet::new(info) }.ok())
+        .map(|hpet| Arc::new(RwLock::new(hpet)))
+});
 
 pub struct Hpet {
-    base_ptr: *mut u32,
+    base_ptr: *mut HpetReg,
 
     block_id: u8,
     period_fs: u64,
+    num_comparators: usize,
 }
 
+unsafe impl Send for Hpet {}
+unsafe impl Sync for Hpet {}
+
 impl Hpet {
-    unsafe fn read_reg(base_ptr: *const u32, reg: HpetReg) -> u32 {
-        base_ptr.add(reg as usize).read_volatile()
-    }
+    pub unsafe fn new(data: acpi::HpetInfo) -> Result<Self, &'static str> {
+        struct Guard(NonNull<u8>);
+        impl Drop for Guard {
+            fn drop(&mut self) {
+                let _ = unsafe { space::current().deallocate(self.0) };
+            }
+        }
 
-    unsafe fn write_reg(base_ptr: *mut u32, reg: HpetReg, val: u32) {
-        base_ptr.add(reg as usize).write_volatile(val)
-    }
+        let phys_base = PAddr::new(data.base_address);
+        let phys = Phys::new(
+            phys_base,
+            PAGE_LAYOUT,
+            Flags::READABLE | Flags::WRITABLE | Flags::UNCACHED,
+        );
+        let memory = unsafe {
+            space::current()
+                .allocate(
+                    AllocType::Layout(phys.layout()),
+                    Some(phys.clone()),
+                    phys.flags(),
+                )
+                .expect("Failed to allocate memory")
+        };
+        let guard = Guard(memory.cast());
+        let base_ptr = memory.cast::<HpetReg>().as_ptr();
 
-    pub unsafe fn new(data: HpetData) -> Result<Self, &'static str> {
-        let HpetData {
-            base: phys,
-            block_id,
-        } = data;
+        let num_comparators = data.num_comparators() as usize;
+        if num_comparators < 2 {
+            (*base_ptr).config &= !2;
+            return Err("Our HPET only supports 2 or more comparators");
+        }
+        if ((*base_ptr).caps & (1 << 13)) == 0 {
+            (*base_ptr).config &= !2;
+            return Err("Our HPET only supports 64-bit counter");
+        }
 
-        let base_ptr = phys.to_laddr(minfo::ID_OFFSET).cast::<u32>();
-        let period_fs = Self::read_reg(base_ptr, HpetReg::Period).into();
+        let period_fs = (*base_ptr).caps >> 32;
 
+        mem::forget(guard);
         Ok(Hpet {
             base_ptr,
-            block_id,
+            block_id: data.hpet_number,
             period_fs,
+            num_comparators,
+        })
+    }
+
+    pub fn set_counter(&mut self, value: u64) -> bool {
+        unsafe {
+            if (*self.base_ptr).config & HPET_REG_CFG_ENABLE == 0 {
+                (*self.base_ptr).counter = value;
+                true
+            } else {
+                false
+            }
+        }
+    }
+
+    pub fn enable(&mut self, enabled: bool) {
+        unsafe {
+            if enabled {
+                (*self.base_ptr).config |= HPET_REG_CFG_ENABLE;
+            } else {
+                (*self.base_ptr).config &= !HPET_REG_CFG_ENABLE;
+            }
+        }
+    }
+
+    pub fn counter(&self) -> u64 {
+        let a = unsafe { (*self.base_ptr).counter };
+        let b = unsafe { (*self.base_ptr).counter };
+        a.min(b)
+    }
+}
+
+pub fn calibrate_tsc() -> Option<u64> {
+    let mut hpet = match *HPET {
+        Some(ref hpet) => hpet.write(),
+        None => return None,
+    };
+
+    let time_ms = 50;
+    let hpet_ticks = time_ms * 1_000_000_000_000 / hpet.period_fs;
+
+    hpet.set_counter(0);
+    hpet.enable(true);
+    let start = archop::msr::rdtsc();
+    let mut t = start;
+    while hpet.counter() < hpet_ticks {
+        t = archop::msr::rdtsc();
+    }
+    hpet.enable(false);
+    let end = t;
+    Some((end - start) / time_ms)
+}
+
+pub struct HpetClock {
+    canary: Canary<HpetClock>,
+    hpet: Arc<RwLock<Hpet>>,
+    mul: u128,
+    sft: u128,
+}
+
+impl ClockChip for HpetClock {
+    fn get(&self) -> Instant {
+        self.canary.assert();
+        let val = self.hpet.read().counter();
+        unsafe { Instant::from_raw((val as u128 * self.mul) >> self.sft) }
+    }
+}
+
+impl HpetClock {
+    pub fn new() -> Option<HpetClock> {
+        let hpet = match *HPET {
+            Some(ref hpet) => hpet.clone(),
+            None => return None,
+        };
+
+        let khz = 1_000_000_000_000 / hpet.read().period_fs;
+        let (mul, sft) = factor_from_freq(khz);
+        log::info!("HPET frequency: {} KHz", khz);
+
+        {
+            let mut hpet = hpet.write();
+            hpet.set_counter(0);
+            hpet.enable(true);
+        }
+
+        Some(HpetClock {
+            canary: Canary::new(),
+            hpet,
+            mul,
+            sft,
         })
     }
 }

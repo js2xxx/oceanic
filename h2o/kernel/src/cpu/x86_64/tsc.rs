@@ -1,69 +1,42 @@
-use archop::{
-    io::{Io, Port},
-    msr::rdtsc,
+use archop::msr::rdtsc;
+use raw_cpuid::CpuId;
+
+use crate::cpu::time::{
+    chip::{factor_from_freq, ClockChip},
+    Instant,
 };
-use static_assertions::const_assert;
 
-static mut TSC_FREQ_KHZ: u64 = 2600000;
-static mut TSC_INITIAL: u64 = 0;
-static mut NS_CLOCK_FACTORS: (u128, u128) = (0, 0);
-
-/// Get the per-CPU clock in nanoseconds.
-///
-/// # Safety
-///
-/// This function must be called only after [`tsc_init`].
-pub(in crate::cpu) unsafe fn ns_clock() -> u128 {
-    let val = rdtsc() - TSC_INITIAL;
-    let (mul, sft) = NS_CLOCK_FACTORS;
-    (val as u128 * mul) >> sft
+pub struct TscClock {
+    initial: u64,
+    mul: u128,
+    sft: u128,
 }
 
-/// Calibrate the CPU's frequency (KHz) by activating the PIT timer.
-unsafe fn pit_calibrate_tsc() -> u64 {
-    const PIT_RATE: u64 = 1193182;
-    const CALIB_TIME_MS: u64 = 50;
-    const CALIB_LATCH: u64 = PIT_RATE / (1000 / CALIB_TIME_MS);
-    const_assert!(CALIB_LATCH <= core::u16::MAX as u64);
-
-    let mut speaker = Port::<u8>::new(0x61);
-    // Set the Gate high and disable speaker
-    speaker.write((speaker.read() & !0x02) | 0x01);
-
-    let mut pit = Port::<u8>::new(0x40);
-    // Channel 2, mode 0 (one-shot), binary count
-    pit.write_offset(3, 0xb0);
-
-    pit.write_offset(2, (CALIB_LATCH & 0xff) as u8);
-    pit.write_offset(2, (CALIB_LATCH >> 8) as u8);
-
-    let mut t = 0;
-    let start = rdtsc();
-    while (speaker.read() & 0x20) == 0 {
-        t = rdtsc();
+impl ClockChip for TscClock {
+    fn get(&self) -> Instant {
+        let val = rdtsc() - self.initial;
+        let ns = (val as u128 * self.mul) >> self.sft;
+        unsafe { Instant::from_raw(ns) }
     }
-    let end = t;
-
-    (end - start) / CALIB_TIME_MS
 }
 
-/// # Safety
-///
-/// This function must be called only once from the bootstrap CPU.
-pub unsafe fn init() {
-    TSC_FREQ_KHZ = pit_calibrate_tsc();
-    TSC_INITIAL = rdtsc();
-    NS_CLOCK_FACTORS = {
-        let mut sft = 32;
-        let mut mul = 0;
-        while sft > 0 {
-            mul = ((1000000 << sft) + (TSC_FREQ_KHZ >> 1)) / TSC_FREQ_KHZ;
-            if (mul >> 32) == 0 {
-                break;
-            }
-            sft -= 1;
-        }
-        (mul as u128, sft as u128)
-    };
-    log::info!("CPU Timestamp frequency: {} KHz", TSC_FREQ_KHZ);
+impl TscClock {
+    pub fn new() -> Option<TscClock> {
+        let cpuid = CpuId::new();
+        cpuid
+            .get_advanced_power_mgmt_info()?
+            .has_invariant_tsc()
+            .then(|| {
+                let khz = crate::dev::hpet::calibrate_tsc()
+                    .unwrap_or(unsafe { crate::dev::pit::calibrate_tsc() });
+                let initial = rdtsc();
+                let (mul, sft) = factor_from_freq(khz);
+                log::info!("CPU Timestamp frequency: {} KHz", khz);
+                TscClock {
+                    initial,
+                    mul: mul as u128,
+                    sft: sft as u128,
+                }
+            })
+    }
 }

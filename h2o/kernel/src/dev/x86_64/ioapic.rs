@@ -1,30 +1,48 @@
-use acpi::platform::interrupt::{Apic, IoApic as AcpiIoapic, Polarity as AcpiPolarity, TriggerMode as AcpiTriggerMode};
 use alloc::{sync::Arc, vec::Vec};
 use core::ops::Range;
 
+use acpi::platform::interrupt::{
+    Apic, IoApic as AcpiIoapic, Polarity as AcpiPolarity, TriggerMode as AcpiTriggerMode,
+};
 use modular_bitfield::prelude::*;
 use paging::PAddr;
-use spin::Mutex;
+use spin::{Lazy, Mutex};
 
-use crate::{
-    cpu::{
-        arch::{
-            apic::{lapic, DelivMode, Polarity, TriggerMode, LAPIC_ID},
-            intr::ArchReg,
-        },
-        intr::{edge_handler, fasteoi_handler, Interrupt, IntrChip, TypeHandler},
+use crate::cpu::{
+    arch::{
+        apic::{lapic, DelivMode, Polarity, TriggerMode, LAPIC_ID},
+        intr::ArchReg,
     },
+    intr::{edge_handler, fasteoi_handler, Interrupt, IntrChip, TypeHandler},
 };
 
 const LEGACY_IRQ: Range<u32> = 0..16;
 
-static mut IOAPIC_CHIP: Option<Arc<Mutex<dyn IntrChip>>> = None;
+static IOAPIC_CHIP: Lazy<(Arc<Mutex<dyn IntrChip>>, Vec<IntrOvr>)> = Lazy::new(|| unsafe {
+    let ioapic_data = match crate::dev::acpi::platform_info().interrupt_model {
+        acpi::InterruptModel::Apic(ref apic) => apic,
+        _ => panic!("Failed to get IOAPIC data"),
+    };
+    let (ioapics, intr_ovr) = Ioapics::new(ioapic_data);
+    (Arc::new(Mutex::new(ioapics)), intr_ovr)
+});
 
-/// # Safety
-///
-/// This function must be called only after I/O APIC is initialized.
-pub unsafe fn chip() -> Arc<Mutex<dyn IntrChip>> {
-    IOAPIC_CHIP.clone().expect("I/O APIC uninitialized")
+pub fn chip() -> Arc<Mutex<dyn IntrChip>> {
+    IOAPIC_CHIP.0.clone()
+}
+
+fn intr_ovr() -> &'static [IntrOvr] {
+    &IOAPIC_CHIP.1
+}
+
+pub fn gsi_from_isa(irq: crate::cpu::intr::IsaIrq) -> u32 {
+    let raw = irq as u8;
+    for intr_ovr in intr_ovr() {
+        if intr_ovr.hw_irq == raw {
+            return intr_ovr.gsi;
+        }
+    }
+    u32::from(raw)
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -101,6 +119,9 @@ pub struct Ioapic {
     gsi: Range<u32>,
 }
 
+unsafe impl Send for Ioapic {}
+unsafe impl Sync for Ioapic {}
+
 impl Ioapic {
     unsafe fn read_reg(&mut self, reg: u32) -> u32 {
         write_regsel(self.base_ptr, reg);
@@ -168,11 +189,10 @@ struct IntrOvr {
 
 pub struct Ioapics {
     ioapic_data: Vec<Ioapic>,
-    intr_ovr: Vec<IntrOvr>,
 }
 
 impl Ioapics {
-    pub unsafe fn new(ioapic_data: &Apic) -> Self {
+    unsafe fn new(ioapic_data: &Apic) -> (Self, Vec<IntrOvr>) {
         let Apic {
             io_apics: acpi_ioapics,
             interrupt_source_overrides: acpi_intr_ovr,
@@ -227,10 +247,7 @@ impl Ioapics {
             });
         }
 
-        Ioapics {
-            ioapic_data,
-            intr_ovr,
-        }
+        (Ioapics { ioapic_data }, intr_ovr)
     }
 
     pub fn chip_pin(&self, gsi: u32) -> Option<(&Ioapic, u8)> {
@@ -265,7 +282,7 @@ impl IntrChip for Ioapics {
             )
         };
         let (trigger_mode, polarity) =
-            if let Some(intr_ovr) = self.intr_ovr.iter().find(|i| i.gsi == gsi) {
+            if let Some(intr_ovr) = intr_ovr().iter().find(|i| i.gsi == gsi) {
                 (intr_ovr.trigger_mode, intr_ovr.polarity)
             } else if LEGACY_IRQ.contains(&gsi) {
                 (TriggerMode::Edge, Polarity::High)
@@ -282,6 +299,7 @@ impl IntrChip for Ioapics {
             .with_deliv_mode(DelivMode::Fixed)
             .with_trigger_mode(trigger_mode)
             .with_polarity(polarity)
+            .with_mask(true)
             .with_dest((apic_id & 0xFF) as u8)
             .with_dest_hi(((apic_id >> 8) & 0xFF) as u8);
 
@@ -353,9 +371,4 @@ impl IntrChip for Ioapics {
             chip.write_ioredtbl(pin, entry.into());
         }
     }
-}
-
-pub unsafe fn init(ioapic_data: &Apic) {
-    let ioapics = Ioapics::new(ioapic_data);
-    IOAPIC_CHIP = Some(Arc::new(Mutex::new(ioapics)));
 }

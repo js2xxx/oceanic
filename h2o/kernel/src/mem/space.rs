@@ -65,7 +65,8 @@ bitflags::bitflags! {
         const READABLE    = 1 << 1;
         const WRITABLE    = 1 << 2;
         const EXECUTABLE  = 1 << 3;
-        const ZEROED      = 1 << 4;
+        const UNCACHED    = 1 << 4;
+        const ZEROED      = 1 << 10;
     }
 }
 

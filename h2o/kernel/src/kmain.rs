@@ -53,29 +53,19 @@ pub extern "C" fn kmain() {
 
     mem::init();
 
-    l::debug!("Creating the kernel space");
     unsafe { mem::space::init_bsp_early() };
+    unsafe { cpu::arch::init_bsp_early() };
     sched::task::tid::init();
 
     l::debug!("Initializing ACPI tables");
     unsafe { dev::acpi::init_tables(*KARGS.rsdp) };
 
-    l::debug!("Set up CPU architecture");
-    unsafe { cpu::arch::init() };
     unsafe { mem::space::init() };
+    unsafe { cpu::arch::init() };
 
-    l::debug!("Set up Interrupt system");
     unsafe { dev::init_intr_chip() };
 
-    l::debug!("Set up tasks");
     sched::init();
-
-    // Tests
-    // let hpet_data =
-    //       unsafe { dev::acpi::table::hpet::get_hpet_data().expect("Failed to get
-    // HPET data") }; let hpet = unsafe { dev::hpet::Hpet::new(hpet_data)
-    // }.expect("Failed to initialize HPET"); let _ = core::mem::ManuallyDrop::
-    // new(hpet);
 
     // Test end
     l::debug!("Reaching end of kernel");
@@ -88,10 +78,8 @@ pub extern "C" fn kmain_ap() {
     l::debug!("Starting initialization");
     unsafe { mem::space::init() };
 
-    l::debug!("Set up CPU architecture");
     unsafe { cpu::arch::init_ap() };
 
-    l::debug!("Set up tasks");
     sched::init();
 
     l::debug!("Finished");

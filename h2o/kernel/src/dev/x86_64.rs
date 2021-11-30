@@ -1,6 +1,7 @@
 pub mod hpet;
 pub mod ioapic;
 pub mod lpic;
+pub mod pit;
 
 /// Initialize interrupt chips.
 ///
@@ -15,5 +16,5 @@ pub unsafe fn init_intr_chip() {
     if ioapic_data.also_has_legacy_pics {
         lpic::init(true);
     }
-    ioapic::init(ioapic_data);
+    let _ = ioapic::chip();
 }

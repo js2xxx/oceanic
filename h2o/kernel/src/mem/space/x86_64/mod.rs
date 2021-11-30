@@ -99,10 +99,12 @@ impl Space {
     ) -> Result<(), paging::Error> {
         self.canary.assert();
 
+        let uncached = flags.contains(Flags::UNCACHED);
         let attr = paging::Attr::builder()
             .writable(flags.contains(Flags::WRITABLE))
             .user_access(flags.contains(Flags::USER_ACCESS))
             .executable(flags.contains(Flags::EXECUTABLE))
+            .cache(uncached, uncached)
             .build();
 
         let map_info = paging::MapInfo {
@@ -122,10 +124,12 @@ impl Space {
     ) -> Result<(), paging::Error> {
         self.canary.assert();
 
+        let uncached = flags.contains(Flags::UNCACHED);
         let attr = paging::Attr::builder()
             .writable(flags.contains(Flags::WRITABLE))
             .user_access(flags.contains(Flags::USER_ACCESS))
             .executable(flags.contains(Flags::EXECUTABLE))
+            .cache(uncached, uncached)
             .build();
 
         let reprotect_info = paging::ReprotectInfo {

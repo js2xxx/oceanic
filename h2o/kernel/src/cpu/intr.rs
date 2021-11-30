@@ -2,12 +2,30 @@ pub mod alloc;
 
 use core::sync::atomic::{AtomicU16, Ordering};
 
-use ::alloc::sync::Arc;
+use ::alloc::{sync::Arc, vec::Vec};
 use bitop_ex::BitOpEx;
-use spin::Mutex;
+use spin::{Lazy, Mutex};
 
 use self::arch::ArchReg;
 pub use super::arch::intr as arch;
+
+pub static ALLOC: Lazy<Mutex<alloc::Allocator>> =
+    Lazy::new(|| Mutex::new(alloc::Allocator::new(crate::cpu::count())));
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[repr(u8)]
+pub enum IsaIrq {
+    Pit = 0,
+    Ps2Keyboard = 1,
+    Pic2 = 2,
+    Serial2 = 3,
+    Serial1 = 4,
+    Printer1 = 7,
+    Rtc = 8,
+    Ps2Mouse = 12,
+    Ide0 = 14,
+    Ide1 = 15,
+}
 
 bitflags::bitflags! {
     pub struct IrqReturn: u8 {
@@ -20,7 +38,18 @@ bitflags::bitflags! {
 
 pub type TypeHandler = unsafe fn(Arc<Interrupt>);
 
-pub trait IntrChip {
+pub struct Handler {
+    func: fn(*mut u8) -> IrqReturn,
+    arg: *mut u8,
+}
+
+impl Handler {
+    pub fn new(func: fn(*mut u8) -> IrqReturn, arg: *mut u8) -> Self {
+        Handler { func, arg }
+    }
+}
+
+pub trait IntrChip: Send + Sync {
     /// Set up a interrupt in the chip.
     ///
     /// # Safety
@@ -95,9 +124,13 @@ pub struct Interrupt {
     hw_irq: u8,
     chip: Arc<Mutex<dyn IntrChip>>,
     arch_reg: Mutex<arch::ArchReg>,
-    handler: TypeHandler,
+    type_handler: TypeHandler,
     affinity: super::CpuMask,
+    handlers: Mutex<Vec<Handler>>,
 }
+
+unsafe impl Send for Interrupt {}
+unsafe impl Sync for Interrupt {}
 
 impl Interrupt {
     pub fn gsi(&self) -> u32 {
@@ -108,43 +141,49 @@ impl Interrupt {
         self.hw_irq
     }
 
+    pub fn chip(&self) -> Arc<Mutex<dyn IntrChip>> {
+        self.chip.clone()
+    }
+
     pub fn arch_reg(&self) -> &Mutex<arch::ArchReg> {
         &self.arch_reg
     }
 
     pub(super) unsafe fn handle(self: &Arc<Interrupt>) {
-        (self.handler)(self.clone())
+        (self.type_handler)(self.clone())
     }
 
     pub fn affinity(&self) -> &super::CpuMask {
         &self.affinity
     }
+
+    pub fn handlers(&self) -> &Mutex<Vec<Handler>> {
+        &self.handlers
+    }
 }
 
 fn handle_event(intr: Arc<Interrupt>) -> IrqReturn {
-    todo!()
-    // let state = self.state.load(Ordering::SeqCst);
-    // if state.contains_bit(State::ENABLED) {
-    //       let mut ret = IrqReturn::empty();
-    //       // for hdl in self.handler.iter() {
-    //       //       let r = (hdl)(self.clone());
-    //       //       // TODO: wake up tasks if specified.
-    //       //       ret |= r;
-    //       // }
-    //       if self
-    //             .state
-    //             .load(Ordering::SeqCst)
-    //             .contains_bit(State::ONESHOT)
-    //       {
-    //             ret
-    //       } else {
-    //             ret | IrqReturn::UNMASK
-    //       }
-    // } else {
-    //       self.state
-    //             .store(state | State::PENDING, Ordering::SeqCst);
-    //       IrqReturn::DISABLED
-    // }
+    let state = intr.state.load(Ordering::SeqCst);
+    if state.contains_bit(State::ENABLED) {
+        let mut ret = IrqReturn::empty();
+        for Handler { func, arg } in intr.handlers.lock().iter() {
+            let r = (func)(*arg);
+            // TODO: wake up tasks if specified.
+            ret |= r;
+        }
+        if intr
+            .state
+            .load(Ordering::SeqCst)
+            .contains_bit(State::ONESHOT)
+        {
+            ret
+        } else {
+            ret | IrqReturn::UNMASK
+        }
+    } else {
+        intr.state.store(state | State::PENDING, Ordering::SeqCst);
+        IrqReturn::DISABLED
+    }
 }
 
 /// Handle a EDGE-triggered interrupt from the current interrupt handler.

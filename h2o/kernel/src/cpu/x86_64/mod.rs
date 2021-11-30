@@ -122,6 +122,24 @@ impl KernelGs {
     }
 }
 
+/// Initialize x86_64 architecture early (for kernel_fs).
+///
+/// # Safety
+///
+/// The caller must ensure that this function should only be called once from
+/// bootstrap CPU.
+pub unsafe fn init_bsp_early() {
+    archop::fpu::init();
+
+    let kernel_fs = seg::init();
+
+    let syscall_stack = syscall::init().expect("Memory allocation failed");
+
+    let kernel_gs = KernelGs::new(syscall_stack, kernel_fs);
+    // SAFE: During bootstrap initialization.
+    unsafe { KernelGs::load(kernel_gs) };
+}
+
 /// Initialize x86_64 architecture.
 ///
 /// # Safety
@@ -129,21 +147,8 @@ impl KernelGs {
 /// The caller must ensure that this function should only be called once from
 /// bootstrap CPU.
 pub unsafe fn init() {
-    archop::fpu::init();
-
     let platform_info = unsafe { crate::dev::acpi::platform_info() };
-
-    let kernel_fs = seg::init();
-
-    unsafe { tsc::init() };
-
     apic::init();
-
-    let syscall_stack = syscall::init().expect("Memory allocation failed");
-
-    let kernel_gs = KernelGs::new(syscall_stack, kernel_fs);
-    // SAFE: During bootstrap initialization.
-    unsafe { KernelGs::load(kernel_gs) };
 
     let cnt = {
         let lapic_data = platform_info

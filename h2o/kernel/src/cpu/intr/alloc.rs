@@ -1,4 +1,4 @@
-use alloc::sync::Arc;
+use alloc::{sync::Arc, vec::Vec};
 use core::sync::atomic::AtomicU16;
 
 use spin::Mutex;
@@ -48,8 +48,9 @@ impl Allocator {
             hw_irq,
             chip,
             arch_reg: Mutex::new(arch_reg),
-            handler,
+            type_handler: handler,
             affinity,
+            handlers: Mutex::new(Vec::new()),
         });
 
         while match unsafe { try_register(&intr) } {

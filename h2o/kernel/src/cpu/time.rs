@@ -1,3 +1,4 @@
+pub mod chip;
 pub mod timer;
 
 use core::{
@@ -12,9 +13,7 @@ pub struct Instant(solvent::time::Instant);
 
 impl Instant {
     pub fn now() -> Self {
-        let mut data = 0;
-        let _ = syscall::get_time(&mut data);
-        Instant(unsafe { solvent::time::Instant::from_raw(data) })
+        chip::CLOCK_CHIP.get()
     }
 
     pub fn elapsed(&self) -> Duration {
@@ -23,6 +22,10 @@ impl Instant {
 
     pub unsafe fn raw(&self) -> u128 {
         self.0.raw()
+    }
+
+    pub unsafe fn from_raw(data: u128) -> Self {
+        Instant(solvent::time::Instant::from_raw(data))
     }
 }
 
@@ -70,14 +73,12 @@ pub fn delay(duration: Duration) {
 mod syscall {
     use solvent::*;
 
-    #[cfg(target_arch = "x86_64")]
-    use crate::cpu::arch::tsc::ns_clock;
-
     #[syscall]
     pub(super) fn get_time(ptr: *mut u128) {
         #[cfg(target_arch = "x86_64")]
         unsafe {
-            ptr.write(ns_clock())
+            let raw = super::Instant::now().raw();
+            ptr.write(raw)
         };
         Ok(())
     }
