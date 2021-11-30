@@ -1,5 +1,8 @@
 use alloc::sync::Arc;
-use core::{mem, ptr::NonNull};
+use core::{
+    mem,
+    ptr::{addr_of, NonNull},
+};
 
 // use core::ptr::addr_of_mut;
 use canary::Canary;
@@ -125,8 +128,9 @@ impl Hpet {
     }
 
     pub fn counter(&self) -> u64 {
-        let a = unsafe { (*self.base_ptr).counter };
-        let b = unsafe { (*self.base_ptr).counter };
+        let ptr = unsafe { addr_of!((*self.base_ptr).counter) };
+        let a = unsafe { ptr.read_volatile() };
+        let b = unsafe { ptr.read_volatile() };
         a.min(b)
     }
 

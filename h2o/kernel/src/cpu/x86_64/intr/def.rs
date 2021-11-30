@@ -58,11 +58,15 @@ macro_rules! single_ent {
 macro_rules! hdl {
     ($name:ident, | $frame_arg:ident | $body:expr) => {
         paste::paste! {
-              extern "C" { pub fn [<rout_ $name>](); }
-              #[no_mangle]
-              unsafe extern "C" fn [<hdl_ $name>]($frame_arg: *const Frame) {
-                    { $body };
-              }
+            extern "C" { pub fn [<rout_ $name>](); }
+            #[no_mangle]
+            unsafe extern "C" fn [<hdl_ $name>]($frame_arg: *const Frame) {
+                { $body };
+                #[allow(unreachable_code)]
+                {
+                    archop::pause_intr();
+                }
+            }
         }
     };
 }

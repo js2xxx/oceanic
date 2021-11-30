@@ -312,8 +312,8 @@ extern save_regs; Save the GPRs from the current stack and switch to the task's 
 intr_entry:
       cld
 
-      bt    qword [rsp + 8 * 3], 2; Test if it's a reentrancy.
-      jc    .reent
+      cmp   qword [rsp + 8 * 3], 0xc; Test if it's a reentrancy.
+      je    .reent
 
       swapgs
       lfence
@@ -353,18 +353,12 @@ intr_entry:
 
       push_regs   1, 0; The routine has a return address, so we must preserve it.
       lea   rbp, [rsp + 8 + 1]
-
-      mov   rcx, FS_BASE
-      mov   rax, [gs:(KernelGs.kernel_fs)]
-      mov   rdx, rax
-      shr   rdx, 32
-      wrmsr
 .ret:
       ret
 
 intr_exit:
-      bt    qword [rsp + Frame.cs], 2; Test if it's a reentrancy.
-      jc    .reent
+      cmp   qword [rsp + Frame.cs], 0xc; Test if it's a reentrancy.
+      je    .reent
 
       pop_regs    1
 
