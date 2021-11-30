@@ -57,9 +57,6 @@ pub extern "C" fn kmain() {
     unsafe { cpu::arch::init_bsp_early() };
     sched::task::tid::init();
 
-    l::debug!("Initializing ACPI tables");
-    unsafe { dev::acpi::init_tables(*KARGS.rsdp) };
-
     unsafe { mem::space::init() };
     unsafe { cpu::arch::init() };
 

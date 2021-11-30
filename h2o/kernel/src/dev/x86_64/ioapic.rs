@@ -5,15 +5,18 @@ use acpi::platform::interrupt::{
     Apic, IoApic as AcpiIoapic, Polarity as AcpiPolarity, TriggerMode as AcpiTriggerMode,
 };
 use modular_bitfield::prelude::*;
-use paging::PAddr;
+use paging::{PAddr, PAGE_LAYOUT};
 use spin::{Lazy, Mutex};
 
-use crate::cpu::{
-    arch::{
-        apic::{lapic, DelivMode, Polarity, TriggerMode, LAPIC_ID},
-        intr::ArchReg,
+use crate::{
+    cpu::{
+        arch::{
+            apic::{lapic, DelivMode, Polarity, TriggerMode, LAPIC_ID},
+            intr::ArchReg,
+        },
+        intr::{edge_handler, fasteoi_handler, Interrupt, IntrChip, TypeHandler},
     },
-    intr::{edge_handler, fasteoi_handler, Interrupt, IntrChip, TypeHandler},
+    mem::space::{self, AllocType, Flags, Phys},
 };
 
 const LEGACY_IRQ: Range<u32> = 0..16;
@@ -114,6 +117,8 @@ unsafe fn write_eoi(base_ptr: *mut u32, val: u32) {
 
 pub struct Ioapic {
     base_ptr: *mut u32,
+    phys: Arc<Phys>,
+
     id: u8,
     version: u32,
     gsi: Range<u32>,
@@ -149,18 +154,31 @@ impl Ioapic {
     ///
     /// The caller must ensure that this function is called only once per I/O
     /// APIC ID.
-    pub unsafe fn new(node: &AcpiIoapic) -> Result<Self, &'static str> {
+    pub unsafe fn new(node: &AcpiIoapic) -> Self {
         let AcpiIoapic {
             id,
             address: paddr,
             global_system_interrupt_base: gsi_base,
         } = node;
-
-        let base_ptr = PAddr::new(*paddr as usize)
-            .to_laddr(minfo::ID_OFFSET)
-            .cast::<u32>();
+        let phys = Phys::new(
+            PAddr::new(*paddr as usize),
+            PAGE_LAYOUT,
+            Flags::READABLE | Flags::WRITABLE | Flags::UNCACHED,
+        );
+        let base_ptr = unsafe {
+            space::current()
+                .allocate(
+                    AllocType::Layout(phys.layout()),
+                    Some(phys.clone()),
+                    phys.flags(),
+                )
+                .expect("Failed to allocate memory")
+        }
+        .cast::<u32>()
+        .as_ptr();
         let mut ioapic = Ioapic {
             base_ptr,
+            phys,
             id: *id,
             version: 0,
             gsi: 0..0,
@@ -172,11 +190,15 @@ impl Ioapic {
         ioapic.version = version;
         ioapic.gsi = *gsi_base..(*gsi_base + size);
 
-        Ok(ioapic)
+        ioapic
     }
 
     pub fn size(&self) -> usize {
         self.gsi.len()
+    }
+
+    pub fn phys(&self) -> &Phys {
+        &self.phys
     }
 }
 
@@ -199,53 +221,45 @@ impl Ioapics {
             ..
         } = ioapic_data;
 
-        let mut ioapic_data = Vec::new();
-        for acpi_ioapic in acpi_ioapics {
-            if let Ok(ioapic) = Ioapic::new(acpi_ioapic) {
-                ioapic_data.push(ioapic);
-            }
-        }
+        let ioapic_data = acpi_ioapics
+            .iter()
+            .map(|data| Ioapic::new(data))
+            .collect::<Vec<_>>();
 
-        let mut intr_ovr = Vec::new();
-        for acpi_io in acpi_intr_ovr {
-            let gsi = acpi_io.global_system_interrupt;
-            let hw_irq = acpi_io.isa_source;
-
-            let isa = LEGACY_IRQ.contains(&gsi);
-            if isa && gsi != hw_irq.into() {
-                continue;
-            }
-
-            let polarity = match acpi_io.polarity {
-                AcpiPolarity::SameAsBus => {
-                    if isa {
-                        Polarity::High
-                    } else {
-                        Polarity::Low
-                    }
+        let intr_ovr = acpi_intr_ovr
+            .iter()
+            .map(|acpi_io| {
+                let gsi = acpi_io.global_system_interrupt;
+                let hw_irq = acpi_io.isa_source;
+                let isa = LEGACY_IRQ.contains(&gsi);
+                IntrOvr {
+                    hw_irq,
+                    gsi,
+                    polarity: match acpi_io.polarity {
+                        AcpiPolarity::SameAsBus => {
+                            if isa {
+                                Polarity::High
+                            } else {
+                                Polarity::Low
+                            }
+                        }
+                        AcpiPolarity::ActiveHigh => Polarity::High,
+                        AcpiPolarity::ActiveLow => Polarity::Low,
+                    },
+                    trigger_mode: match acpi_io.trigger_mode {
+                        AcpiTriggerMode::SameAsBus => {
+                            if isa {
+                                TriggerMode::Edge
+                            } else {
+                                TriggerMode::Level
+                            }
+                        }
+                        AcpiTriggerMode::Edge => TriggerMode::Edge,
+                        AcpiTriggerMode::Level => TriggerMode::Level,
+                    },
                 }
-                AcpiPolarity::ActiveHigh => Polarity::High,
-                AcpiPolarity::ActiveLow => Polarity::Low,
-            };
-            let trigger_mode = match acpi_io.trigger_mode {
-                AcpiTriggerMode::SameAsBus => {
-                    if isa {
-                        TriggerMode::Edge
-                    } else {
-                        TriggerMode::Level
-                    }
-                }
-                AcpiTriggerMode::Edge => TriggerMode::Edge,
-                AcpiTriggerMode::Level => TriggerMode::Level,
-            };
-
-            intr_ovr.push(IntrOvr {
-                hw_irq,
-                gsi,
-                polarity,
-                trigger_mode,
-            });
-        }
+            })
+            .collect::<Vec<_>>();
 
         (Ioapics { ioapic_data }, intr_ovr)
     }

@@ -45,6 +45,7 @@ static HPET: Lazy<Option<Arc<RwLock<Hpet>>>> = Lazy::new(|| {
 
 pub struct Hpet {
     base_ptr: *mut HpetReg,
+    phys: Arc<Phys>,
 
     block_id: u8,
     period_fs: u64,
@@ -63,9 +64,8 @@ impl Hpet {
             }
         }
 
-        let phys_base = PAddr::new(data.base_address);
         let phys = Phys::new(
-            phys_base,
+            PAddr::new(data.base_address),
             PAGE_LAYOUT,
             Flags::READABLE | Flags::WRITABLE | Flags::UNCACHED,
         );
@@ -96,6 +96,7 @@ impl Hpet {
         mem::forget(guard);
         Ok(Hpet {
             base_ptr,
+            phys,
             block_id: data.hpet_number,
             period_fs,
             num_comparators,
@@ -127,6 +128,10 @@ impl Hpet {
         let a = unsafe { (*self.base_ptr).counter };
         let b = unsafe { (*self.base_ptr).counter };
         a.min(b)
+    }
+
+    pub fn phys(&self) -> &Phys {
+        &self.phys
     }
 }
 

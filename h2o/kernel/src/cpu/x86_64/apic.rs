@@ -5,12 +5,31 @@ use alloc::collections::BTreeMap;
 
 use archop::msr;
 use modular_bitfield::prelude::*;
-use paging::{LAddr, PAddr};
+use paging::{LAddr, PAddr, PAGE_LAYOUT};
 use raw_cpuid::CpuId;
+use spin::{Lazy, RwLock};
 
 use super::intr::def::ApicVec;
+use crate::mem::space::{self, AllocType, Flags, Phys};
 
-pub static LAPIC_ID: spin::RwLock<BTreeMap<usize, u32>> = spin::RwLock::new(BTreeMap::new());
+pub static LAPIC_ID: RwLock<BTreeMap<usize, u32>> = RwLock::new(BTreeMap::new());
+static mut LAPIC_BASE: Lazy<LAddr> = Lazy::new(|| {
+    let phys = Phys::new(
+        PAddr::new(0xFEE00000),
+        PAGE_LAYOUT,
+        Flags::READABLE | Flags::WRITABLE | Flags::UNCACHED,
+    );
+    let base_ptr = unsafe {
+        space::current()
+            .allocate(
+                AllocType::Layout(phys.layout()),
+                Some(phys.clone()),
+                phys.flags(),
+            )
+            .expect("Failed to allocate memory")
+    };
+    LAddr::from(base_ptr)
+});
 #[thread_local]
 static mut LAPIC: Option<Lapic> = None;
 
@@ -177,8 +196,7 @@ impl Lapic {
             }
             LapicType::X2
         } else {
-            let phys = PAddr::new(0xFEE00000);
-            LapicType::X1(phys.to_laddr(minfo::ID_OFFSET))
+            LapicType::X1(unsafe { *LAPIC_BASE })
         };
 
         // Get the LAPIC ID.

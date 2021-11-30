@@ -1,4 +1,5 @@
 use paging::PAddr;
+use spin::Lazy;
 
 #[derive(Debug, Clone)]
 pub struct Handler;
@@ -20,23 +21,16 @@ impl acpi::AcpiHandler for Handler {
     fn unmap_physical_region<T>(_: &acpi::PhysicalMapping<Self, T>) {}
 }
 
-static mut TABLES: Option<acpi::AcpiTables<Handler>> = None;
-static mut PLATFORM_INFO: Option<acpi::PlatformInfo> = None;
-
-/// # Safety
-///
-/// TODO: Remove `pub` or `unsafe` after module implementation.
-pub unsafe fn init_tables(rsdp: usize) {
-    let tables = acpi::AcpiTables::from_rsdp(Handler, rsdp).expect("Failed to get ACPI tables");
-    debug_assert!(TABLES.is_none());
-    PLATFORM_INFO = Some(tables.platform_info().expect("Failed to get platform info"));
-    TABLES = Some(tables);
-}
+static TABLES: Lazy<acpi::AcpiTables<Handler>> = Lazy::new(|| unsafe {
+    acpi::AcpiTables::from_rsdp(Handler, *crate::KARGS.rsdp).expect("Failed to get ACPI tables")
+});
+static PLATFORM_INFO: Lazy<acpi::PlatformInfo> =
+    Lazy::new(|| TABLES.platform_info().expect("Failed to get platform info"));
 
 pub unsafe fn tables() -> &'static acpi::AcpiTables<Handler> {
-    TABLES.as_ref().unwrap()
+    &*TABLES
 }
 
 pub unsafe fn platform_info() -> &'static acpi::PlatformInfo {
-    PLATFORM_INFO.as_ref().unwrap()
+    &*PLATFORM_INFO
 }
