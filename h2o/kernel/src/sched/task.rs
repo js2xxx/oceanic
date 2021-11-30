@@ -132,7 +132,7 @@ impl TaskInfo {
 pub struct Init {
     tid: Tid,
     space: Arc<Space>,
-    kstack: Box<ctx::Kstack>,
+    kstack: ctx::Kstack,
 }
 
 impl Init {
@@ -176,7 +176,7 @@ pub struct Ready {
     time_slice: Duration,
 
     space: Arc<Space>,
-    kstack: Box<ctx::Kstack>,
+    kstack: ctx::Kstack,
     ext_frame: Box<ctx::ExtendedFrame>,
 
     pub(super) cpu: usize,
@@ -246,7 +246,7 @@ impl Ready {
         let Ready { tid, kstack, .. } = this;
         let dead = Dead { tid, retval };
         destroy(dead);
-        idle::CTX_DROPPER.push(kstack);
+        idle::CTX_DROPPER.push(kstack.into_ptr());
     }
 
     pub fn tid(&self) -> &Tid {
@@ -262,7 +262,7 @@ impl Ready {
     /// # Safety
     ///
     /// The caller must ensure that `frame` points to a valid frame.
-    pub unsafe fn save_intr(&mut self) {
+    pub unsafe fn save_regs(&mut self) {
         debug_assert!(!matches!(self.running_state, RunningState::NotRunning));
 
         self.ext_frame.save();
@@ -304,7 +304,7 @@ pub struct Blocked {
     tid: Tid,
 
     space: Arc<Space>,
-    kstack: Box<ctx::Kstack>,
+    kstack: ctx::Kstack,
     ext_frame: Box<ctx::ExtendedFrame>,
 
     cpu: usize,

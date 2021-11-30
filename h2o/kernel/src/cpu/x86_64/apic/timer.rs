@@ -59,7 +59,6 @@ pub unsafe fn activate(lapic: &mut super::Lapic, mode: TimerMode, div: u8, init_
 /// The caller must ensure that this function is called only by interrupt
 /// routines and when everything about interrupts is set up.
 pub unsafe fn timer_handler() {
-    // log::debug!("T");
     // SAFE: Inside the timer interrupt handler.
     super::lapic(|lapic| lapic.eoi());
 

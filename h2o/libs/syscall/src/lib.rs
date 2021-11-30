@@ -32,8 +32,8 @@ pub type SyscallWrapper = unsafe extern "C" fn(usize, usize, usize, usize, usize
 
 #[cfg(feature = "call")]
 pub fn test() {
-    #[cfg(not(debug_assertions))]
-    return;
-
-    task::test();
+    #[cfg(debug_assertions)]
+    {
+        task::test();
+    }
 }

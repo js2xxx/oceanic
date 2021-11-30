@@ -31,7 +31,7 @@ type ArchSpace = arch::Space;
 pub use arch::init_pgc;
 pub use obj::Phys;
 
-static INIT: Lazy<Arc<Space>> = Lazy::new(|| Space::new(task::Type::Kernel));
+pub static KRL: Lazy<Arc<Space>> = Lazy::new(|| Space::new(task::Type::Kernel));
 
 #[thread_local]
 static mut CURRENT: Option<Arc<Space>> = None;
@@ -393,7 +393,7 @@ impl Drop for Space {
 ///
 /// The function must be called only once from the bootstrap CPU.
 pub unsafe fn init_bsp_early() {
-    INIT.load();
+    KRL.load();
 }
 
 /// Load the kernel space for enery CPU.
@@ -402,7 +402,7 @@ pub unsafe fn init_bsp_early() {
 ///
 /// The function must be called only once from each application CPU.
 pub unsafe fn init() {
-    let space = INIT.clone();
+    let space = KRL.clone();
     unsafe { space.load() };
     CURRENT = Some(space);
 }

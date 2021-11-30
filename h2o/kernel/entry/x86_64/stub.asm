@@ -242,15 +242,15 @@ switch_kframe:
 
       ; Save the current stack context.
       cmp   rdi, 0
-      je    .next
+      je    .switch
       mov   [rdi], rsp
-.next:
+.switch:
       ; Switch the stack (a.k.a. the context).
       mov   rsp, rsi
 
-      push  .popcs
+      push  .pop_regs
       retfq
-.popcs:
+.pop_regs:
       popfq
       pop   r15
       pop   r14
@@ -307,7 +307,7 @@ define_intr i, rout_name(i), common_interrupt, i
 %endrep
 %undef rout_name
 
-extern save_intr; Save the GPRs from the current stack and switch to the task's `intr_stack`.
+extern save_regs; Save the GPRs from the current stack and switch to the task's `intr_stack`.
 
 intr_entry:
       cld
@@ -344,7 +344,7 @@ intr_entry:
       shr   rdx, 32
       wrmsr
 
-      align_call  save_intr, r12
+      align_call  save_regs, r12
 
       jmp   .ret
 .reent:
@@ -353,6 +353,12 @@ intr_entry:
 
       push_regs   1, 0; The routine has a return address, so we must preserve it.
       lea   rbp, [rsp + 8 + 1]
+
+      mov   rcx, FS_BASE
+      mov   rax, [gs:(KernelGs.kernel_fs)]
+      mov   rdx, rax
+      shr   rdx, 32
+      wrmsr
 .ret:
       ret
 
@@ -408,7 +414,7 @@ rout_syscall:
       mov   rcx, KERNEL_GS_BASE
       wrmsr
 
-      align_call  save_intr, r12
+      align_call  save_regs, r12
 
       mov   rdi, rsp
 

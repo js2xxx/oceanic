@@ -1,4 +1,4 @@
-use core::{any::Any, hint};
+use core::{hint, ptr::NonNull};
 
 use spin::Lazy;
 
@@ -17,7 +17,7 @@ use crate::{
 ///
 /// [`task_exit`]: crate::sched::task::syscall::task_exit
 #[thread_local]
-pub(super) static CTX_DROPPER: Lazy<deque::Injector<Box<dyn Any>>> =
+pub(super) static CTX_DROPPER: Lazy<deque::Injector<NonNull<u8>>> =
     Lazy::new(|| deque::Injector::new());
 
 #[thread_local]
@@ -93,8 +93,12 @@ fn ctx_dropper(fs_base: u64) -> ! {
         match CTX_DROPPER.steal_batch(&worker) {
             deque::Steal::Empty | deque::Steal::Retry => hint::spin_loop(),
             deque::Steal::Success(_) => {
-                while let Some(obj) = worker.pop() {
-                    drop(obj);
+                while let Some(ptr) = worker.pop() {
+                    unsafe {
+                        space::with(space::KRL.clone(), |space| {
+                            let _ = space.deallocate(ptr);
+                        })
+                    }
                 }
             }
         }

@@ -158,9 +158,9 @@ impl Frame {
 ///
 /// This function must be called only by assembly stubs.
 #[no_mangle]
-unsafe extern "C" fn save_intr() {
+unsafe extern "C" fn save_regs() {
     if let Some(ref mut cur) = &mut *crate::sched::SCHED.current() {
-        cur.save_intr();
+        cur.save_regs();
     }
 }
 

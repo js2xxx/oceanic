@@ -273,7 +273,7 @@ impl Scheduler {
             Some(ref mut task) => task,
             None => return !sole,
         };
-        // log::trace!("Updating task {:?}'s timer slice", cur.tid().raw());
+        log::trace!("Updating task {:?}'s timer slice", cur.tid().raw());
 
         match &cur.running_state {
             task::RunningState::Running(start_time) => {

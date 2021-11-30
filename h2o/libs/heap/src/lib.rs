@@ -69,65 +69,66 @@ static GLOBAL_ALLOC: Allocator = Allocator::new_null();
 
 /// Set the functions for allocating and deallocating pages.
 pub unsafe fn set_alloc(alloc_pages: AllocPages, dealloc_pages: DeallocPages) {
-      GLOBAL_ALLOC.set_alloc(alloc_pages, dealloc_pages)
+    GLOBAL_ALLOC.set_alloc(alloc_pages, dealloc_pages)
 }
 
 /// Reset the function for allocating and deallocating pages.
 pub unsafe fn reset_alloc() {
-      GLOBAL_ALLOC.reset_alloc()
+    GLOBAL_ALLOC.reset_alloc()
 }
 
 pub fn stat() -> stat::Stat {
-      GLOBAL_ALLOC.stat()
+    GLOBAL_ALLOC.stat()
 }
 
 /// The test function for the module.
 #[allow(dead_code)]
+#[allow(unused_variables)]
 pub fn test(start_seed: usize) {
-      #[cfg(not(debug_assertions))]
-      return;
-
-      use core::alloc::Layout;
-      fn random(mut seed: usize) -> usize {
+    #[cfg(debug_assertions)]
+    {
+        use core::alloc::Layout;
+        fn random(mut seed: usize) -> usize {
             let mut ret = ((seed % 0x100001).pow(3) >> 6) & paging::PAGE_MASK;
             while ret == 0 {
-                  seed += 2;
-                  ret = ((seed % 0xFA53DCEB).pow(2) >> 5) & paging::PAGE_MASK
+                seed += 2;
+                ret = ((seed % 0xFA53DCEB).pow(2) >> 5) & paging::PAGE_MASK
             }
             ret
-      }
+        }
 
-      let mut seed = random(start_seed);
-      let mut k = [(core::ptr::null_mut(), Layout::for_value(&0)); 100];
-      let allocator = &GLOBAL_ALLOC as &dyn core::alloc::GlobalAlloc;
+        let mut seed = random(start_seed);
+        let mut k = [(core::ptr::null_mut(), Layout::for_value(&0)); 100];
+        let allocator = &GLOBAL_ALLOC as &dyn core::alloc::GlobalAlloc;
 
-      let n1 = k.len() / 3 + seed % (k.len() / 3);
-      let n2 = k.len() - n1;
+        let n1 = k.len() / 3 + seed % (k.len() / 3);
+        let n2 = k.len() - n1;
 
-      // Safety: All the allocations are paired and thus legal.
-      unsafe {
+        // Safety: All the allocations are paired and thus legal.
+        unsafe {
             for u in k.iter_mut().take(n2) {
-                  let layout = core::alloc::Layout::from_size_align(seed, seed.next_power_of_two())
-                        .expect("Invalid layout");
-                  *u = (allocator.alloc(layout), layout);
-                  seed = random(seed);
+                let layout = core::alloc::Layout::from_size_align(seed, seed.next_power_of_two())
+                    .expect("Invalid layout");
+                *u = (allocator.alloc(layout), layout);
+                seed = random(seed);
             }
 
             for v in k.iter().take(n1) {
-                  allocator.dealloc(v.0, v.1);
+                allocator.dealloc(v.0, v.1);
             }
 
             for w in k.iter_mut().skip(n2) {
-                  let layout = core::alloc::Layout::from_size_align(seed, seed.next_power_of_two())
-                        .expect("Invalid layout");
-                  *w = (allocator.alloc(layout), layout);
-                  seed = random(seed);
+                let layout = core::alloc::Layout::from_size_align(seed, seed.next_power_of_two())
+                    .expect("Invalid layout");
+                *w = (allocator.alloc(layout), layout);
+                seed = random(seed);
             }
 
             for a in k.iter().skip(n1) {
-                  allocator.dealloc(a.0, a.1);
+                allocator.dealloc(a.0, a.1);
             }
-      }
+        }
+    }
 }
 
 }}
