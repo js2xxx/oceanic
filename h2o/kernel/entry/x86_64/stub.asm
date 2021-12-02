@@ -265,6 +265,7 @@ extern switch_finishing
 ; The entry into the interrupt context of a new task.
 task_fresh:
       align_call switch_finishing, r12
+      cli
       jmp   intr_exit
 
 ; define_intr(vec, asm_name, name, has_code)

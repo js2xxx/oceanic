@@ -71,10 +71,9 @@ pub extern "C" fn kmain() {
 #[no_mangle]
 pub extern "C" fn kmain_ap() {
     unsafe { cpu::set_id(false) };
-
     l::debug!("Starting initialization");
-    unsafe { mem::space::init() };
 
+    unsafe { mem::space::init() };
     unsafe { cpu::arch::init_ap() };
 
     sched::init();

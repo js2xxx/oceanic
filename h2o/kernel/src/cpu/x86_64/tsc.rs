@@ -1,10 +1,13 @@
 use archop::msr::rdtsc;
 use raw_cpuid::CpuId;
+use spin::Lazy;
 
 use crate::cpu::time::{
     chip::{factor_from_freq, ClockChip},
     Instant,
 };
+
+pub static TSC_CLOCK: Lazy<Option<TscClock>> = Lazy::new(TscClock::new);
 
 pub struct TscClock {
     initial: u64,
@@ -27,8 +30,7 @@ impl TscClock {
             .get_advanced_power_mgmt_info()?
             .has_invariant_tsc()
             .then(|| {
-                let khz = crate::dev::hpet::calibrate_tsc()
-                    .unwrap_or(unsafe { crate::dev::pit::calibrate_tsc() });
+                let khz = crate::cpu::time::chip::calibrate(|| {}, rdtsc, rdtsc, || {});
                 let initial = rdtsc();
                 let (mul, sft) = factor_from_freq(khz);
                 log::info!("CPU Timestamp frequency: {} KHz", khz);

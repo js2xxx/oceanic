@@ -11,7 +11,7 @@ use spin::{Lazy, RwLock};
 
 use crate::{
     cpu::time::{
-        chip::{factor_from_freq, ClockChip},
+        chip::{factor_from_freq, CalibrationClock, ClockChip},
         Instant,
     },
     mem::space::{self, AllocType, Flags, Phys},
@@ -45,6 +45,8 @@ static HPET: Lazy<Option<Arc<RwLock<Hpet>>>> = Lazy::new(|| {
         .and_then(|info| unsafe { Hpet::new(info) }.ok())
         .map(|hpet| Arc::new(RwLock::new(hpet)))
 });
+
+pub static HPET_CLOCK: Lazy<Option<HpetClock>> = Lazy::new(HpetClock::new);
 
 pub struct Hpet {
     base_ptr: *mut HpetReg,
@@ -139,27 +141,6 @@ impl Hpet {
     }
 }
 
-pub fn calibrate_tsc() -> Option<u64> {
-    let mut hpet = match *HPET {
-        Some(ref hpet) => hpet.write(),
-        None => return None,
-    };
-
-    let time_ms = 50;
-    let hpet_ticks = time_ms * 1_000_000_000_000 / hpet.period_fs;
-
-    hpet.set_counter(0);
-    hpet.enable(true);
-    let start = archop::msr::rdtsc();
-    let mut t = start;
-    while hpet.counter() < hpet_ticks {
-        t = archop::msr::rdtsc();
-    }
-    hpet.enable(false);
-    let end = t;
-    Some((end - start) / time_ms)
-}
-
 pub struct HpetClock {
     canary: Canary<HpetClock>,
     hpet: Arc<RwLock<Hpet>>,
@@ -172,6 +153,28 @@ impl ClockChip for HpetClock {
         self.canary.assert();
         let val = self.hpet.read().counter();
         unsafe { Instant::from_raw((val as u128 * self.mul) >> self.sft) }
+    }
+}
+
+impl CalibrationClock for HpetClock {
+    unsafe fn prepare(&self, _: u64) {
+        let mut hpet = self.hpet.write();
+        hpet.enable(true);
+        mem::forget(hpet);
+    }
+
+    unsafe fn cycle(&self, ms: u64) {
+        let hpet = &mut *self.hpet.as_mut_ptr();
+        let hpet_ticks = ms * 1_000_000_000_000 / hpet.period_fs;
+
+        let start = hpet.counter();
+        while hpet.counter() - start < hpet_ticks {}
+    }
+
+    unsafe fn cleanup(&self) {
+        let hpet = &mut *self.hpet.as_mut_ptr();
+        hpet.enable(false);
+        self.hpet.force_write_unlock();
     }
 }
 

@@ -4,49 +4,23 @@ use core::{
     sync::atomic::{AtomicU64, Ordering::*},
 };
 
-use archop::{
-    io::{Io, Port},
-    msr::rdtsc,
-};
-use static_assertions::const_assert;
+use archop::io::{Io, Port};
+use spin::Lazy;
 
 use super::ioapic;
 use crate::cpu::{
     intr::{self, Handler, Interrupt, IrqReturn, IsaIrq},
-    time::{chip::ClockChip, Instant},
+    time::{
+        chip::{CalibrationClock, ClockChip},
+        Instant,
+    },
 };
 
 const PIT_RATE: u64 = 1193182;
 
 static PIT_TICKS: AtomicU64 = AtomicU64::new(0);
 
-/// Calibrate the CPU's frequency (KHz) by activating the PIT timer.
-pub unsafe fn calibrate_tsc() -> u64 {
-    const PIT_RATE: u64 = 1193182;
-    const CALIB_TIME_MS: u64 = 50;
-    const CALIB_LATCH: u64 = PIT_RATE / (1000 / CALIB_TIME_MS);
-    const_assert!(CALIB_LATCH <= core::u16::MAX as u64);
-
-    let mut speaker = Port::<u8>::new(0x61);
-    // Set the Gate high and disable speaker
-    speaker.write((speaker.read() & !0x02) | 0x01);
-
-    let mut pit = Port::<u8>::new(0x40);
-    // Channel 2, mode 0 (one-shot), binary count
-    pit.write_offset(3, 0xb0);
-
-    pit.write_offset(2, (CALIB_LATCH & 0xff) as u8);
-    pit.write_offset(2, (CALIB_LATCH >> 8) as u8);
-
-    let mut t = 0;
-    let start = rdtsc();
-    while (speaker.read() & 0x20) == 0 {
-        t = rdtsc();
-    }
-    let end = t;
-
-    (end - start) / CALIB_TIME_MS
-}
+pub static PIT_CLOCK: Lazy<PitClock> = Lazy::new(PitClock::new);
 
 pub struct PitClock {
     intr: Arc<Interrupt>,
@@ -56,6 +30,33 @@ impl ClockChip for PitClock {
     fn get(&self) -> Instant {
         let ms = PIT_TICKS.load(SeqCst);
         unsafe { Instant::from_raw((ms * 1_000_000) as u128) }
+    }
+}
+
+impl CalibrationClock for PitClock {
+    unsafe fn prepare(&self, ms: u64) {
+        let latch = PIT_RATE * ms / 1000;
+        let mut speaker = Port::<u8>::new(0x61);
+        // Set the Gate high and disable speaker
+        speaker.write((speaker.read() & !0x02) | 0x01);
+
+        let mut pit = Port::<u8>::new(0x40);
+        // Channel 2, mode 0 (one-shot), binary count
+        pit.write_offset(3, 0xb0);
+        pit.write_offset(2, (latch & 0xff) as u8);
+    }
+
+    unsafe fn cycle(&self, ms: u64) {
+        let latch = PIT_RATE * ms / 1000;
+        let speaker = Port::<u8>::new(0x61);
+        let mut pit = Port::<u8>::new(0x40);
+        pit.write_offset(2, (latch >> 8) as u8);
+        while (speaker.read() & 0x20) == 0 {}
+    }
+
+    unsafe fn cleanup(&self) {
+        let mut pit = Port::<u8>::new(0x40);
+        pit.write_offset(3, 0x38);
     }
 }
 

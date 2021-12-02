@@ -13,7 +13,7 @@ pub struct Instant(solvent::time::Instant);
 
 impl Instant {
     pub fn now() -> Self {
-        chip::CLOCK_CHIP.get()
+        chip::CLOCK.get()
     }
 
     pub fn elapsed(&self) -> Duration {
