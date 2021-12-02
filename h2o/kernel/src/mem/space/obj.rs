@@ -1,9 +1,13 @@
 use alloc::{alloc::Global, sync::Arc};
-use core::alloc::{AllocError, Allocator, Layout};
+use core::{
+    alloc::{AllocError, Allocator, Layout},
+    ops::Range,
+    ptr::NonNull,
+};
 
 use paging::{LAddr, PAddr};
 
-use super::Flags;
+use super::{Flags, Space, SpaceError};
 
 #[derive(Debug)]
 pub struct Phys {
@@ -77,6 +81,70 @@ impl Drop for Phys {
         if self.from_allocator {
             let ptr = self.base.to_laddr(minfo::ID_OFFSET).as_non_null().unwrap();
             unsafe { Global.deallocate(ptr, self.layout) };
+        }
+    }
+}
+
+pub struct Virt {
+    ptr: NonNull<[u8]>,
+    phys: Arc<Phys>,
+    space: Arc<Space>,
+}
+
+unsafe impl Send for Virt {}
+unsafe impl Sync for Virt {}
+
+impl Virt {
+    pub(super) fn new(ptr: NonNull<[u8]>, phys: Arc<Phys>, space: Arc<Space>) -> Self {
+        Virt { ptr, phys, space }
+    }
+
+    pub fn base(&self) -> LAddr {
+        LAddr::new(self.ptr.as_mut_ptr())
+    }
+
+    pub fn as_ptr(&self) -> NonNull<[u8]> {
+        self.ptr
+    }
+
+    pub fn range(&self) -> Range<LAddr> {
+        let (ptr, len) = (self.ptr.as_mut_ptr(), self.ptr.len());
+        self.base()..LAddr::new(unsafe { ptr.add(len) })
+    }
+
+    pub fn layout(&self) -> Layout {
+        self.phys.layout
+    }
+
+    pub fn phys_flags(&self) -> Flags {
+        self.phys.flags
+    }
+
+    pub unsafe fn modify(&self, ptr: NonNull<[u8]>, flags: Flags) -> Result<(), SpaceError> {
+        if flags & !self.phys_flags() != Flags::empty() {
+            return Err(SpaceError::Permission);
+        }
+        let (base, len) = (ptr.as_non_null_ptr(), ptr.len());
+        let base = if base.as_ptr() >= *self.base() {
+            base
+        } else {
+            return Err(SpaceError::InvalidFormat);
+        };
+        let len = if base.as_ptr().add(len) <= *self.range().end {
+            len
+        } else {
+            return Err(SpaceError::InvalidFormat);
+        };
+
+        let ptr = NonNull::slice_from_raw_parts(base, len);
+        self.space.modify(ptr, flags)
+    }
+}
+
+impl Drop for Virt {
+    fn drop(&mut self) {
+        unsafe {
+            let _ = self.space.deallocate(self.base().as_non_null().unwrap());
         }
     }
 }

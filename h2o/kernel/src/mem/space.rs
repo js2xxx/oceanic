@@ -19,7 +19,7 @@ use collection_ex::RangeSet;
 use paging::LAddr;
 use spin::{Lazy, Mutex, MutexGuard};
 
-use crate::sched::task;
+use crate::sched::{task, PREEMPT};
 
 cfg_if::cfg_if! {
     if #[cfg(target_arch = "x86_64")] {
@@ -29,7 +29,7 @@ cfg_if::cfg_if! {
 }
 type ArchSpace = arch::Space;
 pub use arch::init_pgc;
-pub use obj::Phys;
+pub use obj::{Phys, Virt};
 
 pub static KRL: Lazy<Arc<Space>> = Lazy::new(|| Space::new(task::Type::Kernel));
 
@@ -134,14 +134,16 @@ impl Space {
 
     /// Allocate an address range in the space.
     pub fn allocate(
-        &self,
+        self: &Arc<Self>,
         ty: AllocType,
-        phys: Option<Arc<Phys>>,
+        mut phys: Option<Arc<Phys>>,
         flags: Flags,
-    ) -> Result<NonNull<[u8]>, SpaceError> {
+    ) -> Result<Virt, SpaceError> {
         self.canary.assert();
+        let _pree = PREEMPT.lock();
 
-        self.allocator.allocate(ty, phys, flags, &self.arch)
+        let ret = self.allocator.allocate(ty, &mut phys, flags, &self.arch);
+        ret.map(|ptr| Virt::new(ptr, phys.unwrap(), self.clone()))
     }
 
     /// Modify the access flags of an address range without a specific type.
@@ -153,6 +155,7 @@ impl Space {
     /// influenced by the modification).
     pub unsafe fn modify(&self, ptr: NonNull<[u8]>, flags: Flags) -> Result<(), SpaceError> {
         self.canary.assert();
+        let _pree = PREEMPT.lock();
 
         self.allocator.modify(ptr, flags, &self.arch)
     }
@@ -164,6 +167,7 @@ impl Space {
     /// The caller must ensure that `ptr` was allocated by this `Space`.
     pub unsafe fn deallocate(&self, ptr: NonNull<u8>) -> Result<Arc<Phys>, SpaceError> {
         self.canary.assert();
+        let _pree = PREEMPT.lock();
 
         self.allocator.deallocate(ptr, &self.arch)
     }
@@ -186,6 +190,7 @@ impl Space {
     where
         F: FnOnce(LAddr) -> R,
     {
+        let _pree = PREEMPT.lock();
         if realloc {
             self.dealloc_tls();
         }
@@ -231,6 +236,7 @@ impl Space {
     }
 
     pub fn dealloc_tls(&self) {
+        let _pree = PREEMPT.lock();
         if let Some(layout) = self.tls.lock().take() {
             let base = LAddr::from(minfo::USER_TLS_BASE);
             let virt = base..LAddr::from(base.val() + layout.size());
@@ -299,6 +305,7 @@ impl Space {
 
     pub fn init_stack(&self, size: usize) -> Result<LAddr, SpaceError> {
         self.canary.assert();
+        let _pree = PREEMPT.lock();
         // if matches!(self.ty, task::Type::Kernel) {
         //       return Err("Stack allocation is not allowed in kernel");
         // }
@@ -318,6 +325,7 @@ impl Space {
 
     pub fn grow_stack(&self, addr: LAddr) -> Result<(), SpaceError> {
         self.canary.assert();
+        let _pree = PREEMPT.lock();
         if matches!(self.ty, task::Type::Kernel) {
             return Err(SpaceError::Permission);
         }
@@ -340,6 +348,7 @@ impl Space {
 
     pub fn clear_stack(&self) -> Result<(), SpaceError> {
         self.canary.assert();
+        let _pree = PREEMPT.lock();
 
         let mut stack_blocks = self.stack_blocks.lock();
         while let Some((base, layout)) = stack_blocks.pop_first() {
@@ -363,6 +372,7 @@ impl Space {
             task::Type::User => task::Type::User,
         };
 
+        let _pree = PREEMPT.lock();
         Arc::new(Space {
             canary: Canary::new(),
             ty,
@@ -377,13 +387,10 @@ impl Space {
 
 impl Drop for Space {
     fn drop(&mut self) {
-        unsafe { self.load() };
-
+        let _pree = PREEMPT.lock();
         let _ = self.clear_stack();
         self.dealloc_tls();
         unsafe { self.allocator.dispose(&self.arch) };
-
-        unsafe { current().load() };
     }
 }
 
@@ -423,7 +430,6 @@ where
     F: FnOnce(&'a Arc<Space>) -> R,
     R: 'a,
 {
-    let _pree = crate::sched::PREEMPT.lock();
     let cur = unsafe { CURRENT.as_ref().expect("No current space available") };
     func(cur)
 }
@@ -434,24 +440,7 @@ where
 ///
 /// The function must be called only from the epilogue of context switching.
 pub unsafe fn set_current(space: Arc<Space>) {
+    let _pree = PREEMPT.lock();
     space.load();
-    let _old = CURRENT.replace(space);
-}
-
-/// # Safety
-///
-/// The caller must ensure that [`set_current`] won't be called during the
-/// execution of `f`.
-pub unsafe fn with<S, F, R>(space: S, func: F) -> R
-where
-    S: AsRef<Space>,
-    F: FnOnce(&Space) -> R,
-{
-    let _pree = crate::sched::PREEMPT.lock();
-
-    space.as_ref().load();
-    let ret = func(space.as_ref());
-    current().load();
-
-    ret
+    CURRENT = Some(space);
 }

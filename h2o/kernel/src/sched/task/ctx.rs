@@ -17,7 +17,7 @@ use paging::{LAddr, PAGE_SIZE};
 
 use crate::{
     cpu::arch::seg::ndt::INTR_CODE,
-    mem::space::{self, AllocType, Flags},
+    mem::space::{self, AllocType, Flags, Virt},
 };
 
 pub const KSTACK_SIZE: usize = paging::PAGE_SIZE * 13;
@@ -53,32 +53,33 @@ impl KstackData {
     }
 }
 
-pub struct Kstack(NonNull<KstackData>, Box<*mut u8>);
+pub struct Kstack {
+    ptr: NonNull<KstackData>,
+    virt: Virt,
+    kframe_ptr: Box<*mut u8>,
+}
 
 unsafe impl Send for Kstack {}
 
 impl Kstack {
     pub fn new(entry: Entry, ty: super::Type) -> Self {
-        let memory = unsafe {
-            space::with(space::KRL.clone(), |space| {
-                let memory = space
-                    .allocate(
-                        AllocType::Layout(Layout::new::<KstackData>()),
-                        None,
-                        Flags::READABLE | Flags::WRITABLE,
-                    )
-                    .expect("Failed to allocate kernel stack");
-                let pad = {
-                    let ptr = memory.cast::<u8>();
-                    NonNull::slice_from_raw_parts(ptr, PAGE_SIZE)
-                };
-                space
-                    .modify(pad, Flags::READABLE)
+        let (virt, ptr) = {
+            let virt = space::KRL
+                .allocate(
+                    AllocType::Layout(Layout::new::<KstackData>()),
+                    None,
+                    Flags::READABLE | Flags::WRITABLE,
+                )
+                .expect("Failed to allocate kernel stack");
+            let ptr = virt.as_ptr();
+            let pad = NonNull::slice_from_raw_parts(ptr.as_non_null_ptr(), PAGE_SIZE);
+            unsafe {
+                virt.modify(pad, Flags::READABLE)
                     .expect("Failed to set padding");
-                memory
-            })
+            }
+            (virt, ptr)
         };
-        let mut kstack = memory.cast::<KstackData>();
+        let mut kstack = ptr.cast::<KstackData>();
         let kframe_ptr = unsafe {
             let this = kstack.as_mut();
             let frame = this.task_frame_mut();
@@ -90,21 +91,25 @@ impl Kstack {
             ));
             kframe.cast()
         };
-        Kstack(kstack, box kframe_ptr)
+        Kstack {
+            ptr: kstack,
+            virt,
+            kframe_ptr: box kframe_ptr,
+        }
     }
 
     #[cfg(target_arch = "x86_64")]
     pub fn kframe_ptr(&self) -> *mut u8 {
-        *self.1
+        *self.kframe_ptr
     }
 
     #[cfg(target_arch = "x86_64")]
     pub fn kframe_ptr_mut(&mut self) -> *mut *mut u8 {
-        &mut *self.1
+        &mut *self.kframe_ptr
     }
 
-    pub fn into_ptr(self) -> NonNull<u8> {
-        self.0.cast()
+    pub fn virt(&self) -> &Virt {
+        &self.virt
     }
 }
 
@@ -112,13 +117,13 @@ impl Deref for Kstack {
     type Target = KstackData;
 
     fn deref(&self) -> &Self::Target {
-        unsafe { self.0.as_ref() }
+        unsafe { self.ptr.as_ref() }
     }
 }
 
 impl DerefMut for Kstack {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        unsafe { self.0.as_mut() }
+        unsafe { self.ptr.as_mut() }
     }
 }
 

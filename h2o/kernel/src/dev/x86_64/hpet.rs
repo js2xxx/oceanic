@@ -1,8 +1,5 @@
 use alloc::sync::Arc;
-use core::{
-    mem,
-    ptr::{addr_of, NonNull},
-};
+use core::{mem, ptr::addr_of};
 
 // use core::ptr::addr_of_mut;
 use canary::Canary;
@@ -14,7 +11,7 @@ use crate::{
         chip::{factor_from_freq, CalibrationClock, ClockChip},
         Instant,
     },
-    mem::space::{self, AllocType, Flags, Phys},
+    mem::space::{self, AllocType, Flags, Phys, Virt},
 };
 
 #[repr(C, packed)]
@@ -50,7 +47,7 @@ pub static HPET_CLOCK: Lazy<Option<HpetClock>> = Lazy::new(HpetClock::new);
 
 pub struct Hpet {
     base_ptr: *mut HpetReg,
-    phys: Arc<Phys>,
+    virt: Virt,
 
     block_id: u8,
     period_fs: u64,
@@ -62,19 +59,12 @@ unsafe impl Sync for Hpet {}
 
 impl Hpet {
     pub unsafe fn new(data: acpi::HpetInfo) -> Result<Self, &'static str> {
-        struct Guard(NonNull<u8>);
-        impl Drop for Guard {
-            fn drop(&mut self) {
-                let _ = unsafe { space::current().deallocate(self.0) };
-            }
-        }
-
         let phys = Phys::new(
             PAddr::new(data.base_address),
             PAGE_LAYOUT,
             Flags::READABLE | Flags::WRITABLE | Flags::UNCACHED,
         );
-        let memory = unsafe {
+        let virt = unsafe {
             space::current()
                 .allocate(
                     AllocType::Layout(phys.layout()),
@@ -83,8 +73,7 @@ impl Hpet {
                 )
                 .expect("Failed to allocate memory")
         };
-        let guard = Guard(memory.cast());
-        let base_ptr = memory.cast::<HpetReg>().as_ptr();
+        let base_ptr = virt.as_ptr().cast::<HpetReg>().as_ptr();
 
         let num_comparators = data.num_comparators() as usize;
         if num_comparators < 2 {
@@ -97,11 +86,9 @@ impl Hpet {
         }
 
         let period_fs = (*base_ptr).caps >> 32;
-
-        mem::forget(guard);
         Ok(Hpet {
             base_ptr,
-            phys,
+            virt,
             block_id: data.hpet_number,
             period_fs,
             num_comparators,
@@ -136,8 +123,8 @@ impl Hpet {
         a.min(b)
     }
 
-    pub fn phys(&self) -> &Phys {
-        &self.phys
+    pub fn virt(&self) -> &Virt {
+        &self.virt
     }
 }
 

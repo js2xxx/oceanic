@@ -10,16 +10,16 @@ use raw_cpuid::CpuId;
 use spin::{Lazy, RwLock};
 
 use super::intr::def::ApicVec;
-use crate::mem::space::{self, AllocType, Flags, Phys};
+use crate::mem::space::{self, AllocType, Flags, Phys, Virt};
 
 pub static LAPIC_ID: RwLock<BTreeMap<usize, u32>> = RwLock::new(BTreeMap::new());
-static mut LAPIC_BASE: Lazy<LAddr> = Lazy::new(|| {
+static LAPIC_BASE: Lazy<Virt> = Lazy::new(|| {
     let phys = Phys::new(
         PAddr::new(0xFEE00000),
         PAGE_LAYOUT,
         Flags::READABLE | Flags::WRITABLE | Flags::UNCACHED,
     );
-    let base_ptr = unsafe {
+    unsafe {
         space::current()
             .allocate(
                 AllocType::Layout(phys.layout()),
@@ -27,8 +27,7 @@ static mut LAPIC_BASE: Lazy<LAddr> = Lazy::new(|| {
                 phys.flags(),
             )
             .expect("Failed to allocate memory")
-    };
-    LAddr::from(base_ptr)
+    }
 });
 #[thread_local]
 static mut LAPIC: Option<Lapic> = None;
@@ -196,7 +195,7 @@ impl Lapic {
             }
             LapicType::X2
         } else {
-            LapicType::X1(unsafe { *LAPIC_BASE })
+            LapicType::X1(LAPIC_BASE.base())
         };
 
         // Get the LAPIC ID.

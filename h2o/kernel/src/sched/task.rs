@@ -26,7 +26,7 @@ pub use self::{
 use super::PREEMPT;
 use crate::{
     cpu::{self, arch::KernelGs, time::Instant, CpuMask},
-    mem::space::{with, Space, SpaceError},
+    mem::space::{Space, SpaceError},
 };
 
 static ROOT: Lazy<Tid> = Lazy::new(|| {
@@ -246,7 +246,7 @@ impl Ready {
         let Ready { tid, kstack, .. } = this;
         let dead = Dead { tid, retval };
         destroy(dead);
-        idle::CTX_DROPPER.push(kstack.into_ptr());
+        idle::CTX_DROPPER.push(kstack);
     }
 
     pub fn tid(&self) -> &Tid {
@@ -348,7 +348,7 @@ fn create_with_space<F>(
     args: [u64; 2],
 ) -> Result<(Init, UserHandle)>
 where
-    F: FnOnce(&Space) -> Result<(LAddr, Option<LAddr>, usize)>,
+    F: FnOnce(&Arc<Space>) -> Result<(LAddr, Option<LAddr>, usize)>,
 {
     let (cur_tid, space) = super::SCHED
         .with_current(|cur| {
@@ -363,7 +363,7 @@ where
         })
         .ok_or(TaskError::NoCurrentTask)?;
 
-    let (entry, tls, stack_size) = unsafe { with(&space, with_space) }?;
+    let (entry, tls, stack_size) = with_space(&space)?;
 
     let (tid, ret_wo) = {
         let pree = PREEMPT.lock();

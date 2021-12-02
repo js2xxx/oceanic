@@ -29,7 +29,7 @@ impl Allocator {
     pub fn allocate<'a, 'b>(
         &'a self,
         ty: AllocType,
-        phys: Option<Arc<Phys>>,
+        phys: &mut Option<Arc<Phys>>,
         flags: Flags,
         arch: &'b ArchSpace,
     ) -> Result<NonNull<[u8]>, SpaceError> {
@@ -92,14 +92,14 @@ impl Allocator {
         };
 
         // Get the physical address mapped to.
-        let phys = match phys {
-            Some(phys) => phys,
+        let new_phys = match phys {
+            Some(phys) => phys.clone(),
             None => Phys::allocate(layout, flags).map_err(|_| SpaceError::OutOfMemory)?,
         };
 
         // Map it.
         let base = virt.start;
-        arch.maps(virt, phys.base(), flags)
+        arch.maps(virt, new_phys.base(), flags)
             .map_err(SpaceError::PagingError)?;
 
         range.remove(prefix.start);
@@ -113,7 +113,8 @@ impl Allocator {
 
         let ret =
             unsafe { NonNull::slice_from_raw_parts(base.as_non_null().unwrap(), layout.size()) };
-        self.record.lock().insert(base, phys);
+        self.record.lock().insert(base, new_phys.clone());
+        *phys = Some(new_phys);
         Ok(ret)
     }
 

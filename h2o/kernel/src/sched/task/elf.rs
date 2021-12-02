@@ -1,4 +1,5 @@
 use alloc::string::String;
+use core::mem;
 
 use bitop_ex::BitOpEx;
 use goblin::elf::*;
@@ -11,7 +12,7 @@ use crate::{
 };
 
 fn load_prog(
-    space: &Space,
+    space: &Arc<Space>,
     flags: u32,
     virt: LAddr,
     phys: PAddr,
@@ -47,8 +48,10 @@ fn load_prog(
         let virt = LAddr::from(vstart)..LAddr::from(vend);
         log::trace!("Mapping {:?}", virt);
         let phys = Phys::new(phys, paging::PAGE_LAYOUT, flags);
-        unsafe { space.allocate(AllocType::Virt(virt), Some(phys), flags) }
+        let virt = unsafe { space.allocate(AllocType::Virt(virt), Some(phys), flags) }
             .map_err(TaskError::Memory)?;
+        // TODO: add `virt` to `image` field of `TaskInfo` in the future.
+        mem::forget(virt);
     }
 
     if msize > fsize {
@@ -56,14 +59,16 @@ fn load_prog(
 
         let virt = LAddr::from(vend)..LAddr::from(vend + extra);
         log::trace!("Allocating {:?}", virt);
-        unsafe { space.allocate(AllocType::Virt(virt), None, flags | Flags::ZEROED) }
+        let virt = unsafe { space.allocate(AllocType::Virt(virt), None, flags | Flags::ZEROED) }
             .map_err(TaskError::Memory)?;
+        // TODO: add `virt` to `image` field of `TaskInfo` in the future.mem::forget(virt);
+        mem::forget(virt);
     }
 
     Ok(())
 }
 
-fn load_tls(space: &Space, size: usize, align: usize, file_base: LAddr) -> Result<LAddr> {
+fn load_tls(space: &Arc<Space>, size: usize, align: usize, file_base: LAddr) -> Result<LAddr> {
     log::trace!("Loading TLS phdr (size = {:?}, align = {:?})", size, align);
     let layout =
         core::alloc::Layout::from_size_align(size, align).map_err(|_| TaskError::InvalidFormat)?;
@@ -93,7 +98,7 @@ fn load_tls(space: &Space, size: usize, align: usize, file_base: LAddr) -> Resul
         .unwrap()
 }
 
-fn load_elf(space: &Space, file: &Elf, image: &[u8]) -> Result<(LAddr, Option<LAddr>, usize)> {
+fn load_elf(space: &Arc<Space>, file: &Elf, image: &[u8]) -> Result<(LAddr, Option<LAddr>, usize)> {
     log::trace!(
         "Loading ELF file from image {:?}, space = {:?}",
         image.as_ptr(),
