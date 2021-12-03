@@ -1,4 +1,4 @@
-use core::alloc::Layout;
+use core::{alloc::Layout, ptr::NonNull};
 
 bitflags::bitflags! {
     /// Flags to describe a block of memory.
@@ -11,27 +11,41 @@ bitflags::bitflags! {
     }
 }
 
-pub fn alloc_pages(
-    virt: *mut u8,
+pub fn virt_alloc(
+    virt: &mut *mut u8,
     phys: usize,
     layout: Layout,
     flags: Flags,
-) -> crate::Result<*mut [u8]> {
+) -> crate::Result<crate::Handle> {
     let (size, align) = (layout.size(), layout.align());
     let flags = flags.bits;
-    crate::call::alloc_pages(virt, phys, size, align, flags)
-        .map(|ptr| unsafe { core::slice::from_raw_parts_mut(ptr, size) as *mut _ })
+    crate::call::virt_alloc(virt, phys, size, align, flags)
 }
 
-pub fn dealloc_pages(ptr: *mut u8) -> crate::Result<usize> {
-    crate::call::dealloc_pages(ptr)
+pub fn mem_alloc(layout: Layout, flags: Flags) -> crate::Result<NonNull<[u8]>> {
+    let (size, align) = (layout.size(), layout.align());
+    let ptr = crate::call::mem_alloc(size, align, flags.bits)?;
+    unsafe {
+        Ok(NonNull::slice_from_raw_parts(
+            NonNull::new_unchecked(ptr),
+            size,
+        ))
+    }
+}
+
+pub fn mem_dealloc(ptr: NonNull<u8>) -> crate::Result<()> {
+    crate::call::mem_dealloc(ptr.as_ptr())
 }
 
 /// # Safety
 ///
 /// The caller must ensure that `ptr` is only in the possession of current
 /// context.
-pub unsafe fn modify_pages(ptr: *mut [u8], flags: Flags) -> crate::Result<()> {
+pub unsafe fn virt_modify(
+    hdl: crate::Handle,
+    ptr: NonNull<[u8]>,
+    flags: Flags,
+) -> crate::Result<()> {
     let size = ptr.len();
-    crate::call::modify_pages(ptr.as_mut_ptr(), size, flags.bits)
+    crate::call::virt_modify(hdl, ptr.as_mut_ptr(), size, flags.bits)
 }

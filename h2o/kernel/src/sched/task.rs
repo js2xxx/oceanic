@@ -12,17 +12,13 @@ use alloc::{boxed::Box, format, string::String, sync::Arc};
 use core::time::Duration;
 
 use paging::LAddr;
+use solvent::Handle;
 use spin::Lazy;
 
 #[cfg(target_arch = "x86_64")]
 pub use self::ctx::arch::{DEFAULT_STACK_LAYOUT, DEFAULT_STACK_SIZE};
 use self::{child::Child, sig::Signal};
-pub use self::{
-    elf::from_elf,
-    hdl::{UserHandle, UserHandles},
-    prio::Priority,
-    tid::Tid,
-};
+pub use self::{elf::from_elf, hdl::HandleMap, prio::Priority, tid::Tid};
 use super::PREEMPT;
 use crate::{
     cpu::{self, arch::KernelGs, time::Instant, CpuMask},
@@ -36,7 +32,7 @@ static ROOT: Lazy<Tid> = Lazy::new(|| {
         ty: Type::Kernel,
         affinity: crate::cpu::all_mask(),
         prio: prio::DEFAULT,
-        user_handles: UserHandles::new(),
+        handles: HandleMap::new(),
         signal: None,
     };
 
@@ -86,7 +82,7 @@ pub struct TaskInfo {
     ty: Type,
     affinity: CpuMask,
     prio: Priority,
-    pub(in crate::sched) user_handles: UserHandles,
+    pub handles: HandleMap,
     signal: Option<Signal>,
 }
 
@@ -346,7 +342,7 @@ fn create_with_space<F>(
     dup_cur_space: bool,
     with_space: F,
     args: [u64; 2],
-) -> Result<(Init, UserHandle)>
+) -> Result<(Init, Handle)>
 where
     F: FnOnce(&Arc<Space>) -> Result<(LAddr, Option<LAddr>, usize)>,
 {
@@ -387,7 +383,7 @@ where
             ty,
             affinity,
             prio,
-            user_handles: UserHandles::new(),
+            handles: HandleMap::new(),
             signal: None,
         };
         let tid = tid::allocate(new_ti).map_err(|_| TaskError::TidExhausted)?;
@@ -395,7 +391,7 @@ where
         let (ret_wo, child) = {
             let mut cur_ti = cur_ti.upgrade();
             let child = Arc::new(Child::new(tid.clone()));
-            (cur_ti.user_handles.insert(child.clone()).unwrap(), child)
+            (cur_ti.handles.insert(child.clone()).unwrap(), child)
         };
         drop(pree);
 
@@ -411,7 +407,7 @@ pub fn create_fn(
     stack_size: usize,
     func: LAddr,
     arg: *mut u8,
-) -> Result<(Init, UserHandle)> {
+) -> Result<(Init, Handle)> {
     let (name, ty, affinity, prio) = super::SCHED
         .with_current(|cur| {
             let ti = cur.tid.info().read();

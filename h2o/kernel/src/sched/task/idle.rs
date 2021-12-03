@@ -29,7 +29,7 @@ pub(super) static IDLE: Lazy<Tid> = Lazy::new(|| {
         ty: Type::Kernel,
         affinity: crate::cpu::current_mask(),
         prio: prio::IDLE,
-        user_handles: UserHandles::new(),
+        handles: HandleMap::new(),
         signal: None,
     };
 

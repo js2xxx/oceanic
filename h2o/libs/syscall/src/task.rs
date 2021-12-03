@@ -44,7 +44,7 @@ pub fn test() {
         let task = creator(0).expect("Failed to create task");
         let wo = crate::call::wo_create().expect("Failed to create wait object");
 
-        crate::call::task_ctl(task, TASK_CTL_SUSPEND, wo as *mut u8)
+        crate::call::task_ctl(task, TASK_CTL_SUSPEND, wo.raw() as *mut u8)
             .expect("Failed to suspend a task");
 
         let notify = || crate::call::wo_notify(wo, 0).expect("Failed to notify a wait object");

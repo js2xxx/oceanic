@@ -2,6 +2,7 @@ use alloc::sync::Arc;
 use core::{hash::BuildHasherDefault, ptr};
 
 use collection_ex::{CHashMap, FnvHasher, IdAllocator};
+use solvent::Handle;
 use spin::{Lazy, RwLock};
 
 use super::{Child, TaskInfo};
@@ -27,10 +28,10 @@ impl Tid {
         &*self.1
     }
 
-    pub fn child(&self, hdl: super::UserHandle) -> Option<Arc<Child>> {
+    pub fn child(&self, hdl: Handle) -> Option<Arc<Child>> {
         self.info()
             .read()
-            .user_handles
+            .handles
             .get::<Arc<Child>>(hdl)
             .cloned()
     }

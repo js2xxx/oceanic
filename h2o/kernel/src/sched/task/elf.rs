@@ -61,7 +61,7 @@ fn load_prog(
         log::trace!("Allocating {:?}", virt);
         let virt = unsafe { space.allocate(AllocType::Virt(virt), None, flags | Flags::ZEROED) }
             .map_err(TaskError::Memory)?;
-        // TODO: add `virt` to `image` field of `TaskInfo` in the future.mem::forget(virt);
+        // TODO: add `virt` to `image` field of `TaskInfo` in the future.
         mem::forget(virt);
     }
 
@@ -149,7 +149,7 @@ pub fn from_elf<'a, 'b>(
     name: String,
     affinity: CpuMask,
     args: [u64; 2],
-) -> Result<(Init, UserHandle)> {
+) -> Result<(Init, Handle)> {
     let file = Elf::parse(image)
         .map_err(|_| TaskError::InvalidFormat)
         .and_then(|file| {

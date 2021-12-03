@@ -2,6 +2,7 @@
 #![feature(asm)]
 #![feature(bool_to_option)]
 #![feature(lang_items)]
+#![feature(nonnull_slice_from_raw_parts)]
 #![feature(result_into_ok_or_err)]
 #![feature(slice_ptr_get)]
 #![feature(slice_ptr_len)]
@@ -18,7 +19,7 @@ cfg_if::cfg_if! {
     }
 }
 
-pub use call::reg::*;
+pub use call::{hdl::Handle, reg::*};
 pub use error::*;
 pub use solvent_gen::*;
 

@@ -43,12 +43,11 @@ impl WaitObject {
 
 mod syscall {
     use alloc::sync::Arc;
-    use core::num::{NonZeroU32, NonZeroUsize};
+    use core::num::NonZeroUsize;
 
     use solvent::*;
 
     use super::*;
-    use crate::sched::task::UserHandle;
 
     #[syscall]
     fn wo_create() -> u32 {
@@ -56,18 +55,18 @@ mod syscall {
         SCHED
             .with_current(|cur| {
                 let mut info = cur.tid().info().write();
-                info.user_handles.insert(wo).unwrap().raw()
+                info.handles.insert(wo).unwrap().raw()
             })
             .map_or(Err(Error(ESRCH)), Ok)
     }
 
     #[syscall]
-    fn wo_notify(hdl: u32, n: usize) -> usize {
-        let hdl = UserHandle::new(NonZeroU32::new(hdl).ok_or(Error(EINVAL))?);
+    fn wo_notify(hdl: Handle, n: usize) -> usize {
+        hdl.check_null()?;
         let wo = SCHED
             .with_current(|cur| {
                 let info = cur.tid().info().read();
-                info.user_handles.get::<Arc<WaitObject>>(hdl).cloned()
+                info.handles.get::<Arc<WaitObject>>(hdl).cloned()
             })
             .flatten()
             .ok_or(Error(EINVAL))?;

@@ -45,70 +45,104 @@ pub fn init() {
 }
 
 mod syscall {
+    use core::{alloc::Layout, ptr::NonNull};
+
     use bitop_ex::BitOpEx;
     use solvent::*;
 
-    #[syscall]
-    fn alloc_pages(virt: *mut u8, phys: usize, size: usize, align: usize, flags: u32) -> *mut u8 {
-        use core::{alloc::Layout, ptr::NonNull};
+    use super::space;
 
-        use super::space;
-
+    fn check_options(size: usize, align: usize, flags: u32) -> Result<(Layout, space::Flags)> {
         if size.contains_bit(paging::PAGE_MASK) || !align.is_power_of_two() {
             return Err(Error(EINVAL));
         }
         let layout = Layout::from_size_align(size, align).map_err(|_| Error(EINVAL))?;
-
         let flags = space::Flags::from_bits(flags).ok_or(Error(EINVAL))?;
+
+        Ok((layout, flags))
+    }
+
+    #[syscall]
+    fn virt_alloc(
+        virt_ptr: *mut *mut u8,
+        phys: usize,
+        size: usize,
+        align: usize,
+        flags: u32,
+    ) -> Handle {
+        if virt_ptr.is_null() {
+            return Err(Error(EINVAL));
+        }
+        let (layout, flags) = check_options(size, align, flags)?;
 
         // TODO: Check whether the physical address is permitted.
         let phys = (phys != 0).then_some(paging::PAddr::new(phys));
         let phys = phys.map(|phys| space::Phys::new(phys, layout, flags));
 
-        let ty = if virt.is_null() {
+        let ptr = unsafe { *virt_ptr };
+        let ty = if ptr.is_null() {
             space::AllocType::Layout(layout)
         } else {
             // TODO: Check whether the virtual address is permitted.
             space::AllocType::Virt(
-                paging::LAddr::new(virt)..paging::LAddr::new(unsafe { virt.add(size) }),
+                paging::LAddr::new(ptr)..paging::LAddr::new(unsafe { ptr.add(size) }),
             )
         };
 
         let ret = space::with_current(|cur| cur.allocate(ty, phys, flags));
-        ret.map_err(Into::into).map(NonNull::as_mut_ptr)
+        ret.map_err(Into::into).and_then(|virt| {
+            let ptr = virt.as_ptr().as_mut_ptr();
+            unsafe { virt_ptr.write(ptr) };
+            crate::sched::SCHED
+                .with_current(|cur| {
+                    let mut info = cur.tid().info().write();
+                    info.handles.insert(box virt)
+                })
+                .flatten()
+                .ok_or(Error(ESRCH))
+        })
     }
 
     #[syscall]
-    fn dealloc_pages(ptr: *mut u8) -> usize {
-        use core::ptr::NonNull;
-
-        use super::space;
-        use crate::mem::space::Phys;
-
-        let ret = unsafe {
-            let ptr = NonNull::new(ptr).ok_or(Error(EINVAL))?;
-            space::with_current(|cur| cur.deallocate(ptr))
-        };
-        ret.map_err(Into::into).map(|phys| *Phys::consume(phys))
-    }
-
-    #[syscall]
-    fn modify_pages(ptr: *mut u8, size: usize, flags: u32) {
-        use core::ptr::NonNull;
-
-        use super::space;
+    fn virt_modify(hdl: Handle, ptr: *mut u8, size: usize, flags: u32) {
+        hdl.check_null()?;
 
         if size.contains_bit(paging::PAGE_MASK) {
             return Err(Error(EINVAL));
         }
         let flags = space::Flags::from_bits(flags).ok_or(Error(EINVAL))?;
+        let ptr = NonNull::new(ptr).ok_or(Error(EINVAL))?;
+        let ptr = NonNull::slice_from_raw_parts(ptr, size);
 
+        crate::sched::SCHED
+            .with_current(|cur| {
+                let info = cur.tid().info().read();
+                match info.handles.get::<space::Virt>(hdl) {
+                    Some(virt) => unsafe { virt.modify(ptr, flags) }.map_err(Into::into),
+                    None => Err(Error(EINVAL)),
+                }
+            })
+            .unwrap_or(Err(Error(ESRCH)))
+    }
+
+    #[syscall]
+    fn mem_alloc(size: usize, align: usize, flags: u32) -> *mut u8 {
+        let (layout, flags) = check_options(size, align, flags)?;
+        let ty = space::AllocType::Layout(layout);
+        let ret = space::with_current(|cur| cur.allocate(ty, None, flags));
+        ret.map_err(Into::into).map(|virt| {
+            let ptr = *virt.base();
+            core::mem::forget(virt);
+            ptr
+        })
+    }
+
+    #[syscall]
+    fn mem_dealloc(ptr: *mut u8) {
         let ret = unsafe {
             let ptr = NonNull::new(ptr).ok_or(Error(EINVAL))?;
-            let ptr = NonNull::slice_from_raw_parts(ptr, size);
-            space::with_current(|cur| cur.modify(ptr, flags))
+            space::with_current(|cur| cur.deallocate(ptr))
         };
-        ret.map_err(Into::into)?;
-        Ok(())
+        ret.map_err(Into::into).map(|_| {})
     }
 }

@@ -3,7 +3,7 @@ use core::time::Duration;
 
 use solvent::*;
 
-use super::{RunningState, Signal, UserHandle};
+use super::{RunningState, Signal};
 use crate::{
     cpu::time::Instant,
     sched::{wait::WaitObject, SCHED},
@@ -54,10 +54,8 @@ pub fn task_fn(
 }
 
 #[syscall]
-pub fn task_join(hdl: u32) -> usize {
-    use core::num::NonZeroU32;
-
-    let wc_hdl = UserHandle::new(NonZeroU32::new(hdl).ok_or(Error(EINVAL))?);
+pub fn task_join(hdl: Handle) -> usize {
+    hdl.check_null()?;
 
     let child = {
         let tid = SCHED
@@ -65,17 +63,15 @@ pub fn task_join(hdl: u32) -> usize {
             .ok_or(Error(ESRCH))?;
 
         let _pree = super::PREEMPT.lock();
-        tid.child(wc_hdl).ok_or(Error(ECHILD))?
+        tid.child(hdl).ok_or(Error(ECHILD))?
     };
 
     Error::decode(child.cell().take("task_join"))
 }
 
 #[syscall]
-pub fn task_ctl(hdl: u32, op: u32, data: *mut u8) {
-    use core::num::NonZeroU32;
-
-    let wc_hdl = UserHandle::new(NonZeroU32::new(hdl).ok_or(Error(EINVAL))?);
+pub fn task_ctl(hdl: Handle, op: u32, data: *mut u8) {
+    hdl.check_null()?;
 
     let tid = SCHED
         .with_current(|cur| cur.tid.clone())
@@ -85,7 +81,7 @@ pub fn task_ctl(hdl: u32, op: u32, data: *mut u8) {
         task::TASK_CTL_KILL => {
             let child = {
                 let _pree = super::PREEMPT.lock();
-                tid.child(wc_hdl).ok_or(Error(ECHILD))?
+                tid.child(hdl).ok_or(Error(ECHILD))?
             };
 
             let _pree = super::PREEMPT.lock();
@@ -96,15 +92,11 @@ pub fn task_ctl(hdl: u32, op: u32, data: *mut u8) {
         }
         task::TASK_CTL_SUSPEND => {
             let wo = {
-                let data = u32::try_from(data as u64)
-                    .ok()
-                    .and_then(NonZeroU32::new)
-                    .map(UserHandle::new)
-                    .ok_or(Error(EINVAL))?;
+                let data = Handle::try_from(data)?;
 
                 let _pree = super::PREEMPT.lock();
                 let info = &tid.info().read();
-                match info.user_handles.get::<Arc<WaitObject>>(data).cloned() {
+                match info.handles.get::<Arc<WaitObject>>(data).cloned() {
                     Some(wo) => wo,
                     None => return Err(Error(EINVAL)),
                 }
@@ -112,7 +104,7 @@ pub fn task_ctl(hdl: u32, op: u32, data: *mut u8) {
 
             let child = {
                 let _pree = super::PREEMPT.lock();
-                tid.child(wc_hdl).ok_or(Error(ECHILD))?
+                tid.child(hdl).ok_or(Error(ECHILD))?
             };
 
             let _pree = super::PREEMPT.lock();
@@ -124,7 +116,7 @@ pub fn task_ctl(hdl: u32, op: u32, data: *mut u8) {
         task::TASK_CTL_DETACH => {
             let _pree = super::PREEMPT.lock();
             let mut ti = tid.info().write();
-            ti.user_handles.remove(wc_hdl).ok_or(Error(ECHILD))?;
+            ti.handles.remove(hdl).ok_or(Error(ECHILD))?;
 
             Ok(())
         }
