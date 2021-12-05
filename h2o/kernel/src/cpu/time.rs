@@ -73,12 +73,14 @@ pub fn delay(duration: Duration) {
 mod syscall {
     use solvent::*;
 
+    use crate::syscall::{Out, UserPtr};
+
     #[syscall]
-    pub(super) fn get_time(ptr: *mut u128) {
+    pub(super) fn get_time(ptr: UserPtr<Out, u128>) {
         #[cfg(target_arch = "x86_64")]
         unsafe {
             let raw = super::Instant::now().raw();
-            ptr.write(raw)
+            ptr.write(raw)?
         };
         Ok(())
     }

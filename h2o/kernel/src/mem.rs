@@ -51,6 +51,7 @@ mod syscall {
     use solvent::*;
 
     use super::space;
+    use crate::syscall::{InOut, UserPtr};
 
     fn check_options(size: usize, align: usize, flags: u32) -> Result<(Layout, space::Flags)> {
         if size.contains_bit(paging::PAGE_MASK) || !align.is_power_of_two() {
@@ -64,26 +65,22 @@ mod syscall {
 
     #[syscall]
     fn virt_alloc(
-        virt_ptr: *mut *mut u8,
+        virt_ptr: UserPtr<InOut, *mut u8>,
         phys: usize,
         size: usize,
         align: usize,
         flags: u32,
     ) -> Handle {
-        if virt_ptr.is_null() {
-            return Err(Error(EINVAL));
-        }
         let (layout, flags) = check_options(size, align, flags)?;
+        let ptr = unsafe { virt_ptr.r#in().read()? };
 
         // TODO: Check whether the physical address is permitted.
         let phys = (phys != 0).then_some(paging::PAddr::new(phys));
         let phys = phys.map(|phys| space::Phys::new(phys, layout, flags));
 
-        let ptr = unsafe { *virt_ptr };
         let ty = if ptr.is_null() {
             space::AllocType::Layout(layout)
         } else {
-            // TODO: Check whether the virtual address is permitted.
             space::AllocType::Virt(
                 paging::LAddr::new(ptr)..paging::LAddr::new(unsafe { ptr.add(size) }),
             )
@@ -92,7 +89,7 @@ mod syscall {
         let ret = space::with_current(|cur| cur.allocate(ty, phys, flags));
         ret.map_err(Into::into).and_then(|virt| {
             let ptr = virt.as_ptr().as_mut_ptr();
-            unsafe { virt_ptr.write(ptr) };
+            unsafe { virt_ptr.out().write(ptr) }.unwrap();
             crate::sched::SCHED
                 .with_current(|cur| {
                     let mut info = cur.tid().info().write();

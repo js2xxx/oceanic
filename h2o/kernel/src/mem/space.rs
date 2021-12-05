@@ -6,6 +6,13 @@
 mod alloc;
 pub mod obj;
 
+cfg_if::cfg_if! {
+    if #[cfg(target_arch = "x86_64")] {
+        #[path = "space/x86_64/mod.rs"]
+        mod arch;
+    }
+}
+
 use core::{alloc::Layout, ops::Range, ptr::NonNull};
 
 use ::alloc::{
@@ -13,23 +20,18 @@ use ::alloc::{
     collections::BTreeMap,
     sync::Arc,
 };
+pub use arch::init_pgc;
 use bitop_ex::BitOpEx;
 use canary::Canary;
 use collection_ex::RangeSet;
+pub use obj::{Phys, Virt};
 use paging::LAddr;
+pub use solvent::mem::Flags;
 use spin::{Lazy, Mutex, MutexGuard};
 
 use crate::sched::{task, PREEMPT};
 
-cfg_if::cfg_if! {
-    if #[cfg(target_arch = "x86_64")] {
-        #[path = "space/x86_64/mod.rs"]
-        mod arch;
-    }
-}
 type ArchSpace = arch::Space;
-pub use arch::init_pgc;
-pub use obj::{Phys, Virt};
 
 pub static KRL: Lazy<Arc<Space>> = Lazy::new(|| Space::new(task::Type::Kernel));
 
@@ -55,18 +57,6 @@ impl Into<solvent::Error> for SpaceError {
             SpaceError::PagingError(_) => EFAULT,
             SpaceError::Permission => EPERM,
         })
-    }
-}
-
-bitflags::bitflags! {
-    /// Flags to describe a block of memory.
-    pub struct Flags: u32 {
-        const USER_ACCESS = 1;
-        const READABLE    = 1 << 1;
-        const WRITABLE    = 1 << 2;
-        const EXECUTABLE  = 1 << 3;
-        const UNCACHED    = 1 << 4;
-        const ZEROED      = 1 << 10;
     }
 }
 

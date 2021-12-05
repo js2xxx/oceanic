@@ -2,6 +2,7 @@ use crossbeam_queue::SegQueue;
 
 use super::WaitObject;
 
+#[derive(Debug)]
 pub struct WaitQueue<T> {
     data: SegQueue<T>,
     wo: WaitObject,

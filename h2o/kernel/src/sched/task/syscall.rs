@@ -1,12 +1,14 @@
 use alloc::{string::ToString, sync::Arc};
 use core::time::Duration;
 
+use paging::LAddr;
 use solvent::*;
 
 use super::{RunningState, Signal};
 use crate::{
     cpu::time::Instant,
     sched::{wait::WaitObject, SCHED},
+    syscall::{In, UserPtr},
 };
 
 #[syscall]
@@ -27,27 +29,25 @@ fn task_sleep(ms: u32) {
 
 #[syscall]
 pub fn task_fn(
-    name: *mut u8,
+    name: UserPtr<In, u8>,
     name_len: usize,
     stack_size: usize,
     func: *mut u8,
     arg: *mut u8,
 ) -> u32 {
-    let name = if !name.is_null() {
-        unsafe {
-            let slice = core::slice::from_raw_parts(name, name_len);
-            Some(
-                core::str::from_utf8(slice)
-                    .map_err(|_| Error(EINVAL))?
-                    .to_string(),
-            )
-        }
-    } else {
-        None
-    };
+    let name = name.null_or_slice(name_len, |ptr| {
+        ptr.map(|ptr| unsafe {
+            let slice = ptr.as_ref();
+
+            core::str::from_utf8(slice)
+                .map_err(|_| Error(EINVAL))
+                .map(ToString::to_string)
+        })
+        .transpose()
+    })?;
 
     let (task, ret_wo) =
-        super::create_fn(name, stack_size, paging::LAddr::new(func), arg).map_err(Into::into)?;
+        super::create_fn(name, stack_size, LAddr::new(func), arg).map_err(Into::into)?;
     SCHED.push(task);
 
     Ok(ret_wo.raw())

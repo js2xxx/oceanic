@@ -86,10 +86,13 @@ pub unsafe fn init(max_level: log::Level) {
 
 mod syscall {
     use solvent::*;
+
+    use crate::syscall::{In, UserPtr};
+
     #[syscall]
-    fn log(rec: *const ::log::Record) {
+    fn log(rec: UserPtr<In, ::log::Record>) {
         let logger = unsafe { super::LOGGER.assume_init_ref() } as &dyn ::log::Log;
-        logger.log(unsafe { &*rec });
+        logger.log(unsafe { &rec.read()? });
         Ok(())
     }
 }

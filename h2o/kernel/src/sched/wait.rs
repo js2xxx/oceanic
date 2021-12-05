@@ -2,6 +2,7 @@ pub mod cell;
 pub mod queue;
 
 pub use cell::WaitCell;
+pub use queue::WaitQueue;
 
 use super::*;
 use crate::cpu::time::Instant;

@@ -31,7 +31,10 @@
 //! ];
 //! ```
 
+pub mod user_ptr;
+
 use solvent::*;
+pub use user_ptr::*;
 
 static SYSCALL_TABLE: &[Option<SyscallWrapper>] = &[
     Some(syscall_wrapper!(get_time)),
