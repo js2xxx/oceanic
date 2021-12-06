@@ -90,15 +90,23 @@ impl Drop for Phys {
 #[derive(Debug)]
 pub struct Virt {
     ty: Type,
+    alloc_ty: AllocType,
     ptr: NonNull<[u8]>,
     phys: Arc<Phys>,
     space: Arc<Space>,
 }
 
 impl Virt {
-    pub(super) fn new(ty: Type, ptr: NonNull<[u8]>, phys: Arc<Phys>, space: Arc<Space>) -> Self {
+    pub(super) fn new(
+        ty: Type,
+        alloc_ty: AllocType,
+        ptr: NonNull<[u8]>,
+        phys: Arc<Phys>,
+        space: Arc<Space>,
+    ) -> Self {
         Virt {
             ty,
+            alloc_ty,
             ptr,
             phys,
             space,
@@ -158,22 +166,15 @@ impl Virt {
         }
     }
 
-    pub fn migrate(self, space: Arc<Space>, keep_virt: bool) -> Result<Virt, SpaceError> {
+    pub fn migrate(self, space: Arc<Space>) -> Result<Virt, SpaceError> {
         if Arc::ptr_eq(&space, &self.space) {
             Ok(self)
         } else {
             unsafe {
+                let alloc_ty = self.alloc_ty.clone();
                 let phys = self.space.deallocate(self.ptr.as_non_null_ptr())?;
-                let ty = if keep_virt {
-                    AllocType::Virt(
-                        LAddr::from(self.ptr)..LAddr::new(unsafe {
-                            self.ptr.as_mut_ptr().add(self.ptr.len())
-                        }),
-                    )
-                } else {
-                    AllocType::Layout(self.phys.layout())
-                };
-                space.allocate(ty, Some(phys), self.phys.flags)
+                let flags = phys.flags;
+                space.allocate(alloc_ty, Some(phys), flags)
             }
         }
     }

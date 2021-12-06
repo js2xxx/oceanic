@@ -3,12 +3,12 @@
 #![feature(nonnull_slice_from_raw_parts)]
 #![feature(step_trait)]
 
-pub mod addr;
-pub mod alloc;
-pub mod consts;
-pub mod entry;
+mod addr;
+mod alloc;
+mod consts;
+mod entry;
 mod inner;
-pub mod level;
+mod level;
 
 pub use alloc::PageAlloc;
 use core::{ops::Range, ptr::NonNull};

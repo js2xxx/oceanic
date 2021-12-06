@@ -24,12 +24,13 @@ impl Tid {
         self.0
     }
 
+    #[inline]
     pub fn info(&self) -> &RwLock<TaskInfo> {
         &*self.1
     }
 
-    pub fn child(&self, hdl: Handle) -> Option<Arc<Child>> {
-        self.info().read().handles.get::<Arc<Child>>(hdl).cloned()
+    pub fn child(&self, hdl: Handle) -> Option<Child> {
+        self.info().read().handles.get::<Child>(hdl).cloned()
     }
 }
 

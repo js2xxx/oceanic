@@ -1,6 +1,6 @@
 pub mod fpu;
 pub mod io;
-pub mod lock;
+mod lock;
 pub mod msr;
 pub mod rand;
 pub mod reg;

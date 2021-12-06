@@ -1,11 +1,11 @@
 pub mod child;
 pub mod ctx;
-pub mod elf;
-pub mod hdl;
+mod elf;
+mod hdl;
 pub mod idle;
 pub mod prio;
 pub mod sig;
-pub mod syscall;
+mod syscall;
 pub mod tid;
 
 use alloc::{boxed::Box, format, string::String, sync::Arc};
@@ -77,7 +77,7 @@ pub enum Type {
 
 #[derive(Debug)]
 pub struct TaskInfo {
-    from: Option<(Tid, Option<Arc<Child>>)>,
+    from: Option<(Tid, Option<Child>)>,
     name: String,
     ty: Type,
     affinity: CpuMask,
@@ -289,10 +289,6 @@ impl Ready {
     pub fn kframe_mut(&mut self) -> *mut *mut u8 {
         self.kstack.kframe_ptr_mut()
     }
-
-    pub fn space(&self) -> &Arc<Space> {
-        &self.space
-    }
 }
 
 #[derive(Debug)]
@@ -390,7 +386,7 @@ where
 
         let (ret_wo, child) = {
             let mut cur_ti = cur_ti.upgrade();
-            let child = Arc::new(Child::new(tid.clone()));
+            let child = Child::new(tid.clone());
             (cur_ti.handles.insert(child.clone()).unwrap(), child)
         };
         drop(pree);

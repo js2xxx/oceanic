@@ -7,8 +7,8 @@
 #![feature(slice_ptr_get)]
 #![feature(slice_ptr_len)]
 
-pub mod call;
-pub mod error;
+mod call;
+mod error;
 pub mod mem;
 pub mod task;
 pub mod time;

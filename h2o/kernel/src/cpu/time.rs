@@ -1,5 +1,5 @@
 pub mod chip;
-pub mod timer;
+mod timer;
 
 use core::{
     ops::{Add, AddAssign, Sub, SubAssign},

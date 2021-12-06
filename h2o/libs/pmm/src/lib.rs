@@ -2,7 +2,7 @@
 #![feature(asm)]
 #![feature(nonnull_slice_from_raw_parts)]
 
-pub mod buddy;
+mod buddy;
 
 #[cfg(debug_assertions)]
 pub use buddy::dump_data;

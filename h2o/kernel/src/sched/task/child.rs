@@ -1,16 +1,18 @@
+use alloc::sync::Arc;
+
 use super::Tid;
 use crate::sched::wait::WaitCell;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Child {
-    cell: WaitCell<usize>,
+    cell: Arc<WaitCell<usize>>,
     tid: Tid,
 }
 
 impl Child {
     pub fn new(tid: Tid) -> Self {
         Child {
-            cell: WaitCell::new(),
+            cell: Arc::new(WaitCell::new()),
             tid,
         }
     }

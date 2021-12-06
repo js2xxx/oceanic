@@ -76,7 +76,7 @@ fn ty_to_range_set(ty: task::Type) -> RangeSet<LAddr> {
     range_set
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum AllocType {
     Layout(Layout),
     Virt(Range<LAddr>),
@@ -132,8 +132,10 @@ impl Space {
         self.canary.assert();
         let _pree = PREEMPT.lock();
 
-        let ret = self.allocator.allocate(ty, &mut phys, flags, &self.arch);
-        ret.map(|ptr| Virt::new(self.ty, ptr, phys.unwrap(), self.clone()))
+        let ret = self
+            .allocator
+            .allocate(ty.clone(), &mut phys, flags, &self.arch);
+        ret.map(|ptr| Virt::new(self.ty, ty, ptr, phys.unwrap(), self.clone()))
     }
 
     /// Allocate an address range in the kernel space.

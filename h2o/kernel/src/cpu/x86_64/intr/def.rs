@@ -292,7 +292,7 @@ hdl!(lapic_error, |_frame| {
 });
 
 hdl!(lapic_ipi_task_migrate, |_frame| {
-    crate::sched::sched::task_migrate_handler();
+    crate::sched::task_migrate_handler();
 });
 
 hdl!(lapic_spurious, |_frame| {

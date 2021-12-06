@@ -74,7 +74,7 @@ impl<'a> BootAlloc<'a> {
     }
 }
 
-unsafe impl<'a> paging::alloc::PageAlloc for BootAlloc<'a> {
+unsafe impl<'a> paging::PageAlloc for BootAlloc<'a> {
     unsafe fn allocate(&mut self) -> Option<paging::PAddr> {
         self.alloc_n(1)
     }

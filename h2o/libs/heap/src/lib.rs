@@ -50,9 +50,9 @@
 #![feature(slice_ptr_get)]
 #![feature(slice_ptr_len)]
 
-pub mod alloc;
-pub mod page;
-pub mod stat;
+mod alloc;
+mod page;
+mod stat;
 
 mod pool;
 mod slab;

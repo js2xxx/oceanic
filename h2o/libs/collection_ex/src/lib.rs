@@ -3,11 +3,11 @@
 #![feature(const_btree_new)]
 #![feature(const_fn_trait_bound)]
 
-pub mod chash_map;
-pub mod fnv_hasher;
-pub mod id_alloc;
-pub mod range_map;
-pub mod range_set;
+mod chash_map;
+mod fnv_hasher;
+mod id_alloc;
+mod range_map;
+mod range_set;
 
 pub use chash_map::CHashMap;
 pub use fnv_hasher::FnvHasher;

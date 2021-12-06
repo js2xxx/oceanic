@@ -31,7 +31,7 @@
 //! ];
 //! ```
 
-pub mod user_ptr;
+mod user_ptr;
 
 use solvent::*;
 pub use user_ptr::*;
