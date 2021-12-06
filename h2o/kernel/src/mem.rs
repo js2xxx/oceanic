@@ -127,11 +127,7 @@ mod syscall {
         let (layout, flags) = check_options(size, align, flags)?;
         let ty = space::AllocType::Layout(layout);
         let ret = space::with_current(|cur| cur.allocate(ty, None, flags));
-        ret.map_err(Into::into).map(|virt| {
-            let ptr = *virt.base();
-            core::mem::forget(virt);
-            ptr
-        })
+        ret.map_err(Into::into).map(|virt| virt.leak().as_mut_ptr())
     }
 
     #[syscall]

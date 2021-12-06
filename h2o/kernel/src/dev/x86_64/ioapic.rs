@@ -16,7 +16,7 @@ use crate::{
         },
         intr::{edge_handler, fasteoi_handler, Interrupt, IntrChip, TypeHandler},
     },
-    mem::space::{self, AllocType, Flags, Phys, Virt},
+    mem::space::{self, AllocType, Flags, KernelVirt, Phys},
 };
 
 const LEGACY_IRQ: Range<u32> = 0..16;
@@ -117,7 +117,7 @@ unsafe fn write_eoi(base_ptr: *mut u32, val: u32) {
 
 pub struct Ioapic {
     base_ptr: *mut u32,
-    virt: Virt,
+    virt: KernelVirt,
 
     id: u8,
     version: u32,
@@ -167,7 +167,7 @@ impl Ioapic {
         );
         let virt = unsafe {
             space::current()
-                .allocate(
+                .allocate_kernel(
                     AllocType::Layout(phys.layout()),
                     Some(phys.clone()),
                     phys.flags(),
@@ -196,7 +196,7 @@ impl Ioapic {
         self.gsi.len()
     }
 
-    pub fn virt(&self) -> &Virt {
+    pub fn virt(&self) -> &KernelVirt {
         &self.virt
     }
 }

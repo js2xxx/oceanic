@@ -10,10 +10,10 @@ use raw_cpuid::CpuId;
 use spin::{Lazy, RwLock};
 
 use super::intr::def::ApicVec;
-use crate::mem::space::{self, AllocType, Flags, Phys, Virt};
+use crate::mem::space::{self, AllocType, Flags, KernelVirt, Phys};
 
 pub static LAPIC_ID: RwLock<BTreeMap<usize, u32>> = RwLock::new(BTreeMap::new());
-static LAPIC_BASE: Lazy<Virt> = Lazy::new(|| {
+static LAPIC_BASE: Lazy<KernelVirt> = Lazy::new(|| {
     let phys = Phys::new(
         PAddr::new(0xFEE00000),
         PAGE_LAYOUT,
@@ -21,7 +21,7 @@ static LAPIC_BASE: Lazy<Virt> = Lazy::new(|| {
     );
     unsafe {
         space::current()
-            .allocate(
+            .allocate_kernel(
                 AllocType::Layout(phys.layout()),
                 Some(phys.clone()),
                 phys.flags(),

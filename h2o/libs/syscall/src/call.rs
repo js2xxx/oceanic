@@ -1,12 +1,12 @@
+pub mod hdl;
 #[cfg(feature = "call")]
 pub mod raw;
 pub mod reg;
-pub mod hdl;
 
 use solvent_gen::syscall_stub;
 
 #[allow(unused_imports)]
-use crate::{Arguments, SerdeReg, Handle};
+use crate::{Arguments, Handle, SerdeReg};
 
 syscall_stub!(0 => pub(crate) fn get_time(ptr: *mut u128));
 // #[cfg(debug_assertions)]
@@ -35,11 +35,11 @@ syscall_stub!(8 =>
         flags: u32
     ) -> Handle
 );
-syscall_stub!(9 => 
+syscall_stub!(9 =>
     pub(crate) unsafe fn virt_modify(
-        hdl: Handle, 
-        ptr: *mut u8, 
-        size: usize, 
+        hdl: Handle,
+        ptr: *mut u8,
+        size: usize,
         flags: u32
     )
 );

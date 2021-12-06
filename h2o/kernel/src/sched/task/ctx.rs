@@ -17,7 +17,7 @@ use paging::{LAddr, PAGE_SIZE};
 
 use crate::{
     cpu::arch::seg::ndt::INTR_CODE,
-    mem::space::{self, AllocType, Flags, Virt},
+    mem::space::{self, AllocType, Flags, KernelVirt},
 };
 
 pub const KSTACK_SIZE: usize = paging::PAGE_SIZE * 13;
@@ -55,7 +55,7 @@ impl KstackData {
 
 pub struct Kstack {
     ptr: NonNull<KstackData>,
-    virt: Virt,
+    virt: KernelVirt,
     kframe_ptr: Box<*mut u8>,
 }
 
@@ -65,7 +65,7 @@ impl Kstack {
     pub fn new(entry: Entry, ty: super::Type) -> Self {
         let (virt, ptr) = {
             let virt = space::KRL
-                .allocate(
+                .allocate_kernel(
                     AllocType::Layout(Layout::new::<KstackData>()),
                     None,
                     Flags::READABLE | Flags::WRITABLE,
@@ -108,7 +108,7 @@ impl Kstack {
         &mut *self.kframe_ptr
     }
 
-    pub fn virt(&self) -> &Virt {
+    pub fn virt(&self) -> &KernelVirt {
         &self.virt
     }
 }

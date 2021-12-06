@@ -29,11 +29,7 @@ impl Tid {
     }
 
     pub fn child(&self, hdl: Handle) -> Option<Arc<Child>> {
-        self.info()
-            .read()
-            .handles
-            .get::<Arc<Child>>(hdl)
-            .cloned()
+        self.info().read().handles.get::<Arc<Child>>(hdl).cloned()
     }
 }
 

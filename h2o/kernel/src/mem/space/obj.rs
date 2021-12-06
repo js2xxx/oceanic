@@ -1,13 +1,15 @@
 use alloc::{alloc::Global, sync::Arc};
 use core::{
     alloc::{AllocError, Allocator, Layout},
-    ops::Range,
+    mem,
+    ops::{Deref, Range},
     ptr::NonNull,
 };
 
 use paging::{LAddr, PAddr};
 
-use super::{Flags, Space, SpaceError};
+use super::{AllocType, Flags, Space, SpaceError};
+use crate::sched::task::Type;
 
 #[derive(Debug)]
 pub struct Phys {
@@ -85,18 +87,26 @@ impl Drop for Phys {
     }
 }
 
+#[derive(Debug)]
 pub struct Virt {
+    ty: Type,
     ptr: NonNull<[u8]>,
     phys: Arc<Phys>,
     space: Arc<Space>,
 }
 
-unsafe impl Send for Virt {}
-unsafe impl Sync for Virt {}
-
 impl Virt {
-    pub(super) fn new(ptr: NonNull<[u8]>, phys: Arc<Phys>, space: Arc<Space>) -> Self {
-        Virt { ptr, phys, space }
+    pub(super) fn new(ty: Type, ptr: NonNull<[u8]>, phys: Arc<Phys>, space: Arc<Space>) -> Self {
+        Virt {
+            ty,
+            ptr,
+            phys,
+            space,
+        }
+    }
+
+    pub fn ty(&self) -> Type {
+        self.ty
     }
 
     pub fn base(&self) -> LAddr {
@@ -139,6 +149,34 @@ impl Virt {
         let ptr = NonNull::slice_from_raw_parts(base, len);
         self.space.modify(ptr, flags)
     }
+
+    pub fn leak(self) -> NonNull<[u8]> {
+        unsafe {
+            let inner = self.ptr;
+            mem::forget(self);
+            inner
+        }
+    }
+
+    pub fn migrate(self, space: Arc<Space>, keep_virt: bool) -> Result<Virt, SpaceError> {
+        if Arc::ptr_eq(&space, &self.space) {
+            Ok(self)
+        } else {
+            unsafe {
+                let phys = self.space.deallocate(self.ptr.as_non_null_ptr())?;
+                let ty = if keep_virt {
+                    AllocType::Virt(
+                        LAddr::from(self.ptr)..LAddr::new(unsafe {
+                            self.ptr.as_mut_ptr().add(self.ptr.len())
+                        }),
+                    )
+                } else {
+                    AllocType::Layout(self.phys.layout())
+                };
+                space.allocate(ty, Some(phys), self.phys.flags)
+            }
+        }
+    }
 }
 
 impl Drop for Virt {
@@ -146,5 +184,29 @@ impl Drop for Virt {
         unsafe {
             let _ = self.space.deallocate(self.base().as_non_null().unwrap());
         }
+    }
+}
+
+#[derive(Debug)]
+#[repr(transparent)]
+pub struct KernelVirt(Virt);
+
+unsafe impl Send for KernelVirt {}
+unsafe impl Sync for KernelVirt {}
+
+impl KernelVirt {
+    pub(super) fn new(virt: Virt) -> Result<Self, Virt> {
+        match virt.ty {
+            Type::Kernel => Ok(KernelVirt(virt)),
+            Type::User => Err(virt),
+        }
+    }
+}
+
+impl Deref for KernelVirt {
+    type Target = Virt;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }

@@ -4,7 +4,7 @@
 //! higher level, especially for large objects like APIC.
 
 mod alloc;
-pub mod obj;
+mod obj;
 
 cfg_if::cfg_if! {
     if #[cfg(target_arch = "x86_64")] {
@@ -24,7 +24,7 @@ pub use arch::init_pgc;
 use bitop_ex::BitOpEx;
 use canary::Canary;
 use collection_ex::RangeSet;
-pub use obj::{Phys, Virt};
+pub use obj::*;
 use paging::LAddr;
 pub use solvent::mem::Flags;
 use spin::{Lazy, Mutex, MutexGuard};
@@ -133,7 +133,25 @@ impl Space {
         let _pree = PREEMPT.lock();
 
         let ret = self.allocator.allocate(ty, &mut phys, flags, &self.arch);
-        ret.map(|ptr| Virt::new(ptr, phys.unwrap(), self.clone()))
+        ret.map(|ptr| Virt::new(self.ty, ptr, phys.unwrap(), self.clone()))
+    }
+
+    /// Allocate an address range in the kernel space.
+    ///
+    /// Used for sharing kernel variables of [`KernelVirt`].
+    pub fn allocate_kernel(
+        self: &Arc<Self>,
+        ty: AllocType,
+        phys: Option<Arc<Phys>>,
+        flags: Flags,
+    ) -> Result<KernelVirt, SpaceError> {
+        self.canary.assert();
+        match self.ty {
+            task::Type::Kernel => self
+                .allocate(ty, phys, flags)
+                .map(|virt| KernelVirt::new(virt).unwrap()),
+            task::Type::User => Err(SpaceError::Permission),
+        }
     }
 
     /// Modify the access flags of an address range without a specific type.

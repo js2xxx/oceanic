@@ -11,7 +11,7 @@ use crate::{
         chip::{factor_from_freq, CalibrationClock, ClockChip},
         Instant,
     },
-    mem::space::{self, AllocType, Flags, Phys, Virt},
+    mem::space::{self, AllocType, Flags, KernelVirt, Phys},
 };
 
 #[repr(C, packed)]
@@ -47,7 +47,7 @@ pub static HPET_CLOCK: Lazy<Option<HpetClock>> = Lazy::new(HpetClock::new);
 
 pub struct Hpet {
     base_ptr: *mut HpetReg,
-    virt: Virt,
+    virt: KernelVirt,
 
     block_id: u8,
     period_fs: u64,
@@ -66,7 +66,7 @@ impl Hpet {
         );
         let virt = unsafe {
             space::current()
-                .allocate(
+                .allocate_kernel(
                     AllocType::Layout(phys.layout()),
                     Some(phys.clone()),
                     phys.flags(),
@@ -123,7 +123,7 @@ impl Hpet {
         a.min(b)
     }
 
-    pub fn virt(&self) -> &Virt {
+    pub fn virt(&self) -> &KernelVirt {
         &self.virt
     }
 }
