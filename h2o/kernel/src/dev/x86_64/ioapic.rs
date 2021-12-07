@@ -124,6 +124,7 @@ pub struct Ioapic {
     gsi: Range<u32>,
 }
 
+// [`Ioapic`] lives in the kernel space and should share its data.
 unsafe impl Send for Ioapic {}
 unsafe impl Sync for Ioapic {}
 

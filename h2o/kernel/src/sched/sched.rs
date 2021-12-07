@@ -241,7 +241,7 @@ impl Scheduler {
             return Some(pree);
         }
 
-        match ti.take_signal() {
+        match unsafe { ti.take_signal() } {
             Some(task::sig::Signal::Kill) => {
                 drop(ti);
                 log::trace!("Killing task {:?}, P{}", cur.tid().raw(), PREEMPT.raw());

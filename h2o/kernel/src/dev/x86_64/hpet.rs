@@ -54,6 +54,7 @@ pub struct Hpet {
     num_comparators: usize,
 }
 
+// [`Hpet`] lives in the kernel space and should share its data.
 unsafe impl Send for Hpet {}
 unsafe impl Sync for Hpet {}
 

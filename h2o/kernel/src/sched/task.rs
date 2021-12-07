@@ -86,7 +86,6 @@ pub struct TaskInfo {
     signal: Mutex<Option<Signal>>,
 }
 
-unsafe impl Send for TaskInfo {}
 unsafe impl Sync for TaskInfo {}
 
 impl TaskInfo {
@@ -110,7 +109,10 @@ impl TaskInfo {
         &self.handles
     }
 
-    pub fn take_signal(&self) -> Option<Signal> {
+    /// # Safety
+    ///
+    /// This function must be called only if `PREEMPT` is locked.
+    pub unsafe fn take_signal(&self) -> Option<Signal> {
         self.signal.lock().take()
     }
 

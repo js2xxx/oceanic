@@ -93,7 +93,7 @@ mod syscall {
             crate::sched::SCHED
                 .with_current(|cur| {
                     let info = cur.tid().info();
-                    info.handles().write().insert(box virt)
+                    unsafe { info.handles().write().insert_unchecked(box virt) }
                 })
                 .ok_or(Error(ESRCH))
         })
@@ -113,7 +113,7 @@ mod syscall {
         crate::sched::SCHED
             .with_current(|cur| {
                 let info = cur.tid().info();
-                match info.handles().read().get::<space::Virt>(hdl) {
+                match unsafe { info.handles().read().get_unchecked::<space::Virt>(hdl) } {
                     Some(virt) => unsafe { virt.modify(ptr, flags) }.map_err(Into::into),
                     None => Err(Error(EINVAL)),
                 }

@@ -171,6 +171,7 @@ impl Drop for Virt {
 #[repr(transparent)]
 pub struct KernelVirt(Virt);
 
+// [`KernelVirt`] lives in the kernel space and should share its data.
 unsafe impl Send for KernelVirt {}
 unsafe impl Sync for KernelVirt {}
 
