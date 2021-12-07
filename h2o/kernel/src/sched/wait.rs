@@ -55,8 +55,8 @@ mod syscall {
         let wo = Arc::new(WaitObject::new());
         SCHED
             .with_current(|cur| {
-                let mut info = cur.tid().info().write();
-                info.handles.insert(wo).unwrap().raw()
+                let info = cur.tid().info();
+                info.handles().write().insert(wo).raw()
             })
             .map_or(Err(Error(ESRCH)), Ok)
     }
@@ -66,8 +66,8 @@ mod syscall {
         hdl.check_null()?;
         let wo = SCHED
             .with_current(|cur| {
-                let info = cur.tid().info().read();
-                info.handles.get::<Arc<WaitObject>>(hdl).cloned()
+                let info = cur.tid().info();
+                info.handles().read().get::<Arc<WaitObject>>(hdl).cloned()
             })
             .flatten()
             .ok_or(Error(EINVAL))?;

@@ -52,7 +52,7 @@ impl PreemptState {
 
     /// # Safety
     ///
-    /// This function must be called only if a [`PreemptLockGuard`] is
+    /// This function must be called only if a [`PreemptStateGuard`] is
     /// [`forget`]ed or peered with [`disable`].
     ///
     /// [`forget`]: core::mem::forget

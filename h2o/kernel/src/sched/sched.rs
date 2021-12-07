@@ -47,7 +47,7 @@ impl Scheduler {
             PREEMPT.raw(),
         );
 
-        let affinity = task.tid().info().read().affinity();
+        let affinity = task.tid().info().affinity();
 
         let time_slice = MINIMUM_TIME_GRANULARITY;
         if !affinity.get(self.cpu).map_or(false, |r| *r) {
@@ -235,7 +235,7 @@ impl Scheduler {
             None => return Some(pree),
         };
         log::trace!("Checking task {:?}'s pending signal", cur.tid().raw());
-        let mut ti = cur.tid().info().write();
+        let ti = cur.tid().info();
 
         if ti.ty() == task::Type::Kernel {
             return Some(pree);

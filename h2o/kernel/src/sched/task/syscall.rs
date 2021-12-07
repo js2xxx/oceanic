@@ -62,7 +62,6 @@ pub fn task_join(hdl: Handle) -> usize {
             .with_current(|cur| cur.tid.clone())
             .ok_or(Error(ESRCH))?;
 
-        let _pree = super::PREEMPT.lock();
         tid.child(hdl).ok_or(Error(ECHILD))?
     };
 
@@ -73,19 +72,15 @@ pub fn task_join(hdl: Handle) -> usize {
 pub fn task_ctl(hdl: Handle, op: u32, data: *mut u8) {
     hdl.check_null()?;
 
-    let tid = SCHED
+    let cur_tid = SCHED
         .with_current(|cur| cur.tid.clone())
         .ok_or(Error(ESRCH))?;
 
     match op {
         task::TASK_CTL_KILL => {
-            let child = {
-                let _pree = super::PREEMPT.lock();
-                tid.child(hdl).ok_or(Error(ECHILD))?
-            };
+            let child = cur_tid.child(hdl).ok_or(Error(ECHILD))?;
 
-            let _pree = super::PREEMPT.lock();
-            let mut ti = child.tid().info().write();
+            let ti = child.tid().info();
             ti.replace_signal(Some(Signal::Kill));
 
             Ok(())
@@ -94,29 +89,25 @@ pub fn task_ctl(hdl: Handle, op: u32, data: *mut u8) {
             let wo = {
                 let data = Handle::try_from(data)?;
 
+                let info = cur_tid.info();
                 let _pree = super::PREEMPT.lock();
-                let info = &tid.info().read();
-                match info.handles.get::<Arc<WaitObject>>(data).cloned() {
+                match info.handles().read().get::<Arc<WaitObject>>(data).cloned() {
                     Some(wo) => wo,
                     None => return Err(Error(EINVAL)),
                 }
             };
 
-            let child = {
-                let _pree = super::PREEMPT.lock();
-                tid.child(hdl).ok_or(Error(ECHILD))?
-            };
+            let child = cur_tid.child(hdl).ok_or(Error(ECHILD))?;
 
-            let _pree = super::PREEMPT.lock();
-            let mut ti = child.tid().info().write();
+            let ti = child.tid().info();
             ti.replace_signal(Some(Signal::Suspend(wo)));
 
             Ok(())
         }
         task::TASK_CTL_DETACH => {
+            let ti = cur_tid.info();
             let _pree = super::PREEMPT.lock();
-            let mut ti = tid.info().write();
-            ti.handles.remove(hdl).ok_or(Error(ECHILD))?;
+            ti.handles.write().remove(hdl).ok_or(Error(ECHILD))?;
 
             Ok(())
         }

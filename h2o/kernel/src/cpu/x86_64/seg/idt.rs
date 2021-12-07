@@ -56,10 +56,9 @@ static IDT: Lazy<IntDescTable> = Lazy::new(|| {
 /// Because a packed & aligned structure cannot be built in Rust, so we hide the
 /// actual fields in 2 quadwords.
 ///
-///     size: |<-------u16------>|<-------u16------>|<--u8-->|<---u8-->|<-------u16------>|
-///     `q0`: |   offset_low     |     selector     |   IST  |  attr   |
-/// offset_mid     |     `q1`: |             offset_high             |
-/// (reserved)              |
+///     size: |<-----u16---->|<-----u16---->|<--u8-->|<--u8-->|<----u16----->|
+///     `q0`: |  offset_low  |   selector   |   IST  |  attr  |  offset_mid  |
+///     `q1`: |             offset_high     |              (reserved)        |
 #[repr(C, align(0x10))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Gate {

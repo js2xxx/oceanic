@@ -1,9 +1,9 @@
 use alloc::sync::Arc;
-use core::{hash::BuildHasherDefault, ptr};
+use core::hash::BuildHasherDefault;
 
 use collection_ex::{CHashMap, FnvHasher, IdAllocator};
 use solvent::Handle;
-use spin::{Lazy, RwLock};
+use spin::Lazy;
 
 use super::{Child, TaskInfo};
 use crate::sched::PREEMPT;
@@ -11,13 +11,12 @@ use crate::sched::PREEMPT;
 pub const NR_TASKS: usize = 65536;
 
 type BH = BuildHasherDefault<FnvHasher>;
-static TI_MAP: Lazy<CHashMap<u32, Arc<RwLock<TaskInfo>>, BH>> =
-    Lazy::new(|| CHashMap::new(BH::default()));
+static TI_MAP: Lazy<CHashMap<u32, Arc<TaskInfo>, BH>> = Lazy::new(|| CHashMap::new(BH::default()));
 static TID_ALLOC: Lazy<spin::Mutex<IdAllocator>> =
     Lazy::new(|| spin::Mutex::new(IdAllocator::new(0..=(NR_TASKS as u64 - 1))));
 
 #[derive(Debug, Clone)]
-pub struct Tid(u32, Arc<RwLock<TaskInfo>>);
+pub struct Tid(u32, Arc<TaskInfo>);
 
 impl Tid {
     pub fn raw(&self) -> u32 {
@@ -25,18 +24,19 @@ impl Tid {
     }
 
     #[inline]
-    pub fn info(&self) -> &RwLock<TaskInfo> {
+    pub fn info(&self) -> &TaskInfo {
         &*self.1
     }
 
     pub fn child(&self, hdl: Handle) -> Option<Child> {
-        self.info().read().handles.get::<Child>(hdl).cloned()
+        let _pree = super::PREEMPT.lock();
+        self.info().handles().read().get::<Child>(hdl).cloned()
     }
 }
 
 impl PartialEq for Tid {
     fn eq(&self, other: &Self) -> bool {
-        self.0 == other.0 && ptr::eq(self.1.as_mut_ptr(), other.1.as_mut_ptr())
+        self.0 == other.0 && Arc::ptr_eq(&self.1, &other.1)
     }
 }
 
@@ -56,7 +56,7 @@ where
     let _flags = PREEMPT.lock();
     match next() {
         Some(raw) => {
-            let ti = Arc::new(RwLock::new(ti));
+            let ti = Arc::new(ti);
             let old = TI_MAP.insert(raw, ti.clone());
             debug_assert!(old.is_none());
             Ok(Tid(raw, ti))

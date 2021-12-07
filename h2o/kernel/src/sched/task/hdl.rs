@@ -1,4 +1,4 @@
-use alloc::{boxed::Box, collections::BTreeMap};
+use alloc::{boxed::Box, collections::BTreeMap, vec::Vec};
 use core::any::Any;
 
 use solvent::Handle;
@@ -9,9 +9,6 @@ pub struct HandleMap {
     map: BTreeMap<Handle, Box<dyn Any>>,
 }
 
-unsafe impl Send for HandleMap {}
-unsafe impl Sync for HandleMap {}
-
 impl HandleMap {
     pub fn new() -> Self {
         HandleMap {
@@ -20,7 +17,7 @@ impl HandleMap {
         }
     }
 
-    pub fn insert<T: 'static>(&mut self, obj: T) -> Option<Handle> {
+    pub fn insert<T: 'static>(&mut self, obj: T) -> Handle {
         let k = box obj;
         let id = {
             let new = self.next_id;
@@ -28,9 +25,8 @@ impl HandleMap {
             Handle::new(new)
         };
         self.map.insert(id, k);
-        Some(id)
+        id
     }
-
     pub fn get<T: 'static>(&self, hdl: Handle) -> Option<&T> {
         self.map.get(&hdl).and_then(|k| k.downcast_ref())
     }
@@ -55,6 +51,24 @@ impl HandleMap {
             drop(ent.remove())
         }
     }
+
+    pub fn send(&mut self, handles: &[Handle]) -> Option<Vec<Box<dyn Any>>> {
+        for hdl in handles {
+            if self.map.get(&hdl).is_none() {
+                return None;
+            }
+        }
+        Some(
+            handles
+                .into_iter()
+                .map(|hdl| self.map.remove(&hdl).unwrap())
+                .collect(),
+        )
+    }
+
+    pub fn receive(&mut self, objects: Vec<Box<dyn Any + Send>>) -> Vec<Handle> {
+        objects.into_iter().map(|obj| self.insert(obj)).collect()
+    }
 }
 
 mod syscall {
@@ -64,8 +78,8 @@ mod syscall {
     fn object_drop(hdl: Handle) {
         hdl.check_null()?;
         crate::sched::SCHED.with_current(|cur| {
-            let mut info = cur.tid().info().write();
-            info.handles.drop(hdl);
+            let info = cur.tid().info();
+            (*info.handles().write()).drop(hdl);
         });
         Ok(())
     }

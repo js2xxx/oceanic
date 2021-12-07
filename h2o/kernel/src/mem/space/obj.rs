@@ -8,7 +8,7 @@ use core::{
 
 use paging::{LAddr, PAddr};
 
-use super::{AllocType, Flags, Space, SpaceError};
+use super::{Flags, Space, SpaceError};
 use crate::sched::task::Type;
 
 #[derive(Debug)]
@@ -90,23 +90,15 @@ impl Drop for Phys {
 #[derive(Debug)]
 pub struct Virt {
     ty: Type,
-    alloc_ty: AllocType,
     ptr: NonNull<[u8]>,
     phys: Arc<Phys>,
     space: Arc<Space>,
 }
 
 impl Virt {
-    pub(super) fn new(
-        ty: Type,
-        alloc_ty: AllocType,
-        ptr: NonNull<[u8]>,
-        phys: Arc<Phys>,
-        space: Arc<Space>,
-    ) -> Self {
+    pub(super) fn new(ty: Type, ptr: NonNull<[u8]>, phys: Arc<Phys>, space: Arc<Space>) -> Self {
         Virt {
             ty,
-            alloc_ty,
             ptr,
             phys,
             space,
@@ -163,19 +155,6 @@ impl Virt {
             let inner = self.ptr;
             mem::forget(self);
             inner
-        }
-    }
-
-    pub fn migrate(self, space: Arc<Space>) -> Result<Virt, SpaceError> {
-        if Arc::ptr_eq(&space, &self.space) {
-            Ok(self)
-        } else {
-            unsafe {
-                let alloc_ty = self.alloc_ty.clone();
-                let phys = self.space.deallocate(self.ptr.as_non_null_ptr())?;
-                let flags = phys.flags;
-                space.allocate(alloc_ty, Some(phys), flags)
-            }
         }
     }
 }

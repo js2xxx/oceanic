@@ -9,11 +9,11 @@ mod syscall;
 pub mod tid;
 
 use alloc::{boxed::Box, format, string::String, sync::Arc};
-use core::time::Duration;
+use core::{cell::UnsafeCell, time::Duration};
 
 use paging::LAddr;
 use solvent::Handle;
-use spin::Lazy;
+use spin::{Lazy, Mutex, RwLock};
 
 #[cfg(target_arch = "x86_64")]
 pub use self::ctx::arch::{DEFAULT_STACK_LAYOUT, DEFAULT_STACK_SIZE};
@@ -27,13 +27,13 @@ use crate::{
 
 static ROOT: Lazy<Tid> = Lazy::new(|| {
     let ti = TaskInfo {
-        from: None,
+        from: UnsafeCell::new(None),
         name: String::from("ROOT"),
         ty: Type::Kernel,
         affinity: crate::cpu::all_mask(),
         prio: prio::DEFAULT,
-        handles: HandleMap::new(),
-        signal: None,
+        handles: RwLock::new(HandleMap::new()),
+        signal: Mutex::new(None),
     };
 
     tid::allocate(ti).expect("Failed to acquire a valid TID")
@@ -77,14 +77,17 @@ pub enum Type {
 
 #[derive(Debug)]
 pub struct TaskInfo {
-    from: Option<(Tid, Option<Child>)>,
+    from: UnsafeCell<Option<(Tid, Option<Child>)>>,
     name: String,
     ty: Type,
     affinity: CpuMask,
     prio: Priority,
-    pub handles: HandleMap,
-    signal: Option<Signal>,
+    handles: RwLock<HandleMap>,
+    signal: Mutex<Option<Signal>>,
 }
+
+unsafe impl Send for TaskInfo {}
+unsafe impl Sync for TaskInfo {}
 
 impl TaskInfo {
     pub fn name(&self) -> &str {
@@ -103,12 +106,18 @@ impl TaskInfo {
         self.prio
     }
 
-    pub fn take_signal(&mut self) -> Option<Signal> {
-        self.signal.take()
+    pub fn handles(&self) -> &RwLock<HandleMap> {
+        &self.handles
     }
 
-    pub fn replace_signal(&mut self, signal: Option<Signal>) -> Option<Signal> {
-        match (signal, &mut self.signal) {
+    pub fn take_signal(&self) -> Option<Signal> {
+        self.signal.lock().take()
+    }
+
+    pub fn replace_signal(&self, signal: Option<Signal>) -> Option<Signal> {
+        let _pree = super::PREEMPT.lock();
+        let mut self_signal = self.signal.lock();
+        match (signal, &mut *self_signal) {
             (None, s) => {
                 *s = None;
                 None
@@ -149,7 +158,7 @@ impl Init {
             args,
         };
 
-        let kstack = ctx::Kstack::new(entry, tid.info().read().ty);
+        let kstack = ctx::Kstack::new(entry, tid.info().ty);
 
         Ok(Init { tid, space, kstack })
     }
@@ -271,7 +280,7 @@ impl Ready {
         KernelGs::update_tss_rsp0(tss_rsp0);
         crate::mem::space::set_current(self.space.clone());
         self.ext_frame.load();
-        if !cpu::arch::in_intr() && self.tid.info().read().ty == Type::Kernel {
+        if !cpu::arch::in_intr() && self.tid.info().ty == Type::Kernel {
             KernelGs::reload();
         }
     }
@@ -358,8 +367,7 @@ where
     let (entry, tls, stack_size) = with_space(&space)?;
 
     let (tid, ret_wo) = {
-        let pree = PREEMPT.lock();
-        let cur_ti = cur_tid.info().upgradeable_read();
+        let cur_ti = cur_tid.info();
 
         let ty = match ty {
             Type::Kernel => cur_ti.ty,
@@ -374,24 +382,23 @@ where
         let prio = prio.min(cur_ti.prio);
 
         let new_ti = TaskInfo {
-            from: None,
+            from: UnsafeCell::new(None),
             name,
             ty,
             affinity,
             prio,
-            handles: HandleMap::new(),
-            signal: None,
+            handles: RwLock::new(HandleMap::new()),
+            signal: Mutex::new(None),
         };
         let tid = tid::allocate(new_ti).map_err(|_| TaskError::TidExhausted)?;
 
         let (ret_wo, child) = {
-            let mut cur_ti = cur_ti.upgrade();
             let child = Child::new(tid.clone());
-            (cur_ti.handles.insert(child.clone()).unwrap(), child)
+            let _pree = PREEMPT.lock();
+            (cur_ti.handles().write().insert(child.clone()), child)
         };
-        drop(pree);
 
-        tid.info().write().from = Some((cur_tid, Some(child)));
+        unsafe { tid.info().from.get().write(Some((cur_tid, Some(child)))) };
         (tid, ret_wo)
     };
 
@@ -406,7 +413,7 @@ pub fn create_fn(
 ) -> Result<(Init, Handle)> {
     let (name, ty, affinity, prio) = super::SCHED
         .with_current(|cur| {
-            let ti = cur.tid.info().read();
+            let ti = cur.tid.info();
             (
                 name.unwrap_or(format!("{}.func{:?}", ti.name, *func)),
                 ti.ty,
@@ -428,11 +435,8 @@ pub fn create_fn(
 }
 
 pub(super) fn destroy(task: Dead) {
-    if let Some((_, Some(child))) = {
-        tid::deallocate(&task.tid);
-        let ti = task.tid.info().read();
-        ti.from.clone()
-    } {
+    tid::deallocate(&task.tid);
+    if let Some((_, Some(child))) = { unsafe { &*task.tid.info().from.get() }.clone() } {
         let _ = child.cell().replace(task.retval);
     }
 }

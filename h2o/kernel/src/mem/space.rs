@@ -135,7 +135,7 @@ impl Space {
         let ret = self
             .allocator
             .allocate(ty.clone(), &mut phys, flags, &self.arch);
-        ret.map(|ptr| Virt::new(self.ty, ty, ptr, phys.unwrap(), self.clone()))
+        ret.map(|ptr| Virt::new(self.ty, ptr, phys.unwrap(), self.clone()))
     }
 
     /// Allocate an address range in the kernel space.

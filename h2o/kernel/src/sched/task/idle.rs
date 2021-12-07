@@ -24,13 +24,13 @@ pub(super) static IDLE: Lazy<Tid> = Lazy::new(|| {
     let cpu = unsafe { crate::cpu::id() };
 
     let ti = TaskInfo {
-        from: Some((ROOT.clone(), None)),
+        from: UnsafeCell::new(Some((ROOT.clone(), None))),
         name: format!("IDLE{}", cpu),
         ty: Type::Kernel,
         affinity: crate::cpu::current_mask(),
         prio: prio::IDLE,
-        handles: HandleMap::new(),
-        signal: None,
+        handles: RwLock::new(HandleMap::new()),
+        signal: Mutex::new(None),
     };
 
     let space = Space::clone(unsafe { space::current() }, Type::Kernel);
