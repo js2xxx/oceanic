@@ -26,6 +26,7 @@ solvent = {path = "../libs/syscall", default-features = false}
 acpi = "4.1"
 bitflags = "1.3"
 bitvec = {version = "0.22", default-features = false, features = ["atomic"]}
+bytes = {version = "1.1", default-features = false}
 cfg-if = "1.0"
 crossbeam-epoch = {version = "0.9", default-features = false, features = ["alloc"]}
 crossbeam-queue = {version = "0.3", default-features = false, features = ["alloc"]}

@@ -35,7 +35,7 @@ impl<T> WaitCell<T> {
     #[inline]
     pub fn replace(&self, obj: T) -> Option<T> {
         let old = self.data.lock().replace(obj);
-        self.wo.notify(None);
+        self.wo.notify(1);
         old
     }
 }

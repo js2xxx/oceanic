@@ -19,7 +19,7 @@ use spin::{Lazy, Mutex, RwLock};
 pub use self::ctx::arch::{DEFAULT_STACK_LAYOUT, DEFAULT_STACK_SIZE};
 use self::{child::Child, sig::Signal};
 pub use self::{elf::from_elf, hdl::HandleMap, prio::Priority, tid::Tid};
-use super::{PREEMPT, ipc::{Channel, Message}};
+use super::{ipc::Channel, PREEMPT};
 use crate::{
     cpu::{self, arch::KernelGs, time::Instant, CpuMask},
     mem::space::{Space, SpaceError},
@@ -348,7 +348,7 @@ fn create_common<F>(
     prio: Priority,
     dup_cur_space: bool,
     with_space: F,
-    init_channel: Option<Channel<Message>>,
+    init_channel: Option<Channel>,
     arg: u64,
 ) -> Result<(Init, Handle)>
 where

@@ -100,7 +100,7 @@ mod syscall {
     }
 
     #[syscall]
-    fn virt_modify(hdl: Handle, ptr: *mut u8, size: usize, flags: u32) {
+    fn virt_prot(hdl: Handle, ptr: *mut u8, size: usize, flags: u32) {
         hdl.check_null()?;
 
         if size.contains_bit(paging::PAGE_MASK) {

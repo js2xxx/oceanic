@@ -24,8 +24,8 @@ impl WaitObject {
         SCHED.block_current(Instant::now(), guard, self, block_desc);
     }
 
-    pub fn notify(&self, num: Option<usize>) -> usize {
-        let num = num.unwrap_or(usize::MAX);
+    pub fn notify(&self, num: usize) -> usize {
+        let num = if num == 0 { usize::MAX } else { num };
 
         let mut cnt = 0;
         while cnt < num {
@@ -44,14 +44,13 @@ impl WaitObject {
 
 mod syscall {
     use alloc::sync::Arc;
-    use core::num::NonZeroUsize;
 
     use solvent::*;
 
     use super::*;
 
     #[syscall]
-    fn wo_create() -> u32 {
+    fn wo_new() -> u32 {
         let wo = Arc::new(WaitObject::new());
         SCHED
             .with_current(|cur| {
@@ -71,6 +70,6 @@ mod syscall {
             })
             .flatten()
             .ok_or(Error(EINVAL))?;
-        Ok(wo.notify(NonZeroUsize::new(n).map(Into::into)))
+        Ok(wo.notify(n))
     }
 }

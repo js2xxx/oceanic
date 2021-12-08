@@ -29,13 +29,13 @@ pub fn virt_alloc(
 ///
 /// The caller must ensure that `ptr` is only in the possession of current
 /// context.
-pub unsafe fn virt_modify(
+pub unsafe fn virt_protect(
     hdl: crate::Handle,
     ptr: NonNull<[u8]>,
     flags: Flags,
 ) -> crate::Result<()> {
     let size = ptr.len();
-    crate::call::virt_modify(hdl, ptr.as_mut_ptr(), size, flags.bits)
+    crate::call::virt_prot(hdl, ptr.as_mut_ptr(), size, flags.bits)
 }
 
 pub fn mem_alloc(layout: Layout, flags: Flags) -> crate::Result<NonNull<[u8]>> {

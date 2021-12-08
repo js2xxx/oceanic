@@ -14,7 +14,7 @@ extern crate alloc;
 pub use solvent::rxx::*;
 
 #[no_mangle]
-extern "C" fn tmain() {
+extern "C" fn tmain(init_channel: solvent::Handle) {
     solvent::log::init(log::Level::Debug);
     mem::init();
 

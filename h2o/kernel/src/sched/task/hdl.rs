@@ -7,6 +7,8 @@ use core::any::Any;
 
 use solvent::Handle;
 
+use crate::sched::ipc::Channel;
+
 #[derive(Debug)]
 pub struct HandleMap {
     next_id: u32,
@@ -35,13 +37,17 @@ impl HandleMap {
     /// The caller is responsible for the usage of the inserted object if its
     /// `!Send`.
     pub unsafe fn insert_unchecked<T: 'static>(&mut self, obj: T) -> Handle {
-        let k = box obj;
+        self.insert_boxed(box obj)
+    }
+
+    unsafe fn insert_boxed(&mut self, boxed: Box<dyn Any>) -> Handle {
         let id = {
             let new = self.next_id;
             self.next_id += 1;
             Handle::new(new)
         };
-        self.map.insert(id, k);
+        let _ret = self.map.insert(id, boxed);
+        debug_assert!(_ret.is_none());
         id
     }
 
@@ -86,19 +92,37 @@ impl HandleMap {
     /// The caller must ensure every object indexed by `handles` in the map is
     /// `Send`, excluding:
     /// * [`crate::mem::space::Virt`].
-    pub unsafe fn send(&mut self, handles: &[Handle]) -> Option<Vec<Box<dyn Any + Send>>> {
+    pub unsafe fn send_for_channel<'a, 'b>(
+        &'a mut self,
+        handles: &'b [Handle],
+        chan: Handle,
+    ) -> Result<(Vec<Box<dyn Any + Send>>, &'a Channel), solvent::Error> {
+        debug_assert!(!handles.contains(&chan));
+
+        let chan = self
+            .get::<Channel>(chan)
+            .ok_or(solvent::Error(solvent::EINVAL))? as *const Channel;
+
         for hdl in handles {
             match self.map.get(&hdl) {
-                None => return None,
+                None => return Err(solvent::Error(solvent::EINVAL)),
                 // TODO: Find a better way to check if the object is `!Send`. If found, remove the
                 // `unsafe` marker.
-                Some(obj) if obj.downcast_ref::<crate::mem::space::Virt>().is_some() => {
-                    return None
+                Some(obj) => {
+                    if obj.downcast_ref::<crate::mem::space::Virt>().is_some() {
+                        return Err(solvent::Error(solvent::EPERM));
+                    }
+
+                    if let Some(other) = obj.downcast_ref::<Channel>() {
+                        let chan = unsafe { &*chan };
+                        if chan.is_peer(other) {
+                            return Err(solvent::Error(solvent::EPERM));
+                        }
+                    }
                 }
-                _ => {}
             }
         }
-        Some(
+        Ok((
             handles
                 .into_iter()
                 .map(|hdl| self.map.remove(&hdl).unwrap())
@@ -110,11 +134,15 @@ impl HandleMap {
                     Box::from_raw_in(raw as *mut (dyn Any + Send), alloc)
                 })
                 .collect(),
-        )
+            unsafe { &*chan },
+        ))
     }
 
     pub fn receive(&mut self, objects: Vec<Box<dyn Any + Send>>) -> Vec<Handle> {
-        objects.into_iter().map(|obj| self.insert(obj)).collect()
+        objects
+            .into_iter()
+            .map(|obj| unsafe { self.insert_boxed(obj) })
+            .collect()
     }
 }
 
@@ -122,7 +150,7 @@ mod syscall {
     use solvent::*;
 
     #[syscall]
-    fn object_drop(hdl: Handle) {
+    fn obj_drop(hdl: Handle) {
         hdl.check_null()?;
         crate::sched::SCHED.with_current(|cur| {
             let info = cur.tid().info();

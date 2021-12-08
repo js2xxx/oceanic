@@ -6,7 +6,7 @@ pub mod reg;
 use solvent_gen::syscall_stub;
 
 #[allow(unused_imports)]
-use crate::{Arguments, Handle, SerdeReg};
+use crate::{ipc::RawPacket, Arguments, Handle, SerdeReg};
 
 syscall_stub!(0 => pub(crate) fn get_time(ptr: *mut u128));
 // #[cfg(debug_assertions)]
@@ -36,7 +36,7 @@ syscall_stub!(8 =>
     ) -> Handle
 );
 syscall_stub!(9 =>
-    pub(crate) unsafe fn virt_modify(
+    pub(crate) unsafe fn virt_prot(
         hdl: Handle,
         ptr: *mut u8,
         size: usize,
@@ -46,7 +46,11 @@ syscall_stub!(9 =>
 syscall_stub!(10 => pub(crate) fn mem_alloc(size: usize, align: usize, flags: u32) -> *mut u8);
 syscall_stub!(11 => pub(crate) fn mem_dealloc(ptr: *mut u8));
 
-syscall_stub!(13 => pub(crate) fn wo_create() -> Handle);
+syscall_stub!(13 => pub(crate) fn wo_new() -> Handle);
 syscall_stub!(15 => pub(crate) fn wo_notify(hdl: Handle, n: usize) -> usize);
 
-syscall_stub!(20 => pub(crate) fn object_drop(hdl: Handle));
+syscall_stub!(20 => pub(crate) fn obj_drop(hdl: Handle));
+
+syscall_stub!(23 => pub(crate) fn chan_new(p1: *mut Handle, p2: *mut Handle));
+syscall_stub!(24 => pub(crate) fn chan_send(hdl: Handle, packet: *const RawPacket));
+syscall_stub!(25 => pub fn chan_recv(hdl: Handle, packet: *mut RawPacket, block: bool));

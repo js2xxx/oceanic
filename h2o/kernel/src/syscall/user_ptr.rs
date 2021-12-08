@@ -10,6 +10,13 @@ pub struct UserPtr<T: Type, D> {
 }
 
 impl<T: Type, D> UserPtr<T, D> {
+    pub fn new(data: *mut D) -> Self {
+        UserPtr {
+            data,
+            _marker: PhantomData,
+        }
+    }
+
     pub fn as_ptr(&self) -> *mut D {
         self.data
     }

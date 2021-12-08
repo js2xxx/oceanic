@@ -1,9 +1,15 @@
 use crate::SerdeReg;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[repr(transparent)]
 pub struct Handle(u32);
 
+impl !Send for Handle {}
+impl !Sync for Handle {}
+
 impl Handle {
+    pub const NULL: Handle = Handle(0);
+
     pub fn new(raw: u32) -> Handle {
         Handle(raw)
     }

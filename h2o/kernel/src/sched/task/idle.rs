@@ -70,7 +70,7 @@ fn idle(cpu: usize) -> ! {
     if cpu == 0 {
         let (me, chan) = Channel::new();
 
-        me.send(Message::new(Vec::new(), &[]))
+        me.send(crate::sched::ipc::Packet::new(Vec::new(), &[]))
             .expect("Failed to send message");
 
         let image = unsafe {

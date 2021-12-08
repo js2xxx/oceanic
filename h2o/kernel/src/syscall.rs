@@ -46,18 +46,23 @@ static SYSCALL_TABLE: &[Option<SyscallWrapper>] = &[
     Some(syscall_wrapper!(task_ctl)),
     Some(syscall_wrapper!(task_sleep)),
     Some(syscall_wrapper!(virt_alloc)),
-    Some(syscall_wrapper!(virt_modify)),
+    Some(syscall_wrapper!(virt_prot)),
     Some(syscall_wrapper!(mem_alloc)),
     Some(syscall_wrapper!(mem_dealloc)),
     None,
-    Some(syscall_wrapper!(wo_create)),
+    Some(syscall_wrapper!(wo_new)),
     None, // Reserved for future use of `wo_wait`.
     Some(syscall_wrapper!(wo_notify)),
     None,
     None,
     None,
     None,
-    Some(syscall_wrapper!(object_drop)),
+    Some(syscall_wrapper!(obj_drop)),
+    None,
+    None,
+    Some(syscall_wrapper!(chan_new)),
+    Some(syscall_wrapper!(chan_send)),
+    Some(syscall_wrapper!(chan_recv)),
 ];
 
 pub fn handler(arg: &Arguments) -> solvent::Result<usize> {

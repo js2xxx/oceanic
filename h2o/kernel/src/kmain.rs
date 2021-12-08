@@ -20,6 +20,7 @@
 #![feature(map_first_last)]
 #![feature(new_uninit)]
 #![feature(nonnull_slice_from_raw_parts)]
+#![feature(result_flattening)]
 #![feature(slice_ptr_get)]
 #![feature(slice_ptr_len)]
 #![feature(thread_local)]

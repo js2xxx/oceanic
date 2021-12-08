@@ -23,6 +23,16 @@ serde_reg_primitives!(u8, u16, u32, usize, i8, i16, i32, isize);
 #[cfg(target_pointer_width = "64")]
 serde_reg_primitives!(u64, i64);
 
+impl SerdeReg for bool {
+    fn encode(self) -> usize {
+        self as usize
+    }
+
+    fn decode(val: usize) -> Self {
+        val != 0
+    }
+}
+
 impl<T> SerdeReg for *const T {
     fn encode(self) -> usize {
         self as _

@@ -2,6 +2,7 @@
 #![feature(asm)]
 #![feature(bool_to_option)]
 #![feature(lang_items)]
+#![feature(negative_impls)]
 #![feature(nonnull_slice_from_raw_parts)]
 #![feature(result_into_ok_or_err)]
 #![feature(slice_ptr_get)]
@@ -9,6 +10,7 @@
 
 mod call;
 mod error;
+pub mod ipc;
 pub mod mem;
 pub mod task;
 pub mod time;
@@ -36,5 +38,6 @@ pub fn test() {
     #[cfg(debug_assertions)]
     {
         task::test();
+        ipc::test();
     }
 }
