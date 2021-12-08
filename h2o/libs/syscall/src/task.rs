@@ -19,7 +19,7 @@ where
 #[cfg(feature = "call")]
 #[cfg(debug_assertions)]
 pub fn test() {
-    extern "C" fn func(arg: u32) {
+    extern "C" fn func(_: u64, arg: u32) {
         if arg == 0 {
             for _ in 0..10000000 {}
         }

@@ -169,7 +169,7 @@ pub fn unmaps(syst: &SystemTable<Boot>, virt: Range<paging::LAddr>) -> Result<()
 
 pub fn init_pf(syst: &SystemTable<Boot>) -> (usize, usize) {
     let mmap_size = syst.boot_services().memory_map_size();
-    let mut buffer = alloc::vec![0; mmap_size];
+    let mut buffer = alloc::vec![0; mmap_size * 6 / 5];
     let (_key, mmap) = syst
         .boot_services()
         .memory_map(&mut buffer)

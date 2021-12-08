@@ -12,6 +12,7 @@ enum Cmd {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
+    env_logger::init();
     let args = Cmd::from_args();
     match args {
         Cmd::Dist(dist) => dist.build(),

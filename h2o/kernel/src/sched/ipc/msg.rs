@@ -5,6 +5,7 @@ use solvent::Handle;
 
 use crate::sched::SCHED;
 
+#[derive(Debug)]
 pub struct Message {
     objects: Vec<Box<dyn Any + Send>>,
     buffer: Box<[u8]>,

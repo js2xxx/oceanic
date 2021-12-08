@@ -1,3 +1,4 @@
+use alloc::vec::Vec;
 use core::hint;
 
 use spin::Lazy;
@@ -57,20 +58,6 @@ fn idle(cpu: usize) -> ! {
     use crate::sched::{task, SCHED};
     log::debug!("IDLE #{}", cpu);
 
-    if cpu == 0 {
-        let image = unsafe {
-            core::slice::from_raw_parts(
-                *crate::KARGS.tinit_phys.to_laddr(minfo::ID_OFFSET),
-                crate::KARGS.tinit_len,
-            )
-        };
-
-        let (tinit, ..) =
-            task::from_elf(image, String::from("TINIT"), crate::cpu::all_mask(), [0, 0])
-                .expect("Failed to initialize TINIT");
-        SCHED.push(tinit);
-    }
-
     let (ctx_dropper, ..) = task::create_fn(
         Some(String::from("CTXD")),
         DEFAULT_STACK_SIZE,
@@ -80,10 +67,33 @@ fn idle(cpu: usize) -> ! {
     .expect("Failed to create context dropper");
     SCHED.push(ctx_dropper);
 
+    if cpu == 0 {
+        let (me, chan) = Channel::new();
+
+        me.send(Message::new(Vec::new(), &[]))
+            .expect("Failed to send message");
+
+        let image = unsafe {
+            core::slice::from_raw_parts(
+                *crate::KARGS.tinit_phys.to_laddr(minfo::ID_OFFSET),
+                crate::KARGS.tinit_len,
+            )
+        };
+
+        let (tinit, ..) = task::from_elf(
+            image,
+            String::from("TINIT"),
+            crate::cpu::all_mask(),
+            Some(chan),
+        )
+        .expect("Failed to initialize TINIT");
+        SCHED.push(tinit);
+    }
+
     unsafe { archop::halt_loop(Some(true)) };
 }
 
-fn ctx_dropper(fs_base: u64) -> ! {
+fn ctx_dropper(_: u64, fs_base: u64) -> ! {
     log::debug!("Context dropper for cpu #{}", unsafe { crate::cpu::id() });
     unsafe { archop::msr::write(archop::msr::FS_BASE, fs_base) };
 

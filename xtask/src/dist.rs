@@ -31,6 +31,8 @@ impl Dist {
 
         {
             // Build h2o_boot
+            log::info!("Building h2o_boot");
+
             let mut cmd = Command::new(&cargo);
             let cmd = cmd.current_dir(src_root.join(H2O_BOOT)).arg("build");
             if self.release {
@@ -50,6 +52,8 @@ impl Dist {
 
         // Build h2o_kernel
         {
+            log::info!("Building h2o_kernel");
+
             let mut cmd = Command::new(&cargo);
             let cmd = cmd.current_dir(src_root.join(H2O_KERNEL)).arg("build");
             if self.release {
@@ -69,6 +73,8 @@ impl Dist {
 
         // Build h2o_tinit
         {
+            log::info!("Building h2o_tinit");
+
             let mut cmd = Command::new(&cargo);
             let cmd = cmd.current_dir(src_root.join(H2O_TINIT)).arg("build");
             if self.release {
@@ -87,6 +93,7 @@ impl Dist {
         }
 
         // Generate debug symbols
+        log::info!("Generating debug symbols");
         Command::new("sh")
             .current_dir(src_root)
             .arg("scripts/gendbg.sh")
@@ -96,6 +103,7 @@ impl Dist {
         match &self.ty {
             Type::Iso => {
                 // Generate img
+                log::info!("Generating a hard disk image file");
                 Command::new("sh")
                     .current_dir(src_root)
                     .arg("scripts/genimg.sh")

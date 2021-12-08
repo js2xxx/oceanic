@@ -19,7 +19,7 @@ use spin::{Lazy, Mutex, RwLock};
 pub use self::ctx::arch::{DEFAULT_STACK_LAYOUT, DEFAULT_STACK_SIZE};
 use self::{child::Child, sig::Signal};
 pub use self::{elf::from_elf, hdl::HandleMap, prio::Priority, tid::Tid};
-use super::PREEMPT;
+use super::{PREEMPT, ipc::{Channel, Message}};
 use crate::{
     cpu::{self, arch::KernelGs, time::Instant, CpuMask},
     mem::space::{Space, SpaceError},
@@ -341,14 +341,15 @@ pub(super) fn init() {
     Lazy::force(&idle::IDLE);
 }
 
-fn create_with_space<F>(
+fn create_common<F>(
     name: String,
     ty: Type,
     affinity: CpuMask,
     prio: Priority,
     dup_cur_space: bool,
     with_space: F,
-    args: [u64; 2],
+    init_channel: Option<Channel<Message>>,
+    arg: u64,
 ) -> Result<(Init, Handle)>
 where
     F: FnOnce(&Arc<Space>) -> Result<(LAddr, Option<LAddr>, usize)>,
@@ -368,7 +369,7 @@ where
 
     let (entry, tls, stack_size) = with_space(&space)?;
 
-    let (tid, ret_wo) = {
+    let (tid, init_handle, ret_wo) = {
         let cur_ti = cur_tid.info();
 
         let ty = match ty {
@@ -383,7 +384,7 @@ where
         };
         let prio = prio.min(cur_ti.prio);
 
-        let new_ti = TaskInfo {
+        let mut new_ti = TaskInfo {
             from: UnsafeCell::new(None),
             name,
             ty,
@@ -392,6 +393,7 @@ where
             handles: RwLock::new(HandleMap::new()),
             signal: Mutex::new(None),
         };
+        let init_handle = init_channel.map(|chan| new_ti.handles.get_mut().insert(chan));
         let tid = tid::allocate(new_ti).map_err(|_| TaskError::TidExhausted)?;
 
         let (ret_wo, child) = {
@@ -401,10 +403,18 @@ where
         };
 
         unsafe { tid.info().from.get().write(Some((cur_tid, Some(child)))) };
-        (tid, ret_wo)
+        (tid, init_handle, ret_wo)
     };
 
-    Init::new(tid, space, entry, stack_size, tls, args).map(|task| (task, ret_wo))
+    Init::new(
+        tid,
+        space,
+        entry,
+        stack_size,
+        tls,
+        [init_handle.map_or(0, |h| u64::from(h.raw())), arg],
+    )
+    .map(|task| (task, ret_wo))
 }
 
 pub fn create_fn(
@@ -425,14 +435,15 @@ pub fn create_fn(
         })
         .ok_or(TaskError::NoCurrentTask)?;
 
-    create_with_space(
+    create_common(
         name,
         ty,
         affinity,
         prio,
         true,
         |_| Ok((func, None, stack_size)),
-        [arg as u64, 0],
+        None,
+        arg as u64,
     )
 }
 

@@ -148,7 +148,7 @@ pub fn from_elf<'a, 'b>(
     image: &'b [u8],
     name: String,
     affinity: CpuMask,
-    args: [u64; 2],
+    init_channel: Option<Channel<Message>>,
 ) -> Result<(Init, Handle)> {
     let file = Elf::parse(image)
         .map_err(|_| TaskError::InvalidFormat)
@@ -160,13 +160,14 @@ pub fn from_elf<'a, 'b>(
             }
         })?;
 
-    super::create_with_space(
+    super::create_common(
         name,
         Type::User,
         affinity,
         prio::DEFAULT,
         false,
         |space| load_elf(space, &file, image),
-        args,
+        init_channel,
+        0,
     )
 }
