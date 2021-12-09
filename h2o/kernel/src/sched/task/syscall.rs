@@ -4,7 +4,7 @@ use core::time::Duration;
 use paging::LAddr;
 use solvent::*;
 
-use super::{RunningState, Signal};
+use super::{RunningState, Signal, DEFAULT_STACK_SIZE};
 use crate::{
     cpu::time::Instant,
     sched::{wait::WaitObject, SCHED},
@@ -12,7 +12,7 @@ use crate::{
 };
 
 #[syscall]
-pub fn task_exit(retval: usize) {
+fn task_exit(retval: usize) {
     SCHED.exit_current(retval);
 }
 
@@ -28,14 +28,9 @@ fn task_sleep(ms: u32) {
 }
 
 #[syscall]
-pub fn task_fn(
-    name: UserPtr<In, u8>,
-    name_len: usize,
-    stack_size: usize,
-    func: *mut u8,
-    arg: *mut u8,
-) -> u32 {
-    let name = name.null_or_slice(name_len, |ptr| {
+fn task_fn(ci: UserPtr<In, task::CreateInfo>) -> u32 {
+    let ci = unsafe { ci.read()? };
+    let name = UserPtr::<In, _>::new(ci.name).null_or_slice(ci.name_len, |ptr| {
         ptr.map(|ptr| unsafe {
             let slice = ptr.as_ref();
 
@@ -46,15 +41,33 @@ pub fn task_fn(
         .transpose()
     })?;
 
-    let (task, ret_wo) =
-        super::create_fn(name, stack_size, LAddr::new(func), arg).map_err(Into::into)?;
+    let stack_size = if ci.stack_size == 0 {
+        DEFAULT_STACK_SIZE
+    } else {
+        ci.stack_size
+    };
+
+    let init_chan = match ci.init_chan.check_null() {
+        Ok(hdl) => SCHED.with_current(|cur| {
+            let mut map = cur.tid().info().handles().write();
+            map.remove::<crate::sched::ipc::Channel>(hdl)
+                .ok_or(Error(EINVAL))
+        }),
+        Err(_) => None,
+    }
+    .transpose()?;
+
+    UserPtr::<In, _>::new(ci.func).check()?;
+
+    let (task, ret_wo) = super::create_fn(name, stack_size, init_chan, LAddr::new(ci.func), ci.arg)
+        .map_err(Into::into)?;
     SCHED.push(task);
 
     Ok(ret_wo.raw())
 }
 
 #[syscall]
-pub fn task_join(hdl: Handle) -> usize {
+fn task_join(hdl: Handle) -> usize {
     hdl.check_null()?;
 
     let child = {
@@ -69,7 +82,7 @@ pub fn task_join(hdl: Handle) -> usize {
 }
 
 #[syscall]
-pub fn task_ctl(hdl: Handle, op: u32, data: *mut u8) {
+fn task_ctl(hdl: Handle, op: u32, data: *mut u8) {
     hdl.check_null()?;
 
     let cur_tid = SCHED
@@ -105,11 +118,11 @@ pub fn task_ctl(hdl: Handle, op: u32, data: *mut u8) {
             Ok(())
         }
         task::TASK_CTL_DETACH => {
-            let ti = cur_tid.info();
-            let _pree = super::PREEMPT.lock();
-            ti.handles.write().remove(hdl).ok_or(Error(ECHILD))?;
-
-            Ok(())
+            if cur_tid.drop_child(hdl) {
+                Ok(())
+            } else {
+                Err(Error(ECHILD))
+            }
         }
         _ => Err(Error(EINVAL)),
     }

@@ -348,7 +348,7 @@ fn create_common<F>(
     prio: Priority,
     dup_cur_space: bool,
     with_space: F,
-    init_channel: Option<Channel>,
+    init_chan: Option<Channel>,
     arg: u64,
 ) -> Result<(Init, Handle)>
 where
@@ -393,7 +393,7 @@ where
             handles: RwLock::new(HandleMap::new()),
             signal: Mutex::new(None),
         };
-        let init_handle = init_channel.map(|chan| new_ti.handles.get_mut().insert(chan));
+        let init_handle = init_chan.map(|chan| new_ti.handles.get_mut().insert(chan));
         let tid = tid::allocate(new_ti).map_err(|_| TaskError::TidExhausted)?;
 
         let (ret_wo, child) = {
@@ -420,6 +420,7 @@ where
 pub fn create_fn(
     name: Option<String>,
     stack_size: usize,
+    init_chan: Option<Channel>,
     func: LAddr,
     arg: *mut u8,
 ) -> Result<(Init, Handle)> {
@@ -442,7 +443,7 @@ pub fn create_fn(
         prio,
         true,
         |_| Ok((func, None, stack_size)),
-        None,
+        init_chan,
         arg as u64,
     )
 }

@@ -32,6 +32,11 @@ impl Tid {
         let _pree = super::PREEMPT.lock();
         self.info().handles().read().get::<Child>(hdl).cloned()
     }
+
+    pub fn drop_child(&self, hdl: Handle) -> bool {
+        let _pree = super::PREEMPT.lock();
+        self.info().handles().write().remove::<Child>(hdl).is_some()
+    }
 }
 
 impl PartialEq for Tid {

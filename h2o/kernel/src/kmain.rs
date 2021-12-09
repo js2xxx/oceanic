@@ -50,7 +50,7 @@ pub extern "C" fn kmain() {
 
     // SAFE: Everything is uninitialized.
     unsafe { self::log::init(l::Level::Debug) };
-    l::info!("Starting initialization");
+    l::info!("Starting the kernel");
 
     mem::init();
 
@@ -72,7 +72,7 @@ pub extern "C" fn kmain() {
 #[no_mangle]
 pub extern "C" fn kmain_ap() {
     unsafe { cpu::set_id(false) };
-    l::debug!("Starting initialization");
+    l::debug!("Starting the kernel");
 
     unsafe { mem::space::init() };
     unsafe { cpu::arch::init_ap() };

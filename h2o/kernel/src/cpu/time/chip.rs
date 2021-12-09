@@ -6,12 +6,16 @@ use crate::{
     dev::{hpet::HPET_CLOCK, pit::PIT_CLOCK},
 };
 
-pub static CLOCK: Lazy<&'static dyn ClockChip> = Lazy::new(|| match *TSC_CLOCK {
-    Some(ref tsc) => tsc,
-    None => match *HPET_CLOCK {
-        Some(ref hpet) => hpet,
-        None => &*PIT_CLOCK,
-    },
+pub static CLOCK: Lazy<&'static dyn ClockChip> = Lazy::new(|| {
+    let ret: &'static dyn ClockChip = match *TSC_CLOCK {
+        Some(ref tsc) => tsc,
+        None => match *HPET_CLOCK {
+            Some(ref hpet) => hpet,
+            None => &*PIT_CLOCK,
+        },
+    };
+    *crate::log::HAS_TIME.write() = true;
+    ret
 });
 
 static CALIB_CLOCK: Lazy<&'static dyn CalibrationClock> = Lazy::new(|| match *HPET_CLOCK {

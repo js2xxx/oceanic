@@ -61,6 +61,7 @@ fn idle(cpu: usize) -> ! {
     let (ctx_dropper, ..) = task::create_fn(
         Some(String::from("CTXD")),
         DEFAULT_STACK_SIZE,
+        None,
         LAddr::new(ctx_dropper as *mut u8),
         unsafe { archop::msr::read(archop::msr::FS_BASE) } as *mut u8,
     )
@@ -94,8 +95,8 @@ fn idle(cpu: usize) -> ! {
 }
 
 fn ctx_dropper(_: u64, fs_base: u64) -> ! {
-    log::debug!("Context dropper for cpu #{}", unsafe { crate::cpu::id() });
     unsafe { archop::msr::write(archop::msr::FS_BASE, fs_base) };
+    log::debug!("Context dropper for cpu #{}", unsafe { crate::cpu::id() });
 
     let worker = deque::Worker::new_fifo();
     loop {
@@ -107,5 +108,7 @@ fn ctx_dropper(_: u64, fs_base: u64) -> ! {
                 }
             }
         }
+        crate::sched::SCHED.with_current(|cur| cur.running_state = RunningState::NeedResched);
+        unsafe { archop::resume_intr(None) };
     }
 }

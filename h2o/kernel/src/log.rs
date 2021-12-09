@@ -5,6 +5,9 @@ use core::{fmt::*, mem::MaybeUninit};
 
 use archop::IntrMutex;
 use serial::COM_LOG;
+use spin::RwLock;
+
+use crate::cpu::time::Instant;
 
 struct OptionU32Display(Option<u32>);
 
@@ -17,6 +20,8 @@ impl core::fmt::Display for OptionU32Display {
         }
     }
 }
+
+pub static HAS_TIME: RwLock<bool> = RwLock::new(false);
 
 struct Logger {
     output: IntrMutex<serial::Output>,
@@ -44,25 +49,31 @@ impl log::Log for Logger {
         }
 
         let mut os = self.output.lock();
+        let cur_time = HAS_TIME
+            .read()
+            .then(|| Instant::now())
+            .unwrap_or(unsafe { Instant::from_raw(0) });
 
         let res = if record.level() < log::Level::Debug {
-            write(
+            write!(
                 &mut *os,
-                format_args!("{}: {}\n", record.level(), record.args()),
+                "[{}] {}: {}\n",
+                cur_time,
+                record.level(),
+                record.args(),
             )
         } else {
             let file = record.file().unwrap_or("<NULL>");
             let line = OptionU32Display(record.line());
-            write(
+            write!(
                 &mut *os,
-                format_args!(
-                    "{}: [#{} {}:{}] {}\n",
-                    record.level(),
-                    unsafe { crate::cpu::id() },
-                    file,
-                    line,
-                    record.args()
-                ),
+                "[{}] {}: [#{} {}:{}] {}\n",
+                cur_time,
+                record.level(),
+                unsafe { crate::cpu::id() },
+                file,
+                line,
+                record.args(),
             )
         };
         res.expect("Failed to output");

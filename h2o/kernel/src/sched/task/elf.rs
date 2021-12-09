@@ -148,7 +148,7 @@ pub fn from_elf<'a, 'b>(
     image: &'b [u8],
     name: String,
     affinity: CpuMask,
-    init_channel: Option<Channel>,
+    init_chan: Option<Channel>,
 ) -> Result<(Init, Handle)> {
     let file = Elf::parse(image)
         .map_err(|_| TaskError::InvalidFormat)
@@ -167,7 +167,7 @@ pub fn from_elf<'a, 'b>(
         prio::DEFAULT,
         false,
         |space| load_elf(space, &file, image),
-        init_channel,
+        init_chan,
         0,
     )
 }

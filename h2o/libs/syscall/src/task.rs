@@ -1,3 +1,5 @@
+use crate::Handle;
+
 pub const DEFAULT_STACK_SIZE: usize = 256 * 1024;
 
 pub const PRIO_DEFAULT: u16 = 20;
@@ -5,6 +7,17 @@ pub const PRIO_DEFAULT: u16 = 20;
 pub const TASK_CTL_KILL: u32 = 1;
 pub const TASK_CTL_SUSPEND: u32 = 2;
 pub const TASK_CTL_DETACH: u32 = 3;
+
+#[derive(Debug)]
+#[repr(C)]
+pub struct CreateInfo {
+    pub name: *mut u8,
+    pub name_len: usize,
+    pub stack_size: usize,
+    pub init_chan: Handle,
+    pub func: *mut u8,
+    pub arg: *mut u8,
+}
 
 #[cfg(feature = "call")]
 pub fn exit<T>(res: crate::Result<T>) -> !
@@ -27,13 +40,15 @@ pub fn test() {
     }
 
     let creator = |arg: u32| {
-        crate::call::task_fn(
-            core::ptr::null_mut(),
-            0,
-            crate::task::DEFAULT_STACK_SIZE,
-            func as *mut u8,
-            arg as *mut u8,
-        )
+        let ci = CreateInfo {
+            name: core::ptr::null_mut(),
+            name_len: 0,
+            stack_size: crate::task::DEFAULT_STACK_SIZE,
+            init_chan: Handle::NULL,
+            func: func as *mut u8,
+            arg: arg as *mut u8,
+        };
+        crate::call::task_fn(&ci)
     };
     {
         let task = creator(1).expect("Failed to create task");

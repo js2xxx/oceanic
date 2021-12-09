@@ -13,6 +13,7 @@ pub struct Instant(solvent::time::Instant);
 
 impl Instant {
     pub fn now() -> Self {
+        let _pree = crate::sched::PREEMPT.lock();
         chip::CLOCK.get()
     }
 
@@ -68,6 +69,14 @@ impl Sub<Instant> for Instant {
 pub fn delay(duration: Duration) {
     let instant = Instant::now();
     while instant.elapsed() < duration {}
+}
+
+impl core::fmt::Display for Instant {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let ns = unsafe { self.raw() };
+        let s = ns as f64 / 1_000_000_000.0;
+        write!(f, "{:.4} s", s)
+    }
 }
 
 mod syscall {
