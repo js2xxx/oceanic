@@ -1,4 +1,4 @@
-# Oceanic PC desktop OS
+# Oceanic: A PC desktop OS
 
 [![996.icu](https://img.shields.io/badge/link-996.icu-red.svg)](https://996.icu)
 
@@ -13,6 +13,7 @@ support aarch64 in the future.
 
 * ```debug``` - contains the decompiled assembly files, debug symbols, object
   file informations. and the serial log files of the virtual machines.
+
 * ```scripts``` - contains the scripts required for building the project.
 * ```target``` - contains the binaries and virtual disk files.
 * ```xtask``` - contains the builder for the project.
