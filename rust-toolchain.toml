@@ -1,0 +1,5 @@
+[toolchain]
+channel = "nightly"
+components = ["rustfmt", "rustc", "rust-std", "rust-src", "cargo", "clippy"]
+targets = ["x86_64-unknown-linux-gnu"]
+profile = "default"
