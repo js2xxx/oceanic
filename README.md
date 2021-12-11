@@ -11,13 +11,11 @@ support aarch64 in the future.
 
 # Source tree
 
-* ```debug``` - contains the decompiled assembly files, debug symbols, object
-  file informations. and the serial log files of the virtual machines.
-
-* ```scripts``` - contains the scripts required for building the project.
-* ```target``` - contains the binaries and virtual disk files.
-* ```xtask``` - contains the builder for the project.
-* ```h2o``` - contains the source code for the kernel.
+- ```debug``` - contains the decompiled assembly files, debug symbols, object file informations. and the serial log files of the virtual machines.
+- ```scripts``` - contains the scripts required for building the project.
+- ```target``` - contains the binaries and virtual disk files.
+- ```xtask``` - contains the builder for the project.
+- ```h2o``` - contains the source code for the kernel.
 
 # Build and debug from source
 
