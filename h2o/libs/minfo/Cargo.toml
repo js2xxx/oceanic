@@ -6,4 +6,5 @@ name = "minfo"
 version = "0.1.0"
 
 [dependencies]
+paging = {path = "../paging"}
 pmm = {path = "../pmm"}

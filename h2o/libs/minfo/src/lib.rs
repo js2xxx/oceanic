@@ -1,4 +1,7 @@
 #![no_std]
+
+use core::alloc::Layout;
+
 // Physical addresses
 
 pub const KARGS_BASE: usize = 0;
@@ -27,3 +30,19 @@ pub const KERNEL_ALLOCABLE_RANGE: core::ops::Range<pmm::LAddr> =
         ..pmm::LAddr::new(0xFFFF_F000_0000_0000 as *mut u8);
 
 pub const ID_OFFSET: usize = KERNEL_SPACE_START;
+
+// Kernel args
+
+#[derive(Debug, Copy, Clone)]
+pub struct KernelArgs {
+    pub rsdp: paging::PAddr,
+
+    pub efi_mmap_paddr: paging::PAddr,
+    pub efi_mmap_len: usize,
+    pub efi_mmap_unit: usize,
+
+    pub pls_layout: Option<Layout>,
+
+    pub tinit_phys: paging::PAddr,
+    pub tinit_len: usize,
+}

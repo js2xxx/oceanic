@@ -17,7 +17,6 @@ canary = {path = "../libs/canary"}
 collection_ex = {path = "../libs/collection_ex"}
 heap = {path = "../libs/heap"}
 iter_ex = {path = "../libs/iter_ex"}
-kargs = {path = "../libs/kargs"}
 minfo = {path = "../libs/minfo"}
 paging = {path = "../libs/paging"}
 pmm = {path = "../libs/pmm"}

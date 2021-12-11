@@ -29,9 +29,8 @@ mod rxx;
 
 use core::mem::MaybeUninit;
 
-use kargs::KernelArgs;
 use log::*;
-use minfo::KARGS_BASE;
+use minfo::{KernelArgs, KARGS_BASE};
 use paging::PAddr;
 use uefi::{
     logger::Logger,

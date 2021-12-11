@@ -41,8 +41,8 @@ use spin::Lazy;
 
 extern crate alloc;
 
-static KARGS: Lazy<kargs::KernelArgs> =
-    Lazy::new(|| unsafe { (minfo::KARGS_BASE as *const kargs::KernelArgs).read() });
+static KARGS: Lazy<minfo::KernelArgs> =
+    Lazy::new(|| unsafe { (minfo::KARGS_BASE as *const minfo::KernelArgs).read() });
 
 #[no_mangle]
 pub extern "C" fn kmain() {

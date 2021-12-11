@@ -9,7 +9,6 @@ version = "0.1.0"
 # Local crates
 archop = {path = "../libs/archop"}
 bitop_ex = {path = "../libs/bitop_ex"}
-kargs = {path = "../libs/kargs"}
 minfo = {path = "../libs/minfo"}
 paging = {path = "../libs/paging"}
 # External crates
