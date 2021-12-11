@@ -14,4 +14,3 @@ paging = {path = "../paging"}
 intrusive-collections = {version = "0.9", default-features = false, features = ["nightly"]}
 log = "0.4"
 spin = {version = "0.9", features = ["use_ticket_mutex"]}
-uefi = {version = "0.11", default-features = false}

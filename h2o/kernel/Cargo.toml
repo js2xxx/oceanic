@@ -16,6 +16,7 @@ bitop_ex = {path = "../libs/bitop_ex"}
 canary = {path = "../libs/canary"}
 collection_ex = {path = "../libs/collection_ex"}
 heap = {path = "../libs/heap"}
+iter_ex = {path = "../libs/iter_ex"}
 kargs = {path = "../libs/kargs"}
 minfo = {path = "../libs/minfo"}
 paging = {path = "../libs/paging"}
@@ -39,7 +40,3 @@ paste = "1.0"
 raw-cpuid = "10"
 spin = {version = "0.9", features = ["use_ticket_mutex"]}
 static_assertions = "1.1"
-
-[build-dependencies]
-bindgen = {version = "0.58", default-features = false, features = ["which-rustfmt"]}
-cc = {version = "1.0", features = ["parallel"]}

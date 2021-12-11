@@ -1,11 +1,15 @@
 use core::marker::PhantomData;
 
+#[derive(Debug, Clone, Copy)]
 pub struct PointerIterator<T> {
     ptr: *mut u8,
     len: usize,
     step: usize,
     _t: PhantomData<T>,
 }
+
+unsafe impl<T: Send> Send for PointerIterator<T> {}
+unsafe impl<T: Sync> Sync for PointerIterator<T> {}
 
 impl<T> PointerIterator<T> {
     pub fn new(ptr: *mut T, len: usize, step: usize) -> Self {
@@ -40,3 +44,13 @@ impl<T> Iterator for PointerIterator<T> {
 }
 
 impl<T> ExactSizeIterator for PointerIterator<T> {}
+
+impl<'a, T: Copy> IntoIterator for &'a PointerIterator<T> {
+    type Item = *mut T;
+
+    type IntoIter = PointerIterator<T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        *self
+    }
+}

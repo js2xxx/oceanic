@@ -46,6 +46,7 @@ use core::{cell::Cell, cmp::min, mem::size_of, ops::Range};
 
 use bitop_ex::BitOpEx;
 use intrusive_collections::{intrusive_adapter, LinkedList, LinkedListLink};
+use iter_ex::PointerIterator;
 use spin::Mutex;
 
 use super::{PAddr, KMEM_PHYS_BASE, PAGE_SHIFT, PAGE_SIZE};
@@ -687,12 +688,12 @@ pub unsafe fn dealloc_pages_exact(n: usize, addr: PAddr) {
 ///
 /// It'll always be safe **UNLESS** `mmap_ptr` is invalid.
 unsafe fn parse_mmap(
-    mmap_iter: iter_ex::PointerIterator<uefi::table::boot::MemoryDescriptor>,
+    mmap_iter: &PointerIterator<crate::boot::MemRange>,
     reserved_range: Range<usize>,
 ) -> usize {
-    use uefi::table::boot::MemoryType;
+    use crate::boot::MemType;
 
-    let available = |ty| matches!(ty, MemoryType::CONVENTIONAL | MemoryType::PERSISTENT_MEMORY);
+    let available = |ty| matches!(ty, MemType::Conventional | MemType::PersistentMemory);
     let not_reserved =
         |start, len| !reserved_range.contains(&start) && !reserved_range.contains(&(start + len));
 
@@ -701,13 +702,10 @@ unsafe fn parse_mmap(
         let mdsc = &*mdsc_ptr;
         log::trace!("Block at {:?}: {:?}", mdsc_ptr, *mdsc);
         if available(mdsc.ty)
-            && not_reserved(
-                mdsc.phys_start as usize,
-                mdsc.page_count as usize * PAGE_SIZE,
-            )
+            && not_reserved(mdsc.phys as usize, mdsc.page_count as usize * PAGE_SIZE)
         {
             let n = mdsc.page_count as usize;
-            dealloc_pages_exact(n, PAddr::new(mdsc.phys_start as usize));
+            dealloc_pages_exact(n, PAddr::new(mdsc.phys as usize));
             sum += n << PAGE_SHIFT;
         }
     }
@@ -740,20 +738,12 @@ pub fn dump_data(pftype: PfType) {
 ///
 /// Unfortunately, we must initialize every free list manually, and it takes a
 /// long time.
-pub fn init(
-    mmap: *mut uefi::table::boot::MemoryDescriptor,
-    mmap_len: usize,
-    mmap_unit: usize,
-    reserved_range: Range<usize>,
-) -> usize {
+pub fn init(mmap: &PointerIterator<crate::boot::MemRange>, reserved_range: Range<usize>) -> usize {
     for i in ORDERS {
         *(pf_list_mut(PfType::Low, i).unwrap()) = PfList::new(PFAdapter::new());
         *(pf_list_mut(PfType::High, i).unwrap()) = PfList::new(PFAdapter::new());
     }
 
     // NOTE: There we trust the `mmap` is valid.
-    unsafe {
-        let iter = iter_ex::PointerIterator::new(mmap, mmap_len, mmap_unit);
-        parse_mmap(iter, reserved_range)
-    }
+    unsafe { parse_mmap(mmap, reserved_range) }
 }

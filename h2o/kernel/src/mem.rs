@@ -3,7 +3,19 @@ pub mod space;
 use alloc::alloc::Global;
 use core::{alloc::Allocator, ptr::NonNull};
 
+use iter_ex::PointerIterator;
 use paging::LAddr;
+use spin::Lazy;
+
+use crate::KARGS;
+
+pub static MMAP: Lazy<PointerIterator<pmm::boot::MemRange>> = Lazy::new(|| {
+    PointerIterator::new(
+        KARGS.efi_mmap_paddr.to_laddr(minfo::ID_OFFSET).cast(),
+        KARGS.efi_mmap_len,
+        KARGS.efi_mmap_unit,
+    )
+});
 
 #[inline(never)]
 unsafe fn alloc_pages(n: usize) -> Option<NonNull<[heap::Page]>> {
@@ -29,12 +41,7 @@ pub fn alloc_system_stack() -> Option<NonNull<u8>> {
 
 /// Initialize the PMM and the kernel heap (Rust global allocator).
 pub fn init() {
-    let all_available = pmm::init(
-        crate::KARGS.efi_mmap_paddr,
-        crate::KARGS.efi_mmap_len,
-        crate::KARGS.efi_mmap_unit,
-        minfo::TRAMPOLINE_RANGE,
-    );
+    let all_available = pmm::init(&*MMAP, minfo::TRAMPOLINE_RANGE);
     log::info!(
         "Memory size: {:.3} GB ({:#x} Bytes)",
         (all_available as f64) / 1073741824.0,

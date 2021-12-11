@@ -2,6 +2,7 @@
 #![feature(asm)]
 #![feature(nonnull_slice_from_raw_parts)]
 
+pub mod boot;
 mod buddy;
 
 #[cfg(debug_assertions)]
@@ -16,11 +17,8 @@ pub const KMEM_PHYS_BASE: usize = 0xFFFF_9000_0000_0000;
 
 #[inline]
 pub fn init(
-    efi_mmap_paddr: paging::PAddr,
-    efi_mmap_len: usize,
-    efi_mmap_unit: usize,
+    mmap: &iter_ex::PointerIterator<boot::MemRange>,
     reserved_range: core::ops::Range<usize>,
 ) -> usize {
-    let efi_mmap_ptr = *efi_mmap_paddr as *mut uefi::table::boot::MemoryDescriptor;
-    buddy::init(efi_mmap_ptr, efi_mmap_len, efi_mmap_unit, reserved_range)
+    buddy::init(mmap, reserved_range)
 }
