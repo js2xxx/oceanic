@@ -53,6 +53,9 @@ support aarch64 in the future.
    gdb debug/FOO.sym
    # FOO for the binary you want to debug;
    # you may check it in the directory first.
+
+   # In the gdb:
+   target remote :1234
    ```
    then you can set breakpoints (KERNEL.sym for example):
    ```sh
