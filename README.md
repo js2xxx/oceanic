@@ -22,49 +22,39 @@ support aarch64 in the future.
 ## Linux
 
 1. Download rust and other dependencies (Ubuntu for example):
-
    ```sh
    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
    sudo apt install build-essential qemu-system-x86
    ```
 
 2. Add the following toolchain:
-
    ```sh
    rustup add toolchain nightly-x86_64-unknown-linux-gnu
    ```
 
 3. Change to the project's root directory and run the following command:
-
    ```sh
    cargo xtask dist iso
    ```
 
 4. To run the OS with qemu, run the following command:
-
    ```sh
    sh scripts/run.sh qemu N # N for the number of CPUs
    ```
-
    and check `debug/qemu.log` file, you should see the output of the OS.
 
 5. To debug with qemu, run the following command:
-
    ```sh
    sh scripts/run.sh qdbg N # Same as above
    ```
-
    and open a new terminal:
-
    ```sh
    # cd to the working directory
    gdb debug/FOO.sym
    # FOO for the binary you want to debug;
    # you may check it in the directory first.
    ```
-
    then you can set breakpoints (KERNEL.sym for example):
-
    ```sh
    b kmain
    c
