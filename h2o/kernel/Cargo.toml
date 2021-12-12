@@ -15,7 +15,7 @@ archop = {path = "../libs/archop"}
 bitop_ex = {path = "../libs/bitop_ex"}
 canary = {path = "../libs/canary"}
 collection_ex = {path = "../libs/collection_ex"}
-heap = {path = "../libs/heap"}
+heap = {path = "../libs/heap", default-features = false}
 iter_ex = {path = "../libs/iter_ex"}
 minfo = {path = "../libs/minfo"}
 paging = {path = "../libs/paging"}

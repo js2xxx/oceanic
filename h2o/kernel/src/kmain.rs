@@ -15,7 +15,6 @@
 #![feature(const_btree_new)]
 #![feature(const_fn_fn_ptr_basics)]
 #![feature(const_fn_trait_bound)]
-#![feature(default_alloc_error_handler)]
 #![feature(linked_list_remove)]
 #![feature(map_first_last)]
 #![feature(new_uninit)]
