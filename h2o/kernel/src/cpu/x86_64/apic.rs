@@ -1,7 +1,7 @@
 pub mod ipi;
 pub mod timer;
 
-use alloc::collections::BTreeMap;
+use alloc::{collections::BTreeMap, sync::Arc};
 
 use archop::msr;
 use modular_bitfield::prelude::*;
@@ -23,7 +23,7 @@ static LAPIC_BASE: Lazy<KernelVirt> = Lazy::new(|| {
         space::current()
             .allocate_kernel(
                 AllocType::Layout(phys.layout()),
-                Some(phys.clone()),
+                Some(Arc::clone(&phys)),
                 phys.flags(),
             )
             .expect("Failed to allocate memory")

@@ -280,7 +280,7 @@ impl Ready {
 
         let tss_rsp0 = self.kstack.top().val() as u64;
         KernelGs::update_tss_rsp0(tss_rsp0);
-        crate::mem::space::set_current(self.space.clone());
+        crate::mem::space::set_current(Arc::clone(&self.space));
         self.ext_frame.load();
         if !cpu::arch::in_intr() && self.tid.info().ty == Type::Kernel {
             KernelGs::reload();

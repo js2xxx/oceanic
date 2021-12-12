@@ -37,6 +37,17 @@ pub struct Space {
 }
 
 impl Space {
+    #[inline]
+    fn flags_to_pg_attr(flags: Flags) -> paging::Attr {
+        let uncached = flags.contains(Flags::UNCACHED);
+        paging::Attr::builder()
+            .writable(flags.contains(Flags::WRITABLE))
+            .user_access(flags.contains(Flags::USER_ACCESS))
+            .executable(flags.contains(Flags::EXECUTABLE))
+            .cache(uncached, uncached)
+            .build()
+    }
+
     /// Construct a new arch-specific space.
     ///
     /// The space's root page table must contains the page tables of the kernel
@@ -99,18 +110,10 @@ impl Space {
     ) -> Result<(), paging::Error> {
         self.canary.assert();
 
-        let uncached = flags.contains(Flags::UNCACHED);
-        let attr = paging::Attr::builder()
-            .writable(flags.contains(Flags::WRITABLE))
-            .user_access(flags.contains(Flags::USER_ACCESS))
-            .executable(flags.contains(Flags::EXECUTABLE))
-            .cache(uncached, uncached)
-            .build();
-
         let map_info = paging::MapInfo {
             virt,
             phys,
-            attr,
+            attr: Self::flags_to_pg_attr(flags),
             id_off: minfo::ID_OFFSET,
         };
 
@@ -124,17 +127,9 @@ impl Space {
     ) -> Result<(), paging::Error> {
         self.canary.assert();
 
-        let uncached = flags.contains(Flags::UNCACHED);
-        let attr = paging::Attr::builder()
-            .writable(flags.contains(Flags::WRITABLE))
-            .user_access(flags.contains(Flags::USER_ACCESS))
-            .executable(flags.contains(Flags::EXECUTABLE))
-            .cache(uncached, uncached)
-            .build();
-
         let reprotect_info = paging::ReprotectInfo {
             virt,
-            attr,
+            attr: Self::flags_to_pg_attr(flags),
             id_off: minfo::ID_OFFSET,
         };
 

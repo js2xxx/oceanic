@@ -69,7 +69,7 @@ impl Hpet {
             space::current()
                 .allocate_kernel(
                     AllocType::Layout(phys.layout()),
-                    Some(phys.clone()),
+                    Some(Arc::clone(&phys)),
                     phys.flags(),
                 )
                 .expect("Failed to allocate memory")
@@ -168,8 +168,8 @@ impl CalibrationClock for HpetClock {
 
 impl HpetClock {
     pub fn new() -> Option<HpetClock> {
-        let hpet = match *HPET {
-            Some(ref hpet) => hpet.clone(),
+        let hpet = match HPET.clone() {
+            Some(hpet) => hpet,
             None => return None,
         };
 

@@ -55,7 +55,7 @@ impl Channel {
         let q2 = Arc::new(WaitQueue::new());
         let c1 = Channel {
             peer_id,
-            me: q1.clone(),
+            me: Arc::clone(&q1),
             peer: Arc::downgrade(&q2),
             head: Mutex::new(None),
         };

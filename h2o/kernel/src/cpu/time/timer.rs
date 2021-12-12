@@ -47,7 +47,7 @@ impl Timer {
             deadline: Instant::now() + duration,
             cancel: AtomicBool::new(false),
         });
-        TIMER_QUEUE.push(ret.clone());
+        TIMER_QUEUE.push(Arc::clone(&ret));
         ret
     }
 }
@@ -61,7 +61,7 @@ pub unsafe fn tick() {
                 timer.canary.assert();
                 if !timer.cancel.load(Acquire) {
                     if cur_time >= timer.deadline {
-                        timer.callback.call(timer.clone(), cur_time);
+                        timer.callback.call(Arc::clone(&timer), cur_time);
                     } else {
                         TIMER_QUEUE.push(timer);
                     }

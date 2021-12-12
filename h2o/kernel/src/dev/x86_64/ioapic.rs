@@ -31,7 +31,7 @@ static IOAPIC_CHIP: Lazy<(Arc<Mutex<dyn IntrChip>>, Vec<IntrOvr>)> = Lazy::new(|
 });
 
 pub fn chip() -> Arc<Mutex<dyn IntrChip>> {
-    IOAPIC_CHIP.0.clone()
+    Arc::clone(&IOAPIC_CHIP.0)
 }
 
 fn intr_ovr() -> &'static [IntrOvr] {
@@ -170,7 +170,7 @@ impl Ioapic {
             space::current()
                 .allocate_kernel(
                     AllocType::Layout(phys.layout()),
-                    Some(phys.clone()),
+                    Some(Arc::clone(&phys)),
                     phys.flags(),
                 )
                 .expect("Failed to allocate memory")

@@ -73,7 +73,7 @@ impl Allocator {
             Err(RegisterError::Pending) => true,
         } {}
 
-        unsafe { intr.chip.lock().remove(intr.clone()) }.map_err(AllocError::Chip)?;
+        unsafe { intr.chip.lock().remove(Arc::clone(&intr)) }.map_err(AllocError::Chip)?;
 
         let arch_reg = intr.arch_reg.lock().clone();
         self.arch

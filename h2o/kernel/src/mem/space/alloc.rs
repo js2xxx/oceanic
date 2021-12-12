@@ -93,7 +93,7 @@ impl Allocator {
 
         // Get the physical address mapped to.
         let new_phys = match phys {
-            Some(phys) => phys.clone(),
+            Some(phys) => Arc::clone(phys),
             None => Phys::allocate(layout, flags).map_err(|_| SpaceError::OutOfMemory)?,
         };
 
@@ -113,7 +113,7 @@ impl Allocator {
 
         let ret =
             unsafe { NonNull::slice_from_raw_parts(base.as_non_null().unwrap(), layout.size()) };
-        self.record.lock().insert(base, new_phys.clone());
+        self.record.lock().insert(base, Arc::clone(&new_phys));
         *phys = Some(new_phys);
         Ok(ret)
     }

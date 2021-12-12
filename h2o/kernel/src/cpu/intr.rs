@@ -97,7 +97,7 @@ pub trait IntrChip: Send + Sync {
     /// WARNING: This function modifies the architecture's basic registers. Be
     /// sure to make preparations.
     unsafe fn mask_ack(&mut self, intr: Arc<Interrupt>) {
-        self.mask(intr.clone());
+        self.mask(Arc::clone(&intr));
         self.ack(intr);
     }
 
@@ -142,7 +142,7 @@ impl Interrupt {
     }
 
     pub fn chip(&self) -> Arc<Mutex<dyn IntrChip>> {
-        self.chip.clone()
+        Arc::clone(&self.chip)
     }
 
     pub fn arch_reg(&self) -> &Mutex<arch::ArchReg> {
@@ -150,7 +150,7 @@ impl Interrupt {
     }
 
     pub(super) unsafe fn handle(self: &Arc<Interrupt>) {
-        (self.type_handler)(self.clone())
+        (self.type_handler)(Arc::clone(&self))
     }
 
     pub fn affinity(&self) -> &super::CpuMask {
@@ -192,10 +192,10 @@ fn handle_event(intr: Arc<Interrupt>) -> IrqReturn {
 ///
 /// This function must be called only from the interrupt handler.
 pub unsafe fn level_handler(intr: Arc<Interrupt>) {
-    intr.chip.lock().mask_ack(intr.clone());
-    let ret = handle_event(intr.clone());
+    intr.chip.lock().mask_ack(Arc::clone(&intr));
+    let ret = handle_event(Arc::clone(&intr));
     if !ret.contains(IrqReturn::DISABLED) && ret.contains(IrqReturn::UNMASK) {
-        intr.chip.lock().unmask(intr.clone());
+        intr.chip.lock().unmask(Arc::clone(&intr));
     }
 }
 
@@ -205,12 +205,12 @@ pub unsafe fn level_handler(intr: Arc<Interrupt>) {
 ///
 /// This function must be called only from the interrupt handler.
 pub unsafe fn fasteoi_handler(intr: Arc<Interrupt>) {
-    let ret = handle_event(intr.clone());
+    let ret = handle_event(Arc::clone(&intr));
     if !ret.contains(IrqReturn::DISABLED) {
         let mut chip = intr.chip.lock();
-        chip.eoi(intr.clone());
+        chip.eoi(Arc::clone(&intr));
         if ret.contains(IrqReturn::UNMASK) {
-            chip.unmask(intr.clone());
+            chip.unmask(Arc::clone(&intr));
         }
     }
 }
@@ -223,21 +223,21 @@ pub unsafe fn fasteoi_handler(intr: Arc<Interrupt>) {
 pub unsafe fn edge_handler(intr: Arc<Interrupt>) {
     let state = intr.state.fetch_or(State::RUNNING, Ordering::SeqCst);
     if state.contains_bit(State::RUNNING) {
-        intr.chip.lock().mask_ack(intr.clone());
+        intr.chip.lock().mask_ack(Arc::clone(&intr));
         intr.state.fetch_or(State::PENDING, Ordering::SeqCst);
         return;
     }
 
-    intr.chip.lock().ack(intr.clone());
+    intr.chip.lock().ack(Arc::clone(&intr));
 
     while {
         let state = intr.state.load(Ordering::SeqCst);
         state.contains_bit(State::PENDING) && state.contains_bit(State::ENABLED)
     } {
-        intr.chip.lock().unmask(intr.clone());
+        intr.chip.lock().unmask(Arc::clone(&intr));
 
         intr.state.fetch_and(!State::PENDING, Ordering::SeqCst);
-        let ret = handle_event(intr.clone());
+        let ret = handle_event(Arc::clone(&intr));
         if ret.contains(IrqReturn::DISABLED) {
             break;
         }
