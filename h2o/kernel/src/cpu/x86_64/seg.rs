@@ -124,7 +124,7 @@ pub unsafe fn reload_pls() {
         static TBSS_START: u8;
     }
     use archop::msr;
-    let pls_size = crate::KARGS.pls_layout.map_or(0, |layout| layout.size());
+    let pls_size = crate::kargs().pls_layout.map_or(0, |layout| layout.size());
 
     let val = msr::read(msr::FS_BASE) as usize;
     if val != 0 {
@@ -146,7 +146,7 @@ pub fn alloc_pls() -> Option<NonNull<u8>> {
         static TBSS_START: u8;
     }
 
-    let pls_layout = match crate::KARGS.pls_layout {
+    let pls_layout = match crate::kargs().pls_layout {
         Some(layout) => layout,
         None => return None,
     };

@@ -76,8 +76,8 @@ fn idle(cpu: usize) -> ! {
 
         let image = unsafe {
             core::slice::from_raw_parts(
-                *crate::KARGS.tinit_phys.to_laddr(minfo::ID_OFFSET),
-                crate::KARGS.tinit_len,
+                *crate::kargs().tinit_phys.to_laddr(minfo::ID_OFFSET),
+                crate::kargs().tinit_len,
             )
         };
 

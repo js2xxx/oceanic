@@ -7,13 +7,13 @@ use core::{alloc::Allocator, ptr::NonNull};
 use iter_ex::PointerIterator;
 use spin::Lazy;
 
-use crate::KARGS;
+use crate::kargs;
 
 pub static MMAP: Lazy<PointerIterator<pmm::boot::MemRange>> = Lazy::new(|| {
     PointerIterator::new(
-        KARGS.efi_mmap_paddr.to_laddr(minfo::ID_OFFSET).cast(),
-        KARGS.efi_mmap_len,
-        KARGS.efi_mmap_unit,
+        kargs().efi_mmap_paddr.to_laddr(minfo::ID_OFFSET).cast(),
+        kargs().efi_mmap_len,
+        kargs().efi_mmap_unit,
     )
 });
 
