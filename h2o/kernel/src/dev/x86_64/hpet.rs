@@ -65,15 +65,13 @@ impl Hpet {
             PAGE_LAYOUT,
             Flags::READABLE | Flags::WRITABLE | Flags::UNCACHED,
         );
-        let virt = unsafe {
-            space::current()
-                .allocate_kernel(
-                    AllocType::Layout(phys.layout()),
-                    Some(Arc::clone(&phys)),
-                    phys.flags(),
-                )
-                .expect("Failed to allocate memory")
-        };
+        let virt = space::KRL
+            .allocate_kernel(
+                AllocType::Layout(phys.layout()),
+                Some(Arc::clone(&phys)),
+                phys.flags(),
+            )
+            .expect("Failed to allocate memory");
         let base_ptr = virt.as_ptr().cast::<HpetReg>().as_ptr();
 
         let num_comparators = data.num_comparators() as usize;

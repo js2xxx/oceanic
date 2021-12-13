@@ -1,6 +1,8 @@
 pub mod intr;
 pub mod time;
 
+pub use core::lazy::Lazy as CpuLocalLazy;
+
 use bitvec::prelude::*;
 
 cfg_if::cfg_if! {

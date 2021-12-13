@@ -5,12 +5,15 @@ pub mod syscall;
 pub mod tsc;
 
 use core::{
-    mem::MaybeUninit,
+    cell::UnsafeCell,
     ptr::null_mut,
     sync::atomic::{AtomicUsize, Ordering},
 };
 
 use paging::LAddr;
+pub use seg::reload_pls;
+
+use crate::cpu::CpuLocalLazy;
 
 pub const MAX_CPU: usize = 256;
 pub static CPU_INDEX: AtomicUsize = AtomicUsize::new(0);
@@ -58,19 +61,26 @@ pub unsafe fn is_bsp() -> bool {
 
 #[repr(C)]
 pub struct KernelGs {
-    tss_rsp0: u64,
+    tss_rsp0: UnsafeCell<u64>,
     syscall_user_stack: *mut u8,
     syscall_stack: LAddr,
     kernel_fs: LAddr,
 }
 
 #[thread_local]
-static mut KERNEL_GS: MaybeUninit<KernelGs> = MaybeUninit::uninit();
+pub static KERNEL_GS: CpuLocalLazy<KernelGs> = CpuLocalLazy::new(|| {
+    let syscall_stack = unsafe { syscall::init() }.expect("Memory allocation failed");
+
+    KernelGs::new(
+        syscall_stack,
+        LAddr::from(unsafe { archop::msr::read(archop::msr::FS_BASE) } as usize),
+    )
+});
 
 impl KernelGs {
-    pub fn new(syscall_stack: LAddr, kernel_fs: LAddr) -> Self {
+    fn new(syscall_stack: LAddr, kernel_fs: LAddr) -> Self {
         KernelGs {
-            tss_rsp0: unsafe { seg::ndt::TSS.rsp0() },
+            tss_rsp0: UnsafeCell::new(unsafe { seg::ndt::TSS.rsp0() }),
             syscall_user_stack: null_mut(),
             syscall_stack,
             kernel_fs,
@@ -90,18 +100,9 @@ impl KernelGs {
     ///
     /// The caller must ensure that this function is called only if
     /// [`archop::msr::KERNEL_GS_BASE`] is uninitialized.
-    pub unsafe fn load(this: Self) {
-        let ptr = KERNEL_GS.write(this) as *mut Self;
-
+    pub unsafe fn load(&self) {
         use archop::msr;
-        msr::write(msr::KERNEL_GS_BASE, ptr as u64);
-    }
-
-    pub unsafe fn reload() {
-        let ptr = KERNEL_GS.as_mut_ptr();
-
-        use archop::msr;
-        msr::write(msr::KERNEL_GS_BASE, ptr as u64);
+        msr::write(msr::KERNEL_GS_BASE, self.as_ptr() as u64);
     }
 
     /// Update TSS's rsp0 a.k.a. task's interrupt frame pointer.
@@ -111,33 +112,14 @@ impl KernelGs {
     /// # Safety
     ///
     /// `rsp0` must be a valid pointer to a task's interrupt frame.
-    pub unsafe fn update_tss_rsp0(rsp0: u64) {
-        let this = KERNEL_GS.assume_init_mut();
+    pub unsafe fn update_tss_rsp0(&self, rsp0: u64) {
         seg::ndt::TSS.set_rsp0(rsp0);
-        this.tss_rsp0 = rsp0;
+        *self.tss_rsp0.get() = rsp0;
     }
 
-    pub unsafe fn as_ptr() -> *mut u8 {
-        KERNEL_GS.as_mut_ptr().cast()
+    pub unsafe fn as_ptr(&self) -> *const u8 {
+        (self as *const KernelGs).cast()
     }
-}
-
-/// Initialize x86_64 architecture early (for kernel_fs).
-///
-/// # Safety
-///
-/// The caller must ensure that this function should only be called once from
-/// bootstrap CPU.
-pub unsafe fn init_bsp_early() {
-    archop::fpu::init();
-
-    let kernel_fs = seg::init();
-
-    let syscall_stack = syscall::init().expect("Memory allocation failed");
-
-    let kernel_gs = KernelGs::new(syscall_stack, kernel_fs);
-    // SAFE: During bootstrap initialization.
-    unsafe { KernelGs::load(kernel_gs) };
 }
 
 /// Initialize x86_64 architecture.
@@ -147,6 +129,13 @@ pub unsafe fn init_bsp_early() {
 /// The caller must ensure that this function should only be called once from
 /// bootstrap CPU.
 pub unsafe fn init() {
+    archop::fpu::init();
+
+    seg::init();
+
+    // SAFE: During bootstrap initialization.
+    unsafe { KERNEL_GS.load() };
+
     let platform_info = unsafe { crate::dev::acpi::platform_info() };
     apic::init();
 
@@ -167,13 +156,10 @@ pub unsafe fn init() {
 /// The caller must ensure that this function should only be called once from
 /// each application CPU.
 pub unsafe fn init_ap() {
-    let kernel_fs = seg::init_ap();
+    seg::init_ap();
+
+    // SAFE: During bootstrap initialization.
+    unsafe { KERNEL_GS.load() };
 
     apic::init();
-
-    let syscall_stack = syscall::init().expect("Memory allocation failed");
-
-    let kernel_gs = KernelGs::new(syscall_stack, kernel_fs);
-    // SAFE: During bootstrap initialization.
-    unsafe { KernelGs::load(kernel_gs) };
 }

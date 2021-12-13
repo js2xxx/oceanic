@@ -19,6 +19,7 @@
 #![feature(map_first_last)]
 #![feature(new_uninit)]
 #![feature(nonnull_slice_from_raw_parts)]
+#![feature(once_cell)]
 #![feature(result_flattening)]
 #![feature(slice_ptr_get)]
 #![feature(slice_ptr_len)]
@@ -46,18 +47,15 @@ static KARGS: Lazy<minfo::KernelArgs> =
 #[no_mangle]
 pub extern "C" fn kmain() {
     unsafe { cpu::set_id(true) };
+    unsafe { cpu::arch::reload_pls() };
 
     // SAFE: Everything is uninitialized.
     unsafe { self::log::init(l::Level::Debug) };
     l::info!("Starting the kernel");
 
     mem::init();
-
-    unsafe { mem::space::init_bsp_early() };
-    unsafe { cpu::arch::init_bsp_early() };
     sched::task::tid::init();
 
-    unsafe { mem::space::init() };
     unsafe { cpu::arch::init() };
 
     unsafe { dev::init_intr_chip() };

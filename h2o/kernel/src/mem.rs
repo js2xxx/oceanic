@@ -1,4 +1,4 @@
-mod heap;
+pub mod heap;
 pub mod space;
 
 use alloc::alloc::Global;
@@ -33,7 +33,8 @@ pub fn init() {
         (all_available as f64) / 1073741824.0,
         all_available
     );
-    heap::init();
+    heap::init_global();
+    unsafe { space::init() };
 }
 
 mod syscall {

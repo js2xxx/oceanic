@@ -25,9 +25,9 @@ pub enum ExVec {
     Alignment = 0x11,
     MachineCheck = 0x12,
     SimdExcep = 0x13,
-    /* Virtual = 0x14,
-     * ControlProt = 0x15,
-     * VmmComm = 0x1D, */
+    // Virtual = 0x14,
+    // ControlProt = 0x15,
+    // VmmComm = 0x1D,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

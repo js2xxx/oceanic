@@ -3,11 +3,10 @@ mod serial;
 
 use core::{fmt::*, mem::MaybeUninit};
 
-use archop::IntrMutex;
 use serial::COM_LOG;
-use spin::RwLock;
+use spin::{Mutex, RwLock};
 
-use crate::cpu::time::Instant;
+use crate::{cpu::time::Instant, sched::PREEMPT};
 
 struct OptionU32Display(Option<u32>);
 
@@ -24,14 +23,14 @@ impl core::fmt::Display for OptionU32Display {
 pub static HAS_TIME: RwLock<bool> = RwLock::new(false);
 
 struct Logger {
-    output: IntrMutex<serial::Output>,
+    output: Mutex<serial::Output>,
     level: log::Level,
 }
 
 impl Logger {
     pub fn new(level: log::Level) -> Logger {
         Logger {
-            output: IntrMutex::new(unsafe { serial::Output::new(COM_LOG) }),
+            output: Mutex::new(unsafe { serial::Output::new(COM_LOG) }),
             level,
         }
     }
@@ -48,6 +47,7 @@ impl log::Log for Logger {
             return;
         }
 
+        let _pree = PREEMPT.lock();
         let mut os = self.output.lock();
         let cur_time = HAS_TIME
             .read()

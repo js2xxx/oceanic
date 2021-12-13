@@ -1,4 +1,6 @@
-static LOGGER: spin::Lazy<Logger> = spin::Lazy::new(|| Logger);
+use spin::Lazy;
+
+static LOGGER: Lazy<Logger> = Lazy::new(|| Logger);
 
 struct Logger;
 

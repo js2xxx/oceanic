@@ -6,12 +6,14 @@ use core::{
 use ::heap::Allocator as Memory;
 use paging::LAddr;
 
+use crate::sched::PREEMPT;
+
 #[global_allocator]
 static KH: KHeap = KHeap {
     global_mem: Memory::new(alloc_pages, dealloc_pages),
 };
 
-pub struct KHeap {
+struct KHeap {
     global_mem: Memory,
 }
 
@@ -20,10 +22,12 @@ unsafe impl Sync for KHeap {}
 
 unsafe impl GlobalAlloc for KHeap {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        let _pree = PREEMPT.lock();
         self.global_mem.alloc(layout)
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+        let _pree = PREEMPT.lock();
         self.global_mem.dealloc(ptr, layout)
     }
 }
@@ -42,6 +46,6 @@ unsafe fn dealloc_pages(pages: NonNull<[::heap::Page]>) {
     pmm::dealloc_pages_exact(n, paddr);
 }
 
-pub(super) fn init() {
+pub(super) fn init_global() {
     ::heap::test(&KH, archop::rand::get() as usize);
 }

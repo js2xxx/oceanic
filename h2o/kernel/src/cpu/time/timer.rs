@@ -5,13 +5,12 @@ use core::{
 };
 
 use canary::Canary;
-use spin::Lazy;
 
 use super::Instant;
-use crate::sched::deque::Worker;
+use crate::{cpu::CpuLocalLazy, sched::deque::Worker};
 
 #[thread_local]
-static TIMER_QUEUE: Lazy<Worker<Arc<Timer>>> = Lazy::new(|| Worker::new_fifo());
+static TIMER_QUEUE: CpuLocalLazy<Worker<Arc<Timer>>> = CpuLocalLazy::new(|| Worker::new_fifo());
 
 pub struct Callback {
     func: fn(Arc<Timer>, Instant, *mut u8),

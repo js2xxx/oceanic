@@ -10,7 +10,10 @@ use deque::{Injector, Steal, Worker};
 use spin::Lazy;
 
 use super::task;
-use crate::cpu::time::{Instant, Timer, TimerCallback};
+use crate::cpu::{
+    time::{Instant, Timer, TimerCallback},
+    CpuLocalLazy,
+};
 
 const MINIMUM_TIME_GRANULARITY: Duration = Duration::from_millis(30);
 const WAKE_TIME_GRANULARITY: Duration = Duration::from_millis(1);
@@ -21,7 +24,7 @@ static MIGRATION_QUEUE: Lazy<Vec<Injector<task::Ready>>> = Lazy::new(|| {
 });
 
 #[thread_local]
-pub static SCHED: Lazy<Scheduler> = Lazy::new(|| Scheduler {
+pub static SCHED: CpuLocalLazy<Scheduler> = CpuLocalLazy::new(|| Scheduler {
     canary: Canary::new(),
     cpu: unsafe { crate::cpu::id() },
     current: UnsafeCell::new(None),

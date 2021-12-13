@@ -19,15 +19,13 @@ static LAPIC_BASE: Lazy<KernelVirt> = Lazy::new(|| {
         PAGE_LAYOUT,
         Flags::READABLE | Flags::WRITABLE | Flags::UNCACHED,
     );
-    unsafe {
-        space::current()
-            .allocate_kernel(
-                AllocType::Layout(phys.layout()),
-                Some(Arc::clone(&phys)),
-                phys.flags(),
-            )
-            .expect("Failed to allocate memory")
-    }
+    space::KRL
+        .allocate_kernel(
+            AllocType::Layout(phys.layout()),
+            Some(Arc::clone(&phys)),
+            phys.flags(),
+        )
+        .expect("Failed to allocate memory")
 });
 #[thread_local]
 static mut LAPIC: Option<Lapic> = None;

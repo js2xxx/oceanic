@@ -89,7 +89,7 @@ impl Frame {
         }
         if matches!(ty, task::Type::Kernel) {
             // TODO: Check for permissions.
-            self.gs_base = unsafe { crate::cpu::arch::KernelGs::as_ptr() } as u64;
+            self.gs_base = unsafe { crate::cpu::arch::KERNEL_GS.as_ptr() } as u64;
         }
 
         self.rdi = entry.args[0];

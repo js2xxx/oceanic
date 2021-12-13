@@ -1,15 +1,17 @@
+// use core::slice::{Iter, IterMut};
 use core::{
     mem::size_of,
     ops::{Index, IndexMut},
 };
 
 use paging::LAddr;
-// use core::slice::{Iter, IterMut};
-use spin::Lazy;
 use static_assertions::*;
 
 use super::{ndt::INTR_CODE, *};
-use crate::cpu::arch::intr::def::{IdtEntry, IdtInit, IDT_INIT};
+use crate::cpu::{
+    arch::intr::def::{IdtEntry, IdtInit, IDT_INIT},
+    CpuLocalLazy,
+};
 
 /// The count of all the interrupts in one CPU.
 ///
@@ -17,7 +19,7 @@ use crate::cpu::arch::intr::def::{IdtEntry, IdtInit, IDT_INIT};
 pub const NR_VECTORS: usize = 256;
 
 #[thread_local]
-static IDT: Lazy<IntDescTable> = Lazy::new(|| {
+static IDT: CpuLocalLazy<IntDescTable> = CpuLocalLazy::new(|| {
     let mut array = [Gate::zeroed(); NR_VECTORS];
 
     let mut set_ent = |entry: &IdtEntry| {

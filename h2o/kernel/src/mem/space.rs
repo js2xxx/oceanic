@@ -404,15 +404,6 @@ impl Drop for Space {
     }
 }
 
-/// Initialize the kernel memory space.
-///
-/// # Safety
-///
-/// The function must be called only once from the bootstrap CPU.
-pub unsafe fn init_bsp_early() {
-    KRL.load();
-}
-
 /// Load the kernel space for enery CPU.
 ///
 /// # Safety
