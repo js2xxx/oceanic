@@ -7,7 +7,7 @@ use archop::IntrMutex;
 use serial::COM_LOG;
 use spin::RwLock;
 
-use crate::cpu::time::Instant;
+use crate::{cpu::time::Instant, sched::PREEMPT};
 
 struct OptionU32Display(Option<u32>);
 
@@ -48,6 +48,7 @@ impl log::Log for Logger {
             return;
         }
 
+        let _pree = PREEMPT.lock();
         let mut os = self.output.lock();
         let cur_time = HAS_TIME
             .read()

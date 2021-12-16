@@ -135,7 +135,7 @@ impl Space {
         let ret = self
             .allocator
             .allocate(ty.clone(), &mut phys, flags, &self.arch);
-        ret.map(|ptr| Virt::new(self.ty, ptr, phys.unwrap(), self.clone()))
+        ret.map(|ptr| Virt::new(self.ty, ptr, phys.unwrap(), Arc::clone(self)))
     }
 
     /// Allocate an address range in the kernel space.
@@ -404,22 +404,13 @@ impl Drop for Space {
     }
 }
 
-/// Initialize the kernel memory space.
-///
-/// # Safety
-///
-/// The function must be called only once from the bootstrap CPU.
-pub unsafe fn init_bsp_early() {
-    KRL.load();
-}
-
 /// Load the kernel space for enery CPU.
 ///
 /// # Safety
 ///
 /// The function must be called only once from each application CPU.
 pub unsafe fn init() {
-    let space = KRL.clone();
+    let space = Arc::clone(&KRL);
     unsafe { space.load() };
     CURRENT = Some(space);
 }

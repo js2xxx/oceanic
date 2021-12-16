@@ -5,6 +5,7 @@ use spin::Lazy;
 use static_assertions::*;
 
 use super::*;
+use crate::cpu::CpuLocalLazy;
 
 pub const KRL_CODE_X64: SegSelector = SegSelector::from_const(0x08); // SegSelector::new().with_index(1)
 pub const KRL_DATA_X64: SegSelector = SegSelector::from_const(0x10); // SegSelector::new().with_index(2)
@@ -35,7 +36,7 @@ static LDT: Lazy<DescTable<3>> = Lazy::new(|| {
 });
 
 #[thread_local]
-pub static GDT: Lazy<DescTable<10>> = Lazy::new(|| {
+pub static GDT: CpuLocalLazy<DescTable<10>> = CpuLocalLazy::new(|| {
     DescTable::new([
         Segment::new(0, 0, 0, 0),
         Segment::new(0, INIT_LIM, attrs::SEG_CODE | attrs::X64 | INIT_ATTR, 0),
@@ -51,7 +52,7 @@ pub static GDT: Lazy<DescTable<10>> = Lazy::new(|| {
 });
 
 #[thread_local]
-pub(in crate::cpu::arch) static TSS: Lazy<TssStruct> = Lazy::new(|| {
+pub(in crate::cpu::arch) static TSS: CpuLocalLazy<TssStruct> = CpuLocalLazy::new(|| {
     // SAFE: No physical address specified.
     let alloc_stack = || {
         crate::mem::alloc_system_stack()

@@ -3,12 +3,14 @@
 pub use crossbeam_epoch::*;
 use spin::Lazy;
 
+use crate::cpu::CpuLocalLazy;
+
 /// The global data for the default garbage collector.
 static COLLECTOR: Lazy<Collector> = Lazy::new(Collector::new);
 
 /// The per-thread participant for the default garbage collector.
 #[thread_local]
-static HANDLE: Lazy<LocalHandle> = Lazy::new(|| COLLECTOR.register());
+static HANDLE: CpuLocalLazy<LocalHandle> = CpuLocalLazy::new(|| COLLECTOR.register());
 
 /// Pins the current thread.
 #[inline]

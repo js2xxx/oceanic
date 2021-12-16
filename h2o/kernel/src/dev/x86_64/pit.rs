@@ -83,7 +83,7 @@ impl PitClock {
         intr.handlers()
             .lock()
             .push(Handler::new(pit_handler, ptr::null_mut()));
-        unsafe { intr.chip().lock().unmask(intr.clone()) };
+        unsafe { intr.chip().lock().unmask(Arc::clone(&intr)) };
 
         PitClock { intr }
     }

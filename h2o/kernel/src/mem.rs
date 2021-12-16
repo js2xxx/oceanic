@@ -1,35 +1,21 @@
+pub mod heap;
 pub mod space;
 
 use alloc::alloc::Global;
 use core::{alloc::Allocator, ptr::NonNull};
 
 use iter_ex::PointerIterator;
-use paging::LAddr;
 use spin::Lazy;
 
-use crate::KARGS;
+use crate::kargs;
 
 pub static MMAP: Lazy<PointerIterator<pmm::boot::MemRange>> = Lazy::new(|| {
     PointerIterator::new(
-        KARGS.efi_mmap_paddr.to_laddr(minfo::ID_OFFSET).cast(),
-        KARGS.efi_mmap_len,
-        KARGS.efi_mmap_unit,
+        kargs().efi_mmap_paddr.to_laddr(minfo::ID_OFFSET).cast(),
+        kargs().efi_mmap_len,
+        kargs().efi_mmap_unit,
     )
 });
-
-#[inline(never)]
-unsafe fn alloc_pages(n: usize) -> Option<NonNull<[heap::Page]>> {
-    let laddr = pmm::alloc_pages_exact(n, None)?.to_laddr(minfo::ID_OFFSET);
-    let ptr = NonNull::new(laddr.cast::<heap::Page>());
-    ptr.map(|ptr| NonNull::slice_from_raw_parts(ptr, n))
-}
-
-#[inline(never)]
-unsafe fn dealloc_pages(pages: NonNull<[heap::Page]>) {
-    let paddr = LAddr::new(pages.as_ptr().cast()).to_paddr(minfo::ID_OFFSET);
-    let n = pages.len();
-    pmm::dealloc_pages_exact(n, paddr);
-}
 
 pub fn alloc_system_stack() -> Option<NonNull<u8>> {
     let layout = crate::sched::task::DEFAULT_STACK_LAYOUT;
@@ -47,8 +33,8 @@ pub fn init() {
         (all_available as f64) / 1073741824.0,
         all_available
     );
-    unsafe { heap::set_alloc(alloc_pages, dealloc_pages) };
-    heap::test(archop::rand::get() as usize);
+    heap::init_global();
+    unsafe { space::init() };
 }
 
 mod syscall {

@@ -17,7 +17,7 @@ impl<'a> Files<'a> {
     {
         self.0
             .iter()
-            .find_map(|(nm, data)| (nm.starts_with(name.as_ref())).then_some(data.clone()))
+            .find_map(|(nm, data)| (nm.starts_with(name.as_ref())).then_some(data))
             .expect("Failed to find file")
     }
 }

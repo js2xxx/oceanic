@@ -13,7 +13,7 @@ use core::{
     alloc::{Allocator, Layout},
     mem::{size_of, transmute},
     ops::Range,
-    ptr::{null_mut, NonNull},
+    ptr::NonNull,
 };
 
 use modular_bitfield::prelude::*;
@@ -118,13 +118,13 @@ pub unsafe fn get_type_attr(ptr: *mut u8) -> u16 {
 ///
 /// The caller must ensure the value stored in [`archop::msr::FS_BASE`] is a
 /// valid physical address.
-pub unsafe fn reload_pls() -> LAddr {
+pub unsafe fn reload_pls() {
     extern "C" {
         static TDATA_START: u8;
         static TBSS_START: u8;
     }
     use archop::msr;
-    let pls_size = crate::KARGS.pls_layout.map_or(0, |layout| layout.size());
+    let pls_size = crate::kargs().pls_layout.map_or(0, |layout| layout.size());
 
     let val = msr::read(msr::FS_BASE) as usize;
     if val != 0 {
@@ -136,9 +136,6 @@ pub unsafe fn reload_pls() -> LAddr {
         ptr.write(ptr as usize);
 
         msr::write(msr::FS_BASE, ptr as u64);
-        LAddr::new(ptr.cast())
-    } else {
-        LAddr::new(null_mut())
     }
 }
 
@@ -149,7 +146,7 @@ pub fn alloc_pls() -> Option<NonNull<u8>> {
         static TBSS_START: u8;
     }
 
-    let pls_layout = match crate::KARGS.pls_layout {
+    let pls_layout = match crate::kargs().pls_layout {
         Some(layout) => layout,
         None => return None,
     };
@@ -180,17 +177,12 @@ pub fn alloc_pls() -> Option<NonNull<u8>> {
 ///
 /// The caller must ensure that this function is called only once from the
 /// bootstrap CPU.
-pub(super) unsafe fn init() -> LAddr {
-    let kernel_fs = unsafe { reload_pls() };
+pub(super) unsafe fn init() {
     ndt::init();
     idt::init();
-
-    kernel_fs
 }
 
-pub(super) unsafe fn init_ap() -> LAddr {
+pub(super) unsafe fn init_ap() {
     ndt::init();
     idt::init();
-
-    LAddr::from(archop::msr::read(archop::msr::FS_BASE) as usize)
 }

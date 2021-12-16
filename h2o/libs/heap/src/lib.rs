@@ -59,7 +59,8 @@ mod slab;
 
 pub use alloc::Allocator;
 
-pub use page::{AllocPages, DeallocPages, Page};
+pub use page::{AllocPages, DeallocPages, Page, OBJ_SIZES, MAX_OBJ_SIZE};
+pub use pool::unwrap_layout;
 pub use stat::Stat;
 
 cfg_if::cfg_if! { if #[cfg(feature = "global")] {
@@ -81,10 +82,17 @@ pub fn stat() -> stat::Stat {
     GLOBAL_ALLOC.stat()
 }
 
+#[inline]
+pub fn test_global(start_seed: usize) {
+    test(&GLOBAL_ALLOC, start_seed);
+}
+
+}}
+
 /// The test function for the module.
 #[allow(dead_code)]
 #[allow(unused_variables)]
-pub fn test(start_seed: usize) {
+pub fn test(a: &impl core::alloc::GlobalAlloc, start_seed: usize) {
     #[cfg(debug_assertions)]
     {
         use core::alloc::Layout;
@@ -99,7 +107,7 @@ pub fn test(start_seed: usize) {
 
         let mut seed = random(start_seed);
         let mut k = [(core::ptr::null_mut(), Layout::for_value(&0)); 100];
-        let allocator = &GLOBAL_ALLOC as &dyn core::alloc::GlobalAlloc;
+        let allocator = a;
 
         let n1 = k.len() / 3 + seed % (k.len() / 3);
         let n2 = k.len() - n1;
@@ -130,5 +138,3 @@ pub fn test(start_seed: usize) {
         }
     }
 }
-
-}}

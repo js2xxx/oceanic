@@ -1,7 +1,7 @@
 pub mod ipi;
 pub mod timer;
 
-use alloc::collections::BTreeMap;
+use alloc::{collections::BTreeMap, sync::Arc};
 
 use archop::msr;
 use modular_bitfield::prelude::*;
@@ -19,15 +19,13 @@ static LAPIC_BASE: Lazy<KernelVirt> = Lazy::new(|| {
         PAGE_LAYOUT,
         Flags::READABLE | Flags::WRITABLE | Flags::UNCACHED,
     );
-    unsafe {
-        space::current()
-            .allocate_kernel(
-                AllocType::Layout(phys.layout()),
-                Some(phys.clone()),
-                phys.flags(),
-            )
-            .expect("Failed to allocate memory")
-    }
+    space::KRL
+        .allocate_kernel(
+            AllocType::Layout(phys.layout()),
+            Some(Arc::clone(&phys)),
+            phys.flags(),
+        )
+        .expect("Failed to allocate memory")
 });
 #[thread_local]
 static mut LAPIC: Option<Lapic> = None;

@@ -43,12 +43,12 @@ pub enum RegisterError {
 pub unsafe fn try_register(
     intr: &Arc<Interrupt>,
 ) -> Result<Option<Weak<Interrupt>>, RegisterError> {
-    let ArchReg { vec, cpu } = intr.arch_reg().lock().clone();
-    if cpu != crate::cpu::id() {
+    let ArchReg { ref vec, ref cpu } = &*intr.arch_reg().lock();
+    if *cpu != crate::cpu::id() {
         return Err(RegisterError::NotCurCpu);
     }
 
-    if let Some(mut intr_slot) = VEC_INTR[vec as usize].try_lock() {
+    if let Some(mut intr_slot) = VEC_INTR[*vec as usize].try_lock() {
         Ok(intr_slot.replace(Arc::downgrade(intr)))
     } else {
         Err(RegisterError::Pending)
@@ -60,12 +60,12 @@ pub unsafe fn try_register(
 /// WARNING: This function modifies the architecture's basic registers. Be sure
 /// to make preparations.
 pub unsafe fn try_unregister(intr: &Arc<Interrupt>) -> Result<(), RegisterError> {
-    let ArchReg { vec, cpu } = intr.arch_reg().lock().clone();
-    if cpu != crate::cpu::id() {
+    let ArchReg { ref vec, ref cpu } = &*intr.arch_reg().lock();
+    if *cpu != crate::cpu::id() {
         return Err(RegisterError::NotCurCpu);
     }
 
-    if let Some(mut intr_slot) = VEC_INTR[vec as usize].try_lock() {
+    if let Some(mut intr_slot) = VEC_INTR[*vec as usize].try_lock() {
         intr_slot.replace(Weak::new());
         Ok(())
     } else {

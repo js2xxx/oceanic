@@ -31,7 +31,7 @@ static IOAPIC_CHIP: Lazy<(Arc<Mutex<dyn IntrChip>>, Vec<IntrOvr>)> = Lazy::new(|
 });
 
 pub fn chip() -> Arc<Mutex<dyn IntrChip>> {
-    IOAPIC_CHIP.0.clone()
+    Arc::clone(&IOAPIC_CHIP.0)
 }
 
 fn intr_ovr() -> &'static [IntrOvr] {
@@ -166,15 +166,13 @@ impl Ioapic {
             PAGE_LAYOUT,
             Flags::READABLE | Flags::WRITABLE | Flags::UNCACHED,
         );
-        let virt = unsafe {
-            space::current()
-                .allocate_kernel(
-                    AllocType::Layout(phys.layout()),
-                    Some(phys.clone()),
-                    phys.flags(),
-                )
-                .expect("Failed to allocate memory")
-        };
+        let virt = space::KRL
+            .allocate_kernel(
+                AllocType::Layout(phys.layout()),
+                Some(Arc::clone(&phys)),
+                phys.flags(),
+            )
+            .expect("Failed to allocate memory");
         let base_ptr = virt.as_ptr().cast::<u32>().as_ptr();
         let mut ioapic = Ioapic {
             base_ptr,
@@ -191,6 +189,10 @@ impl Ioapic {
         ioapic.gsi = *gsi_base..(*gsi_base + size);
 
         ioapic
+    }
+
+    pub fn id(&self) -> u8 {
+        self.id
     }
 
     pub fn size(&self) -> usize {

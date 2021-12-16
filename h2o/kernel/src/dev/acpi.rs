@@ -22,7 +22,7 @@ impl acpi::AcpiHandler for Handler {
 }
 
 static TABLES: Lazy<acpi::AcpiTables<Handler>> = Lazy::new(|| unsafe {
-    acpi::AcpiTables::from_rsdp(Handler, *crate::KARGS.rsdp).expect("Failed to get ACPI tables")
+    acpi::AcpiTables::from_rsdp(Handler, *crate::kargs().rsdp).expect("Failed to get ACPI tables")
 });
 static PLATFORM_INFO: Lazy<acpi::PlatformInfo> =
     Lazy::new(|| TABLES.platform_info().expect("Failed to get platform info"));

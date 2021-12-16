@@ -1,10 +1,9 @@
 use alloc::vec::Vec;
 use core::hint;
 
-use spin::Lazy;
-
 use super::{ctx::Kstack, *};
 use crate::{
+    cpu::CpuLocalLazy,
     mem::space::{self, Space},
     sched::deque,
 };
@@ -18,10 +17,11 @@ use crate::{
 ///
 /// [`task_exit`]: crate::sched::task::syscall::task_exit
 #[thread_local]
-pub(super) static CTX_DROPPER: Lazy<deque::Injector<Kstack>> = Lazy::new(|| deque::Injector::new());
+pub(super) static CTX_DROPPER: CpuLocalLazy<deque::Injector<Kstack>> =
+    CpuLocalLazy::new(|| deque::Injector::new());
 
 #[thread_local]
-pub(super) static IDLE: Lazy<Tid> = Lazy::new(|| {
+pub(super) static IDLE: CpuLocalLazy<Tid> = CpuLocalLazy::new(|| {
     let cpu = unsafe { crate::cpu::id() };
 
     let ti = TaskInfo {
@@ -76,8 +76,8 @@ fn idle(cpu: usize) -> ! {
 
         let image = unsafe {
             core::slice::from_raw_parts(
-                *crate::KARGS.tinit_phys.to_laddr(minfo::ID_OFFSET),
-                crate::KARGS.tinit_len,
+                *crate::kargs().tinit_phys.to_laddr(minfo::ID_OFFSET),
+                crate::kargs().tinit_len,
             )
         };
 

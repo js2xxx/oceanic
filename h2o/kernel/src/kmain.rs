@@ -10,16 +10,12 @@
 #![feature(bool_to_option)]
 #![feature(box_into_inner)]
 #![feature(box_syntax)]
-#![feature(c_variadic)]
-#![feature(concat_idents)]
 #![feature(const_btree_new)]
 #![feature(const_fn_fn_ptr_basics)]
-#![feature(const_fn_trait_bound)]
-#![feature(default_alloc_error_handler)]
-#![feature(linked_list_remove)]
 #![feature(map_first_last)]
 #![feature(new_uninit)]
 #![feature(nonnull_slice_from_raw_parts)]
+#![feature(once_cell)]
 #![feature(result_flattening)]
 #![feature(slice_ptr_get)]
 #![feature(slice_ptr_len)]
@@ -36,29 +32,35 @@ pub mod rxx;
 pub mod sched;
 pub mod syscall;
 
+use core::mem::MaybeUninit;
+
 use ::log as l;
-use spin::Lazy;
 
 extern crate alloc;
 
-static KARGS: Lazy<minfo::KernelArgs> =
-    Lazy::new(|| unsafe { (minfo::KARGS_BASE as *const minfo::KernelArgs).read() });
+static mut KARGS: MaybeUninit<minfo::KernelArgs> = MaybeUninit::uninit();
+#[inline]
+fn kargs() -> &'static minfo::KernelArgs {
+    unsafe { KARGS.assume_init_ref() }
+}
 
 #[no_mangle]
 pub extern "C" fn kmain() {
-    unsafe { cpu::set_id(true) };
+    unsafe {
+        KARGS.write(core::ptr::read(
+            minfo::KARGS_BASE as *const minfo::KernelArgs,
+        ));
+        cpu::set_id(true);
+        cpu::arch::reload_pls();
+    }
 
     // SAFE: Everything is uninitialized.
     unsafe { self::log::init(l::Level::Debug) };
     l::info!("Starting the kernel");
 
     mem::init();
-
-    unsafe { mem::space::init_bsp_early() };
-    unsafe { cpu::arch::init_bsp_early() };
     sched::task::tid::init();
 
-    unsafe { mem::space::init() };
     unsafe { cpu::arch::init() };
 
     unsafe { dev::init_intr_chip() };

@@ -15,7 +15,7 @@ archop = {path = "../libs/archop"}
 bitop_ex = {path = "../libs/bitop_ex"}
 canary = {path = "../libs/canary"}
 collection_ex = {path = "../libs/collection_ex"}
-heap = {path = "../libs/heap"}
+heap = {path = "../libs/heap", default-features = false}
 iter_ex = {path = "../libs/iter_ex"}
 minfo = {path = "../libs/minfo"}
 paging = {path = "../libs/paging"}
@@ -24,6 +24,7 @@ repeat = {path = "../libs/repeat"}
 solvent = {path = "../libs/syscall", default-features = false}
 # External crates
 acpi = "4.1"
+array-macro = "2.1"
 bitflags = "1.3"
 bitvec = {version = "0.22", default-features = false, features = ["atomic"]}
 bytes = {version = "1.1", default-features = false}

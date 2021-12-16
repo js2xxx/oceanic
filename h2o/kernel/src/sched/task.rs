@@ -21,7 +21,7 @@ use self::{child::Child, sig::Signal};
 pub use self::{elf::from_elf, hdl::HandleMap, prio::Priority, tid::Tid};
 use super::{ipc::Channel, PREEMPT};
 use crate::{
-    cpu::{self, arch::KernelGs, time::Instant, CpuMask},
+    cpu::{self, arch::KERNEL_GS, time::Instant, CpuLocalLazy, CpuMask},
     mem::space::{Space, SpaceError},
 };
 
@@ -279,11 +279,11 @@ impl Ready {
         debug_assert!(!matches!(self.running_state, RunningState::NotRunning));
 
         let tss_rsp0 = self.kstack.top().val() as u64;
-        KernelGs::update_tss_rsp0(tss_rsp0);
-        crate::mem::space::set_current(self.space.clone());
+        KERNEL_GS.update_tss_rsp0(tss_rsp0);
+        crate::mem::space::set_current(Arc::clone(&self.space));
         self.ext_frame.load();
         if !cpu::arch::in_intr() && self.tid.info().ty == Type::Kernel {
-            KernelGs::reload();
+            KERNEL_GS.load();
         }
     }
 
@@ -338,7 +338,7 @@ impl Dead {
 }
 
 pub(super) fn init() {
-    Lazy::force(&idle::IDLE);
+    CpuLocalLazy::force(&idle::IDLE);
 }
 
 fn create_common<F>(

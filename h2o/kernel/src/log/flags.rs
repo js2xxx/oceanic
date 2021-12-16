@@ -26,13 +26,13 @@ pub struct Flags {
 }
 
 /// A simple word buffer for output.
-static mut STR_BUF: [u8; 256] = [0; 256];
 
 impl Display for Flags {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
+        let mut buf = [0; 128];
         unsafe {
             for (i, word) in self.format.split_whitespace().enumerate() {
-                let buf = &mut STR_BUF[0..word.len()];
+                let buf = &mut buf[0..word.len()];
 
                 buf.copy_from_slice(word.as_bytes());
                 let out = str::from_utf8_unchecked_mut(buf);
