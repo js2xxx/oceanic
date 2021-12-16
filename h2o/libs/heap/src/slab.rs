@@ -9,7 +9,6 @@ use core::ptr::NonNull;
 use adapter::PageAdapter;
 use intrusive_collections::{Bound, RBTree};
 use paging::{LAddr, PAGE_MASK};
-use spin::Mutex;
 
 use super::{alloc::Error, page::*};
 
@@ -21,8 +20,6 @@ use super::{alloc::Error, page::*};
 pub struct Slab {
     /// The inner red-black tree.
     list: RBTree<PageAdapter>,
-    /// The mutex lock.
-    lock: Mutex<()>,
 }
 
 impl Slab {
@@ -30,7 +27,6 @@ impl Slab {
     pub const fn new() -> Self {
         Self {
             list: RBTree::new(PageAdapter::NEW),
-            lock: Mutex::new(()),
         }
     }
 
@@ -39,7 +35,6 @@ impl Slab {
     /// This will gain more allocation space, thus making it able to return
     /// available objects
     pub fn extend(&mut self, page: NonNull<Page>) {
-        let _lock = self.lock.lock();
         self.list.insert(page);
     }
 
@@ -54,8 +49,6 @@ impl Slab {
     ///
     /// If no slab page is free, it'll return an error in need of new pages.
     pub fn pop(&mut self) -> Result<LAddr, Error> {
-        let _lock = self.lock.lock();
-
         let mut front = self.list.lower_bound_mut(Bound::Excluded(&0));
         if let Some(mut ptr) = front.remove() {
             let ret = {
@@ -81,8 +74,6 @@ impl Slab {
     /// If the page is not valid or something else (see `Page::push` for more),
     /// it'll return an error.
     pub fn push(&mut self, addr: LAddr) -> Result<Option<NonNull<Page>>, Error> {
-        let _lock = self.lock.lock();
-
         let mut base = NonNull::new((addr.val() & !PAGE_MASK) as *mut Page)
             .ok_or(Error::Internal("Null address"))?;
 

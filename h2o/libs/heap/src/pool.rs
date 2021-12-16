@@ -26,27 +26,6 @@ impl Pool {
         }
     }
 
-    /// Get the corresponding slab list index for the requested `Layout`.
-    ///
-    /// # Errors
-    ///
-    /// If the memory layout doesn't match all the available [`OBJ_SIZES`],
-    /// it'll return an error.
-    fn unwrap_layout(layout: Layout) -> Result<usize, Error> {
-        if layout.size() == 0 {
-            return Err(Error::InvLayout(layout));
-        }
-
-        let size = layout.pad_to_align().size();
-        let idx = OBJ_SIZES.binary_search(&size).into_ok_or_err();
-
-        if !(0..NR_OBJ_SIZES).contains(&idx) {
-            Err(Error::InvLayout(layout))
-        } else {
-            Ok(idx)
-        }
-    }
-
     /// Extend a slab list with a new page
     ///
     /// # Arguments
@@ -59,7 +38,7 @@ impl Pool {
     /// If the memory layout doesn't match all the available [`OBJ_SIZES`],
     /// it'll return an error.
     pub fn extend(&mut self, layout: Layout, mut page: NonNull<Page>) -> Result<(), Error> {
-        let idx = Self::unwrap_layout(layout)?;
+        let idx = unwrap_layout(layout)?;
         unsafe { page.as_mut() }.init(OBJ_SIZES[idx]);
         self.slabs[idx].extend(page);
 
@@ -77,7 +56,7 @@ impl Pool {
     /// 1. The memory layout doesn't match all the available [`OBJ_SIZES`].
     /// 2. There's no free slab page.
     pub fn allocate(&mut self, layout: Layout) -> Result<LAddr, Error> {
-        let idx = Self::unwrap_layout(layout)?;
+        let idx = unwrap_layout(layout)?;
         self.slabs[idx].pop().map(|ret| {
             self.stat.allocate(layout.pad_to_align().size());
             ret
@@ -98,7 +77,7 @@ impl Pool {
         addr: LAddr,
         layout: Layout,
     ) -> Result<Option<NonNull<Page>>, Error> {
-        let idx = Self::unwrap_layout(layout)?;
+        let idx = unwrap_layout(layout)?;
         self.slabs[idx].push(addr).map(|ret| {
             self.stat.deallocate(layout.pad_to_align().size());
             ret
@@ -107,5 +86,26 @@ impl Pool {
 
     pub fn stat(&self) -> Stat {
         self.stat.clone()
+    }
+}
+
+/// Get the corresponding slab list index for the requested `Layout`.
+///
+/// # Errors
+///
+/// If the memory layout doesn't match all the available [`OBJ_SIZES`],
+/// it'll return an error.
+pub fn unwrap_layout(layout: Layout) -> Result<usize, Error> {
+    if layout.size() == 0 {
+        return Err(Error::InvLayout(layout));
+    }
+
+    let size = layout.pad_to_align().size();
+    let idx = OBJ_SIZES.binary_search(&size).into_ok_or_err();
+
+    if !(0..NR_OBJ_SIZES).contains(&idx) {
+        Err(Error::InvLayout(layout))
+    } else {
+        Ok(idx)
     }
 }

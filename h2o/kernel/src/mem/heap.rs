@@ -1,5 +1,6 @@
+use alloc::alloc::handle_alloc_error;
 use core::{
-    alloc::{GlobalAlloc, Layout},
+    alloc::{Allocator, GlobalAlloc, Layout},
     ptr::NonNull,
 };
 
@@ -23,12 +24,18 @@ unsafe impl Sync for KHeap {}
 unsafe impl GlobalAlloc for KHeap {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         let _pree = PREEMPT.lock();
-        self.global_mem.alloc(layout)
+        self.global_mem
+            .allocate(layout)
+            .map_or_else(|_| handle_alloc_error(layout), |ptr| ptr.as_mut_ptr())
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+        let ptr = match NonNull::new(ptr) {
+            Some(ptr) => ptr,
+            None => return,
+        };
         let _pree = PREEMPT.lock();
-        self.global_mem.dealloc(ptr, layout)
+        self.global_mem.deallocate(ptr, layout)
     }
 }
 

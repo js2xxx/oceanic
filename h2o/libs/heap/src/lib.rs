@@ -59,7 +59,8 @@ mod slab;
 
 pub use alloc::Allocator;
 
-pub use page::{AllocPages, DeallocPages, Page};
+pub use page::{AllocPages, DeallocPages, Page, OBJ_SIZES, MAX_OBJ_SIZE};
+pub use pool::unwrap_layout;
 pub use stat::Stat;
 
 cfg_if::cfg_if! { if #[cfg(feature = "global")] {
