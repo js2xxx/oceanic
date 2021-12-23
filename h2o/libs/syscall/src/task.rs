@@ -34,7 +34,9 @@ where
 pub fn test() {
     extern "C" fn func(_: u64, arg: u32) {
         if arg == 0 {
-            for _ in 0..10000000 {}
+            for _ in 0..10000000 {
+                unsafe { asm!("pause") };
+            }
         }
         exit(Ok(12345));
     }

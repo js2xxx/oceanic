@@ -333,6 +333,7 @@ impl Scheduler {
                 None => return None,
             },
         };
+        log::trace!("Switching to {:?}, P{}", next.tid().raw(), PREEMPT.raw());
 
         next.running_state = task::RunningState::Running(cur_time);
         next.cpu = self.cpu;
