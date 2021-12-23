@@ -39,6 +39,7 @@ syscall_stub!(10 => pub(crate) fn mem_alloc(size: usize, align: usize, flags: u3
 syscall_stub!(11 => pub(crate) fn mem_dealloc(ptr: *mut u8));
 
 syscall_stub!(13 => pub(crate) fn wo_new() -> Handle);
+syscall_stub!(14 => pub(crate) fn wo_wait(hdl: Handle, timeout: u64));
 syscall_stub!(15 => pub(crate) fn wo_notify(hdl: Handle, n: usize) -> usize);
 
 syscall_stub!(20 => pub(crate) fn obj_drop(hdl: Handle));
