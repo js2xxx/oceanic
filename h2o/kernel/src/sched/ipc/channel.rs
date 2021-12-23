@@ -1,27 +1,25 @@
 use alloc::{
-    boxed::Box,
     sync::{Arc, Weak},
     vec::Vec,
 };
-use core::any::Any;
 
 use bytes::Bytes;
 use solvent::Handle;
 use spin::{Mutex, MutexGuard};
 
-use super::IpcError;
+use super::{IpcError, Object};
 use crate::sched::{task, wait::WaitQueue, SCHED};
 
 const MAX_QUEUE_SIZE: usize = 2048;
 
 #[derive(Debug)]
 pub struct Packet {
-    objects: Vec<Box<dyn Any + Send>>,
+    objects: Vec<Object>,
     buffer: Bytes,
 }
 
 impl Packet {
-    pub fn new(objects: Vec<Box<dyn Any + Send>>, data: &[u8]) -> Self {
+    pub fn new(objects: Vec<Object>, data: &[u8]) -> Self {
         let buffer = Bytes::copy_from_slice(data);
         Packet { objects, buffer }
     }

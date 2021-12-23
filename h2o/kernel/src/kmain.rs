@@ -12,6 +12,7 @@
 #![feature(box_syntax)]
 #![feature(const_btree_new)]
 #![feature(const_fn_fn_ptr_basics)]
+#![feature(downcast_unchecked)]
 #![feature(map_first_last)]
 #![feature(new_uninit)]
 #![feature(nonnull_slice_from_raw_parts)]

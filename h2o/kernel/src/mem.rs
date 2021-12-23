@@ -86,7 +86,7 @@ mod syscall {
             crate::sched::SCHED
                 .with_current(|cur| {
                     let info = cur.tid().info();
-                    unsafe { info.handles().write().insert_unchecked(box virt) }
+                    unsafe { info.handles().write().insert_unchecked(virt, false, false) }
                 })
                 .ok_or(Error(ESRCH))
         })
