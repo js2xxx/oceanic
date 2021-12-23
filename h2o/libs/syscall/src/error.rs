@@ -103,6 +103,7 @@ pub const ERANGE: i32 = 34;
 
 pub const EKILLED: i32 = 1001;
 pub const EBUFFER: i32 = 1002;
+pub const ETIME: i32 = 1003;
 
 const ERRC_DESC: [&str; ERRC_RANGE.end as usize] = [
     "OK",

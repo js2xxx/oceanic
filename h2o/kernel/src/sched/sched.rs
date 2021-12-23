@@ -9,7 +9,7 @@ use canary::Canary;
 use deque::{Injector, Steal, Worker};
 use spin::Lazy;
 
-use super::task;
+use super::{task, wait::WaitObject};
 use crate::cpu::{
     time::{Instant, Timer, TimerCallback},
     CpuLocalLazy,
@@ -114,13 +114,14 @@ impl Scheduler {
         }
     }
 
+    #[inline]
     pub fn block_current<T>(
         &self,
-        cur_time: Instant,
         guard: T,
-        wo: &super::wait::WaitObject,
+        wo: Option<&WaitObject>,
+        duration: Duration,
         block_desc: &'static str,
-    ) -> bool {
+    ) -> Option<Arc<Timer>> {
         self.canary.assert();
 
         let pree = PREEMPT.lock();
@@ -135,38 +136,18 @@ impl Scheduler {
                 .raw(),
             PREEMPT.raw(),
         );
-        self.schedule_impl(cur_time, pree, None, |task| {
+        self.schedule_impl(Instant::now(), pree, None, |task| {
             let blocked = task::Ready::block(task, block_desc);
-            wo.wait_queue.push(blocked);
-            drop(guard);
-        })
-        .is_some()
-    }
-
-    pub fn sleep_current(&self, duration: Duration) {
-        self.canary.assert();
-
-        let pree = PREEMPT.lock();
-        log::trace!(
-            "Sleeping task {:?}, P{}",
-            unsafe { &*self.current.get() }
-                .as_ref()
-                .unwrap()
-                .tid()
-                .raw(),
-            PREEMPT.raw(),
-        );
-
-        let timer = self.schedule_impl(Instant::now(), pree, None, |task| {
-            let blocked = box task::Ready::block(task, "task_sleep");
-            Timer::activate(
+            let timer = Timer::activate(
                 duration,
-                TimerCallback::new(sleep_callback, Box::into_raw(blocked).cast()),
-            )
-        });
-        if let Some(timer) = timer {
-            timer.cancel();
-        }
+                TimerCallback::new(block_callback, Box::into_raw(box blocked).cast()),
+            );
+            if let Some(wo) = wo {
+                wo.wait_queue.push(Arc::clone(&timer));
+            }
+            drop(guard);
+            timer
+        })
     }
 
     pub fn unblock(&self, task: task::Blocked) {
@@ -211,10 +192,9 @@ impl Scheduler {
     }
 
     pub fn tick(&self, mut cur_time: Instant) {
-        // log::trace!("Scheduler tick");
+        log::trace!("Scheduler tick");
 
-        let pree = PREEMPT.lock();
-        let pree = match self.check_signal(cur_time, pree) {
+        let pree = match self.check_signal(cur_time, PREEMPT.lock()) {
             Some(pree) => pree,
             None => {
                 cur_time = Instant::now();
@@ -257,10 +237,7 @@ impl Scheduler {
                 drop(ti);
 
                 log::trace!("Suspending task {:?}, P{}", cur.tid().raw(), PREEMPT.raw());
-                self.schedule_impl(cur_time, pree, None, |task| {
-                    let blocked = task::Ready::block(task, "task_ctl_suspend");
-                    wo.wait_queue.push(blocked);
-                });
+                self.block_current(pree, Some(&wo), Duration::MAX, "task_ctl_suspend");
 
                 None
             }
@@ -363,9 +340,11 @@ fn select_cpu(affinity: &crate::cpu::CpuMask) -> Option<usize> {
     affinity.iter_ones().next()
 }
 
-fn sleep_callback(_: Arc<Timer>, _: Instant, arg: *mut u8) {
-    let blocked = unsafe { Box::from_raw(arg.cast::<task::Blocked>()) };
-    SCHED.unblock(Box::into_inner(blocked));
+pub(super) fn block_callback(timer: Arc<Timer>, _: Instant, arg: *mut u8) {
+    if !timer.cancel() {
+        let blocked = unsafe { Box::from_raw(arg.cast::<task::Blocked>()) };
+        SCHED.unblock(Box::into_inner(blocked));
+    }
 }
 
 /// # Safety

@@ -22,7 +22,7 @@ fn task_sleep(ms: u32) {
         SCHED.with_current(|cur| cur.running_state = RunningState::NeedResched);
         SCHED.tick(Instant::now());
     } else {
-        SCHED.sleep_current(Duration::from_millis(u64::from(ms)));
+        SCHED.block_current((), None, Duration::from_millis(u64::from(ms)), "task_sleep");
     }
     Ok(())
 }
@@ -78,7 +78,7 @@ fn task_join(hdl: Handle) -> usize {
         tid.child(hdl).ok_or(Error(ECHILD))?
     };
 
-    Error::decode(child.cell().take("task_join"))
+    Error::decode(child.cell().take(Duration::MAX, "task_join").unwrap())
 }
 
 #[syscall]

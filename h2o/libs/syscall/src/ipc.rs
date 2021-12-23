@@ -70,17 +70,17 @@ pub fn test() {
 
         {
             let mut receivee = rp(&mut [], &mut buf);
-            let ret = crate::call::chan_recv(c2, &mut receivee, true);
+            let ret = crate::call::chan_recv(c2, &mut receivee, u64::MAX);
             assert_eq!(ret, Err(Error(EBUFFER)));
 
             receivee = rp(&mut hdl, &mut []);
-            let ret = crate::call::chan_recv(c2, &mut receivee, true);
+            let ret = crate::call::chan_recv(c2, &mut receivee, u64::MAX);
             assert_eq!(ret, Err(Error(EBUFFER)));
         }
 
         buf.fill(0);
         let mut receivee = rp(&mut hdl, &mut buf);
-        crate::call::chan_recv(c2, &mut receivee, true)
+        crate::call::chan_recv(c2, &mut receivee, u64::MAX)
             .expect("Failed to receive a packet from the channel");
         assert_eq!(buf, [1u8, 2, 3, 4, 5, 6, 7]);
 
@@ -88,7 +88,7 @@ pub fn test() {
         crate::call::wo_notify(wo, 0).expect("Failed to notify the wait object");
 
         receivee = rp(&mut hdl, &mut buf);
-        let ret = crate::call::chan_recv(c2, &mut receivee, false);
+        let ret = crate::call::chan_recv(c2, &mut receivee, 0);
         assert_eq!(ret, Err(Error(ENOENT)));
 
         wo
@@ -102,7 +102,7 @@ pub fn test() {
             let mut hdl = [Handle::NULL];
             let mut p = rp(&mut hdl, &mut buf);
 
-            crate::call::chan_recv(init_chan, &mut p, true)
+            crate::call::chan_recv(init_chan, &mut p, u64::MAX)
                 .expect("Failed to receive the init packet");
             for b in buf.iter_mut() {
                 *b += 5;
@@ -138,7 +138,7 @@ pub fn test() {
         crate::call::chan_send(c1, &p).expect("Failed to send init packet");
 
         ::log::trace!("Receiving the response");
-        crate::call::chan_recv(c1, &mut p, true).expect("Failed to receive the response");
+        crate::call::chan_recv(c1, &mut p, u64::MAX).expect("Failed to receive the response");
         assert_eq!(buf, [6, 7, 8, 9, 10, 11, 12]);
 
         ::log::trace!("Finished");

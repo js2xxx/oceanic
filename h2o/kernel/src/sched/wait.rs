@@ -1,16 +1,22 @@
 mod cell;
 mod queue;
 
+use alloc::{boxed::Box, sync::Arc};
+use core::time::Duration;
+
 pub use cell::WaitCell;
 pub use queue::WaitQueue;
 
 use super::*;
-use crate::cpu::time::Instant;
+use crate::cpu::time::Timer;
 
 #[derive(Debug)]
 pub struct WaitObject {
-    pub(super) wait_queue: deque::Injector<task::Blocked>,
+    pub(super) wait_queue: deque::Injector<Arc<Timer>>,
 }
+
+unsafe impl Send for WaitObject {}
+unsafe impl Sync for WaitObject {}
 
 impl WaitObject {
     pub fn new() -> Self {
@@ -20,8 +26,9 @@ impl WaitObject {
     }
 
     #[inline]
-    pub fn wait<T>(&self, guard: T, block_desc: &'static str) {
-        SCHED.block_current(Instant::now(), guard, self, block_desc);
+    pub fn wait<T>(&self, guard: T, timeout: Duration, block_desc: &'static str) -> bool {
+        let timer = SCHED.block_current(guard, Some(self), timeout, block_desc);
+        timer.map_or(false, |timer| !timer.is_called())
     }
 
     pub fn notify(&self, num: usize) -> usize {
@@ -30,9 +37,13 @@ impl WaitObject {
         let mut cnt = 0;
         while cnt < num {
             match self.wait_queue.steal() {
-                deque::Steal::Success(task) => {
-                    SCHED.unblock(task);
-                    cnt += 1;
+                deque::Steal::Success(timer) => {
+                    if !timer.cancel() {
+                        let blocked =
+                            unsafe { Box::from_raw(timer.callback_arg().cast::<task::Blocked>()) };
+                        SCHED.unblock(Box::into_inner(blocked));
+                        cnt += 1;
+                    }
                 }
                 deque::Steal::Retry => {}
                 deque::Steal::Empty => break,
@@ -62,9 +73,9 @@ mod syscall {
     }
 
     #[syscall]
-    fn wo_wait(hdl: Handle, timeout: u64) {
+    fn wo_wait(hdl: Handle, timeout_us: u64) {
         hdl.check_null()?;
-        let timeout = Duration::from_nanos(timeout);
+        let timeout = Duration::from_micros(timeout_us);
         let wo = SCHED
             .with_current(|cur| {
                 let info = cur.tid().info();
@@ -73,12 +84,10 @@ mod syscall {
             .flatten()
             .ok_or(Error(EINVAL))?;
 
-        if timeout.is_zero() {
-            wo.wait((), "wo_wait");
+        if wo.wait((), timeout, "wo_wait") {
             Ok(())
         } else {
-            // TODO: Support timeout-ed waiting.
-            Err(Error(EINVAL))
+            Err(Error(ETIME))
         }
     }
 

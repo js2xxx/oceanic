@@ -2,6 +2,7 @@ use alloc::{
     sync::{Arc, Weak},
     vec::Vec,
 };
+use core::time::Duration;
 
 use bytes::Bytes;
 use solvent::Handle;
@@ -84,10 +85,17 @@ impl Channel {
         }
     }
 
-    pub fn receive<'a>(&'a self) -> Result<MutexGuard<'a, Option<Packet>>, IpcError> {
+    pub fn receive<'a>(
+        &'a self,
+        timeout: Duration,
+    ) -> Result<MutexGuard<'a, Option<Packet>>, IpcError> {
         let mut head = self.head.lock();
         if head.is_none() {
-            *head = Some(self.me.pop("Channel::receive"));
+            *head = Some(
+                self.me
+                    .pop(timeout, "Channel::receive")
+                    .ok_or(IpcError::QueueEmpty)?,
+            );
         }
         Ok(head)
     }
@@ -151,8 +159,13 @@ mod syscall {
     }
 
     #[syscall]
-    fn chan_recv(hdl: Handle, packet_ptr: UserPtr<InOut, RawPacket>, block: bool) {
+    fn chan_recv(hdl: Handle, packet_ptr: UserPtr<InOut, RawPacket>, timeout_us: u64) {
         hdl.check_null()?;
+        let timeout = if timeout_us == u64::MAX {
+            Duration::MAX
+        } else {
+            Duration::from_micros(timeout_us)
+        };
 
         let mut user_packet = unsafe { packet_ptr.r#in().read()? };
         UserPtr::<In, Handle>::new(user_packet.handles).check_slice(user_packet.handle_cap)?;
@@ -169,8 +182,8 @@ mod syscall {
             let packet = {
                 let channel = map.get::<Channel>(hdl).ok_or(Error(EINVAL))?;
 
-                let mut packet = if block {
-                    channel.receive()
+                let mut packet = if !timeout.is_zero() {
+                    channel.receive(timeout)
                 } else {
                     channel.try_receive()
                 }

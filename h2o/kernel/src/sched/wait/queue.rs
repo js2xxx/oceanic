@@ -1,3 +1,5 @@
+use core::time::Duration;
+
 use crossbeam_queue::SegQueue;
 
 use super::WaitObject;
@@ -24,12 +26,14 @@ impl<T> WaitQueue<T> {
         self.data.is_empty()
     }
 
-    pub fn pop(&self, block_desc: &'static str) -> T {
+    pub fn pop(&self, timeout: Duration, block_desc: &'static str) -> Option<T> {
         loop {
             if let Some(data) = self.data.pop() {
-                break data;
+                break Some(data);
             }
-            self.wo.wait((), block_desc);
+            if !self.wo.wait((), timeout, block_desc) {
+                break None;
+            }
         }
     }
 

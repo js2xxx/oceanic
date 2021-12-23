@@ -15,15 +15,22 @@ static TIMER_QUEUE: CpuLocalLazy<Worker<Arc<Timer>>> = CpuLocalLazy::new(|| Work
 pub struct Callback {
     func: fn(Arc<Timer>, Instant, *mut u8),
     arg: *mut u8,
+    called: AtomicBool,
 }
 
 impl Callback {
     pub fn new(func: fn(Arc<Timer>, Instant, *mut u8), arg: *mut u8) -> Self {
-        Callback { func, arg }
+        Callback {
+            called: AtomicBool::new(false),
+            func,
+            arg,
+        }
     }
 
+    #[inline]
     pub fn call(&self, timer: Arc<Timer>, cur_time: Instant) {
-        (self.func)(timer, cur_time, self.arg)
+        (self.func)(timer, cur_time, self.arg);
+        self.called.store(true, Release);
     }
 }
 
@@ -35,10 +42,6 @@ pub struct Timer {
 }
 
 impl Timer {
-    pub fn cancel(&self) -> bool {
-        !self.cancel.swap(true, AcqRel)
-    }
-
     pub fn activate(duration: Duration, callback: Callback) -> Arc<Self> {
         let ret = Arc::new(Timer {
             canary: Canary::new(),
@@ -46,8 +49,27 @@ impl Timer {
             deadline: Instant::now() + duration,
             cancel: AtomicBool::new(false),
         });
-        TIMER_QUEUE.push(Arc::clone(&ret));
+        if duration < Duration::MAX {
+            TIMER_QUEUE.push(Arc::clone(&ret));
+        }
         ret
+    }
+
+    pub fn cancel(&self) -> bool {
+        self.cancel.swap(true, AcqRel)
+    }
+
+    pub fn is_canceled(&self) -> bool {
+        self.cancel.load(Acquire)
+    }
+
+    pub fn is_called(&self) -> bool {
+        self.callback.called.load(Acquire)
+    }
+
+    #[inline]
+    pub fn callback_arg(&self) -> *mut u8 {
+        self.callback.arg
     }
 }
 
@@ -58,7 +80,7 @@ pub unsafe fn tick() {
             Some(timer) => {
                 let cur_time = Instant::now();
                 timer.canary.assert();
-                if !timer.cancel.load(Acquire) {
+                if !timer.is_canceled() {
                     if cur_time >= timer.deadline {
                         timer.callback.call(Arc::clone(&timer), cur_time);
                     } else {
