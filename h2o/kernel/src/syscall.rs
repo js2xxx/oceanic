@@ -51,7 +51,7 @@ static SYSCALL_TABLE: &[Option<SyscallWrapper>] = &[
     Some(syscall_wrapper!(mem_dealloc)),
     None,
     Some(syscall_wrapper!(wo_new)),
-    Some(syscall_wrapper!(wo_wait)),
+    None,
     Some(syscall_wrapper!(wo_notify)),
     None,
     None,

@@ -150,10 +150,11 @@ impl HandleMap {
 mod syscall {
     use solvent::*;
 
+    use crate::sched::SCHED;
     #[syscall]
     fn obj_drop(hdl: Handle) {
         hdl.check_null()?;
-        crate::sched::SCHED.with_current(|cur| {
+        SCHED.with_current(|cur| {
             let info = cur.tid().info();
             unsafe { info.handles().write().drop_unchecked(hdl) };
         });

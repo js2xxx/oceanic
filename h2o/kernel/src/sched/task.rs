@@ -89,22 +89,27 @@ pub struct TaskInfo {
 unsafe impl Sync for TaskInfo {}
 
 impl TaskInfo {
+    #[inline]
     pub fn name(&self) -> &str {
         &self.name
     }
 
+    #[inline]
     pub fn ty(&self) -> Type {
         self.ty
     }
 
+    #[inline]
     pub fn affinity(&self) -> crate::cpu::CpuMask {
         self.affinity.clone()
     }
 
+    #[inline]
     pub fn prio(&self) -> Priority {
         self.prio
     }
 
+    #[inline]
     pub fn handles(&self) -> &RwLock<HandleMap> {
         &self.handles
     }
@@ -112,6 +117,7 @@ impl TaskInfo {
     /// # Safety
     ///
     /// This function must be called only if `PREEMPT` is locked.
+
     pub unsafe fn take_signal(&self) -> Option<Signal> {
         self.signal.lock().take()
     }
@@ -132,6 +138,14 @@ impl TaskInfo {
                 (s.as_ref().unwrap() >= &signal).then(|| s.replace(signal).unwrap())
             }
         }
+    }
+
+    pub fn update_signal<F, R>(&self, func: F) -> R
+    where
+        F: FnOnce(&mut Option<Signal>) -> R,
+    {
+        let _pree = super::PREEMPT.lock();
+        func(&mut *self.signal.lock())
     }
 }
 
@@ -192,6 +206,7 @@ pub struct Ready {
 }
 
 impl Ready {
+    #[inline]
     pub(in crate::sched) fn from_init(init: Init, cpu: usize, time_slice: Duration) -> Self {
         let Init { tid, space, kstack } = init;
         Ready {
@@ -206,6 +221,7 @@ impl Ready {
         }
     }
 
+    #[inline]
     pub(in crate::sched) fn unblock(blocked: Blocked, time_slice: Duration) -> Self {
         let Blocked {
             tid,
@@ -228,6 +244,7 @@ impl Ready {
         }
     }
 
+    #[inline]
     pub(in crate::sched) fn block(this: Self, block_desc: &'static str) -> Blocked {
         let Ready {
             tid,
@@ -256,10 +273,12 @@ impl Ready {
         idle::CTX_DROPPER.push(kstack);
     }
 
+    #[inline]
     pub fn tid(&self) -> &Tid {
         &self.tid
     }
 
+    #[inline]
     pub fn time_slice(&self) -> Duration {
         self.time_slice
     }
@@ -293,10 +312,12 @@ impl Ready {
         self.kstack.task_frame_mut().set_syscall_retval(retval);
     }
 
+    #[inline]
     pub fn kframe(&self) -> *mut u8 {
         self.kstack.kframe_ptr()
     }
 
+    #[inline]
     pub fn kframe_mut(&mut self) -> *mut *mut u8 {
         self.kstack.kframe_ptr_mut()
     }
@@ -316,6 +337,7 @@ pub struct Blocked {
 }
 
 impl Blocked {
+    #[inline]
     pub fn tid(&self) -> &Tid {
         &self.tid
     }
@@ -328,15 +350,18 @@ pub struct Dead {
 }
 
 impl Dead {
+    #[inline]
     pub fn tid(&self) -> &Tid {
         &self.tid
     }
 
+    #[inline]
     pub fn retval(&self) -> usize {
         self.retval
     }
 }
 
+#[inline]
 pub(super) fn init() {
     CpuLocalLazy::force(&idle::IDLE);
 }

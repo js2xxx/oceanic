@@ -4,12 +4,38 @@ use core::time::Duration;
 use paging::LAddr;
 use solvent::*;
 
-use super::{RunningState, Signal, DEFAULT_STACK_SIZE};
+use super::{RunningState, Signal, Tid, DEFAULT_STACK_SIZE};
 use crate::{
     cpu::time::Instant,
     sched::{wait::WaitObject, SCHED},
-    syscall::{In, UserPtr},
+    syscall::{In, InOut, UserPtr},
 };
+
+#[derive(Debug)]
+struct SuspendToken {
+    wo: Arc<WaitObject>,
+    time: Instant,
+    tid: Tid,
+}
+
+impl SuspendToken {
+    #[inline]
+    pub fn signal(&self) -> Signal {
+        Signal::Suspend(Arc::clone(&self.wo), self.time)
+    }
+}
+
+impl Drop for SuspendToken {
+    fn drop(&mut self) {
+        if self.wo.notify(1) == 0 {
+            self.tid.info().update_signal(|sig| {
+                if matches!(sig, Some(sig) if sig == &mut self.signal()) {
+                    *sig = None;
+                }
+            })
+        }
+    }
+}
 
 #[syscall]
 fn task_exit(retval: usize) {
@@ -82,7 +108,7 @@ fn task_join(hdl: Handle) -> usize {
 }
 
 #[syscall]
-fn task_ctl(hdl: Handle, op: u32, data: *mut u8) {
+fn task_ctl(hdl: Handle, op: u32, data: UserPtr<InOut, Handle>) {
     hdl.check_null()?;
 
     let cur_tid = SCHED
@@ -99,21 +125,25 @@ fn task_ctl(hdl: Handle, op: u32, data: *mut u8) {
             Ok(())
         }
         task::TASK_CTL_SUSPEND => {
-            let wo = {
-                let data = Handle::try_from(data)?;
-
-                let info = cur_tid.info();
-                let _pree = super::PREEMPT.lock();
-                match info.handles().read().get::<Arc<WaitObject>>(data).cloned() {
-                    Some(wo) => wo,
-                    None => return Err(Error(EINVAL)),
-                }
-            };
+            data.out().check()?;
 
             let child = cur_tid.child(hdl).ok_or(Error(ECHILD))?;
 
-            let ti = child.tid().info();
-            ti.replace_signal(Some(Signal::Suspend(wo)));
+            let st = SuspendToken {
+                wo: Arc::new(WaitObject::new()),
+                time: Instant::now(),
+                tid: child.tid().clone(),
+            };
+
+            let ti = st.tid.info();
+            ti.replace_signal(Some(st.signal()));
+
+            let out = {
+                let info = cur_tid.info();
+                let _pree = super::PREEMPT.lock();
+                info.handles().write().insert(st)
+            };
+            unsafe { data.out().write(out) }.unwrap();
 
             Ok(())
         }

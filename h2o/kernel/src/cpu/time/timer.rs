@@ -29,7 +29,6 @@ impl Callback {
         }
     }
 
-    #[inline]
     pub fn call(&self, timer: Arc<Timer>, cur_time: Instant) {
         (self.func)(timer, cur_time, self.arg);
         self.fired.store(true, Release);
@@ -68,27 +67,22 @@ impl Timer {
         ret
     }
 
-    #[inline]
     pub fn ty(&self) -> Type {
         self.ty
     }
 
-    #[inline]
     pub fn cancel(&self) -> bool {
         self.cancel.swap(true, AcqRel)
     }
 
-    #[inline]
     pub fn is_canceled(&self) -> bool {
         self.cancel.load(Acquire)
     }
 
-    #[inline]
     pub fn is_fired(&self) -> bool {
         self.callback.fired.load(Acquire)
     }
 
-    #[inline]
     pub fn callback_arg(&self) -> *mut u8 {
         self.callback.arg
     }

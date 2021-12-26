@@ -44,7 +44,6 @@ impl Output {
     // }
 
     /// Output a character byte to the serial port for logging.
-    #[inline]
     unsafe fn out_char(&mut self, c: u8) {
         while self.buf_full() {
             hint::spin_loop();
@@ -54,7 +53,6 @@ impl Output {
 }
 
 impl fmt::Write for Output {
-    #[inline]
     fn write_str(&mut self, s: &str) -> Result<(), fmt::Error> {
         for b in s.bytes() {
             unsafe { self.out_char(b) };

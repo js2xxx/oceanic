@@ -55,7 +55,6 @@ impl WaitObject {
 
 mod syscall {
     use alloc::sync::Arc;
-    use core::time::Duration;
 
     use solvent::*;
 
@@ -70,25 +69,6 @@ mod syscall {
                 info.handles().write().insert(wo).raw()
             })
             .map_or(Err(Error(ESRCH)), Ok)
-    }
-
-    #[syscall]
-    fn wo_wait(hdl: Handle, timeout_us: u64) {
-        hdl.check_null()?;
-        let timeout = Duration::from_micros(timeout_us);
-        let wo = SCHED
-            .with_current(|cur| {
-                let info = cur.tid().info();
-                info.handles().read().get::<Arc<WaitObject>>(hdl).cloned()
-            })
-            .flatten()
-            .ok_or(Error(EINVAL))?;
-
-        if wo.wait((), timeout, "wo_wait") {
-            Ok(())
-        } else {
-            Err(Error(ETIME))
-        }
     }
 
     #[syscall]

@@ -176,12 +176,14 @@ pub struct IntDescTable(IdtArray);
 
 impl Index<usize> for IntDescTable {
     type Output = Gate;
+    #[inline]
     fn index(&self, index: usize) -> &Self::Output {
         &self.0[index]
     }
 }
 
 impl IndexMut<usize> for IntDescTable {
+    #[inline]
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
         &mut self.0[index]
     }
@@ -189,6 +191,7 @@ impl IndexMut<usize> for IntDescTable {
 
 impl IntDescTable {
     /// Construct a new (zeroed) IDT.
+    #[inline]
     pub fn new(array: IdtArray) -> Self {
         IntDescTable(array)
     }

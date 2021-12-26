@@ -19,6 +19,7 @@ static TID_ALLOC: Lazy<spin::Mutex<IdAllocator>> =
 pub struct Tid(u32, Arc<TaskInfo>);
 
 impl Tid {
+    #[inline]
     pub fn raw(&self) -> u32 {
         self.0
     }

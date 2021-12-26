@@ -67,7 +67,6 @@ impl Scheduler {
         }
     }
 
-    #[inline]
     fn enqueue(&self, task: task::Ready, pree: PreemptStateGuard) {
         // SAFE: We have `pree`, which means preemption is disabled.
         match unsafe { &*self.current.get() } {
@@ -97,11 +96,11 @@ impl Scheduler {
         unsafe { (*self.current.get()).as_mut().map(func) }
     }
 
+    #[inline]
     pub fn current(&self) -> *mut Option<task::Ready> {
         self.current.get()
     }
 
-    #[inline]
     pub unsafe fn preempt_current(&self) {
         self.canary.assert();
 
@@ -114,7 +113,6 @@ impl Scheduler {
         }
     }
 
-    #[inline]
     pub fn block_current<T>(
         &self,
         guard: T,
@@ -234,7 +232,7 @@ impl Scheduler {
                 });
                 unreachable!("Dead task");
             }
-            Some(task::sig::Signal::Suspend(wo)) => {
+            Some(task::sig::Signal::Suspend(wo, ..)) => {
                 drop(ti);
 
                 log::trace!("Suspending task {:?}, P{}", cur.tid().raw(), PREEMPT.raw());
