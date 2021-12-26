@@ -11,7 +11,7 @@ use spin::Lazy;
 
 use super::{task, wait::WaitObject};
 use crate::cpu::{
-    time::{Instant, Timer, TimerCallback},
+    time::{Instant, Timer, TimerCallback, TimerType},
     CpuLocalLazy,
 };
 
@@ -139,6 +139,7 @@ impl Scheduler {
         self.schedule_impl(Instant::now(), pree, None, |task| {
             let blocked = task::Ready::block(task, block_desc);
             let timer = Timer::activate(
+                TimerType::Oneshot,
                 duration,
                 TimerCallback::new(block_callback, Box::into_raw(box blocked).cast()),
             );
@@ -340,11 +341,9 @@ fn select_cpu(affinity: &crate::cpu::CpuMask) -> Option<usize> {
     affinity.iter_ones().next()
 }
 
-pub(super) fn block_callback(timer: Arc<Timer>, _: Instant, arg: *mut u8) {
-    if !timer.cancel() {
-        let blocked = unsafe { Box::from_raw(arg.cast::<task::Blocked>()) };
-        SCHED.unblock(Box::into_inner(blocked));
-    }
+fn block_callback(_: Arc<Timer>, _: Instant, arg: *mut u8) {
+    let blocked = unsafe { Box::from_raw(arg.cast::<task::Blocked>()) };
+    SCHED.unblock(Box::into_inner(blocked));
 }
 
 /// # Safety

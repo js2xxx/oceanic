@@ -28,7 +28,7 @@ impl WaitObject {
     #[inline]
     pub fn wait<T>(&self, guard: T, timeout: Duration, block_desc: &'static str) -> bool {
         let timer = SCHED.block_current(guard, Some(self), timeout, block_desc);
-        timer.map_or(false, |timer| !timer.is_called())
+        timer.map_or(false, |timer| !timer.is_fired())
     }
 
     pub fn notify(&self, num: usize) -> usize {

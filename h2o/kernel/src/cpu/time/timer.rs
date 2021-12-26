@@ -1,5 +1,6 @@
 use alloc::sync::Arc;
 use core::{
+    cell::UnsafeCell,
     sync::atomic::{AtomicBool, Ordering::*},
     time::Duration,
 };
@@ -12,16 +13,17 @@ use crate::{cpu::CpuLocalLazy, sched::deque::Worker};
 #[thread_local]
 static TIMER_QUEUE: CpuLocalLazy<Worker<Arc<Timer>>> = CpuLocalLazy::new(|| Worker::new_fifo());
 
+#[derive(Debug)]
 pub struct Callback {
     func: fn(Arc<Timer>, Instant, *mut u8),
     arg: *mut u8,
-    called: AtomicBool,
+    fired: AtomicBool,
 }
 
 impl Callback {
     pub fn new(func: fn(Arc<Timer>, Instant, *mut u8), arg: *mut u8) -> Self {
         Callback {
-            called: AtomicBool::new(false),
+            fired: AtomicBool::new(false),
             func,
             arg,
         }
@@ -30,23 +32,34 @@ impl Callback {
     #[inline]
     pub fn call(&self, timer: Arc<Timer>, cur_time: Instant) {
         (self.func)(timer, cur_time, self.arg);
-        self.called.store(true, Release);
+        self.fired.store(true, Release);
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Type {
+    Oneshot,
+    Periodic,
+}
+
+#[derive(Debug)]
 pub struct Timer {
     canary: Canary<Timer>,
+    ty: Type,
     callback: Callback,
-    deadline: Instant,
+    duration: Duration,
+    deadline: UnsafeCell<Instant>,
     cancel: AtomicBool,
 }
 
 impl Timer {
-    pub fn activate(duration: Duration, callback: Callback) -> Arc<Self> {
+    pub fn activate(ty: Type, duration: Duration, callback: Callback) -> Arc<Self> {
         let ret = Arc::new(Timer {
             canary: Canary::new(),
+            ty,
             callback,
-            deadline: Instant::now() + duration,
+            duration,
+            deadline: UnsafeCell::new(Instant::now() + duration),
             cancel: AtomicBool::new(false),
         });
         if duration < Duration::MAX {
@@ -55,21 +68,51 @@ impl Timer {
         ret
     }
 
+    #[inline]
+    pub fn ty(&self) -> Type {
+        self.ty
+    }
+
+    #[inline]
     pub fn cancel(&self) -> bool {
         self.cancel.swap(true, AcqRel)
     }
 
+    #[inline]
     pub fn is_canceled(&self) -> bool {
         self.cancel.load(Acquire)
     }
 
-    pub fn is_called(&self) -> bool {
-        self.callback.called.load(Acquire)
+    #[inline]
+    pub fn is_fired(&self) -> bool {
+        self.callback.fired.load(Acquire)
     }
 
     #[inline]
     pub fn callback_arg(&self) -> *mut u8 {
         self.callback.arg
+    }
+
+    unsafe fn handle(timer: Arc<Self>, cur_time: Instant) {
+        timer.canary.assert();
+        if !timer.is_canceled() {
+            if cur_time >= *timer.deadline.get() {
+                match timer.ty {
+                    Type::Oneshot => {
+                        if !timer.cancel() {
+                            timer.callback.call(Arc::clone(&timer), cur_time);
+                        }
+                    }
+                    Type::Periodic => {
+                        *timer.deadline.get() += timer.duration;
+                        timer.callback.call(Arc::clone(&timer), cur_time);
+                        TIMER_QUEUE.push(timer);
+                    }
+                }
+            } else {
+                TIMER_QUEUE.push(timer);
+            }
+        }
     }
 }
 
@@ -77,17 +120,7 @@ pub unsafe fn tick() {
     let mut cnt = TIMER_QUEUE.len();
     while cnt > 0 {
         match TIMER_QUEUE.pop() {
-            Some(timer) => {
-                let cur_time = Instant::now();
-                timer.canary.assert();
-                if !timer.is_canceled() {
-                    if cur_time >= timer.deadline {
-                        timer.callback.call(Arc::clone(&timer), cur_time);
-                    } else {
-                        TIMER_QUEUE.push(timer);
-                    }
-                }
-            }
+            Some(timer) => Timer::handle(timer, Instant::now()),
             None => break,
         }
         cnt -= 1;
