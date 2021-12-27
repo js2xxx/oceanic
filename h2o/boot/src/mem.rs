@@ -1,4 +1,4 @@
-use core::{mem::MaybeUninit, ops::Range, ptr::NonNull};
+use core::{arch::asm, mem::MaybeUninit, ops::Range, ptr::NonNull};
 
 use bitop_ex::BitOpEx;
 use minfo::{ID_OFFSET as KERNEL_ID_OFFSET, INITIAL_ID_SPACE, KMEM_PHYS_BASE, PF_SIZE};
@@ -230,7 +230,7 @@ pub fn commit_mapping() {
         msr::write(msr::EFER, efer);
 
         let cr3 = ROOT_TABLE.assume_init();
-        asm!("mov cr3, {}", in(reg) cr3.as_ptr());
+        asm!("mov cr3, {}", in(reg) cr3.as_ptr(), options(nostack));
     }
 }
 

@@ -2,6 +2,7 @@ pub mod ipi;
 pub mod timer;
 
 use alloc::{collections::BTreeMap, sync::Arc};
+use core::arch::asm;
 
 use archop::msr;
 use modular_bitfield::prelude::*;
@@ -332,7 +333,7 @@ impl Lapic {
 /// The caller must ensure that this function is only called by the spurious
 /// handler.
 pub unsafe fn spurious_handler() {
-    asm!("nop");
+    asm!("nop", options(nomem, nostack));
 }
 
 /// # Safety

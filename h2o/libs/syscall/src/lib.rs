@@ -1,5 +1,5 @@
 #![no_std]
-#![feature(asm)]
+
 #![feature(bool_to_option)]
 #![feature(lang_items)]
 #![feature(negative_impls)]

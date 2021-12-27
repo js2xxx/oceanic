@@ -1,3 +1,5 @@
+use core::arch::asm;
+
 pub use Msr::*;
 
 #[repr(u32)]

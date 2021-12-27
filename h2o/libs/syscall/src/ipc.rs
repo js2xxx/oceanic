@@ -18,6 +18,7 @@ pub fn test() {
 
     use crate::*;
 
+    #[inline]
     fn rp(hdl: &mut [Handle], buf: &mut [u8]) -> RawPacket {
         RawPacket {
             handles: hdl.as_mut_ptr(),

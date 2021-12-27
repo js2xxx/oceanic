@@ -20,6 +20,7 @@ pub trait BitOpEx:
     const BIT_SIZE: usize = core::mem::size_of::<Self>() * 8;
 
     #[inline]
+    #[must_use]
     fn round_up_bit(&self, bit: Self) -> Self {
         let val = Self::one() << bit;
         ci::wrapping_add(
@@ -29,22 +30,26 @@ pub trait BitOpEx:
     }
 
     #[inline]
+    #[must_use]
     fn round_down_bit(&self, bit: Self) -> Self {
         let val = Self::one() << bit;
         *self & !ci::wrapping_sub(val, Self::one())
     }
 
     #[inline]
+    #[must_use]
     fn div_ceil_bit(&self, bit: Self) -> Self {
         self.round_up_bit(bit) >> bit
     }
 
     #[inline]
+    #[must_use]
     fn lsb(&self) -> Self {
         ci::cttz(*self)
     }
 
     #[inline]
+    #[must_use]
     fn msb(&self) -> Self {
         ci::wrapping_sub(
             Self::from(Self::BIT_SIZE).unwrap(),
@@ -53,11 +58,13 @@ pub trait BitOpEx:
     }
 
     #[inline]
+    #[must_use]
     fn log2f(&self) -> Self {
         self.msb()
     }
 
     #[inline]
+    #[must_use]
     fn log2c(&self) -> Self {
         let msb = self.msb();
         msb + Self::from((msb != self.lsb()) as usize).unwrap()

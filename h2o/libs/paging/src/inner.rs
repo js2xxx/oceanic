@@ -1,3 +1,5 @@
+use core::arch::asm;
+
 use crate::*;
 
 fn create_table(

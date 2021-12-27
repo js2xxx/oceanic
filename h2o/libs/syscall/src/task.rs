@@ -32,6 +32,8 @@ where
 #[cfg(feature = "call")]
 #[cfg(debug_assertions)]
 pub fn test() {
+    use core::arch::asm;
+
     extern "C" fn func(_: crate::Handle, arg: u32) {
         match arg {
             0 => {

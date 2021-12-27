@@ -1,4 +1,4 @@
-use core::{cell::UnsafeCell, mem::size_of, ptr::addr_of};
+use core::{arch::asm, cell::UnsafeCell, mem::size_of, ptr::addr_of};
 
 use paging::LAddr;
 use spin::Lazy;

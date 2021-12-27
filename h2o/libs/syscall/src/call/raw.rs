@@ -6,7 +6,7 @@ pub unsafe fn syscall(arg: &crate::Arguments) -> crate::Result<usize> {
         fn_num: mut rax,
         args: [rdi, rsi, rdx, r8, r9],
     } = *arg;
-    asm!(
+    core::arch::asm!(
           "syscall",
           inout("rax") rax,
           in("rdi") rdi,

@@ -5,7 +5,7 @@ pub mod msr;
 pub mod rand;
 pub mod reg;
 
-use core::ops::Range;
+use core::{arch::asm, ops::Range};
 
 use bitop_ex::BitOpEx;
 pub use lock::{mutex::*, rwlock::*, IntrState, PreemptState, PreemptStateGuard};

@@ -6,7 +6,7 @@
 #![feature(alloc_layout_extra)]
 #![feature(alloc_error_handler)]
 #![feature(allocator_api)]
-#![feature(asm)]
+
 #![feature(bool_to_option)]
 #![feature(box_into_inner)]
 #![feature(box_syntax)]
