@@ -5,8 +5,8 @@ name = "xtask"
 version = "0.1.0"
 
 [dependencies]
-bindgen = "0.58"
+bindgen = "0.59"
 cc = "1.0"
-log = "0.4"
 env_logger = "0.9"
+log = "0.4"
 structopt = "0.3"

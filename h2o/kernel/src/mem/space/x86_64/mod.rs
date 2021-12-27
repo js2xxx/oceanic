@@ -140,11 +140,12 @@ impl Space {
         )
     }
 
-    // pub fn query(&self, virt: LAddr) -> Result<PAddr, paging::Error> {
-    //       self.canary.assert();
+    #[inline]
+    pub(in crate::mem) fn query(&self, virt: LAddr) -> Result<PAddr, paging::Error> {
+          self.canary.assert();
 
-    //       paging::query(&mut *self.root_table.lock(), virt, minfo::ID_OFFSET)
-    // }
+          paging::query(&mut *self.root_table.lock(), virt, minfo::ID_OFFSET)
+    }
 
     pub(in crate::mem) fn unmaps(
         &self,

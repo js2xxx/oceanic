@@ -156,6 +156,13 @@ impl Space {
         }
     }
 
+    /// Get the mapped physical address of the specified pointer.
+    pub fn get(&self, ptr: NonNull<u8>) -> Result<paging::PAddr, SpaceError> {
+        self.arch
+            .query(LAddr::from(ptr))
+            .map_err(SpaceError::PagingError)
+    }
+
     /// Modify the access flags of an address range without a specific type.
     ///
     /// # Safety

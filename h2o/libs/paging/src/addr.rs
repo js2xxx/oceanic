@@ -5,7 +5,7 @@ use core::{
     ptr::NonNull,
 };
 
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Default)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Default, Hash)]
 #[repr(transparent)]
 pub struct PAddr(usize);
 
@@ -47,7 +47,7 @@ impl core::fmt::Debug for PAddr {
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
 pub struct LAddr(*mut u8);
 

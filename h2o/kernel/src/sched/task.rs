@@ -279,6 +279,11 @@ impl Ready {
     }
 
     #[inline]
+    pub fn space(&self) -> &Space {
+        &self.space
+    }
+
+    #[inline]
     pub fn time_slice(&self) -> Duration {
         self.time_slice
     }

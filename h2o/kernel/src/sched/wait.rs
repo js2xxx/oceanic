@@ -1,5 +1,6 @@
 mod cell;
 mod queue;
+mod futex;
 
 use alloc::{boxed::Box, sync::Arc};
 use core::time::Duration;

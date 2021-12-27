@@ -17,6 +17,7 @@ impl<T: Type, D> UserPtr<T, D> {
         }
     }
 
+    #[inline]
     pub fn as_ptr(&self) -> *mut D {
         self.data
     }
