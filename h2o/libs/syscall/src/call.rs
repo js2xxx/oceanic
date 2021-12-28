@@ -60,6 +60,7 @@ syscall_stub!(18 =>
     )
 );
 
+syscall_stub!(19 => pub(crate) fn obj_clone(hdl: Handle) -> Handle);
 syscall_stub!(20 => pub(crate) fn obj_drop(hdl: Handle));
 
 syscall_stub!(23 => pub(crate) fn chan_new(p1: *mut Handle, p2: *mut Handle));

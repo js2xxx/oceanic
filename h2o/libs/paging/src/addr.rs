@@ -10,6 +10,7 @@ use core::{
 pub struct PAddr(usize);
 
 impl PAddr {
+    #[inline]
     pub const fn new(addr: usize) -> Self {
         PAddr(addr)
     }
@@ -18,6 +19,7 @@ impl PAddr {
         NonZeroUsize::new(self.0)
     }
 
+    #[inline]
     pub fn to_laddr(self, id_off: usize) -> LAddr {
         LAddr::from(self.0 + id_off)
     }
@@ -30,12 +32,14 @@ impl PAddr {
 impl Deref for PAddr {
     type Target = usize;
 
+    #[inline]
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
 
 impl DerefMut for PAddr {
+    #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
     }
@@ -52,18 +56,22 @@ impl core::fmt::Debug for PAddr {
 pub struct LAddr(*mut u8);
 
 impl LAddr {
+    #[inline]
     pub const fn new(ptr: *mut u8) -> Self {
         LAddr(ptr)
     }
 
+    #[inline]
     pub fn val(self) -> usize {
         self.0 as usize
     }
 
+    #[inline]
     pub fn as_non_null(self) -> Option<NonNull<u8>> {
         NonNull::new(self.0)
     }
 
+    #[inline]
     pub fn to_paddr(self, id_off: usize) -> PAddr {
         PAddr(self.val() - id_off)
     }
@@ -84,24 +92,28 @@ impl LAddr {
 impl Deref for LAddr {
     type Target = *mut u8;
 
+    #[inline]
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
 
 impl DerefMut for LAddr {
+    #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
     }
 }
 
 impl From<usize> for LAddr {
+    #[inline]
     fn from(val: usize) -> Self {
         LAddr(val as *mut u8)
     }
 }
 
 impl<T: ?Sized> From<NonNull<T>> for LAddr {
+    #[inline]
     fn from(ptr: NonNull<T>) -> Self {
         LAddr(ptr.as_ptr().cast())
     }

@@ -73,9 +73,12 @@ impl HandleMap {
         self.map.get(&hdl).and_then(|k| k.deref_unchecked())
     }
 
-    // pub fn get_mut<T: Send + 'static>(&mut self, hdl: Handle) -> Option<&mut T> {
-    //     self.map.get_mut(&hdl).and_then(|k| k.downcast_mut())
-    // }
+    pub fn clone_handle(&mut self, hdl: Handle) -> Option<Handle> {
+        match self.map.get(&hdl).and_then(|k| Object::clone(k)) {
+            Some(o) => Some(unsafe { self.insert_impl(o) }),
+            None => None,
+        }
+    }
 
     pub fn remove<T: Send + 'static>(&mut self, hdl: Handle) -> Option<T> {
         match self.map.entry(hdl) {
@@ -145,6 +148,18 @@ mod syscall {
     use solvent::*;
 
     use crate::sched::SCHED;
+
+    #[syscall]
+    fn obj_clone(hdl: Handle) -> Handle {
+        hdl.check_null()?;
+        SCHED
+            .with_current(|cur| cur.tid().handles().write().clone_handle(hdl))
+            .ok_or(Error(ESRCH))
+            .transpose()
+            .ok_or(Error(EINVAL))
+            .flatten()
+    }
+
     #[syscall]
     fn obj_drop(hdl: Handle) {
         hdl.check_null()?;
