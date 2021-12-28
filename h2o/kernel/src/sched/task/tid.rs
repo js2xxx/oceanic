@@ -1,5 +1,5 @@
 use alloc::sync::Arc;
-use core::hash::BuildHasherDefault;
+use core::{hash::BuildHasherDefault, ops::Deref};
 
 use collection_ex::{CHashMap, FnvHasher, IdAllocator};
 use solvent::Handle;
@@ -24,19 +24,23 @@ impl Tid {
         self.0
     }
 
-    #[inline]
-    pub fn info(&self) -> &TaskInfo {
-        &*self.1
-    }
-
     pub fn child(&self, hdl: Handle) -> Option<Child> {
         let _pree = super::PREEMPT.lock();
-        self.info().handles().read().get::<Child>(hdl).cloned()
+        self.handles().read().get::<Child>(hdl).cloned()
     }
 
     pub fn drop_child(&self, hdl: Handle) -> bool {
         let _pree = super::PREEMPT.lock();
-        self.info().handles().write().remove::<Child>(hdl).is_some()
+        self.handles().write().remove::<Child>(hdl).is_some()
+    }
+}
+
+impl Deref for Tid {
+    type Target = TaskInfo;
+
+    #[inline]
+    fn deref(&self) -> &Self::Target {
+        &self.1
     }
 }
 

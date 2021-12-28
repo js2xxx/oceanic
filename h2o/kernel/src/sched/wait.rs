@@ -1,6 +1,6 @@
 mod cell;
-mod queue;
 mod futex;
+mod queue;
 
 use alloc::{boxed::Box, sync::Arc};
 use core::time::Duration;
@@ -65,10 +65,7 @@ mod syscall {
     fn wo_new() -> u32 {
         let wo = Arc::new(WaitObject::new());
         SCHED
-            .with_current(|cur| {
-                let info = cur.tid().info();
-                info.handles().write().insert(wo).raw()
-            })
+            .with_current(|cur| cur.tid().handles().write().insert(wo).raw())
             .map_or(Err(Error(ESRCH)), Ok)
     }
 
@@ -77,8 +74,11 @@ mod syscall {
         hdl.check_null()?;
         let wo = SCHED
             .with_current(|cur| {
-                let info = cur.tid().info();
-                info.handles().read().get::<Arc<WaitObject>>(hdl).cloned()
+                cur.tid()
+                    .handles()
+                    .read()
+                    .get::<Arc<WaitObject>>(hdl)
+                    .cloned()
             })
             .flatten()
             .ok_or(Error(EINVAL))?;

@@ -39,6 +39,7 @@ impl HandleMap {
     ///
     /// The caller is responsible for the usage of the inserted object if its
     /// `!Send`.
+    #[inline]
     pub unsafe fn insert_unchecked<T: 'static>(
         &mut self,
         obj: T,
@@ -114,20 +115,13 @@ impl HandleMap {
         for hdl in handles {
             match self.map.get(&hdl) {
                 None => return Err(solvent::Error(solvent::EINVAL)),
-                // TODO: Find a better way to check if the object is `!Send`. If found, remove the
-                // `unsafe` marker.
-                Some(obj) => {
-                    if !obj.is_send() {
-                        return Err(solvent::Error(solvent::EPERM));
+                Some(obj) if !obj.is_send() => return Err(solvent::Error(solvent::EPERM)),
+                Some(obj) => match obj.deref::<Channel>() {
+                    Some(other) if unsafe { &*chan }.is_peer(other) => {
+                        return Err(solvent::Error(solvent::EPERM))
                     }
-
-                    if let Some(other) = obj.deref::<Channel>() {
-                        let chan = unsafe { &*chan };
-                        if chan.is_peer(other) {
-                            return Err(solvent::Error(solvent::EPERM));
-                        }
-                    }
-                }
+                    _ => (),
+                },
             }
         }
         Ok((
@@ -154,10 +148,7 @@ mod syscall {
     #[syscall]
     fn obj_drop(hdl: Handle) {
         hdl.check_null()?;
-        SCHED.with_current(|cur| {
-            let info = cur.tid().info();
-            unsafe { info.handles().write().drop_unchecked(hdl) };
-        });
+        SCHED.with_current(|cur| unsafe { cur.tid().handles().write().drop_unchecked(hdl) });
         Ok(())
     }
 }

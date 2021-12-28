@@ -122,12 +122,16 @@ mod syscall {
         requeue_num: UserPtr<InOut, usize>,
     ) {
         ptr.check()?;
-        let wake = unsafe { wake_num.r#in().read()? };
         other.check()?;
-        let requeue = unsafe { requeue_num.r#in().read()? };
+        let (wake, requeue, ptr, other) = unsafe {
+            (
+                wake_num.r#in().read()?,
+                requeue_num.r#in().read()?,
+                NonNull::new_unchecked(ptr.as_ptr()),
+                NonNull::new_unchecked(other.as_ptr()),
+            )
+        };
 
-        let ptr = unsafe { NonNull::new_unchecked(ptr.as_ptr()) };
-        let other = unsafe { NonNull::new_unchecked(other.as_ptr()) };
         let (addr, other) = SCHED
             .with_current(|cur| {
                 let space = cur.space();

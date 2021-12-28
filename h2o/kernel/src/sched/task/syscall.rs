@@ -28,7 +28,7 @@ impl SuspendToken {
 impl Drop for SuspendToken {
     fn drop(&mut self) {
         if self.wo.notify(1) == 0 {
-            self.tid.info().update_signal(|sig| {
+            self.tid.update_signal(|sig| {
                 if matches!(sig, Some(sig) if sig == &mut self.signal()) {
                     *sig = None;
                 }
@@ -75,7 +75,7 @@ fn task_fn(ci: UserPtr<In, task::CreateInfo>) -> u32 {
 
     let init_chan = match ci.init_chan.check_null() {
         Ok(hdl) => SCHED.with_current(|cur| {
-            let mut map = cur.tid().info().handles().write();
+            let mut map = cur.tid().handles().write();
             map.remove::<crate::sched::ipc::Channel>(hdl)
                 .ok_or(Error(EINVAL))
         }),
@@ -118,9 +118,7 @@ fn task_ctl(hdl: Handle, op: u32, data: UserPtr<InOut, Handle>) {
     match op {
         task::TASK_CTL_KILL => {
             let child = cur_tid.child(hdl).ok_or(Error(ECHILD))?;
-
-            let ti = child.tid().info();
-            ti.replace_signal(Some(Signal::Kill));
+            child.tid().replace_signal(Some(Signal::Kill));
 
             Ok(())
         }
@@ -135,13 +133,11 @@ fn task_ctl(hdl: Handle, op: u32, data: UserPtr<InOut, Handle>) {
                 tid: child.tid().clone(),
             };
 
-            let ti = st.tid.info();
-            ti.replace_signal(Some(st.signal()));
+            st.tid.replace_signal(Some(st.signal()));
 
             let out = {
-                let info = cur_tid.info();
                 let _pree = super::PREEMPT.lock();
-                info.handles().write().insert(st)
+                cur_tid.handles().write().insert(st)
             };
             unsafe { data.out().write(out) }.unwrap();
 

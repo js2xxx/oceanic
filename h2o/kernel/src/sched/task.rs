@@ -174,7 +174,7 @@ impl Init {
             args,
         };
 
-        let kstack = ctx::Kstack::new(entry, tid.info().ty);
+        let kstack = ctx::Kstack::new(entry, tid.ty);
 
         Ok(Init { tid, space, kstack })
     }
@@ -306,7 +306,7 @@ impl Ready {
         KERNEL_GS.update_tss_rsp0(tss_rsp0);
         crate::mem::space::set_current(Arc::clone(&self.space));
         self.ext_frame.load();
-        if !cpu::arch::in_intr() && self.tid.info().ty == Type::Kernel {
+        if !cpu::arch::in_intr() && self.tid.ty == Type::Kernel {
             KERNEL_GS.load();
         }
     }
@@ -400,10 +400,8 @@ where
     let (entry, tls, stack_size) = with_space(&space)?;
 
     let (tid, init_handle, ret_wo) = {
-        let cur_ti = cur_tid.info();
-
         let ty = match ty {
-            Type::Kernel => cur_ti.ty,
+            Type::Kernel => cur_tid.ty,
             Type::User => {
                 if ty == Type::Kernel {
                     return Err(TaskError::Permission);
@@ -412,7 +410,7 @@ where
                 }
             }
         };
-        let prio = prio.min(cur_ti.prio);
+        let prio = prio.min(cur_tid.prio);
 
         let mut new_ti = TaskInfo {
             from: UnsafeCell::new(None),
@@ -429,10 +427,10 @@ where
         let (ret_wo, child) = {
             let child = Child::new(tid.clone());
             let _pree = PREEMPT.lock();
-            (cur_ti.handles().write().insert(child.clone()), child)
+            (cur_tid.handles().write().insert(child.clone()), child)
         };
 
-        unsafe { tid.info().from.get().write(Some((cur_tid, Some(child)))) };
+        unsafe { tid.from.get().write(Some((cur_tid, Some(child)))) };
         (tid, init_handle, ret_wo)
     };
 
@@ -456,12 +454,11 @@ pub fn create_fn(
 ) -> Result<(Init, Handle)> {
     let (name, ty, affinity, prio) = super::SCHED
         .with_current(|cur| {
-            let ti = cur.tid.info();
             (
-                name.unwrap_or(format!("{}.func{:?}", ti.name, *func)),
-                ti.ty,
-                ti.affinity.clone(),
-                ti.prio,
+                name.unwrap_or(format!("{}.func{:?}", cur.tid.name, *func)),
+                cur.tid.ty,
+                cur.tid.affinity.clone(),
+                cur.tid.prio,
             )
         })
         .ok_or(TaskError::NoCurrentTask)?;
@@ -480,7 +477,7 @@ pub fn create_fn(
 
 pub(super) fn destroy(task: Dead) {
     tid::deallocate(&task.tid);
-    if let Some((_, Some(child))) = { unsafe { &*task.tid.info().from.get() }.clone() } {
+    if let Some((_, Some(child))) = { unsafe { &*task.tid.from.get() }.clone() } {
         let _ = child.cell().replace(task.retval);
     }
 }
