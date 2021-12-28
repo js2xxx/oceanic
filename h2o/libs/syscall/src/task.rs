@@ -32,9 +32,16 @@ where
 #[cfg(feature = "call")]
 #[cfg(debug_assertions)]
 pub fn test() {
-    extern "C" fn func(_: u64, arg: u32) {
-        if arg == 0 {
-            for _ in 0..10000000 {}
+    use core::arch::asm;
+
+    extern "C" fn func(_: crate::Handle, arg: u32) {
+        match arg {
+            0 => {
+                for _ in 0..10000000 {
+                    unsafe { asm!("pause") };
+                }
+            }
+            _ => {}
         }
         exit(Ok(12345));
     }
@@ -51,24 +58,18 @@ pub fn test() {
         crate::call::task_fn(&ci)
     };
     {
-        let task = creator(1).expect("Failed to create task");
+        let task = creator(100).expect("Failed to create task");
         let ret = crate::call::task_join(task);
         assert_eq!(ret, Ok(12345));
     }
     {
         let task = creator(0).expect("Failed to create task");
-        let wo = crate::call::wo_new().expect("Failed to create wait object");
+        let mut st = Handle::NULL;
 
-        crate::call::task_ctl(task, TASK_CTL_SUSPEND, wo.raw() as *mut u8)
-            .expect("Failed to suspend a task");
+        crate::call::task_ctl(task, TASK_CTL_SUSPEND, &mut st).expect("Failed to suspend a task");
 
-        let notify = || crate::call::wo_notify(wo, 0).expect("Failed to notify a wait object");
-        let mut n = notify();
-        while n == 0 {
-            crate::call::task_sleep(50).expect("Failed to sleep");
-            n = notify();
-        }
-        assert_eq!(n, 1);
+        crate::call::task_sleep(50).expect("Failed to sleep");
+        crate::call::obj_drop(st).expect("Failed to resume the task");
 
         crate::call::task_ctl(task, TASK_CTL_KILL, core::ptr::null_mut())
             .expect("Failed to kill a task");

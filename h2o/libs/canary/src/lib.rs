@@ -22,10 +22,12 @@ impl<T: 'static> Canary<T> {
         }
     }
 
+    #[inline]
     pub fn check(&self) -> bool {
         self.id == TypeId::of::<T>()
     }
 
+    #[inline]
     #[track_caller]
     pub fn assert(&self) {
         if unlikely(!self.check()) {

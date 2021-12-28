@@ -1,3 +1,5 @@
+use core::arch::asm;
+
 use bitop_ex::BitOpEx;
 use spin::Lazy;
 

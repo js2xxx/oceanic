@@ -6,9 +6,10 @@ use core::{
     time::Duration,
 };
 
-pub use timer::{tick as timer_tick, Callback as TimerCallback, Timer};
+pub use timer::{tick as timer_tick, Callback as TimerCallback, Timer, Type as TimerType};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[repr(transparent)]
 pub struct Instant(solvent::time::Instant);
 
 impl Instant {

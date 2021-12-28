@@ -22,7 +22,11 @@ impl Error {
     }
 
     pub fn desc(&self) -> &'static str {
-        ERRC_DESC[self.0 as usize]
+        if ERRC_RANGE.contains(&self.0) {
+            ERRC_DESC[self.0 as usize]
+        } else {
+            CUSTOM_DESC[(self.0 - CUSTOM_OFFSET) as usize]
+        }
     }
 }
 
@@ -101,10 +105,12 @@ pub const EDOM: i32 = 33;
 /// Math result not representable
 pub const ERANGE: i32 = 34;
 
+pub const CUSTOM_OFFSET: i32 = CUSTOM_RANGE.start;
 pub const EKILLED: i32 = 1001;
 pub const EBUFFER: i32 = 1002;
+pub const ETIME: i32 = 1003;
 
-const ERRC_DESC: [&str; ERRC_RANGE.end as usize] = [
+const ERRC_DESC: &[&str] = &[
     "OK",
     "Operation not permitted",
     "No such file or directory",
@@ -141,3 +147,5 @@ const ERRC_DESC: [&str; ERRC_RANGE.end as usize] = [
     "Math argument out of domain of func",
     "Math result not representable",
 ];
+
+const CUSTOM_DESC: &[&str] = &["Task already killed", "Buffer range exceeded", "Timed out"];

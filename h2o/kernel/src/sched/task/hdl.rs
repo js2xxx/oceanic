@@ -1,18 +1,16 @@
 use alloc::{
-    boxed::Box,
     collections::{btree_map, BTreeMap},
     vec::Vec,
 };
-use core::any::Any;
 
 use solvent::Handle;
 
-use crate::sched::ipc::Channel;
+use crate::sched::ipc::{Channel, Object};
 
 #[derive(Debug)]
 pub struct HandleMap {
     next_id: u32,
-    map: BTreeMap<Handle, Box<dyn Any>>,
+    map: BTreeMap<Handle, Object>,
 }
 
 unsafe impl Send for HandleMap {}
@@ -29,24 +27,35 @@ impl HandleMap {
 
     #[inline]
     pub fn insert<T: Send + 'static>(&mut self, obj: T) -> Handle {
-        unsafe { self.insert_unchecked(obj) }
+        unsafe { self.insert_unchecked(obj, true, false) }
+    }
+
+    #[inline]
+    pub fn insert_shared<T: Send + Sync + 'static>(&mut self, obj: T) -> Handle {
+        unsafe { self.insert_unchecked(obj, true, true) }
     }
 
     /// # Safety
     ///
     /// The caller is responsible for the usage of the inserted object if its
     /// `!Send`.
-    pub unsafe fn insert_unchecked<T: 'static>(&mut self, obj: T) -> Handle {
-        self.insert_boxed(box obj)
+    #[inline]
+    pub unsafe fn insert_unchecked<T: 'static>(
+        &mut self,
+        obj: T,
+        send: bool,
+        shared: bool,
+    ) -> Handle {
+        self.insert_impl(Object::new_unchecked(obj, send, shared))
     }
 
-    unsafe fn insert_boxed(&mut self, boxed: Box<dyn Any>) -> Handle {
+    unsafe fn insert_impl(&mut self, obj: Object) -> Handle {
         let id = {
             let new = self.next_id;
             self.next_id += 1;
             Handle::new(new)
         };
-        let _ret = self.map.insert(id, boxed);
+        let _ret = self.map.insert(id, obj);
         debug_assert!(_ret.is_none());
         id
     }
@@ -61,17 +70,20 @@ impl HandleMap {
     /// The caller must ensure the current task is the owner of the
     /// [`HandleMap`] if the returned object is `!Send`.
     pub unsafe fn get_unchecked<T: 'static>(&self, hdl: Handle) -> Option<&T> {
-        self.map.get(&hdl).and_then(|k| k.downcast_ref())
+        self.map.get(&hdl).and_then(|k| k.deref_unchecked())
     }
 
-    // pub fn get_mut<T: Send + 'static>(&mut self, hdl: Handle) -> Option<&mut T> {
-    //     self.map.get_mut(&hdl).and_then(|k| k.downcast_mut())
-    // }
+    pub fn clone_handle(&mut self, hdl: Handle) -> Option<Handle> {
+        match self.map.get(&hdl).and_then(|k| Object::clone(k)) {
+            Some(o) => Some(unsafe { self.insert_impl(o) }),
+            None => None,
+        }
+    }
 
     pub fn remove<T: Send + 'static>(&mut self, hdl: Handle) -> Option<T> {
         match self.map.entry(hdl) {
-            btree_map::Entry::Occupied(ent) if ent.get().downcast_ref::<T>().is_some() => {
-                Some(Box::into_inner(ent.remove().downcast().unwrap()))
+            btree_map::Entry::Occupied(ent) if ent.get().deref::<T>().is_some() => {
+                Some(Object::into_inner(ent.remove()).unwrap())
             }
             _ => None,
         }
@@ -96,7 +108,7 @@ impl HandleMap {
         &'a mut self,
         handles: &'b [Handle],
         chan: Handle,
-    ) -> Result<(Vec<Box<dyn Any + Send>>, &'a Channel), solvent::Error> {
+    ) -> Result<(Vec<Object>, &'a Channel), solvent::Error> {
         debug_assert!(!handles.contains(&chan));
 
         let chan = self
@@ -106,42 +118,28 @@ impl HandleMap {
         for hdl in handles {
             match self.map.get(&hdl) {
                 None => return Err(solvent::Error(solvent::EINVAL)),
-                // TODO: Find a better way to check if the object is `!Send`. If found, remove the
-                // `unsafe` marker.
-                Some(obj) => {
-                    if obj.downcast_ref::<crate::mem::space::Virt>().is_some() {
-                        return Err(solvent::Error(solvent::EPERM));
+                Some(obj) if !obj.is_send() => return Err(solvent::Error(solvent::EPERM)),
+                Some(obj) => match obj.deref::<Channel>() {
+                    Some(other) if unsafe { &*chan }.is_peer(other) => {
+                        return Err(solvent::Error(solvent::EPERM))
                     }
-
-                    if let Some(other) = obj.downcast_ref::<Channel>() {
-                        let chan = unsafe { &*chan };
-                        if chan.is_peer(other) {
-                            return Err(solvent::Error(solvent::EPERM));
-                        }
-                    }
-                }
+                    _ => (),
+                },
             }
         }
         Ok((
             handles
                 .into_iter()
                 .map(|hdl| self.map.remove(&hdl).unwrap())
-                .map(|obj| unsafe {
-                    // SAFE: So far, all the objects excluding `Virt` is `Send`. Hence, after
-                    // kicking out these shit, we directly reinterpret the pointers just like what
-                    // `Box::downcast` does.
-                    let (raw, alloc): (*mut dyn Any, _) = Box::into_raw_with_allocator(obj);
-                    Box::from_raw_in(raw as *mut (dyn Any + Send), alloc)
-                })
                 .collect(),
             unsafe { &*chan },
         ))
     }
 
-    pub fn receive(&mut self, objects: Vec<Box<dyn Any + Send>>) -> Vec<Handle> {
+    pub fn receive(&mut self, objects: Vec<Object>) -> Vec<Handle> {
         objects
             .into_iter()
-            .map(|obj| unsafe { self.insert_boxed(obj) })
+            .map(|obj| unsafe { self.insert_impl(obj) })
             .collect()
     }
 }
@@ -149,13 +147,23 @@ impl HandleMap {
 mod syscall {
     use solvent::*;
 
+    use crate::sched::SCHED;
+
+    #[syscall]
+    fn obj_clone(hdl: Handle) -> Handle {
+        hdl.check_null()?;
+        SCHED
+            .with_current(|cur| cur.tid().handles().write().clone_handle(hdl))
+            .ok_or(Error(ESRCH))
+            .transpose()
+            .ok_or(Error(EINVAL))
+            .flatten()
+    }
+
     #[syscall]
     fn obj_drop(hdl: Handle) {
         hdl.check_null()?;
-        crate::sched::SCHED.with_current(|cur| {
-            let info = cur.tid().info();
-            unsafe { info.handles().write().drop_unchecked(hdl) };
-        });
+        SCHED.with_current(|cur| unsafe { cur.tid().handles().write().drop_unchecked(hdl) });
         Ok(())
     }
 }

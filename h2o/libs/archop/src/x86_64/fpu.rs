@@ -1,3 +1,5 @@
+use core::arch::asm;
+
 use spin::Lazy;
 
 use crate::reg::cr4;

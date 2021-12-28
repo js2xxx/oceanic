@@ -170,6 +170,30 @@ impl<K, V, S: BuildHasher + Default> CHashMap<K, V, S> {
         }
     }
 
+    pub fn remove_entry_if<Q, F>(&self, key: &Q, predicate: F) -> Option<(K, V)>
+    where
+        Q: Hash + PartialEq,
+        K: Borrow<Q> + Hash,
+        F: FnOnce(&V) -> bool,
+    {
+        let buckets = self.inner.read();
+        let ret = match buckets.entry(key) {
+            Some(mut entry) => match entry.get() {
+                Some((_, v)) if predicate(v) => mem::replace(&mut *entry, inner::Entry::Removed),
+                _ => return None,
+            },
+            None => return None,
+        };
+        if !ret.is_free() {
+            let len = self.len.fetch_sub(1, SeqCst) - 1;
+            if len * GROW_FACTOR * LOAD_FACTOR_D < buckets.len() * LOAD_FACTOR_N {
+                drop(buckets);
+                self.shrink(len);
+            }
+        }
+        ret.into()
+    }
+
     pub fn remove_entry<Q>(&self, key: &Q) -> Option<(K, V)>
     where
         Q: Hash + PartialEq,

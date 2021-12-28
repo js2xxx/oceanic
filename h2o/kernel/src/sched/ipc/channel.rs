@@ -1,42 +1,43 @@
 use alloc::{
-    boxed::Box,
     sync::{Arc, Weak},
     vec::Vec,
 };
-use core::any::Any;
+use core::time::Duration;
 
 use bytes::Bytes;
 use solvent::Handle;
 use spin::{Mutex, MutexGuard};
 
-use super::IpcError;
+use super::{IpcError, Object};
 use crate::sched::{task, wait::WaitQueue, SCHED};
 
 const MAX_QUEUE_SIZE: usize = 2048;
 
 #[derive(Debug)]
 pub struct Packet {
-    objects: Vec<Box<dyn Any + Send>>,
+    objects: Vec<Object>,
     buffer: Bytes,
 }
 
 impl Packet {
-    pub fn new(objects: Vec<Box<dyn Any + Send>>, data: &[u8]) -> Self {
+    pub fn new(objects: Vec<Object>, data: &[u8]) -> Self {
         let buffer = Bytes::copy_from_slice(data);
         Packet { objects, buffer }
     }
 
+    #[inline]
     pub fn buffer(&self) -> &[u8] {
         &self.buffer
     }
 
+    #[inline]
     pub fn object_count(&self) -> usize {
         self.objects.len()
     }
 
+    #[inline]
     pub unsafe fn process(self, cur: &mut task::Ready) -> Vec<Handle> {
-        let ti = cur.tid().info();
-        ti.handles().write().receive(self.objects)
+        cur.tid().handles().write().receive(self.objects)
     }
 }
 
@@ -86,10 +87,17 @@ impl Channel {
         }
     }
 
-    pub fn receive<'a>(&'a self) -> Result<MutexGuard<'a, Option<Packet>>, IpcError> {
+    pub fn receive<'a>(
+        &'a self,
+        timeout: Duration,
+    ) -> Result<MutexGuard<'a, Option<Packet>>, IpcError> {
         let mut head = self.head.lock();
         if head.is_none() {
-            *head = Some(self.me.pop("Channel::receive"));
+            *head = Some(
+                self.me
+                    .pop(timeout, "Channel::receive")
+                    .ok_or(IpcError::QueueEmpty)?,
+            );
         }
         Ok(head)
     }
@@ -117,7 +125,7 @@ mod syscall {
         p2.check()?;
         let ret = SCHED.with_current(|cur| {
             let (c1, c2) = Channel::new();
-            let mut map = cur.tid().info().handles().write();
+            let mut map = cur.tid().handles().write();
             let h1 = map.insert(c1);
             let h2 = map.insert(c2);
             unsafe {
@@ -143,7 +151,7 @@ mod syscall {
         let buffer = unsafe { slice::from_raw_parts(packet.buffer, packet.buffer_size) };
 
         let ret = SCHED.with_current(|cur| {
-            let mut map = cur.tid().info().handles().write();
+            let mut map = cur.tid().handles().write();
 
             let (objects, channel) = unsafe { map.send_for_channel(handles, hdl) }?;
             let packet = Packet::new(objects, buffer);
@@ -153,8 +161,13 @@ mod syscall {
     }
 
     #[syscall]
-    fn chan_recv(hdl: Handle, packet_ptr: UserPtr<InOut, RawPacket>, block: bool) {
+    fn chan_recv(hdl: Handle, packet_ptr: UserPtr<InOut, RawPacket>, timeout_us: u64) {
         hdl.check_null()?;
+        let timeout = if timeout_us == u64::MAX {
+            Duration::MAX
+        } else {
+            Duration::from_micros(timeout_us)
+        };
 
         let mut user_packet = unsafe { packet_ptr.r#in().read()? };
         UserPtr::<In, Handle>::new(user_packet.handles).check_slice(user_packet.handle_cap)?;
@@ -166,13 +179,13 @@ mod syscall {
             unsafe { slice::from_raw_parts_mut(user_packet.buffer, user_packet.buffer_cap) };
 
         let ret = SCHED.with_current(|cur| {
-            let mut map = cur.tid().info().handles().write();
+            let mut map = cur.tid().handles().write();
 
             let packet = {
                 let channel = map.get::<Channel>(hdl).ok_or(Error(EINVAL))?;
 
-                let mut packet = if block {
-                    channel.receive()
+                let mut packet = if !timeout.is_zero() {
+                    channel.receive(timeout)
                 } else {
                     channel.try_receive()
                 }

@@ -1,4 +1,4 @@
-use core::{cell::UnsafeCell, mem::size_of, ptr::addr_of};
+use core::{arch::asm, cell::UnsafeCell, mem::size_of, ptr::addr_of};
 
 use paging::LAddr;
 use spin::Lazy;
@@ -148,7 +148,6 @@ impl<const N: usize> DescTable<N> {
     }
 
     /// Export the fat pointer of the descriptor table.
-    #[inline]
     pub fn export_fp(&self) -> FatPointer {
         FatPointer {
             base: LAddr::new(self.0.as_ptr() as *mut _),

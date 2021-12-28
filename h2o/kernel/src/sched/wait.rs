@@ -1,16 +1,23 @@
 mod cell;
+mod futex;
 mod queue;
+
+use alloc::{boxed::Box, sync::Arc};
+use core::time::Duration;
 
 pub use cell::WaitCell;
 pub use queue::WaitQueue;
 
 use super::*;
-use crate::cpu::time::Instant;
+use crate::cpu::time::Timer;
 
 #[derive(Debug)]
 pub struct WaitObject {
-    pub(super) wait_queue: deque::Injector<task::Blocked>,
+    pub(super) wait_queue: deque::Injector<Arc<Timer>>,
 }
+
+unsafe impl Send for WaitObject {}
+unsafe impl Sync for WaitObject {}
 
 impl WaitObject {
     pub fn new() -> Self {
@@ -20,8 +27,9 @@ impl WaitObject {
     }
 
     #[inline]
-    pub fn wait<T>(&self, guard: T, block_desc: &'static str) {
-        SCHED.block_current(Instant::now(), guard, self, block_desc);
+    pub fn wait<T>(&self, guard: T, timeout: Duration, block_desc: &'static str) -> bool {
+        let timer = SCHED.block_current(guard, Some(self), timeout, block_desc);
+        timer.map_or(false, |timer| !timer.is_fired())
     }
 
     pub fn notify(&self, num: usize) -> usize {
@@ -30,9 +38,13 @@ impl WaitObject {
         let mut cnt = 0;
         while cnt < num {
             match self.wait_queue.steal() {
-                deque::Steal::Success(task) => {
-                    SCHED.unblock(task);
-                    cnt += 1;
+                deque::Steal::Success(timer) => {
+                    if !timer.cancel() {
+                        let blocked =
+                            unsafe { Box::from_raw(timer.callback_arg().cast::<task::Blocked>()) };
+                        SCHED.unblock(Box::into_inner(blocked));
+                        cnt += 1;
+                    }
                 }
                 deque::Steal::Retry => {}
                 deque::Steal::Empty => break,
@@ -53,10 +65,7 @@ mod syscall {
     fn wo_new() -> u32 {
         let wo = Arc::new(WaitObject::new());
         SCHED
-            .with_current(|cur| {
-                let info = cur.tid().info();
-                info.handles().write().insert(wo).raw()
-            })
+            .with_current(|cur| cur.tid().handles().write().insert(wo).raw())
             .map_or(Err(Error(ESRCH)), Ok)
     }
 
@@ -65,8 +74,11 @@ mod syscall {
         hdl.check_null()?;
         let wo = SCHED
             .with_current(|cur| {
-                let info = cur.tid().info();
-                info.handles().read().get::<Arc<WaitObject>>(hdl).cloned()
+                cur.tid()
+                    .handles()
+                    .read()
+                    .get::<Arc<WaitObject>>(hdl)
+                    .cloned()
             })
             .flatten()
             .ok_or(Error(EINVAL))?;

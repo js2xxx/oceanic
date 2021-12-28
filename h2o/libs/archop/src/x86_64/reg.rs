@@ -2,6 +2,8 @@ macro_rules! rw_simple {
       ($name:ident {$($cons:ident = $bit:expr),*; $($cons0:ident: $tty:ty = $bit0:expr),*}) => {
             #[doc = concat!("The operations of ", stringify!($name), ".")]
             pub mod $name {
+                  use core::arch::asm;
+
                   /// # Safety
                   ///
                   /// The caller must use the value under a certain limit.
@@ -121,6 +123,8 @@ rw_simple!(dr7 {
 });
 
 pub mod rflags {
+    use core::arch::asm;
+
     /// Read RFLAGS of the current CPU.
     ///
     /// # Safety

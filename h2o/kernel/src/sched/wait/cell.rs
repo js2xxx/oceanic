@@ -1,3 +1,5 @@
+use core::time::Duration;
+
 use spin::Mutex;
 
 use super::WaitObject;
@@ -17,13 +19,15 @@ impl<T> WaitCell<T> {
         }
     }
 
-    pub fn take(&self, block_desc: &'static str) -> T {
+    pub fn take(&self, timeout: Duration, block_desc: &'static str) -> Option<T> {
         loop {
             let mut data = self.data.lock();
             if let Some(obj) = data.take() {
-                break obj;
+                break Some(obj);
             }
-            self.wo.wait(data, block_desc);
+            if !self.wo.wait(data, timeout, block_desc) {
+                break None;
+            }
         }
     }
 

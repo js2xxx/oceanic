@@ -10,7 +10,6 @@
 #![no_main]
 #![feature(abi_efiapi)]
 #![feature(alloc_error_handler)]
-#![feature(asm)]
 #![feature(bool_to_option)]
 #![feature(box_syntax)]
 #![feature(int_abs_diff)]
@@ -46,7 +45,7 @@ unsafe fn kargs_set(kargs: KernelArgs) {
 }
 
 unsafe fn call_kmain(entry: *mut u8) {
-    asm!("call {}", in(reg) entry);
+    core::arch::asm!("call {}", in(reg) entry);
 }
 
 /// Initialize `log` crate for logging messages.

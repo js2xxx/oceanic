@@ -1,6 +1,6 @@
 //! I/O operations for the kernel
 
-use core::marker::PhantomData;
+use core::{arch::asm, marker::PhantomData};
 
 use crate::io::Io;
 

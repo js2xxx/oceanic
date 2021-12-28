@@ -1,4 +1,4 @@
-use core::{alloc::Layout, mem::size_of};
+use core::{alloc::Layout, arch::asm, mem::size_of};
 
 use bitop_ex::BitOpEx;
 use goblin::elf::*;
@@ -99,7 +99,8 @@ fn load_pls(syst: &SystemTable<Boot>, size: usize, align: usize) -> Layout {
               "wrmsr",
               in("ecx") FS_BASE,
               in("eax") self_ptr,
-              in("edx") self_ptr as u64 >> 32
+              in("edx") self_ptr as u64 >> 32,
+              options(nostack)
         );
     }
 
