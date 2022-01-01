@@ -313,13 +313,13 @@ impl Scheduler {
 
         next.running_state = task::RunningState::Running(cur_time);
         next.cpu = self.cpu;
-        let new = next.kframe();
+        let new = next.kstack.kframe_ptr();
 
         // SAFE: We have `pree`, which means preemption is disabled.
         let cur_slot = unsafe { &mut *self.current.get() };
         let (old, ret) = match cur_slot.replace(next) {
             Some(mut prev) => {
-                let kframe_mut = prev.kframe_mut();
+                let kframe_mut = prev.kstack.kframe_ptr_mut();
                 let ret = func(prev);
 
                 Some((kframe_mut, ret))

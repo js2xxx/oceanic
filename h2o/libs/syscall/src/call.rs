@@ -43,15 +43,15 @@ syscall_stub!(13 => pub(crate) fn wo_new() -> Handle);
 // #[cfg(debug_assertions)]
 syscall_stub!(15 => pub(crate) fn wo_notify(hdl: Handle, n: usize) -> usize);
 
-syscall_stub!(16 => 
+syscall_stub!(16 =>
     pub(crate) fn futex_wait(
-        ptr: *mut u64, 
-        expected: u64, 
+        ptr: *mut u64,
+        expected: u64,
         timeout_us: u64
     ) -> bool
 );
 syscall_stub!(17 => pub(crate) fn futex_wake(ptr: *mut u64, num: usize) -> usize);
-syscall_stub!(18 => 
+syscall_stub!(18 =>
     pub(crate) fn futex_requeue(
         ptr: *mut u64,
         wake_num: *mut usize,

@@ -131,138 +131,87 @@ pub static IDT_INIT: &[IdtInit] = &[
 
 hdl!(div_0, |frame| {
     log::error!("EXCEPTION: Divide by zero");
-    let frame = unsafe { &*frame };
-    frame.dump(Frame::ERRC);
-
-    archop::halt_loop(Some(false));
+    super::exception(frame, ExVec::DivideBy0);
 });
 
 hdl!(debug, |frame| {
     log::error!("EXCEPTION: Debug");
-    let frame = unsafe { &*frame };
-    frame.dump(Frame::ERRC);
-
-    archop::halt_loop(Some(false));
+    super::exception(frame, ExVec::Debug);
 });
 
 hdl!(nmi, |frame| {
     log::error!("EXCEPTION: NMI");
-    let frame = unsafe { &*frame };
-    frame.dump(Frame::ERRC);
-
-    archop::halt_loop(Some(false));
+    super::exception(frame, ExVec::Nmi);
 });
 
 hdl!(breakpoint, |frame| {
     log::error!("EXCEPTION: Breakpoint");
-    let frame = unsafe { &*frame };
-    frame.dump(Frame::ERRC);
-
-    archop::halt_loop(Some(false));
+    super::exception(frame, ExVec::Breakpoint);
 });
 
 hdl!(overflow, |frame| {
     log::error!("EXCEPTION: Overflow error");
-    let frame = unsafe { &*frame };
-    frame.dump(Frame::ERRC);
-
-    archop::halt_loop(Some(false));
+    super::exception(frame, ExVec::Overflow);
 });
 
 hdl!(bound, |frame| {
     log::error!("EXCEPTION: Bound range exceeded");
-    let frame = unsafe { &*frame };
-    frame.dump(Frame::ERRC);
-
-    archop::halt_loop(Some(false));
+    super::exception(frame, ExVec::Bound);
 });
 
 hdl!(invalid_op, |frame| {
     log::error!("EXCEPTION: Invalid opcode");
-    let frame = unsafe { &*frame };
-    frame.dump(Frame::ERRC);
-
-    archop::halt_loop(Some(false));
+    super::exception(frame, ExVec::InvalidOp);
 });
 
 hdl!(device_na, |frame| {
     log::error!("EXCEPTION: Device not available");
-    let frame = unsafe { &*frame };
-    frame.dump(Frame::ERRC);
-
-    archop::halt_loop(Some(false));
+    super::exception(frame, ExVec::DeviceNa);
 });
 
 hdl!(double_fault, |frame| {
     log::error!("EXCEPTION: Double fault");
-    let frame = unsafe { &*frame };
-    frame.dump(Frame::ERRC);
-
-    archop::halt_loop(Some(false));
+    super::exception(frame, ExVec::DoubleFault);
 });
 
 hdl!(coproc_overrun, |frame| {
     log::error!("EXCEPTION: Coprocessor overrun");
-    let frame = unsafe { &*frame };
-    frame.dump(Frame::ERRC);
-
-    archop::halt_loop(Some(false));
+    super::exception(frame, ExVec::CoprocOverrun);
 });
 
 hdl!(invalid_tss, |frame| {
     log::error!("EXCEPTION: Invalid TSS");
-    let frame = unsafe { &*frame };
-    frame.dump(Frame::ERRC);
-
-    archop::halt_loop(Some(false));
+    super::exception(frame, ExVec::InvalidTss);
 });
 
 hdl!(segment_na, |frame| {
     log::error!("EXCEPTION: Segment not present");
-    let frame = unsafe { &*frame };
-    frame.dump(Frame::ERRC);
-
-    archop::halt_loop(Some(false));
+    super::exception(frame, ExVec::SegmentNa);
 });
 
 hdl!(stack_fault, |frame| {
     log::error!("EXCEPTION: Stack fault");
-    let frame = unsafe { &*frame };
-    frame.dump(Frame::ERRC);
-
-    archop::halt_loop(Some(false));
+    super::exception(frame, ExVec::StackFault);
 });
 
 hdl!(general_prot, |frame| {
     log::error!("EXCEPTION: General protection");
-    let frame = unsafe { &*frame };
-    frame.dump(Frame::ERRC);
-
-    archop::halt_loop(Some(false));
+    super::exception(frame, ExVec::GeneralProt);
 });
 
 hdl!(page_fault, |frame| {
     log::error!("EXCEPTION: Page fault");
-    let frame = unsafe { &*frame };
-    frame.dump(Frame::ERRC_PF);
-
-    archop::halt_loop(Some(false));
+    super::exception(frame, ExVec::PageFault);
 });
 
 hdl!(fp_excep, |frame| {
     log::error!("EXCEPTION: Floating-point exception");
-    let frame = unsafe { &*frame };
-    frame.dump(Frame::ERRC);
-
-    archop::halt_loop(Some(false));
+    super::exception(frame, ExVec::FloatPoint);
 });
 
 hdl!(alignment, |frame| {
     log::error!("EXCEPTION: Alignment check");
-    let frame = unsafe { &*frame };
-    frame.dump(Frame::ERRC);
-
-    archop::halt_loop(Some(false));
+    super::exception(frame, ExVec::Alignment);
 });
 
 // hdl!(mach_check, |frame| {
@@ -275,10 +224,7 @@ hdl!(alignment, |frame| {
 
 hdl!(simd, |frame| {
     log::error!("EXCEPTION: SIMD exception");
-    let frame = unsafe { &*frame };
-    frame.dump(Frame::ERRC);
-
-    archop::halt_loop(Some(false));
+    super::exception(frame, ExVec::SimdExcep);
 });
 
 // Local APIC interrupts

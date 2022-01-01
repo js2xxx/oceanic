@@ -73,6 +73,26 @@ pub unsafe fn try_unregister(intr: &Arc<Interrupt>) -> Result<(), RegisterError>
     }
 }
 
+unsafe fn exception(frame: *const Frame, vec: def::ExVec) {
+    match vec {
+        def::ExVec::PageFault => {}
+        _ => {}
+    }
+    // No more available remedies. Die.
+    //
+    // TODO: Kill the fucking task if it's the exception source instead of hanging
+    // here.
+
+    let frame = unsafe { &*frame };
+    frame.dump(if vec == def::ExVec::PageFault {
+        Frame::ERRC_PF
+    } else {
+        Frame::ERRC
+    });
+
+    archop::halt_loop(Some(false));
+}
+
 /// # Safety
 ///
 /// This function must only be called from its assembly routine `rout_XX`.

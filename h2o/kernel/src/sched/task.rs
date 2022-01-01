@@ -21,7 +21,7 @@ use self::{child::Child, sig::Signal};
 pub use self::{elf::from_elf, hdl::HandleMap, prio::Priority, tid::Tid};
 use super::{ipc::Channel, PREEMPT};
 use crate::{
-    cpu::{self, arch::KERNEL_GS, time::Instant, CpuLocalLazy, CpuMask},
+    cpu::{time::Instant, CpuLocalLazy, CpuMask},
     mem::space::{Space, SpaceError},
 };
 
@@ -197,7 +197,7 @@ pub struct Ready {
     time_slice: Duration,
 
     space: Arc<Space>,
-    kstack: ctx::Kstack,
+    pub(super) kstack: ctx::Kstack,
     ext_frame: Box<ctx::ExtendedFrame>,
 
     pub(super) cpu: usize,
@@ -288,43 +288,10 @@ impl Ready {
         self.time_slice
     }
 
-    /// Save the context frame of the current task.
-    ///
-    /// # Safety
-    ///
-    /// The caller must ensure that `frame` points to a valid frame.
-    pub unsafe fn save_regs(&mut self) {
-        debug_assert!(!matches!(self.running_state, RunningState::NotRunning));
-
-        self.ext_frame.save();
-    }
-
-    pub unsafe fn load_intr(&self) {
-        debug_assert!(!matches!(self.running_state, RunningState::NotRunning));
-
-        let tss_rsp0 = self.kstack.top().val() as u64;
-        KERNEL_GS.update_tss_rsp0(tss_rsp0);
-        crate::mem::space::set_current(Arc::clone(&self.space));
-        self.ext_frame.load();
-        if !cpu::arch::in_intr() && self.tid.ty == Type::Kernel {
-            KERNEL_GS.load();
-        }
-    }
-
     pub fn save_syscall_retval(&mut self, retval: usize) {
         debug_assert!(matches!(self.running_state, RunningState::Running(..)));
 
         self.kstack.task_frame_mut().set_syscall_retval(retval);
-    }
-
-    #[inline]
-    pub fn kframe(&self) -> *mut u8 {
-        self.kstack.kframe_ptr()
-    }
-
-    #[inline]
-    pub fn kframe_mut(&mut self) -> *mut *mut u8 {
-        self.kstack.kframe_ptr_mut()
     }
 }
 

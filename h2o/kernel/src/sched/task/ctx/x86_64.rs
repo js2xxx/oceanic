@@ -1,10 +1,17 @@
+use alloc::sync::Arc;
 use core::{alloc::Layout, mem::size_of};
 
 use super::Entry;
 use crate::{
-    cpu::arch::seg::{
-        ndt::{KRL_CODE_X64, KRL_DATA_X64, USR_CODE_X64, USR_DATA_X64},
-        SegSelector,
+    cpu::{
+        self,
+        arch::{
+            seg::{
+                ndt::{KRL_CODE_X64, KRL_DATA_X64, USR_CODE_X64, USR_DATA_X64},
+                SegSelector,
+            },
+            KERNEL_GS,
+        },
     },
     sched::{task, PREEMPT},
 };
@@ -160,7 +167,8 @@ impl Frame {
 #[no_mangle]
 unsafe extern "C" fn save_regs() {
     if let Some(ref mut cur) = &mut *crate::sched::SCHED.current() {
-        cur.save_regs();
+        debug_assert!(!matches!(cur.running_state, task::RunningState::NotRunning));
+        cur.ext_frame.save();
     }
 }
 
@@ -168,7 +176,15 @@ unsafe extern "C" fn save_regs() {
 pub unsafe extern "C" fn switch_finishing() {
     if let Some(ref cur) = *crate::sched::SCHED.current() {
         log::trace!("Switched to task {:?}, P{}", cur.tid().raw(), PREEMPT.raw());
-        cur.load_intr();
+        debug_assert!(!matches!(cur.running_state, task::RunningState::NotRunning));
+
+        let tss_rsp0 = cur.kstack.top().val() as u64;
+        KERNEL_GS.update_tss_rsp0(tss_rsp0);
+        crate::mem::space::set_current(Arc::clone(&cur.space));
+        cur.ext_frame.load();
+        if !cpu::arch::in_intr() && cur.tid.ty == task::Type::Kernel {
+            KERNEL_GS.load();
+        }
     }
     PREEMPT.enable(None);
 }

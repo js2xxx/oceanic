@@ -1,5 +1,4 @@
 #![no_std]
-
 #![feature(bool_to_option)]
 #![feature(lang_items)]
 #![feature(negative_impls)]
