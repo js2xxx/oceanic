@@ -2,6 +2,7 @@ pub mod alloc;
 pub(super) mod def;
 
 use ::alloc::sync::{Arc, Weak};
+use archop::reg::cr2;
 use spin::Mutex;
 
 use self::def::NR_VECTORS;
@@ -74,8 +75,11 @@ pub unsafe fn try_unregister(intr: &Arc<Interrupt>) -> Result<(), RegisterError>
 }
 
 unsafe fn exception(frame: *const Frame, vec: def::ExVec) {
+    use def::ExVec::*;
+
+    let frame = unsafe { &*frame };
     match vec {
-        def::ExVec::PageFault => {}
+        PageFault if crate::mem::space::page_fault(cr2::read(), frame.errc_vec) => return,
         _ => {}
     }
     // No more available remedies. Die.
@@ -83,8 +87,7 @@ unsafe fn exception(frame: *const Frame, vec: def::ExVec) {
     // TODO: Kill the fucking task if it's the exception source instead of hanging
     // here.
 
-    let frame = unsafe { &*frame };
-    frame.dump(if vec == def::ExVec::PageFault {
+    frame.dump(if vec == PageFault {
         Frame::ERRC_PF
     } else {
         Frame::ERRC

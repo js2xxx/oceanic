@@ -184,3 +184,42 @@ unsafe impl paging::PageAlloc for PageAlloc {
         }
     }
 }
+
+bitflags::bitflags! {
+    pub struct ErrCode: u64 {
+        const NOT_PRESENT  = 0b0000001;
+        const WRITE        = 0b0000010;
+        const USER_ACCESS  = 0b0000100;
+        const RESERVED     = 0b0001000;
+        const EXECUTING    = 0b0010000;
+        const PROT_KEY     = 0b0100000;
+        const SHADOW_STACK = 0b1000000;
+        const SGX = 1 << 15;
+    }
+}
+
+impl ErrCode {
+    const FMT: &'static str = "P WR US RSVD ID PK SS - - - - - - - - SGX";
+
+    #[inline]
+    pub fn display(errc: u64) -> crate::log::flags::Flags {
+        crate::log::flags::Flags::new(errc, Self::FMT)
+    }
+}
+
+pub unsafe fn page_fault(addr: u64, err_code: u64) -> bool {
+    let code = match ErrCode::from_bits(err_code) {
+        Some(code) => code,
+        None => return false,
+    };
+
+    // So far neither has been supported.
+    if code.contains(ErrCode::PROT_KEY | ErrCode::SHADOW_STACK) {
+        return false;
+    }
+
+    // TODO: Add some handling code.
+    let _ = addr;
+
+    false
+}
