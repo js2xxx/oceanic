@@ -43,6 +43,13 @@ impl<'a, K, V, S> WriteGuard<'a, K, V, S> {
     pub fn key(&self) -> &K {
         &self.inner.get().unwrap().0
     }
+
+    pub fn downgrade(self) -> ReadGuard<'a, K, V, S> {
+        ReadGuard {
+            _buckets: self._buckets,
+            inner: self.inner.downgrade(),
+        }
+    }
 }
 
 impl<'a, K, V, S> Deref for WriteGuard<'a, K, V, S> {
@@ -170,6 +177,38 @@ impl<K, V, S: BuildHasher + Default> CHashMap<K, V, S> {
         }
     }
 
+    pub fn get_or_insert(&self, key: K, value: V) -> WriteGuard<'_, K, V, S>
+    where
+        K: Hash + PartialEq + Clone,
+    {
+        let buckets = self.inner.read();
+        let mut entry = loop {
+            match unsafe { &*(&buckets as *const RwLockReadGuard<inner::Buckets<K, V, S>>) }
+                .entry(&key)
+            {
+                Some(entry) => break entry,
+                None => hint::spin_loop(),
+            }
+        };
+
+        if entry.is_free() {
+            *entry = inner::Entry::Data((key.clone(), value));
+            let len = self.len.fetch_add(1, SeqCst) + 1;
+            if len * LOAD_FACTOR_D >= buckets.len() * LOAD_FACTOR_N {
+                drop(entry);
+                drop(buckets);
+                self.grow(len);
+
+                return self.get_mut(&key).unwrap();
+            }
+        }
+
+        WriteGuard {
+            _buckets: buckets,
+            inner: entry,
+        }
+    }
+
     pub fn remove_entry_if<Q, F>(&self, key: &Q, predicate: F) -> Option<(K, V)>
     where
         Q: Hash + PartialEq,
@@ -199,19 +238,7 @@ impl<K, V, S: BuildHasher + Default> CHashMap<K, V, S> {
         Q: Hash + PartialEq,
         K: Borrow<Q> + Hash,
     {
-        let buckets = self.inner.read();
-        let ret = match buckets.entry(key) {
-            Some(mut entry) => mem::replace(&mut *entry, inner::Entry::Removed),
-            None => return None,
-        };
-        if !ret.is_free() {
-            let len = self.len.fetch_sub(1, SeqCst) - 1;
-            if len * GROW_FACTOR * LOAD_FACTOR_D < buckets.len() * LOAD_FACTOR_N {
-                drop(buckets);
-                self.shrink(len);
-            }
-        }
-        ret.into()
+        self.remove_entry_if(key, |_| true)
     }
 
     pub fn remove<Q>(&self, key: &Q) -> Option<V>
