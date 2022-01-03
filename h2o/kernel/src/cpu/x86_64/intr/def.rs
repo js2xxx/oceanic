@@ -62,10 +62,6 @@ macro_rules! hdl {
             #[no_mangle]
             unsafe extern "C" fn [<hdl_ $name>]($frame_arg: *const Frame) {
                 { $body };
-                #[allow(unreachable_code)]
-                {
-                    archop::pause_intr();
-                }
             }
         }
     };
@@ -200,7 +196,6 @@ hdl!(general_prot, |frame| {
 });
 
 hdl!(page_fault, |frame| {
-    log::error!("EXCEPTION: Page fault");
     super::exception(frame, ExVec::PageFault);
 });
 

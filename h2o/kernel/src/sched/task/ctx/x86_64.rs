@@ -116,8 +116,16 @@ impl Frame {
         }
     }
 
+    #[inline]
     pub fn set_syscall_retval(&mut self, retval: usize) {
         self.rax = retval as u64;
+    }
+
+    #[inline]
+    pub fn set_pf_resume(&mut self, rip: u64, errc: u64, addr: u64) {
+        self.rip = rip;
+        self.rax = errc;
+        self.rdx = addr;
     }
 
     const RFLAGS: &'static str =

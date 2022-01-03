@@ -74,12 +74,20 @@ pub unsafe fn try_unregister(intr: &Arc<Interrupt>) -> Result<(), RegisterError>
     }
 }
 
-unsafe fn exception(frame: *const Frame, vec: def::ExVec) {
+unsafe fn exception(frame_ptr: *const Frame, vec: def::ExVec) {
     use def::ExVec::*;
 
-    let frame = unsafe { &*frame };
+    let frame = &*frame_ptr;
     match vec {
-        PageFault if crate::mem::space::page_fault(cr2::read(), frame.errc_vec) => return,
+        PageFault
+            if crate::mem::space::page_fault(
+                &mut *(frame_ptr as *mut _),
+                cr2::read(),
+                frame.errc_vec,
+            ) =>
+        {
+            return
+        }
         _ => {}
     }
     // No more available remedies. Die.

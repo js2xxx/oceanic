@@ -9,6 +9,7 @@ use alloc::boxed::Box;
 use core::{
     alloc::Layout,
     fmt::Debug,
+    num::NonZeroU64,
     ops::{Deref, DerefMut},
     ptr::{self, NonNull},
 };
@@ -57,6 +58,7 @@ pub struct Kstack {
     ptr: NonNull<KstackData>,
     virt: KernelVirt,
     kframe_ptr: Box<*mut u8>,
+    pf_resume: Box<Option<NonZeroU64>>,
 }
 
 unsafe impl Send for Kstack {}
@@ -95,21 +97,41 @@ impl Kstack {
             ptr: kstack,
             virt,
             kframe_ptr: box kframe_ptr,
+            pf_resume: box None,
         }
     }
 
     #[cfg(target_arch = "x86_64")]
+    #[inline]
     pub fn kframe_ptr(&self) -> *mut u8 {
         *self.kframe_ptr
     }
 
     #[cfg(target_arch = "x86_64")]
+    #[inline]
     pub fn kframe_ptr_mut(&mut self) -> *mut *mut u8 {
         &mut *self.kframe_ptr
     }
 
+    #[inline]
     pub fn virt(&self) -> &KernelVirt {
         &self.virt
+    }
+
+    #[inline]
+    pub unsafe fn pf_resume_mut(&mut self) -> *mut Option<NonZeroU64> {
+        &mut *self.pf_resume
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    pub unsafe fn pf_resume(&mut self, cur_frame: &mut arch::Frame, errc: u64, addr: u64) -> bool {
+        match self.pf_resume.take() {
+            None => false,
+            Some(ret) => {
+                cur_frame.set_pf_resume(ret.into(), errc, addr);
+                true
+            }
+        }
     }
 }
 

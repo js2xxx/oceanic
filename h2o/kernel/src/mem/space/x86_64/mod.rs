@@ -11,6 +11,7 @@ use paging::{LAddr, PAddr, Table};
 use spin::{Lazy, Mutex};
 
 use super::Flags;
+use crate::sched::{task::ctx::x86_64::Frame, SCHED};
 
 /// The root page table at initialization time.
 static KERNEL_ROOT: Lazy<(Box<Table>, u64)> = Lazy::new(|| {
@@ -186,8 +187,9 @@ unsafe impl paging::PageAlloc for PageAlloc {
 }
 
 bitflags::bitflags! {
+    #[repr(C)]
     pub struct ErrCode: u64 {
-        const NOT_PRESENT  = 0b0000001;
+        const PRESENT      = 0b0000001;
         const WRITE        = 0b0000010;
         const USER_ACCESS  = 0b0000100;
         const RESERVED     = 0b0001000;
@@ -207,19 +209,30 @@ impl ErrCode {
     }
 }
 
-pub unsafe fn page_fault(addr: u64, err_code: u64) -> bool {
-    let code = match ErrCode::from_bits(err_code) {
-        Some(code) => code,
-        None => return false,
-    };
+pub unsafe fn page_fault(frame: &mut Frame, addr: u64, errc: u64) -> bool {
+    loop {
+        let code = match ErrCode::from_bits(errc) {
+            Some(code) => code,
+            None => break,
+        };
 
-    // So far neither has been supported.
-    if code.contains(ErrCode::PROT_KEY | ErrCode::SHADOW_STACK) {
-        return false;
+        // So far neither has been supported.
+        if code.contains(ErrCode::PROT_KEY | ErrCode::SHADOW_STACK) {
+            break;
+        }
+
+        if matches!(
+            SCHED.with_current(|cur| cur.kstack_mut().pf_resume(frame, errc, addr)),
+            Some(true)
+        ) {
+            return true;
+        }
+
+        // TODO: Add some handling code.
+        break;
     }
 
-    // TODO: Add some handling code.
-    let _ = addr;
-
+    // No more available remedies.
+    log::error!("EXCEPTION: Page fault");
     false
 }

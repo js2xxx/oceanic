@@ -288,6 +288,11 @@ impl Ready {
         self.time_slice
     }
 
+    #[inline]
+    pub fn kstack_mut(&mut self) -> &mut ctx::Kstack {
+        &mut self.kstack
+    }
+
     pub fn save_syscall_retval(&mut self, retval: usize) {
         debug_assert!(matches!(self.running_state, RunningState::Running(..)));
 

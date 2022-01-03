@@ -45,6 +45,9 @@ pub fn test() {
         }
         exit(Ok(12345));
     }
+    // Test the defence of invalid user pointer access.
+    let ret = crate::call::task_fn(0x100000000 as *const CreateInfo);
+    assert_eq!(ret, Err(crate::Error(crate::EPERM)));
 
     let creator = |arg: u32| {
         let ci = CreateInfo {
