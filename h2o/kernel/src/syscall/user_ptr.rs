@@ -1,4 +1,4 @@
-use core::{marker::PhantomData, mem, mem::MaybeUninit, num::NonZeroU64, ptr::NonNull};
+use core::{marker::PhantomData, mem, mem::MaybeUninit, num::NonZeroU64};
 
 use solvent::{Result, SerdeReg};
 pub use types::*;
@@ -34,30 +34,6 @@ impl<T: Type, D> UserPtr<T, D> {
             mem::size_of::<T>() * len,
             mem::align_of::<D>(),
         )
-    }
-
-    pub fn null_or<F, R>(&self, f: F) -> Result<R>
-    where
-        F: FnOnce(Option<NonNull<D>>) -> Result<R>,
-    {
-        if self.data.is_null() {
-            f(None)
-        } else {
-            self.check()?;
-            f(NonNull::new(self.data))
-        }
-    }
-
-    pub fn null_or_slice<F, R>(&self, len: usize, f: F) -> Result<R>
-    where
-        F: FnOnce(Option<NonNull<[D]>>) -> Result<R>,
-    {
-        if self.data.is_null() {
-            f(None)
-        } else {
-            self.check_slice(len)?;
-            f(NonNull::new(self.data).map(|ptr| NonNull::slice_from_raw_parts(ptr, len)))
-        }
     }
 }
 

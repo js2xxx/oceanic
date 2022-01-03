@@ -1,4 +1,4 @@
-use alloc::{string::ToString, sync::Arc};
+use alloc::{string::String, sync::Arc, vec::Vec};
 use core::time::Duration;
 
 use paging::LAddr;
@@ -56,16 +56,17 @@ fn task_sleep(ms: u32) {
 #[syscall]
 fn task_fn(ci: UserPtr<In, task::CreateInfo>) -> u32 {
     let ci = unsafe { ci.read()? };
-    let name = UserPtr::<In, _>::new(ci.name).null_or_slice(ci.name_len, |ptr| {
-        ptr.map(|ptr| unsafe {
-            let slice = ptr.as_ref();
 
-            core::str::from_utf8(slice)
-                .map_err(|_| Error(EINVAL))
-                .map(ToString::to_string)
-        })
-        .transpose()
-    })?;
+    let name = {
+        let ptr = UserPtr::<In, _>::new(ci.name);
+        if !ptr.as_ptr().is_null() {
+            let mut buf = Vec::<u8>::with_capacity(ci.name_len);
+            unsafe { ptr.read_slice(buf.as_mut_ptr(), buf.len()) }?;
+            Some(String::from_utf8(buf).map_err(|_| Error(EINVAL))?)
+        } else {
+            None
+        }
+    };
 
     let stack_size = if ci.stack_size == 0 {
         DEFAULT_STACK_SIZE
