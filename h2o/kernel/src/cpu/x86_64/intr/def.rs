@@ -1,9 +1,9 @@
-use core::ops::Range;
+use core::{fmt, ops::Range};
 
 pub use crate::cpu::arch::seg::idt::NR_VECTORS;
 use crate::sched::task::ctx::arch::Frame;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum ExVec {
     DivideBy0 = 0,
@@ -28,6 +28,32 @@ pub enum ExVec {
     // Virtual = 0x14,
     // ControlProt = 0x15,
     // VmmComm = 0x1D,
+}
+
+impl fmt::Debug for ExVec {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::DivideBy0 => write!(f, "Divide by zero"),
+            Self::Debug => write!(f, "Debug"),
+            Self::Nmi => write!(f, "Non-maskable interrupt"),
+            Self::Breakpoint => write!(f, "Breakpoint"),
+            Self::Overflow => write!(f, "Overflow"),
+            Self::Bound => write!(f, "Bound range exceeded"),
+            Self::InvalidOp => write!(f, "Invalid opcode"),
+            Self::DeviceNa => write!(f, "Device not available"),
+            Self::DoubleFault => write!(f, "Double fault"),
+            Self::CoprocOverrun => write!(f, "Coprocessor overrun"),
+            Self::InvalidTss => write!(f, "Invalid TSS"),
+            Self::SegmentNa => write!(f, "Segment not available"),
+            Self::StackFault => write!(f, "Stack fault"),
+            Self::GeneralProt => write!(f, "General protection"),
+            Self::PageFault => write!(f, "Page fault"),
+            Self::FloatPoint => write!(f, "Floatpoint exception"),
+            Self::Alignment => write!(f, "Alignment check"),
+            Self::MachineCheck => write!(f, "Machine check"),
+            Self::SimdExcep => write!(f, "SIMD exception"),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -60,11 +86,18 @@ macro_rules! hdl {
         paste::paste! {
             extern "C" { pub fn [<rout_ $name>](); }
             #[no_mangle]
-            unsafe extern "C" fn [<hdl_ $name>]($frame_arg: *const Frame) {
+            unsafe extern "C" fn [<hdl_ $name>]($frame_arg: *mut Frame) {
                 { $body };
             }
         }
     };
+
+    ($($name:ident => $vec:tt),*) => {
+        use ExVec::*;
+        $(hdl!($name, |frame| {
+            super::exception(frame, $vec);
+        });)*
+    }
 }
 
 pub enum IdtInit {
@@ -124,103 +157,26 @@ pub static IDT_INIT: &[IdtInit] = &[
 ];
 
 // x86 exceptions
-
-hdl!(div_0, |frame| {
-    log::error!("EXCEPTION: Divide by zero");
-    super::exception(frame, ExVec::DivideBy0);
-});
-
-hdl!(debug, |frame| {
-    log::error!("EXCEPTION: Debug");
-    super::exception(frame, ExVec::Debug);
-});
-
-hdl!(nmi, |frame| {
-    log::error!("EXCEPTION: NMI");
-    super::exception(frame, ExVec::Nmi);
-});
-
-hdl!(breakpoint, |frame| {
-    log::error!("EXCEPTION: Breakpoint");
-    super::exception(frame, ExVec::Breakpoint);
-});
-
-hdl!(overflow, |frame| {
-    log::error!("EXCEPTION: Overflow error");
-    super::exception(frame, ExVec::Overflow);
-});
-
-hdl!(bound, |frame| {
-    log::error!("EXCEPTION: Bound range exceeded");
-    super::exception(frame, ExVec::Bound);
-});
-
-hdl!(invalid_op, |frame| {
-    log::error!("EXCEPTION: Invalid opcode");
-    super::exception(frame, ExVec::InvalidOp);
-});
-
-hdl!(device_na, |frame| {
-    log::error!("EXCEPTION: Device not available");
-    super::exception(frame, ExVec::DeviceNa);
-});
-
-hdl!(double_fault, |frame| {
-    log::error!("EXCEPTION: Double fault");
-    super::exception(frame, ExVec::DoubleFault);
-});
-
-hdl!(coproc_overrun, |frame| {
-    log::error!("EXCEPTION: Coprocessor overrun");
-    super::exception(frame, ExVec::CoprocOverrun);
-});
-
-hdl!(invalid_tss, |frame| {
-    log::error!("EXCEPTION: Invalid TSS");
-    super::exception(frame, ExVec::InvalidTss);
-});
-
-hdl!(segment_na, |frame| {
-    log::error!("EXCEPTION: Segment not present");
-    super::exception(frame, ExVec::SegmentNa);
-});
-
-hdl!(stack_fault, |frame| {
-    log::error!("EXCEPTION: Stack fault");
-    super::exception(frame, ExVec::StackFault);
-});
-
-hdl!(general_prot, |frame| {
-    log::error!("EXCEPTION: General protection");
-    super::exception(frame, ExVec::GeneralProt);
-});
-
-hdl!(page_fault, |frame| {
-    super::exception(frame, ExVec::PageFault);
-});
-
-hdl!(fp_excep, |frame| {
-    log::error!("EXCEPTION: Floating-point exception");
-    super::exception(frame, ExVec::FloatPoint);
-});
-
-hdl!(alignment, |frame| {
-    log::error!("EXCEPTION: Alignment check");
-    super::exception(frame, ExVec::Alignment);
-});
-
-// hdl!(mach_check, |frame| {
-//       log::error!("EXCEPTION: Machine check");
-//       let frame = unsafe { &*frame };
-//       frame.dump(Frame::ERRC);
-
-//       archop::halt_loop(Some(false));
-// });
-
-hdl!(simd, |frame| {
-    log::error!("EXCEPTION: SIMD exception");
-    super::exception(frame, ExVec::SimdExcep);
-});
+hdl!(
+    div_0 => DivideBy0,
+    debug => Debug,
+    nmi => Nmi,
+    breakpoint => Breakpoint,
+    overflow => Overflow,
+    bound => Bound,
+    invalid_op => InvalidOp,
+    device_na => DeviceNa,
+    double_fault => DoubleFault,
+    coproc_overrun => CoprocOverrun,
+    invalid_tss => InvalidTss,
+    segment_na => SegmentNa,
+    stack_fault => StackFault,
+    general_prot => GeneralProt,
+    page_fault => PageFault,
+    fp_excep => FloatPoint,
+    alignment => Alignment,
+    simd => SimdExcep
+);
 
 // Local APIC interrupts
 

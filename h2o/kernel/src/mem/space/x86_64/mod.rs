@@ -209,7 +209,9 @@ impl ErrCode {
     }
 }
 
-pub unsafe fn page_fault(frame: &mut Frame, addr: u64, errc: u64) -> bool {
+pub unsafe fn page_fault(frame: &mut Frame, errc: u64) -> bool {
+    let addr = archop::reg::cr2::read();
+
     loop {
         let code = match ErrCode::from_bits(errc) {
             Some(code) => code,
@@ -233,6 +235,5 @@ pub unsafe fn page_fault(frame: &mut Frame, addr: u64, errc: u64) -> bool {
     }
 
     // No more available remedies.
-    log::error!("EXCEPTION: Page fault");
     false
 }
