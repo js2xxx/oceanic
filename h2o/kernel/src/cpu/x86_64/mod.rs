@@ -16,7 +16,7 @@ pub use seg::reload_pls;
 use crate::cpu::CpuLocalLazy;
 
 pub const MAX_CPU: usize = 256;
-pub static CPU_INDEX: AtomicUsize = AtomicUsize::new(0);
+static CPU_INDEX: AtomicUsize = AtomicUsize::new(0);
 static CPU_COUNT: AtomicUsize = AtomicUsize::new(0);
 
 /// # Safety
@@ -36,15 +36,18 @@ pub unsafe fn set_id(bsp: bool) -> usize {
 /// # Safety
 ///
 /// This function is only called after [`set_id`].
+#[inline]
 pub unsafe fn id() -> usize {
     use archop::msr;
     msr::read(msr::TSC_AUX) as usize
 }
 
+#[inline]
 pub fn count() -> usize {
     CPU_COUNT.load(Ordering::SeqCst)
 }
 
+#[inline]
 pub fn in_intr() -> bool {
     extern "C" {
         fn cpu_in_intr() -> u32;
@@ -55,6 +58,7 @@ pub fn in_intr() -> bool {
 /// # Safety
 ///
 /// This function is only called after [`set_id`].
+#[inline]
 pub unsafe fn is_bsp() -> bool {
     id() == 0
 }
@@ -136,11 +140,10 @@ pub unsafe fn init() {
     // SAFE: During bootstrap initialization.
     unsafe { KERNEL_GS.load() };
 
-    let platform_info = unsafe { crate::dev::acpi::platform_info() };
     apic::init();
 
     let cnt = {
-        let lapic_data = platform_info
+        let lapic_data = crate::dev::acpi::platform_info()
             .processor_info
             .as_ref()
             .expect("Failed to get LAPIC data");

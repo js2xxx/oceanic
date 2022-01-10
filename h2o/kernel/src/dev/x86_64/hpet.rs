@@ -37,7 +37,7 @@ struct HpetReg {
 const HPET_REG_CFG_ENABLE: u64 = 1;
 
 static HPET: Lazy<Option<Arc<RwLock<Hpet>>>> = Lazy::new(|| {
-    acpi::HpetInfo::new(unsafe { crate::dev::acpi::tables() })
+    acpi::HpetInfo::new(crate::dev::acpi::tables())
         .ok()
         .and_then(|info| unsafe { Hpet::new(info) }.ok())
         .map(|hpet| Arc::new(RwLock::new(hpet)))

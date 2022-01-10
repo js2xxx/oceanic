@@ -53,6 +53,6 @@ unsafe fn dealloc_pages(pages: NonNull<[::heap::Page]>) {
     pmm::dealloc_pages_exact(n, paddr);
 }
 
-pub(super) fn init_global() {
+pub(super) fn test_global() {
     ::heap::test(&KH, archop::rand::get() as usize);
 }

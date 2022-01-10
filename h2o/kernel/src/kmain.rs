@@ -60,7 +60,6 @@ pub extern "C" fn kmain() {
     l::info!("Starting the kernel");
 
     mem::init();
-    sched::task::tid::init();
 
     unsafe { cpu::arch::init() };
 

@@ -33,7 +33,7 @@ pub fn init() {
         (all_available as f64) / 1073741824.0,
         all_available
     );
-    heap::init_global();
+    heap::test_global();
     unsafe { space::init() };
 }
 

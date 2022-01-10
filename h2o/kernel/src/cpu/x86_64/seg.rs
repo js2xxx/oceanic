@@ -177,11 +177,13 @@ pub fn alloc_pls() -> Option<NonNull<u8>> {
 ///
 /// The caller must ensure that this function is called only once from the
 /// bootstrap CPU.
+#[inline]
 pub(super) unsafe fn init() {
     ndt::init();
     idt::init();
 }
 
+#[inline]
 pub(super) unsafe fn init_ap() {
     ndt::init();
     idt::init();

@@ -21,19 +21,21 @@ use crate::{
 
 const LEGACY_IRQ: Range<u32> = 0..16;
 
-static IOAPIC_CHIP: Lazy<(Arc<Mutex<dyn IntrChip>>, Vec<IntrOvr>)> = Lazy::new(|| unsafe {
+static IOAPIC_CHIP: Lazy<(Arc<Mutex<dyn IntrChip>>, Vec<IntrOvr>)> = Lazy::new(|| {
     let ioapic_data = match crate::dev::acpi::platform_info().interrupt_model {
         acpi::InterruptModel::Apic(ref apic) => apic,
         _ => panic!("Failed to get IOAPIC data"),
     };
-    let (ioapics, intr_ovr) = Ioapics::new(ioapic_data);
+    let (ioapics, intr_ovr) = unsafe { Ioapics::new(ioapic_data) };
     (Arc::new(Mutex::new(ioapics)), intr_ovr)
 });
 
+#[inline]
 pub fn chip() -> Arc<Mutex<dyn IntrChip>> {
     Arc::clone(&IOAPIC_CHIP.0)
 }
 
+#[inline]
 fn intr_ovr() -> &'static [IntrOvr] {
     &IOAPIC_CHIP.1
 }
