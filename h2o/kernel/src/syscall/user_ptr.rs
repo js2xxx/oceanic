@@ -1,7 +1,9 @@
-use core::{marker::PhantomData, mem, ptr::NonNull};
+use core::{marker::PhantomData, mem, mem::MaybeUninit, num::NonZeroU64};
 
 use solvent::{Result, SerdeReg};
 pub use types::*;
+
+use crate::{mem::space::PageFaultErrCode, sched::SCHED};
 
 #[derive(Debug, Copy, Clone)]
 pub struct UserPtr<T: Type, D> {
@@ -33,59 +35,81 @@ impl<T: Type, D> UserPtr<T, D> {
             mem::align_of::<D>(),
         )
     }
-
-    pub fn null_or<F, R>(&self, f: F) -> Result<R>
-    where
-        F: FnOnce(Option<NonNull<D>>) -> Result<R>,
-    {
-        if self.data.is_null() {
-            f(None)
-        } else {
-            self.check()?;
-            f(NonNull::new(self.data))
-        }
-    }
-
-    pub fn null_or_slice<F, R>(&self, len: usize, f: F) -> Result<R>
-    where
-        F: FnOnce(Option<NonNull<[D]>>) -> Result<R>,
-    {
-        if self.data.is_null() {
-            f(None)
-        } else {
-            self.check_slice(len)?;
-            f(NonNull::new(self.data).map(|ptr| NonNull::slice_from_raw_parts(ptr, len)))
-        }
-    }
 }
 
 impl<D> UserPtr<In, D> {
     pub unsafe fn read(&self) -> Result<D> {
         self.check()?;
-        Ok(self.data.read_volatile())
+
+        let pf_resume = SCHED
+            .with_current(|cur| cur.kstack_mut().pf_resume_mut())
+            .ok_or(solvent::Error(solvent::ESRCH))?;
+
+        let mut data = MaybeUninit::<D>::uninit();
+        checked_copy(
+            data.as_mut_ptr().cast(),
+            self.data.cast(),
+            pf_resume,
+            mem::size_of::<D>(),
+        )
+        .into_result()?;
+
+        Ok(data.assume_init())
     }
 
     pub unsafe fn read_slice(&self, out: *mut D, count: usize) -> Result<()> {
         self.check_slice(count)?;
-        Ok(out.copy_from_nonoverlapping(self.data, count))
+
+        let pf_resume = SCHED
+            .with_current(|cur| cur.kstack_mut().pf_resume_mut())
+            .ok_or(solvent::Error(solvent::ESRCH))?;
+
+        checked_copy(
+            out.cast(),
+            self.data.cast(),
+            pf_resume,
+            count * mem::size_of::<D>(),
+        )
+        .into_result()
     }
 }
 
 impl<D> UserPtr<Out, D> {
     pub unsafe fn write(&self, value: D) -> Result<()> {
         self.check()?;
-        Ok(self.data.write_volatile(value))
+
+        let pf_resume = SCHED
+            .with_current(|cur| cur.kstack_mut().pf_resume_mut())
+            .ok_or(solvent::Error(solvent::ESRCH))?;
+
+        checked_copy(
+            self.data.cast(),
+            ((&value) as *const D).cast(),
+            pf_resume,
+            mem::size_of::<D>(),
+        )
+        .into_result()
     }
 
     pub unsafe fn write_slice(&self, value: &[D]) -> Result<()> {
         self.check_slice(value.len())?;
-        Ok(self
-            .data
-            .copy_from_nonoverlapping(value.as_ptr(), value.len()))
+
+        let pf_resume = SCHED
+            .with_current(|cur| cur.kstack_mut().pf_resume_mut())
+            .ok_or(solvent::Error(solvent::ESRCH))?;
+
+        checked_copy(
+            self.data.cast(),
+            value.as_ptr().cast(),
+            pf_resume,
+            value.len() * mem::size_of::<D>(),
+        )
+        .into_result()
     }
 }
 
 impl<D> UserPtr<InOut, D> {
+    #[inline]
     pub fn r#in(&self) -> UserPtr<In, D> {
         UserPtr {
             data: self.data,
@@ -93,6 +117,7 @@ impl<D> UserPtr<InOut, D> {
         }
     }
 
+    #[inline]
     pub fn out(&self) -> UserPtr<Out, D> {
         UserPtr {
             data: self.data,
@@ -102,10 +127,12 @@ impl<D> UserPtr<InOut, D> {
 }
 
 impl<T: Type, D> SerdeReg for UserPtr<T, D> {
+    #[inline]
     fn encode(self) -> usize {
         self.data as usize
     }
 
+    #[inline]
     fn decode(val: usize) -> Self {
         UserPtr {
             data: val as *mut D,
@@ -134,4 +161,33 @@ mod types {
     impl Type for In {}
     impl Type for Out {}
     impl Type for InOut {}
+}
+
+#[repr(C)]
+struct CheckedCopyRet {
+    errc: PageFaultErrCode,
+    addr_p1: u64,
+}
+
+impl CheckedCopyRet {
+    fn into_result(self) -> Result<()> {
+        if self.errc != PageFaultErrCode::empty() || self.addr_p1 != 0 {
+            log::warn!(
+                "Page fault at {:#x} during user pointer access",
+                self.addr_p1 - 1
+            );
+            Err(solvent::Error(solvent::EPERM))
+        } else {
+            Ok(())
+        }
+    }
+}
+
+extern "C" {
+    fn checked_copy(
+        dst: *mut u8,
+        src: *const u8,
+        pf_resume: *mut Option<NonZeroU64>,
+        count: usize,
+    ) -> CheckedCopyRet;
 }

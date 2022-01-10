@@ -6,8 +6,15 @@ use spin::Mutex;
 
 use self::def::NR_VECTORS;
 use crate::{
-    cpu::{arch::apic::lapic, intr::Interrupt, time::Instant},
-    sched::task::ctx::arch::Frame,
+    cpu::{
+        arch::{apic::lapic, seg::ndt::USR_CODE_X64},
+        intr::Interrupt,
+        time::Instant,
+    },
+    sched::{
+        task::{self, ctx::arch::Frame},
+        SCHED,
+    },
 };
 
 const VEC_INTR_INIT: Mutex<Option<Weak<Interrupt>>> = Mutex::new(None);
@@ -71,6 +78,37 @@ pub unsafe fn try_unregister(intr: &Arc<Interrupt>) -> Result<(), RegisterError>
     } else {
         Err(RegisterError::Pending)
     }
+}
+
+/// Generic exception handler.
+unsafe fn exception(frame_ptr: *mut Frame, vec: def::ExVec) {
+    use def::ExVec::*;
+
+    let frame = &*frame_ptr;
+    match vec {
+        PageFault if crate::mem::space::page_fault(&mut *frame_ptr, frame.errc_vec) => return,
+        _ => {}
+    }
+
+    // Kill the fucking task if it's the exception source instead of hanging here.
+    match SCHED.with_current(|cur| cur.tid().ty()) {
+        Some(task::Type::User) if frame.cs == USR_CODE_X64.into_val().into() => {
+            SCHED.exit_current((-solvent::EFAULT) as usize)
+            // unreachable!()
+        }
+        _ => {}
+    }
+
+    // No more available remedies. Die.
+    log::error!("{:?}", vec);
+
+    frame.dump(if vec == PageFault {
+        Frame::ERRC_PF
+    } else {
+        Frame::ERRC
+    });
+
+    archop::halt_loop(Some(false));
 }
 
 /// # Safety

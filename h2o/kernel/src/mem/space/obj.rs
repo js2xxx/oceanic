@@ -151,11 +151,9 @@ impl Virt {
     }
 
     pub fn leak(self) -> NonNull<[u8]> {
-        unsafe {
-            let inner = self.ptr;
-            mem::forget(self);
-            inner
-        }
+        let inner = self.ptr;
+        mem::forget(self);
+        inner
     }
 }
 

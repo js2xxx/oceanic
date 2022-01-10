@@ -27,10 +27,12 @@ static TABLES: Lazy<acpi::AcpiTables<Handler>> = Lazy::new(|| unsafe {
 static PLATFORM_INFO: Lazy<acpi::PlatformInfo> =
     Lazy::new(|| TABLES.platform_info().expect("Failed to get platform info"));
 
-pub unsafe fn tables() -> &'static acpi::AcpiTables<Handler> {
+#[inline]
+pub fn tables() -> &'static acpi::AcpiTables<Handler> {
     &*TABLES
 }
 
-pub unsafe fn platform_info() -> &'static acpi::PlatformInfo {
+#[inline]
+pub fn platform_info() -> &'static acpi::PlatformInfo {
     &*PLATFORM_INFO
 }

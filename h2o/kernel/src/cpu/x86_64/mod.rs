@@ -16,7 +16,7 @@ pub use seg::reload_pls;
 use crate::cpu::CpuLocalLazy;
 
 pub const MAX_CPU: usize = 256;
-pub static CPU_INDEX: AtomicUsize = AtomicUsize::new(0);
+static CPU_INDEX: AtomicUsize = AtomicUsize::new(0);
 static CPU_COUNT: AtomicUsize = AtomicUsize::new(0);
 
 /// # Safety
@@ -27,7 +27,7 @@ pub unsafe fn set_id(bsp: bool) -> usize {
     let id = CPU_INDEX.fetch_add(1, Ordering::SeqCst);
     msr::write(msr::TSC_AUX, id as u64);
 
-    while !bsp && count() == 0 {
+    while !bsp && CPU_COUNT.load(Ordering::SeqCst) == 0 {
         core::hint::spin_loop();
     }
     id
@@ -36,15 +36,18 @@ pub unsafe fn set_id(bsp: bool) -> usize {
 /// # Safety
 ///
 /// This function is only called after [`set_id`].
+#[inline]
 pub unsafe fn id() -> usize {
     use archop::msr;
     msr::read(msr::TSC_AUX) as usize
 }
 
+#[inline]
 pub fn count() -> usize {
-    CPU_COUNT.load(Ordering::SeqCst)
+    CPU_COUNT.load(Ordering::Relaxed)
 }
 
+#[inline]
 pub fn in_intr() -> bool {
     extern "C" {
         fn cpu_in_intr() -> u32;
@@ -55,6 +58,7 @@ pub fn in_intr() -> bool {
 /// # Safety
 ///
 /// This function is only called after [`set_id`].
+#[inline]
 pub unsafe fn is_bsp() -> bool {
     id() == 0
 }
@@ -68,25 +72,14 @@ pub struct KernelGs {
 }
 
 #[thread_local]
-pub static KERNEL_GS: CpuLocalLazy<KernelGs> = CpuLocalLazy::new(|| {
-    let syscall_stack = unsafe { syscall::init() }.expect("Memory allocation failed");
-
-    KernelGs::new(
-        syscall_stack,
-        LAddr::from(unsafe { archop::msr::read(archop::msr::FS_BASE) } as usize),
-    )
+pub static KERNEL_GS: CpuLocalLazy<KernelGs> = CpuLocalLazy::new(|| KernelGs {
+    tss_rsp0: UnsafeCell::new(unsafe { seg::ndt::TSS.rsp0() }),
+    syscall_user_stack: null_mut(),
+    syscall_stack: unsafe { syscall::init() }.expect("Memory allocation failed"),
+    kernel_fs: LAddr::from(unsafe { archop::msr::read(archop::msr::FS_BASE) } as usize),
 });
 
 impl KernelGs {
-    fn new(syscall_stack: LAddr, kernel_fs: LAddr) -> Self {
-        KernelGs {
-            tss_rsp0: UnsafeCell::new(unsafe { seg::ndt::TSS.rsp0() }),
-            syscall_user_stack: null_mut(),
-            syscall_stack,
-            kernel_fs,
-        }
-    }
-
     /// Load the object.
     ///
     /// This function consumes the object and transform it into a 'permanent'
@@ -117,12 +110,15 @@ impl KernelGs {
         *self.tss_rsp0.get() = rsp0;
     }
 
+    #[inline]
     pub unsafe fn as_ptr(&self) -> *const u8 {
         (self as *const KernelGs).cast()
     }
 }
 
 /// Initialize x86_64 architecture.
+///
+/// Here we manually initialize [`CPU_COUNT`] for better performance.
 ///
 /// # Safety
 ///
@@ -136,11 +132,10 @@ pub unsafe fn init() {
     // SAFE: During bootstrap initialization.
     unsafe { KERNEL_GS.load() };
 
-    let platform_info = unsafe { crate::dev::acpi::platform_info() };
     apic::init();
 
     let cnt = {
-        let lapic_data = platform_info
+        let lapic_data = crate::dev::acpi::platform_info()
             .processor_info
             .as_ref()
             .expect("Failed to get LAPIC data");

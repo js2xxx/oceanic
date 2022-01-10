@@ -41,10 +41,18 @@ pub fn test() {
                     unsafe { asm!("pause") };
                 }
             }
+            1 => unsafe {
+                let addr: usize = 0x2341_0000_0000_0000;
+                let ptr: *mut u64 = core::mem::transmute(addr);
+                *ptr = 1;
+            },
             _ => {}
         }
         exit(Ok(12345));
     }
+    // Test the defence of invalid user pointer access.
+    let ret = crate::call::task_fn(0x100000000 as *const CreateInfo);
+    assert_eq!(ret, Err(crate::Error(crate::EPERM)));
 
     let creator = |arg: u32| {
         let ci = CreateInfo {
@@ -76,5 +84,10 @@ pub fn test() {
 
         let ret = crate::call::task_join(task);
         assert_eq!(ret, Err(crate::Error(crate::EKILLED)));
+    }
+    {
+        let task = creator(1).expect("Failed to create task");
+        let ret = crate::call::task_join(task);
+        assert_eq!(ret, Err(crate::Error(crate::EFAULT)));
     }
 }

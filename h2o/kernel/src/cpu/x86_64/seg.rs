@@ -98,20 +98,6 @@ impl From<u16> for SegSelector {
     }
 }
 
-/// Get the type of a segment or gate descriptor.
-///
-/// We can do this because the offset of the type attribute of 3 kinds of
-/// descriptors is the same.
-///
-/// # Safety
-///
-/// The caller must ensure the validity of `ptr` as a segment or gate
-/// descriptor.
-pub unsafe fn get_type_attr(ptr: *mut u8) -> u16 {
-    let ptr = ptr.add(size_of::<u32>() + size_of::<u8>());
-    (ptr as *mut u16).read()
-}
-
 /// Reload the Processor-Local Storage of the bootstrap CPU.
 ///
 /// # Safety
@@ -177,11 +163,13 @@ pub fn alloc_pls() -> Option<NonNull<u8>> {
 ///
 /// The caller must ensure that this function is called only once from the
 /// bootstrap CPU.
+#[inline]
 pub(super) unsafe fn init() {
     ndt::init();
     idt::init();
 }
 
+#[inline]
 pub(super) unsafe fn init_ap() {
     ndt::init();
     idt::init();

@@ -17,18 +17,17 @@ struct Futex {
 }
 
 impl Futex {
+    #[inline]
     fn get_or_insert<'a>(addr: PAddr) -> FutexRef<'a> {
-        match FUTEX.get(&addr) {
-            Some(futex) => futex,
-            None => {
-                let futex = Futex {
+        FUTEX
+            .get_or_insert(
+                addr,
+                Futex {
                     addr,
                     wo: WaitObject::new(),
-                };
-                FUTEX.insert(addr, futex).unwrap();
-                FUTEX.get(&addr).unwrap()
-            }
-        }
+                },
+            )
+            .downgrade()
     }
 
     fn wait(&self, val: u64, timeout: Duration) -> Result<bool> {

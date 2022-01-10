@@ -87,7 +87,3 @@ pub fn has_ti(tid: &Tid) -> bool {
     let _flags = PREEMPT.lock();
     TI_MAP.contains_key(&tid.0)
 }
-
-pub fn init() {
-    Lazy::force(&TI_MAP);
-}

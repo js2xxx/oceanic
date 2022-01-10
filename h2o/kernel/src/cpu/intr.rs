@@ -44,6 +44,7 @@ pub struct Handler {
 }
 
 impl Handler {
+    #[inline]
     pub fn new(func: fn(*mut u8) -> IrqReturn, arg: *mut u8) -> Self {
         Handler { func, arg }
     }
@@ -96,6 +97,7 @@ pub trait IntrChip: Send + Sync {
     ///
     /// WARNING: This function modifies the architecture's basic registers. Be
     /// sure to make preparations.
+    #[inline]
     unsafe fn mask_ack(&mut self, intr: Arc<Interrupt>) {
         self.mask(Arc::clone(&intr));
         self.ack(intr);

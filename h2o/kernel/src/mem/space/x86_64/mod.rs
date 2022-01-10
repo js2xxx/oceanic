@@ -11,6 +11,7 @@ use paging::{LAddr, PAddr, Table};
 use spin::{Lazy, Mutex};
 
 use super::Flags;
+use crate::sched::{task::ctx::x86_64::Frame, SCHED};
 
 /// The root page table at initialization time.
 static KERNEL_ROOT: Lazy<(Box<Table>, u64)> = Lazy::new(|| {
@@ -142,9 +143,9 @@ impl Space {
 
     #[inline]
     pub(in crate::mem) fn query(&self, virt: LAddr) -> Result<PAddr, paging::Error> {
-          self.canary.assert();
+        self.canary.assert();
 
-          paging::query(&mut *self.root_table.lock(), virt, minfo::ID_OFFSET)
+        paging::query(&mut *self.root_table.lock(), virt, minfo::ID_OFFSET)
     }
 
     pub(in crate::mem) fn unmaps(
@@ -183,4 +184,56 @@ unsafe impl paging::PageAlloc for PageAlloc {
             Global.deallocate(ptr, core::alloc::Layout::new::<paging::Table>());
         }
     }
+}
+
+bitflags::bitflags! {
+    #[repr(C)]
+    pub struct ErrCode: u64 {
+        const PRESENT      = 0b0000001;
+        const WRITE        = 0b0000010;
+        const USER_ACCESS  = 0b0000100;
+        const RESERVED     = 0b0001000;
+        const EXECUTING    = 0b0010000;
+        const PROT_KEY     = 0b0100000;
+        const SHADOW_STACK = 0b1000000;
+        const SGX = 1 << 15;
+    }
+}
+
+impl ErrCode {
+    const FMT: &'static str = "P WR US RSVD ID PK SS - - - - - - - - SGX";
+
+    #[inline]
+    pub fn display(errc: u64) -> crate::log::flags::Flags {
+        crate::log::flags::Flags::new(errc, Self::FMT)
+    }
+}
+
+pub unsafe fn page_fault(frame: &mut Frame, errc: u64) -> bool {
+    let addr = archop::reg::cr2::read();
+
+    loop {
+        let code = match ErrCode::from_bits(errc) {
+            Some(code) => code,
+            None => break,
+        };
+
+        // So far neither has been supported.
+        if code.contains(ErrCode::PROT_KEY | ErrCode::SHADOW_STACK) {
+            break;
+        }
+
+        if matches!(
+            SCHED.with_current(|cur| cur.kstack_mut().pf_resume(frame, errc, addr)),
+            Some(true)
+        ) {
+            return true;
+        }
+
+        // TODO: Add some handling code.
+        break;
+    }
+
+    // No more available remedies.
+    false
 }

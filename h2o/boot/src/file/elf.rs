@@ -137,8 +137,7 @@ pub fn map_elf(syst: &SystemTable<Boot>, data: &[u8]) -> (*mut u8, Option<Layout
             ),
 
             program_header::PT_TLS => {
-                let ts = phdr.p_memsz as usize;
-                pls_layout = Some(load_pls(syst, ts, phdr.p_align as usize));
+                pls_layout = Some(load_pls(syst, phdr.p_memsz as usize, phdr.p_align as usize));
             }
 
             _ => {}
