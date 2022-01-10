@@ -71,8 +71,7 @@ pub extern "C" fn kmain() {
     l::debug!("Reaching end of kernel");
 }
 
-#[no_mangle]
-pub extern "C" fn kmain_ap() {
+pub fn kmain_ap() {
     unsafe { cpu::set_id(false) };
     l::debug!("Starting the kernel");
 

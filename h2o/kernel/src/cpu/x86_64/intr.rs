@@ -80,6 +80,7 @@ pub unsafe fn try_unregister(intr: &Arc<Interrupt>) -> Result<(), RegisterError>
     }
 }
 
+/// Generic exception handler.
 unsafe fn exception(frame_ptr: *mut Frame, vec: def::ExVec) {
     use def::ExVec::*;
 
@@ -93,6 +94,7 @@ unsafe fn exception(frame_ptr: *mut Frame, vec: def::ExVec) {
     match SCHED.with_current(|cur| cur.tid().ty()) {
         Some(task::Type::User) if frame.cs == USR_CODE_X64.into_val().into() => {
             SCHED.exit_current((-solvent::EFAULT) as usize)
+            // unreachable!()
         }
         _ => {}
     }
