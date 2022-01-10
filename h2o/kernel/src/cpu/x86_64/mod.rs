@@ -27,7 +27,7 @@ pub unsafe fn set_id(bsp: bool) -> usize {
     let id = CPU_INDEX.fetch_add(1, Ordering::SeqCst);
     msr::write(msr::TSC_AUX, id as u64);
 
-    while !bsp && count() == 0 {
+    while !bsp && CPU_COUNT.load(Ordering::SeqCst) == 0 {
         core::hint::spin_loop();
     }
     id
@@ -44,7 +44,7 @@ pub unsafe fn id() -> usize {
 
 #[inline]
 pub fn count() -> usize {
-    CPU_COUNT.load(Ordering::SeqCst)
+    CPU_COUNT.load(Ordering::Relaxed)
 }
 
 #[inline]
@@ -72,25 +72,14 @@ pub struct KernelGs {
 }
 
 #[thread_local]
-pub static KERNEL_GS: CpuLocalLazy<KernelGs> = CpuLocalLazy::new(|| {
-    let syscall_stack = unsafe { syscall::init() }.expect("Memory allocation failed");
-
-    KernelGs::new(
-        syscall_stack,
-        LAddr::from(unsafe { archop::msr::read(archop::msr::FS_BASE) } as usize),
-    )
+pub static KERNEL_GS: CpuLocalLazy<KernelGs> = CpuLocalLazy::new(|| KernelGs {
+    tss_rsp0: UnsafeCell::new(unsafe { seg::ndt::TSS.rsp0() }),
+    syscall_user_stack: null_mut(),
+    syscall_stack: unsafe { syscall::init() }.expect("Memory allocation failed"),
+    kernel_fs: LAddr::from(unsafe { archop::msr::read(archop::msr::FS_BASE) } as usize),
 });
 
 impl KernelGs {
-    fn new(syscall_stack: LAddr, kernel_fs: LAddr) -> Self {
-        KernelGs {
-            tss_rsp0: UnsafeCell::new(unsafe { seg::ndt::TSS.rsp0() }),
-            syscall_user_stack: null_mut(),
-            syscall_stack,
-            kernel_fs,
-        }
-    }
-
     /// Load the object.
     ///
     /// This function consumes the object and transform it into a 'permanent'
@@ -121,12 +110,15 @@ impl KernelGs {
         *self.tss_rsp0.get() = rsp0;
     }
 
+    #[inline]
     pub unsafe fn as_ptr(&self) -> *const u8 {
         (self as *const KernelGs).cast()
     }
 }
 
 /// Initialize x86_64 architecture.
+///
+/// Here we manually initialize [`CPU_COUNT`] for better performance.
 ///
 /// # Safety
 ///

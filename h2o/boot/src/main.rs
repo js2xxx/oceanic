@@ -91,7 +91,7 @@ unsafe fn init_services(img: Handle, syst: &SystemTable<Boot>) {
 #[entry]
 fn efi_main(img: Handle, syst: SystemTable<Boot>) -> Status {
     unsafe { init_services(img, &syst) };
-    info!("H2O UEFI loader for Oceanic OS .v3");
+    info!("H2O UEFI loader for Oceanic OS");
 
     outp::choose_mode(&syst, (1024, 768));
     outp::draw_logo(&syst);
