@@ -17,10 +17,12 @@ impl Child {
         }
     }
 
+    #[inline]
     pub fn cell(&self) -> &WaitCell<usize> {
         &self.cell
     }
 
+    #[inline]
     pub fn tid(&self) -> &Tid {
         &self.tid
     }

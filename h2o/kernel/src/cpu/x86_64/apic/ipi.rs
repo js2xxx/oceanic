@@ -135,6 +135,8 @@ impl TramHeader {
 ///
 /// This function must be called after Local APIC initialization.
 pub unsafe fn start_cpus(aps: &[acpi::platform::Processor]) -> usize {
+    let _ = Instant::now();
+
     static TRAM_DATA: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/tram"));
 
     let base_phys = PAddr::new(minfo::TRAMPOLINE_RANGE.start);

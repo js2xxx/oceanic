@@ -89,13 +89,27 @@ impl HandleMap {
         }
     }
 
+    pub fn drop_shared<T: Send + Sync + 'static>(&mut self, hdl: Handle) -> bool {
+        match self.map.entry(hdl) {
+            btree_map::Entry::Occupied(ent) if ent.get().deref::<T>().is_some() => {
+                drop(ent.remove());
+                true
+            }
+            _ => false,
+        }
+    }
+
     /// # Safety
     ///
     /// The caller must ensure the current task is the owner of the
     /// [`HandleMap`] if the dropped object is `!Send`.
-    pub unsafe fn drop_unchecked(&mut self, hdl: Handle) {
-        if let btree_map::Entry::Occupied(ent) = self.map.entry(hdl) {
-            drop(ent.remove())
+    pub unsafe fn drop_unchecked(&mut self, hdl: Handle) -> bool {
+        match self.map.entry(hdl) {
+            btree_map::Entry::Occupied(ent) => {
+                drop(ent.remove());
+                true
+            }
+            _ => false,
         }
     }
 

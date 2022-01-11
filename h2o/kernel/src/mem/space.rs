@@ -443,13 +443,25 @@ where
     func(cur)
 }
 
+pub unsafe fn with<F, R>(space: &Arc<Space>, func: F) -> R
+where
+    F: FnOnce(&Arc<Space>) -> R,
+{
+    let _pree = PREEMPT.lock();
+
+    let old = set_current(Arc::clone(space));
+    let ret = func(space);
+    set_current(old);
+    ret
+}
+
 /// Set the current memory space of the current CPU.
 ///
 /// # Safety
 ///
 /// The function must be called only from the epilogue of context switching.
-pub unsafe fn set_current(space: Arc<Space>) {
+pub unsafe fn set_current(space: Arc<Space>) -> Arc<Space> {
     let _pree = PREEMPT.lock();
     space.load();
-    CURRENT = Some(space);
+    CURRENT.replace(space).unwrap()
 }

@@ -8,6 +8,12 @@ pub const TASK_CTL_KILL: u32 = 1;
 pub const TASK_CTL_SUSPEND: u32 = 2;
 pub const TASK_CTL_DETACH: u32 = 3;
 
+pub const TASK_DBG_READ_REG: u32 = 1;
+pub const TASK_DBG_WRITE_REG: u32 = 2;
+pub const TASK_DBG_READ_MEM: u32 = 3;
+pub const TASK_DBG_WRITE_MEM: u32 = 4;
+pub const TASK_DBG_EXCEP_HDL: u32 = 5;
+
 #[derive(Debug)]
 #[repr(C)]
 pub struct CreateInfo {
@@ -75,6 +81,20 @@ pub fn test() {
         let mut st = Handle::NULL;
 
         crate::call::task_ctl(task, TASK_CTL_SUSPEND, &mut st).expect("Failed to suspend a task");
+
+        {
+            let mut buf = [0u8; 10];
+            crate::call::task_debug(st, TASK_DBG_READ_MEM, 0x401000, buf.as_mut_ptr(), buf.len())
+                .expect("Failed to read memory");
+            let ret = crate::call::task_debug(
+                st,
+                TASK_DBG_WRITE_MEM,
+                0x401000,
+                buf.as_mut_ptr(),
+                buf.len(),
+            );
+            assert_eq!(ret, Err(crate::Error(crate::EPERM)));
+        }
 
         crate::call::task_sleep(50).expect("Failed to sleep");
         crate::call::obj_drop(st).expect("Failed to resume the task");

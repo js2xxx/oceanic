@@ -232,7 +232,7 @@ impl Scheduler {
                 });
                 unreachable!("Dead task");
             }
-            Some(task::sig::Signal::Suspend(wo, ..)) => {
+            Some(task::sig::Signal::Suspend(wo)) => {
                 drop(ti);
 
                 log::trace!("Suspending task {:?}, P{}", cur.tid().raw(), PREEMPT.raw());

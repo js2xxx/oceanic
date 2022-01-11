@@ -48,44 +48,44 @@ macro_rules! rw_simple {
 }
 
 rw_simple!(cr0 {
-      PE = 0,
-      MP = 1,
-      EM = 2,
-      TS = 3,
-      ET = 4,
-      NE = 5,
-      WP = 16,
-      AM = 18,
-      NW = 29,
-      CD = 30,
-      PG = 31;
+    PE = 0,
+    MP = 1,
+    EM = 2,
+    TS = 3,
+    ET = 4,
+    NE = 5,
+    WP = 16,
+    AM = 18,
+    NW = 29,
+    CD = 30,
+    PG = 31;
 });
 rw_simple!(cr2 {; });
 rw_simple!(cr3 { PWT = 3, PCD = 4; });
 rw_simple!(cr4 {
-      VME = 0,
-      PVI = 1,
-      TSD = 2,
-      DE = 3,
-      PSE = 4,
-      PAE = 5,
-      MCE = 6,
-      PGE = 7,
-      PCE = 8,
-      OSFXSR = 9,
-      OSXMMEXCPT = 10,
-      UMIP = 11,
-      LA57 = 12,
-      VMXE = 13,
-      SMXE = 14,
-      FSGSBASE = 16,
-      PCIDE = 17,
-      OSXSAVE = 18,
-      SMEP = 20,
-      SMAP = 21,
-      PKE = 22,
-      CET = 23,
-      PKS = 24;
+    VME = 0,
+    PVI = 1,
+    TSD = 2,
+    DE = 3,
+    PSE = 4,
+    PAE = 5,
+    MCE = 6,
+    PGE = 7,
+    PCE = 8,
+    OSFXSR = 9,
+    OSXMMEXCPT = 10,
+    UMIP = 11,
+    LA57 = 12,
+    VMXE = 13,
+    SMXE = 14,
+    FSGSBASE = 16,
+    PCIDE = 17,
+    OSXSAVE = 18,
+    SMEP = 20,
+    SMAP = 21,
+    PKE = 22,
+    CET = 23,
+    PKS = 24;
 });
 rw_simple!(cr8 {; });
 
@@ -95,32 +95,29 @@ rw_simple!(dr2 {; });
 rw_simple!(dr3 {; });
 
 rw_simple!(dr6 {
-      B0 = 0,
-      B1 = 1,
-      B2 = 2,
-      B3 = 3,
-      BD = 13,
-      BS = 14,
-      BT = 15,
-      RTM = 16;
+    B0 = 0,
+    B1 = 1,
+    B2 = 2,
+    B3 = 3,
+    BD = 13,
+    BS = 14,
+    BT = 15,
+    RTM = 16;
+    CLEAR: u64 = 0x0000_0000_FFFF_0FF0
 });
 
 rw_simple!(dr7 {
-      L0 = 0,
-      G0 = 1,
-      L1 = 2,
-      G1 = 3,
-      L2 = 4,
-      G2 = 5,
-      L3 = 6,
-      G3 = 7,
-      LE = 8,
-      GE = 9,
-      RTM = 11,
-      GD = 13;
-      RW: [u64; 4] = [3 << 16, 3 << 20, 3 << 24, 3 << 28],
-      LEN: [u64; 4] = [3 << 18, 3 << 22, 3 << 26, 3 << 30]
+    LE = 8,
+    GE = 9,
+    RTM = 11,
+    GD = 13;
+    L: [u64; 4] = [1 << 0, 1 << 2, 1 << 4, 1 << 6],
+    G: [u64; 4] = [1 << 1, 1 << 3, 1 << 5, 1 << 7],
+    RW: [u64; 4] = [3 << 16, 3 << 20, 3 << 24, 3 << 28],
+    LEN: [u64; 4] = [3 << 18, 3 << 22, 3 << 26, 3 << 30]
 });
+
+pub const NR_BREAKPOINT: usize = 4;
 
 pub mod rflags {
     use core::arch::asm;

@@ -1,12 +1,14 @@
 use alloc::{string::String, sync::Arc, vec::Vec};
-use core::time::Duration;
+use core::{hint, slice, time::Duration};
 
 use paging::LAddr;
+use scopeguard::defer;
 use solvent::*;
 
 use super::{RunningState, Signal, Tid, DEFAULT_STACK_SIZE};
 use crate::{
     cpu::time::Instant,
+    mem::space,
     sched::{wait::WaitObject, SCHED},
     syscall::{In, InOut, UserPtr},
 };
@@ -14,14 +16,13 @@ use crate::{
 #[derive(Debug)]
 struct SuspendToken {
     wo: Arc<WaitObject>,
-    time: Instant,
     tid: Tid,
 }
 
 impl SuspendToken {
     #[inline]
     pub fn signal(&self) -> Signal {
-        Signal::Suspend(Arc::clone(&self.wo), self.time)
+        Signal::Suspend(Arc::clone(&self.wo))
     }
 }
 
@@ -130,7 +131,6 @@ fn task_ctl(hdl: Handle, op: u32, data: UserPtr<InOut, Handle>) {
 
             let st = SuspendToken {
                 wo: Arc::new(WaitObject::new()),
-                time: Instant::now(),
                 tid: child.tid().clone(),
             };
 
@@ -151,6 +151,51 @@ fn task_ctl(hdl: Handle, op: u32, data: UserPtr<InOut, Handle>) {
                 Err(Error(ECHILD))
             }
         }
+        _ => Err(Error(EINVAL)),
+    }
+}
+
+#[syscall]
+fn task_debug(hdl: Handle, op: u32, addr: usize, data: UserPtr<InOut, u8>, len: usize) {
+    hdl.check_null()?;
+
+    if len < core::mem::size_of::<usize>() {
+        return Err(Error(EINVAL));
+    }
+    data.check_slice(len)?;
+
+    let wo = SCHED
+        .with_current(|cur| {
+            let handles = cur.tid.handles.read();
+            match handles.get::<SuspendToken>(hdl) {
+                Some(st) => Some(Arc::clone(&st.wo)),
+                None => None,
+            }
+        })
+        .ok_or(Error(ESRCH))?
+        .ok_or(Error(EINVAL))?;
+
+    let timer = loop {
+        match wo.wait_queue.steal() {
+            crate::sched::deque::Steal::Success(timer) => break timer,
+            _ => hint::spin_loop(),
+        }
+    };
+    let task = timer.callback_arg().cast::<super::Blocked>();
+    defer! { wo.wait_queue.push(timer); }
+
+    match op {
+        task::TASK_DBG_READ_MEM => unsafe {
+            space::with(&(*task).space, |_| {
+                let slice = slice::from_raw_parts(addr as *mut u8, len);
+                data.out().write_slice(slice)
+            })
+        },
+        task::TASK_DBG_WRITE_MEM => unsafe {
+            space::with(&(*task).space, |_| {
+                data.r#in().read_slice(addr as *mut u8, len)
+            })
+        },
         _ => Err(Error(EINVAL)),
     }
 }

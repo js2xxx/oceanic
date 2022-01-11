@@ -35,6 +35,14 @@ impl<T: Type, D> UserPtr<T, D> {
             mem::align_of::<D>(),
         )
     }
+
+    #[inline]
+    pub fn cast<U>(self) -> UserPtr<T, U> {
+        UserPtr {
+            data: self.data.cast(),
+            _marker: PhantomData,
+        }
+    }
 }
 
 impl<D> UserPtr<In, D> {
@@ -173,8 +181,9 @@ impl CheckedCopyRet {
     fn into_result(self) -> Result<()> {
         if self.errc != PageFaultErrCode::empty() || self.addr_p1 != 0 {
             log::warn!(
-                "Page fault at {:#x} during user pointer access",
-                self.addr_p1 - 1
+                "Page fault at {:#x} during user pointer access, error code: {:?}",
+                self.addr_p1 - 1,
+                self.errc
             );
             Err(solvent::Error(solvent::EPERM))
         } else {

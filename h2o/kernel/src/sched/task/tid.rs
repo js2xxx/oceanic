@@ -31,7 +31,7 @@ impl Tid {
 
     pub fn drop_child(&self, hdl: Handle) -> bool {
         let _pree = super::PREEMPT.lock();
-        self.handles().write().remove::<Child>(hdl).is_some()
+        self.handles().write().drop_shared::<Child>(hdl)
     }
 }
 
