@@ -164,4 +164,5 @@ pub mod rflags {
     pub const VIF: u64 = 1 << 19;
     pub const VIP: u64 = 1 << 20;
     pub const ID: u64 = 1 << 21;
+    pub const USER_ACCESS: u64 = CF | PF | AF | ZF | SF | TF | DF | OF | NT | AC | ID;
 }

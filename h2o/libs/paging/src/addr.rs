@@ -112,6 +112,13 @@ impl From<usize> for LAddr {
     }
 }
 
+impl From<u64> for LAddr {
+    #[inline]
+    fn from(val: u64) -> Self {
+        LAddr(val as *mut u8)
+    }
+}
+
 impl<T: ?Sized> From<NonNull<T>> for LAddr {
     #[inline]
     fn from(ptr: NonNull<T>) -> Self {

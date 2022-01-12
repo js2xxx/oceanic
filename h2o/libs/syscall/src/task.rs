@@ -1,3 +1,5 @@
+pub mod ctx;
+
 use crate::Handle;
 
 pub const DEFAULT_STACK_SIZE: usize = 256 * 1024;
@@ -13,6 +15,9 @@ pub const TASK_DBG_WRITE_REG: u32 = 2;
 pub const TASK_DBG_READ_MEM: u32 = 3;
 pub const TASK_DBG_WRITE_MEM: u32 = 4;
 pub const TASK_DBG_EXCEP_HDL: u32 = 5;
+
+pub const TASK_DBGADDR_GPR: usize = 0x1000;
+pub const TASK_DBGADDR_FPU: usize = 0x2000;
 
 #[derive(Debug)]
 #[repr(C)]
@@ -40,6 +45,8 @@ where
 pub fn test() {
     use core::arch::asm;
 
+    use crate::call::*;
+
     extern "C" fn func(_: crate::Handle, arg: u32) {
         match arg {
             0 => {
@@ -57,7 +64,7 @@ pub fn test() {
         exit(Ok(12345));
     }
     // Test the defence of invalid user pointer access.
-    let ret = crate::call::task_fn(0x100000000 as *const CreateInfo);
+    let ret = task_fn(0x100000000 as *const CreateInfo);
     assert_eq!(ret, Err(crate::Error(crate::EPERM)));
 
     let creator = |arg: u32| {
@@ -69,24 +76,24 @@ pub fn test() {
             func: func as *mut u8,
             arg: arg as *mut u8,
         };
-        crate::call::task_fn(&ci)
+        task_fn(&ci)
     };
     {
         let task = creator(100).expect("Failed to create task");
-        let ret = crate::call::task_join(task);
+        let ret = task_join(task);
         assert_eq!(ret, Ok(12345));
     }
     {
         let task = creator(0).expect("Failed to create task");
         let mut st = Handle::NULL;
 
-        crate::call::task_ctl(task, TASK_CTL_SUSPEND, &mut st).expect("Failed to suspend a task");
+        task_ctl(task, TASK_CTL_SUSPEND, &mut st).expect("Failed to suspend a task");
 
         {
-            let mut buf = [0u8; 10];
-            crate::call::task_debug(st, TASK_DBG_READ_MEM, 0x401000, buf.as_mut_ptr(), buf.len())
+            let mut buf = [0u8; ctx::GPR_SIZE];
+            task_debug(st, TASK_DBG_READ_MEM, 0x401000, buf.as_mut_ptr(), buf.len())
                 .expect("Failed to read memory");
-            let ret = crate::call::task_debug(
+            let ret = task_debug(
                 st,
                 TASK_DBG_WRITE_MEM,
                 0x401000,
@@ -94,20 +101,36 @@ pub fn test() {
                 buf.len(),
             );
             assert_eq!(ret, Err(crate::Error(crate::EPERM)));
+
+            task_debug(
+                st,
+                TASK_DBG_READ_REG,
+                TASK_DBGADDR_GPR,
+                buf.as_mut_ptr(),
+                buf.len(),
+            )
+            .expect("Failed to read general registers");
+            task_debug(
+                st,
+                TASK_DBG_WRITE_REG,
+                TASK_DBGADDR_GPR,
+                buf.as_mut_ptr(),
+                buf.len(),
+            )
+            .expect("Failed to write general registers");
         }
 
-        crate::call::task_sleep(50).expect("Failed to sleep");
-        crate::call::obj_drop(st).expect("Failed to resume the task");
+        task_sleep(50).expect("Failed to sleep");
+        obj_drop(st).expect("Failed to resume the task");
 
-        crate::call::task_ctl(task, TASK_CTL_KILL, core::ptr::null_mut())
-            .expect("Failed to kill a task");
+        task_ctl(task, TASK_CTL_KILL, core::ptr::null_mut()).expect("Failed to kill a task");
 
-        let ret = crate::call::task_join(task);
+        let ret = task_join(task);
         assert_eq!(ret, Err(crate::Error(crate::EKILLED)));
     }
     {
         let task = creator(1).expect("Failed to create task");
-        let ret = crate::call::task_join(task);
+        let ret = task_join(task);
         assert_eq!(ret, Err(crate::Error(crate::EFAULT)));
     }
 }

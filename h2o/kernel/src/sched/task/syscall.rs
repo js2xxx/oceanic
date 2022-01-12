@@ -162,10 +162,6 @@ fn task_ctl(hdl: Handle, op: u32, data: UserPtr<InOut, Handle>) {
 #[syscall]
 fn task_debug(hdl: Handle, op: u32, addr: usize, data: UserPtr<InOut, u8>, len: usize) {
     hdl.check_null()?;
-
-    if len < core::mem::size_of::<usize>() {
-        return Err(Error(EINVAL));
-    }
     data.check_slice(len)?;
 
     let slot = SCHED
@@ -178,7 +174,7 @@ fn task_debug(hdl: Handle, op: u32, addr: usize, data: UserPtr<InOut, u8>, len: 
         .ok_or(Error(ESRCH))?
         .ok_or(Error(EINVAL))?;
 
-    let task = loop {
+    let mut task = loop {
         match {
             let _pree = super::PREEMPT.lock();
             let ret = slot.lock().take();
@@ -190,6 +186,21 @@ fn task_debug(hdl: Handle, op: u32, addr: usize, data: UserPtr<InOut, u8>, len: 
     };
 
     let ret = match op {
+        task::TASK_DBG_READ_REG if addr == task::TASK_DBGADDR_GPR => {
+            if len < solvent::task::ctx::GPR_SIZE {
+                Err(Error(EBUFFER))
+            } else {
+                unsafe { task.kstack.task_frame().debug_get(data.out().cast()) }
+            }
+        }
+        task::TASK_DBG_WRITE_REG if addr == task::TASK_DBGADDR_GPR => {
+            if len < solvent::task::ctx::GPR_SIZE {
+                Err(Error(EBUFFER))
+            } else {
+                let gpr = unsafe { data.r#in().cast().read()? };
+                unsafe { task.kstack.task_frame_mut().debug_set(&gpr) }
+            }
+        }
         task::TASK_DBG_READ_MEM => unsafe {
             space::with(&task.space, |_| {
                 let slice = slice::from_raw_parts(addr as *mut u8, len);
