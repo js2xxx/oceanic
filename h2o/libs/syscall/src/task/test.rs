@@ -14,13 +14,14 @@ use crate::{call::*, task::excep::ExceptionResult};
 const PF_ADDR: usize = 0x1598_0000_0000;
 
 extern "C" fn func(_: crate::Handle, arg: u32) {
+    log::trace!("arg = {}", arg);
     match arg {
         0 => {
             let a = 19837476.238647f64;
             let b = a.recip();
             let c = b.recip();
             assert!((c - a) < 0.00001 && (a - c) < 0.00001);
-            for _ in 0..10000000 {
+            for _ in 0..1000000000 {
                 unsafe { asm!("pause") };
             }
         }
@@ -35,6 +36,8 @@ extern "C" fn func(_: crate::Handle, arg: u32) {
 }
 
 fn join(normal: Handle, fault: Handle) {
+    log::trace!("join: normal = {:?}, fault = {:?}", normal, fault);
+
     let ret = task_join(normal);
     assert_eq!(ret, Ok(12345));
 
@@ -43,10 +46,13 @@ fn join(normal: Handle, fault: Handle) {
 }
 
 fn sleep() {
+    log::trace!("sleep");
     task_sleep(50).expect("Failed to sleep");
 }
 
 fn debug_mem(st: Handle) {
+    log::trace!("debug_mem: st = {:?}", st);
+
     let mut buf = [0u8; 15];
     task_debug(st, TASK_DBG_READ_MEM, 0x401000, buf.as_mut_ptr(), buf.len())
         .expect("Failed to read memory");
@@ -61,6 +67,8 @@ fn debug_mem(st: Handle) {
 }
 
 fn debug_reg_gpr(st: Handle) {
+    log::trace!("debug_reg_gpr: st = {:?}", st);
+
     let mut buf = MaybeUninit::<Gpr>::uninit();
     task_debug(
         st,
@@ -81,6 +89,8 @@ fn debug_reg_gpr(st: Handle) {
 }
 
 fn debug_reg_fpu(st: Handle) {
+    log::trace!("debug_reg_fpu: st = {:?}", st);
+
     let mut buf = [0u8; 576];
     task_debug(
         st,
@@ -101,6 +111,7 @@ fn debug_reg_fpu(st: Handle) {
 }
 
 fn debug_excep(task: Handle, st: Handle) {
+    log::trace!("debug_reg_excep: task = {:?}, st = {:?}", task, st);
     let chan = {
         let mut chan = Handle::NULL;
         task_debug(
@@ -140,21 +151,23 @@ fn debug_excep(task: Handle, st: Handle) {
 }
 
 fn suspend(task: Handle) {
+    log::trace!("suspend: task = {:?}", task);
+
     let mut st = Handle::NULL;
 
     task_ctl(task, TASK_CTL_SUSPEND, &mut st).expect("Failed to suspend a task");
     sleep();
 
-    {
-        debug_mem(st);
-        debug_reg_gpr(st);
-        debug_reg_fpu(st);
-    }
+    debug_mem(st);
+    debug_reg_gpr(st);
+    debug_reg_fpu(st);
 
     obj_drop(st).expect("Failed to resume the task");
 }
 
 fn kill(task: Handle) {
+    log::trace!("kill: task = {:?}", task);
+
     task_ctl(task, TASK_CTL_KILL, null_mut()).expect("Failed to kill a task");
 
     let ret = task_join(task);
@@ -162,6 +175,7 @@ fn kill(task: Handle) {
 }
 
 fn ctl(task: Handle) {
+    log::trace!("ctl: task = {:?}", task);
     suspend(task);
     sleep();
     kill(task);
