@@ -1,11 +1,11 @@
 use alloc::sync::Arc;
 
-use crate::sched::wait::WaitObject;
+use spin::Mutex;
 
 #[derive(Debug, Clone)]
 pub enum Signal {
     Kill,
-    Suspend(Arc<WaitObject>),
+    Suspend(Arc<Mutex<Option<super::Blocked>>>),
 }
 
 impl PartialEq for Signal {

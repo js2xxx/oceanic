@@ -232,11 +232,13 @@ impl Scheduler {
                 });
                 unreachable!("Dead task");
             }
-            Some(task::sig::Signal::Suspend(wo)) => {
+            Some(task::sig::Signal::Suspend(slot)) => {
                 drop(ti);
 
                 log::trace!("Suspending task {:?}, P{}", cur.tid().raw(), PREEMPT.raw());
-                self.block_current(pree, Some(&wo), Duration::MAX, "task_ctl_suspend");
+                self.schedule_impl(cur_time, pree, None, |task| {
+                    *slot.lock() = Some(task::Ready::block(task, "task_ctl_suspend"));
+                });
 
                 None
             }

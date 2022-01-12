@@ -88,6 +88,8 @@ macro_rules! hdl {
             #[no_mangle]
             unsafe extern "C" fn [<hdl_ $name>]($frame_arg: *mut Frame) {
                 { $body };
+                #[allow(unreachable_code)]
+                archop::pause_intr();
             }
         }
     };

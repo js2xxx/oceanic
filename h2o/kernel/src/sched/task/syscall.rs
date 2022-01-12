@@ -2,38 +2,42 @@ use alloc::{string::String, sync::Arc, vec::Vec};
 use core::{hint, slice, time::Duration};
 
 use paging::LAddr;
-use scopeguard::defer;
 use solvent::*;
+use spin::Mutex;
 
 use super::{RunningState, Signal, Tid, DEFAULT_STACK_SIZE};
 use crate::{
     cpu::time::Instant,
     mem::space,
-    sched::{wait::WaitObject, SCHED},
+    sched::{PREEMPT, SCHED},
     syscall::{In, InOut, UserPtr},
 };
 
 #[derive(Debug)]
 struct SuspendToken {
-    wo: Arc<WaitObject>,
+    slot: Arc<Mutex<Option<super::Blocked>>>,
     tid: Tid,
 }
 
 impl SuspendToken {
     #[inline]
     pub fn signal(&self) -> Signal {
-        Signal::Suspend(Arc::clone(&self.wo))
+        Signal::Suspend(Arc::clone(&self.slot))
     }
 }
 
 impl Drop for SuspendToken {
     fn drop(&mut self) {
-        if self.wo.notify(1) == 0 {
-            self.tid.update_signal(|sig| {
+        match {
+            let _pree = super::PREEMPT.lock();
+            self.slot.lock().take()
+        } {
+            Some(task) => SCHED.unblock(task),
+            None => self.tid.update_signal(|sig| {
                 if matches!(sig, Some(sig) if sig == &mut self.signal()) {
                     *sig = None;
                 }
-            })
+            }),
         }
     }
 }
@@ -130,7 +134,7 @@ fn task_ctl(hdl: Handle, op: u32, data: UserPtr<InOut, Handle>) {
             let child = cur_tid.child(hdl).ok_or(Error(ECHILD))?;
 
             let st = SuspendToken {
-                wo: Arc::new(WaitObject::new()),
+                slot: Arc::new(Mutex::new(None)),
                 tid: child.tid().clone(),
             };
 
@@ -164,38 +168,45 @@ fn task_debug(hdl: Handle, op: u32, addr: usize, data: UserPtr<InOut, u8>, len: 
     }
     data.check_slice(len)?;
 
-    let wo = SCHED
+    let slot = SCHED
         .with_current(|cur| {
             let handles = cur.tid.handles.read();
-            match handles.get::<SuspendToken>(hdl) {
-                Some(st) => Some(Arc::clone(&st.wo)),
-                None => None,
-            }
+            handles
+                .get::<SuspendToken>(hdl)
+                .map(|st| Arc::clone(&st.slot))
         })
         .ok_or(Error(ESRCH))?
         .ok_or(Error(EINVAL))?;
 
-    let timer = loop {
-        match wo.wait_queue.steal() {
-            crate::sched::deque::Steal::Success(timer) => break timer,
+    let task = loop {
+        match {
+            let _pree = super::PREEMPT.lock();
+            let ret = slot.lock().take();
+            ret
+        } {
+            Some(task) => break task,
             _ => hint::spin_loop(),
         }
     };
-    let task = timer.callback_arg().cast::<super::Blocked>();
-    defer! { wo.wait_queue.push(timer); }
 
-    match op {
+    let ret = match op {
         task::TASK_DBG_READ_MEM => unsafe {
-            space::with(&(*task).space, |_| {
+            space::with(&task.space, |_| {
                 let slice = slice::from_raw_parts(addr as *mut u8, len);
                 data.out().write_slice(slice)
             })
         },
         task::TASK_DBG_WRITE_MEM => unsafe {
-            space::with(&(*task).space, |_| {
+            space::with(&task.space, |_| {
                 data.r#in().read_slice(addr as *mut u8, len)
             })
         },
         _ => Err(Error(EINVAL)),
+    };
+
+    {
+        let _pree = PREEMPT.lock();
+        *slot.lock() = Some(task);
     }
+    ret
 }
