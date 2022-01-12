@@ -1,6 +1,7 @@
 pub mod child;
 pub mod ctx;
 mod elf;
+mod excep;
 mod hdl;
 pub mod idle;
 pub mod prio;
@@ -18,7 +19,9 @@ use spin::{Lazy, Mutex, RwLock};
 #[cfg(target_arch = "x86_64")]
 pub use self::ctx::arch::{DEFAULT_STACK_LAYOUT, DEFAULT_STACK_SIZE};
 use self::{child::Child, sig::Signal};
-pub use self::{elf::from_elf, hdl::HandleMap, prio::Priority, tid::Tid};
+pub use self::{
+    elf::from_elf, excep::dispatch_exception, hdl::HandleMap, prio::Priority, tid::Tid,
+};
 use super::{ipc::Channel, PREEMPT};
 use crate::{
     cpu::{time::Instant, CpuLocalLazy, CpuMask},
@@ -374,6 +377,25 @@ impl Blocked {
             }
             _ => Err(Error(EINVAL)),
         }
+    }
+
+    pub fn create_excep_chan(&mut self) -> solvent::Result<Channel> {
+        use solvent::*;
+        let slot = unsafe { &*self.tid.from.get() }
+            .as_ref()
+            .and_then(|from| from.1.as_ref())
+            .map(|child| child.excep_chan())
+            .ok_or(Error(EPERM))?;
+
+        let chan = match slot.lock() {
+            mut g if g.is_none() => {
+                let (usr, krl) = Channel::new();
+                *g = Some(krl);
+                usr
+            }
+            _ => return Err(Error(EEXIST)),
+        };
+        Ok(chan)
     }
 }
 

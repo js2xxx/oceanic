@@ -126,7 +126,8 @@ pub fn test() {
                 arg: ptr::null_mut(),
             };
 
-            crate::call::task_fn(&ci).expect("Failed to create task other")
+            crate::call::task_fn(&ci, crate::task::CreateFlags::empty(), ptr::null_mut())
+                .expect("Failed to create task other")
         };
         crate::call::task_ctl(other, crate::task::TASK_CTL_DETACH, ptr::null_mut())
             .expect("Failed to detach the task");

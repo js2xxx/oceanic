@@ -13,7 +13,13 @@ syscall_stub!(0 => pub(crate) fn get_time(ptr: *mut u128));
 syscall_stub!(1 => pub(crate) fn log(args: *const ::log::Record));
 
 syscall_stub!(2 => pub(crate) fn task_exit(retval: usize));
-syscall_stub!(3 => pub(crate) fn task_fn(ci: *const crate::task::CreateInfo) -> Handle);
+syscall_stub!(3 => 
+    pub(crate) fn task_fn(
+        ci: *const crate::task::CreateInfo,
+        cf: crate::task::CreateFlags,
+        extra: *mut Handle
+    ) -> Handle
+);
 syscall_stub!(5 => pub(crate) fn task_join(hdl: Handle) -> usize);
 syscall_stub!(6 => pub(crate) fn task_ctl(hdl: Handle, op: u32, data: *mut Handle));
 syscall_stub!(7 =>

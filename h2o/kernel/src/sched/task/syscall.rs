@@ -9,8 +9,8 @@ use super::{RunningState, Signal, Tid, DEFAULT_STACK_SIZE};
 use crate::{
     cpu::time::Instant,
     mem::space,
-    sched::{PREEMPT, SCHED},
-    syscall::{In, InOut, UserPtr},
+    sched::{sched::MIN_TIME_GRAN, PREEMPT, SCHED},
+    syscall::{In, InOut, Out, UserPtr},
 };
 
 #[derive(Debug)]
@@ -56,8 +56,15 @@ fn task_sleep(ms: u32) {
 }
 
 #[syscall]
-fn task_fn(ci: UserPtr<In, task::CreateInfo>) -> u32 {
+fn task_fn(
+    ci: UserPtr<In, task::CreateInfo>,
+    cf: task::CreateFlags,
+    extra: UserPtr<Out, Handle>,
+) -> Handle {
     let ci = unsafe { ci.read()? };
+    if cf.contains(task::CreateFlags::SUSPEND_ON_START) {
+        extra.check()?;
+    }
 
     let name = {
         let ptr = UserPtr::<In, _>::new(ci.name);
@@ -90,7 +97,24 @@ fn task_fn(ci: UserPtr<In, task::CreateInfo>) -> u32 {
 
     let (task, hdl) = super::create_fn(name, stack_size, init_chan, LAddr::new(ci.func), ci.arg)
         .map_err(Into::into)?;
-    SCHED.push(task);
+
+    if cf.contains(task::CreateFlags::SUSPEND_ON_START) {
+        let task = super::Ready::block(
+            super::Ready::from_init(task, unsafe { crate::cpu::id() }, MIN_TIME_GRAN),
+            "task_ctl_suspend",
+        );
+        let tid = task.tid.clone();
+        let st = SuspendToken {
+            slot: Arc::new(Mutex::new(Some(task))),
+            tid,
+        };
+        let st = SCHED
+            .with_current(|cur| cur.tid.handles.write().insert(st))
+            .unwrap();
+        unsafe { extra.write(st) }?;
+    } else {
+        SCHED.push(task);
+    }
 
     Ok(hdl)
 }
@@ -189,6 +213,19 @@ fn task_debug(hdl: Handle, op: u32, addr: usize, data: UserPtr<InOut, u8>, len: 
                 data.r#in().read_slice(addr as *mut u8, len)
             })
         },
+        task::TASK_DBG_EXCEP_HDL => {
+            if len < core::mem::size_of::<Handle>() {
+                Err(Error(EBUFFER))
+            } else {
+                let hdl = SCHED
+                    .with_current(|cur| {
+                        task.create_excep_chan()
+                            .map(|chan| cur.tid.handles.write().insert(chan))
+                    })
+                    .unwrap()?;
+                unsafe { data.out().cast().write(hdl) }
+            }
+        }
         _ => Err(Error(EINVAL)),
     };
 
