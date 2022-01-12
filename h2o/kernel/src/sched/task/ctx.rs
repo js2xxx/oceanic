@@ -175,6 +175,22 @@ impl ExtendedFrame {
     }
 }
 
+impl Deref for ExtendedFrame {
+    type Target = [u8];
+
+    #[inline]
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for ExtendedFrame {
+    #[inline]
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
 pub unsafe fn switch_ctx(old: Option<*mut *mut u8>, new: *mut u8) {
     arch::switch_kframe(old.unwrap_or(ptr::null_mut()), new);
     arch::switch_finishing();

@@ -41,6 +41,14 @@ pub unsafe fn init() {
     Lazy::force(&FPU_TYPE);
 }
 
+pub fn frame_size() -> usize {
+    match *FPU_TYPE {
+        FpuType::Fn => 160,
+        FpuType::Fx => 512,
+        FpuType::X(_, _) => 576,
+    }
+}
+
 /// Save the current state of the x87 FPU into the pointer buffer.
 ///
 /// # Safety

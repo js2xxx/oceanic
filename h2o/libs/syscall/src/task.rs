@@ -50,6 +50,10 @@ pub fn test() {
     extern "C" fn func(_: crate::Handle, arg: u32) {
         match arg {
             0 => {
+                let a = 19837476.238647f64;
+                let b = a.recip();
+                let c = b.recip();
+                assert!((c - a) < 0.00001 && (a - c) < 0.00001);
                 for _ in 0..10000000 {
                     unsafe { asm!("pause") };
                 }
@@ -61,7 +65,7 @@ pub fn test() {
             },
             _ => {}
         }
-        exit(Ok(12345));
+        exit(Ok(12345i32));
     }
     // Test the defence of invalid user pointer access.
     let ret = task_fn(0x100000000 as *const CreateInfo);
@@ -89,8 +93,9 @@ pub fn test() {
 
         task_ctl(task, TASK_CTL_SUSPEND, &mut st).expect("Failed to suspend a task");
 
+        task_sleep(50).expect("Failed to sleep");
         {
-            let mut buf = [0u8; ctx::GPR_SIZE];
+            let mut buf = [0u8; 576];
             task_debug(st, TASK_DBG_READ_MEM, 0x401000, buf.as_mut_ptr(), buf.len())
                 .expect("Failed to read memory");
             let ret = task_debug(
@@ -118,11 +123,28 @@ pub fn test() {
                 buf.len(),
             )
             .expect("Failed to write general registers");
+
+            task_debug(
+                st,
+                TASK_DBG_READ_REG,
+                TASK_DBGADDR_FPU,
+                buf.as_mut_ptr(),
+                buf.len(),
+            )
+            .expect("Failed to read FPU registers");
+            task_debug(
+                st,
+                TASK_DBG_WRITE_REG,
+                TASK_DBGADDR_FPU,
+                buf.as_mut_ptr(),
+                buf.len(),
+            )
+            .expect("Failed to write FPU registers");
         }
 
-        task_sleep(50).expect("Failed to sleep");
         obj_drop(st).expect("Failed to resume the task");
 
+        task_sleep(50).expect("Failed to sleep");
         task_ctl(task, TASK_CTL_KILL, core::ptr::null_mut()).expect("Failed to kill a task");
 
         let ret = task_join(task);

@@ -22,7 +22,7 @@ pub const DEFAULT_STACK_SIZE: usize = 64 * paging::PAGE_SIZE;
 pub const DEFAULT_STACK_LAYOUT: Layout =
     unsafe { Layout::from_size_align_unchecked(DEFAULT_STACK_SIZE, paging::PAGE_SIZE) };
 
-pub const EXTENDED_FRAME_SIZE: usize = 768;
+pub const EXTENDED_FRAME_SIZE: usize = 576;
 
 #[derive(Debug, Default)]
 #[repr(C)]

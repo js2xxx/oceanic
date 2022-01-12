@@ -186,21 +186,8 @@ fn task_debug(hdl: Handle, op: u32, addr: usize, data: UserPtr<InOut, u8>, len: 
     };
 
     let ret = match op {
-        task::TASK_DBG_READ_REG if addr == task::TASK_DBGADDR_GPR => {
-            if len < solvent::task::ctx::GPR_SIZE {
-                Err(Error(EBUFFER))
-            } else {
-                unsafe { task.kstack.task_frame().debug_get(data.out().cast()) }
-            }
-        }
-        task::TASK_DBG_WRITE_REG if addr == task::TASK_DBGADDR_GPR => {
-            if len < solvent::task::ctx::GPR_SIZE {
-                Err(Error(EBUFFER))
-            } else {
-                let gpr = unsafe { data.r#in().cast().read()? };
-                unsafe { task.kstack.task_frame_mut().debug_set(&gpr) }
-            }
-        }
+        task::TASK_DBG_READ_REG => task.read_regs(addr, data.out(), len),
+        task::TASK_DBG_WRITE_REG => task.write_regs(addr, data.r#in(), len),
         task::TASK_DBG_READ_MEM => unsafe {
             space::with(&task.space, |_| {
                 let slice = slice::from_raw_parts(addr as *mut u8, len);

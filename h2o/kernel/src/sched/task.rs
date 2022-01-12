@@ -23,6 +23,7 @@ use super::{ipc::Channel, PREEMPT};
 use crate::{
     cpu::{time::Instant, CpuLocalLazy, CpuMask},
     mem::space::{Space, SpaceError},
+    syscall::{In, Out, UserPtr},
 };
 
 static ROOT: Lazy<Tid> = Lazy::new(|| {
@@ -318,6 +319,62 @@ impl Blocked {
     pub fn tid(&self) -> &Tid {
         &self.tid
     }
+
+    pub fn read_regs(
+        &self,
+        addr: usize,
+        data: UserPtr<Out, u8>,
+        len: usize,
+    ) -> solvent::Result<()> {
+        use solvent::{Error, EBUFFER, EINVAL};
+        match addr {
+            solvent::task::TASK_DBGADDR_GPR => {
+                if len < solvent::task::ctx::GPR_SIZE {
+                    Err(Error(EBUFFER))
+                } else {
+                    unsafe { self.kstack.task_frame().debug_get(data.cast()) }
+                }
+            }
+            solvent::task::TASK_DBGADDR_FPU => {
+                let size = archop::fpu::frame_size();
+                if len < size {
+                    Err(Error(EBUFFER))
+                } else {
+                    unsafe { data.write_slice(&self.ext_frame[..size]) }
+                }
+            }
+            _ => Err(Error(EINVAL)),
+        }
+    }
+
+    pub fn write_regs(
+        &mut self,
+        addr: usize,
+        data: UserPtr<In, u8>,
+        len: usize,
+    ) -> solvent::Result<()> {
+        use solvent::{Error, EBUFFER, EINVAL};
+        match addr {
+            solvent::task::TASK_DBGADDR_GPR => {
+                if len < solvent::task::ctx::GPR_SIZE {
+                    Err(Error(EBUFFER))
+                } else {
+                    let gpr = unsafe { data.cast().read()? };
+                    unsafe { self.kstack.task_frame_mut().debug_set(&gpr) }
+                }
+            }
+            solvent::task::TASK_DBGADDR_FPU => {
+                let size = archop::fpu::frame_size();
+                if len < size {
+                    Err(Error(EBUFFER))
+                } else {
+                    let ptr = self.ext_frame.as_mut_ptr();
+                    unsafe { data.read_slice(ptr, size) }
+                }
+            }
+            _ => Err(Error(EINVAL)),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -399,7 +456,10 @@ where
         let (ret_wo, child) = {
             let child = Child::new(tid.clone());
             let _pree = PREEMPT.lock();
-            (cur_tid.handles().write().insert_shared(child.clone()), child)
+            (
+                cur_tid.handles().write().insert_shared(child.clone()),
+                child,
+            )
         };
 
         unsafe { tid.from.get().write(Some((cur_tid, Some(child)))) };
