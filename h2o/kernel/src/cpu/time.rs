@@ -14,8 +14,7 @@ pub struct Instant(solvent::time::Instant);
 
 impl Instant {
     pub fn now() -> Self {
-        let _pree = crate::sched::PREEMPT.lock();
-        chip::CLOCK.get()
+        crate::sched::PREEMPT.scope(|| chip::CLOCK.get())
     }
 
     pub fn elapsed(&self) -> Duration {

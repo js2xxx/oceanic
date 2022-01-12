@@ -141,12 +141,12 @@ impl TaskInfo {
         }
     }
 
+    #[inline]
     pub fn update_signal<F, R>(&self, func: F) -> R
     where
         F: FnOnce(&mut Option<Signal>) -> R,
     {
-        let _pree = super::PREEMPT.lock();
-        func(&mut *self.signal.lock())
+        super::PREEMPT.scope(|| func(&mut *self.signal.lock()))
     }
 }
 
@@ -455,11 +455,12 @@ where
 
         let (ret_wo, child) = {
             let child = Child::new(tid.clone());
-            let _pree = PREEMPT.lock();
-            (
-                cur_tid.handles().write().insert_shared(child.clone()),
-                child,
-            )
+            PREEMPT.scope(|| {
+                (
+                    cur_tid.handles().write().insert_shared(child.clone()),
+                    child,
+                )
+            })
         };
 
         unsafe { tid.from.get().write(Some((cur_tid, Some(child)))) };

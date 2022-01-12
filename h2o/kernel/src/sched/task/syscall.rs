@@ -28,10 +28,7 @@ impl SuspendToken {
 
 impl Drop for SuspendToken {
     fn drop(&mut self) {
-        match {
-            let _pree = super::PREEMPT.lock();
-            self.slot.lock().take()
-        } {
+        match super::PREEMPT.scope(|| self.slot.lock().take()) {
             Some(task) => SCHED.unblock(task),
             None => self.tid.update_signal(|sig| {
                 if matches!(sig, Some(sig) if sig == &mut self.signal()) {
@@ -91,11 +88,11 @@ fn task_fn(ci: UserPtr<In, task::CreateInfo>) -> u32 {
 
     UserPtr::<In, _>::new(ci.func).check()?;
 
-    let (task, ret_wo) = super::create_fn(name, stack_size, init_chan, LAddr::new(ci.func), ci.arg)
+    let (task, hdl) = super::create_fn(name, stack_size, init_chan, LAddr::new(ci.func), ci.arg)
         .map_err(Into::into)?;
     SCHED.push(task);
 
-    Ok(ret_wo.raw())
+    Ok(hdl)
 }
 
 #[syscall]
@@ -140,10 +137,7 @@ fn task_ctl(hdl: Handle, op: u32, data: UserPtr<InOut, Handle>) {
 
             st.tid.replace_signal(Some(st.signal()));
 
-            let out = {
-                let _pree = super::PREEMPT.lock();
-                cur_tid.handles().write().insert(st)
-            };
+            let out = super::PREEMPT.scope(|| cur_tid.handles().write().insert(st));
             unsafe { data.out().write(out) }.unwrap();
 
             Ok(())
@@ -175,11 +169,7 @@ fn task_debug(hdl: Handle, op: u32, addr: usize, data: UserPtr<InOut, u8>, len: 
         .ok_or(Error(EINVAL))?;
 
     let mut task = loop {
-        match {
-            let _pree = super::PREEMPT.lock();
-            let ret = slot.lock().take();
-            ret
-        } {
+        match super::PREEMPT.scope(|| slot.lock().take()) {
             Some(task) => break task,
             _ => hint::spin_loop(),
         }
@@ -202,9 +192,6 @@ fn task_debug(hdl: Handle, op: u32, addr: usize, data: UserPtr<InOut, u8>, len: 
         _ => Err(Error(EINVAL)),
     };
 
-    {
-        let _pree = PREEMPT.lock();
-        *slot.lock() = Some(task);
-    }
+    PREEMPT.scope(|| *slot.lock() = Some(task));
     ret
 }

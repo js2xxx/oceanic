@@ -42,6 +42,15 @@ impl PreemptState {
         PreemptStateGuard(flags, &self.0)
     }
 
+    #[inline]
+    pub fn scope<F, R>(&self, func: F) -> R
+    where
+        F: FnOnce() -> R,
+    {
+        let _pree = self.lock();
+        func()
+    }
+
     pub fn is_locked(&self) -> bool {
         self.0.load(Acquire) > 0
     }

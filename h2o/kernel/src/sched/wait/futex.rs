@@ -108,9 +108,7 @@ mod syscall {
             .ok_or(Error(ESRCH))
             .flatten()?;
 
-        let _pree = PREEMPT.lock();
-        let futex = Futex::get_or_insert(addr);
-        futex.wake(num)
+        PREEMPT.scope(|| Futex::get_or_insert(addr).wake(num))
     }
 
     #[syscall]

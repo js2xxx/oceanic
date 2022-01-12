@@ -1,7 +1,7 @@
 use core::{fmt::Debug, ops::Range};
 
 pub const ERRC_RANGE: Range<i32> = 1..35;
-pub const CUSTOM_RANGE: Range<i32> = 1000..1005;
+pub const CUSTOM_RANGE: Range<i32> = 1001..1005;
 
 pub type Result<T> = core::result::Result<T, Error>;
 
@@ -102,13 +102,14 @@ pub const EMLINK: i32 = 31;
 pub const EPIPE: i32 = 32;
 /// Math argument out of domain of func
 pub const EDOM: i32 = 33;
-/// Math result not representable
+/// Range not available
 pub const ERANGE: i32 = 34;
 
 pub const CUSTOM_OFFSET: i32 = CUSTOM_RANGE.start;
 pub const EKILLED: i32 = 1001;
 pub const EBUFFER: i32 = 1002;
 pub const ETIME: i32 = 1003;
+pub const EALIGN: i32 = 1004;
 
 const ERRC_DESC: &[&str] = &[
     "OK",
@@ -145,7 +146,12 @@ const ERRC_DESC: &[&str] = &[
     "Too many links",
     "Broken pipe",
     "Math argument out of domain of func",
-    "Math result not representable",
+    "Range not available",
 ];
 
-const CUSTOM_DESC: &[&str] = &["Task already killed", "Buffer range exceeded", "Timed out"];
+const CUSTOM_DESC: &[&str] = &[
+    "Task already killed",
+    "Buffer range exceeded",
+    "Timed out",
+    "Pointer unaligned",
+];

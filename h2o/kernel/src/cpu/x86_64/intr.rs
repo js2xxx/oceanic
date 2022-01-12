@@ -4,6 +4,7 @@ pub(super) mod def;
 use ::alloc::sync::{Arc, Weak};
 use spin::Mutex;
 
+pub use self::def::ExVec;
 use self::def::NR_VECTORS;
 use crate::{
     cpu::{

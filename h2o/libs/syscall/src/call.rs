@@ -16,12 +16,12 @@ syscall_stub!(2 => pub(crate) fn task_exit(retval: usize));
 syscall_stub!(3 => pub(crate) fn task_fn(ci: *const crate::task::CreateInfo) -> Handle);
 syscall_stub!(5 => pub(crate) fn task_join(hdl: Handle) -> usize);
 syscall_stub!(6 => pub(crate) fn task_ctl(hdl: Handle, op: u32, data: *mut Handle));
-syscall_stub!(7 => 
+syscall_stub!(7 =>
     pub(crate) fn task_debug(
-        hdl: Handle, 
-        op: u32, 
-        addr: usize, 
-        data: *mut u8, 
+        hdl: Handle,
+        op: u32,
+        addr: usize,
+        data: *mut u8,
         len: usize
     )
 );

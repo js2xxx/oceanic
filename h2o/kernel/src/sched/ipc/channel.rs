@@ -31,6 +31,11 @@ impl Packet {
     }
 
     #[inline]
+    pub fn buffer_mut(&mut self) -> &mut Bytes {
+        &mut self.buffer
+    }
+
+    #[inline]
     pub fn object_count(&self) -> usize {
         self.objects.len()
     }
@@ -41,6 +46,7 @@ impl Packet {
     }
 }
 
+#[derive(Debug)]
 pub struct Channel {
     peer_id: u64,
     me: Arc<WaitQueue<Packet>>,
