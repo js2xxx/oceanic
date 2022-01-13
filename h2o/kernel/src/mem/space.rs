@@ -131,12 +131,12 @@ impl Space {
         flags: Flags,
     ) -> Result<Virt, SpaceError> {
         self.canary.assert();
-        let _pree = PREEMPT.lock();
 
-        let ret = self
-            .allocator
-            .allocate(ty.clone(), &mut phys, flags, &self.arch);
-        ret.map(|ptr| Virt::new(self.ty, ptr, phys.unwrap(), Arc::clone(self)))
+        PREEMPT.scope(|| {
+            self.allocator
+                .allocate(ty.clone(), &mut phys, flags, &self.arch)
+                .map(|ptr| Virt::new(self.ty, ptr, phys.unwrap(), Arc::clone(self)))
+        })
     }
 
     /// Allocate an address range in the kernel space.
@@ -173,9 +173,8 @@ impl Space {
     /// influenced by the modification).
     pub unsafe fn modify(&self, ptr: NonNull<[u8]>, flags: Flags) -> Result<(), SpaceError> {
         self.canary.assert();
-        let _pree = PREEMPT.lock();
 
-        self.allocator.modify(ptr, flags, &self.arch)
+        PREEMPT.scope(|| self.allocator.modify(ptr, flags, &self.arch))
     }
 
     /// Deallocate an address range in the space without a specific type.
@@ -185,9 +184,8 @@ impl Space {
     /// The caller must ensure that `ptr` was allocated by this `Space`.
     pub unsafe fn deallocate(&self, ptr: NonNull<u8>) -> Result<Arc<Phys>, SpaceError> {
         self.canary.assert();
-        let _pree = PREEMPT.lock();
 
-        self.allocator.deallocate(ptr, &self.arch)
+        PREEMPT.scope(|| self.allocator.deallocate(ptr, &self.arch))
     }
 
     /// # Safety
@@ -254,16 +252,17 @@ impl Space {
     }
 
     pub fn dealloc_tls(&self) {
-        let _pree = PREEMPT.lock();
-        if let Some(layout) = self.tls.lock().take() {
-            let base = LAddr::from(minfo::USER_TLS_BASE);
-            let virt = base..LAddr::from(base.val() + layout.size());
+        PREEMPT.scope(|| {
+            if let Some(layout) = self.tls.lock().take() {
+                let base = LAddr::from(minfo::USER_TLS_BASE);
+                let virt = base..LAddr::from(base.val() + layout.size());
 
-            if let Ok(Some(phys)) = self.arch.unmaps(virt) {
-                let alloc_ptr = *phys.to_laddr(minfo::ID_OFFSET);
-                unsafe { mem_dealloc(alloc_ptr, layout) };
+                if let Ok(Some(phys)) = self.arch.unmaps(virt) {
+                    let alloc_ptr = *phys.to_laddr(minfo::ID_OFFSET);
+                    unsafe { mem_dealloc(alloc_ptr, layout) };
+                }
             }
-        }
+        })
     }
 
     fn alloc_stack(
@@ -323,64 +322,67 @@ impl Space {
 
     pub fn init_stack(&self, size: usize) -> Result<LAddr, SpaceError> {
         self.canary.assert();
-        let _pree = PREEMPT.lock();
         // if matches!(self.ty, task::Type::Kernel) {
         //       return Err("Stack allocation is not allowed in kernel");
         // }
 
         let size = size.round_up_bit(paging::PAGE_SHIFT);
 
-        let base = Self::alloc_stack(
-            self.ty,
-            &self.arch,
-            &mut self.stack_blocks.lock(),
-            LAddr::from(minfo::USER_END - size),
-            size,
-        )?;
+        let base = PREEMPT.scope(|| {
+            Self::alloc_stack(
+                self.ty,
+                &self.arch,
+                &mut self.stack_blocks.lock(),
+                LAddr::from(minfo::USER_END - size),
+                size,
+            )
+        })?;
 
         Ok(LAddr::from(base.val() + size))
     }
 
     pub fn grow_stack(&self, addr: LAddr) -> Result<(), SpaceError> {
         self.canary.assert();
-        let _pree = PREEMPT.lock();
         if matches!(self.ty, task::Type::Kernel) {
             return Err(SpaceError::Permission);
         }
 
-        let addr = LAddr::from(addr.val().round_down_bit(paging::PAGE_SHIFT));
+        PREEMPT.scope(|| {
+            let addr = LAddr::from(addr.val().round_down_bit(paging::PAGE_SHIFT));
 
-        let mut stack_blocks = self.stack_blocks.lock();
+            let mut stack_blocks = self.stack_blocks.lock();
 
-        let last = stack_blocks
-            .iter()
-            .next()
-            .map_or(LAddr::from(minfo::USER_END), |(&k, _v)| k);
+            let last = stack_blocks
+                .iter()
+                .next()
+                .map_or(LAddr::from(minfo::USER_END), |(&k, _v)| k);
 
-        let size = unsafe { last.offset_from(*addr) } as usize;
+            let size = unsafe { last.offset_from(*addr) } as usize;
 
-        Self::alloc_stack(self.ty, &self.arch, &mut stack_blocks, addr, size)?;
+            Self::alloc_stack(self.ty, &self.arch, &mut stack_blocks, addr, size)
+        })?;
 
         Ok(())
     }
 
     pub fn clear_stack(&self) -> Result<(), SpaceError> {
         self.canary.assert();
-        let _pree = PREEMPT.lock();
 
-        let mut stack_blocks = self.stack_blocks.lock();
-        while let Some((base, layout)) = stack_blocks.pop_first() {
-            match self.ty {
-                task::Type::Kernel => unsafe { mem_dealloc(*base, layout) },
-                task::Type::User => {
-                    let virt = base..LAddr::from(base.val() + layout.pad_to_align().size());
-                    if let Ok(Some(phys)) = self.arch.unmaps(virt) {
-                        let ptr = phys.to_laddr(minfo::ID_OFFSET);
-                        unsafe { mem_dealloc(*ptr, layout) };
+        PREEMPT.scope(|| {
+            let mut stack_blocks = self.stack_blocks.lock();
+            while let Some((base, layout)) = stack_blocks.pop_first() {
+                match self.ty {
+                    task::Type::Kernel => unsafe { mem_dealloc(*base, layout) },
+                    task::Type::User => {
+                        let virt = base..LAddr::from(base.val() + layout.pad_to_align().size());
+                        if let Ok(Some(phys)) = self.arch.unmaps(virt) {
+                            let ptr = phys.to_laddr(minfo::ID_OFFSET);
+                            unsafe { mem_dealloc(*ptr, layout) };
+                        }
                     }
                 }
             }
-        }
+        });
         Ok(())
     }
 
@@ -390,25 +392,27 @@ impl Space {
             task::Type::User => task::Type::User,
         };
 
-        let _pree = PREEMPT.lock();
-        Arc::new(Space {
-            canary: Canary::new(),
-            ty,
-            arch: ArchSpace::clone(&this.arch),
-            allocator: Arc::clone(&this.allocator),
-            // TODO: Add an image field to `TaskInfo` to get TLS init block.
-            tls: Mutex::new(None),
-            stack_blocks: Mutex::new(BTreeMap::new()),
+        PREEMPT.scope(|| {
+            Arc::new(Space {
+                canary: Canary::new(),
+                ty,
+                arch: ArchSpace::clone(&this.arch),
+                allocator: Arc::clone(&this.allocator),
+                // TODO: Add an image field to `TaskInfo` to get TLS init block.
+                tls: Mutex::new(None),
+                stack_blocks: Mutex::new(BTreeMap::new()),
+            })
         })
     }
 }
 
 impl Drop for Space {
     fn drop(&mut self) {
-        let _pree = PREEMPT.lock();
-        let _ = self.clear_stack();
-        self.dealloc_tls();
-        unsafe { self.allocator.dispose(&self.arch) };
+        PREEMPT.scope(|| {
+            let _ = self.clear_stack();
+            self.dealloc_tls();
+            unsafe { self.allocator.dispose(&self.arch) };
+        })
     }
 }
 
@@ -443,13 +447,26 @@ where
     func(cur)
 }
 
+pub unsafe fn with<F, R>(space: &Arc<Space>, func: F) -> R
+where
+    F: FnOnce(&Arc<Space>) -> R,
+{
+    PREEMPT.scope(|| {
+        let old = set_current(Arc::clone(space));
+        let ret = func(space);
+        set_current(old);
+        ret
+    })
+}
+
 /// Set the current memory space of the current CPU.
 ///
 /// # Safety
 ///
 /// The function must be called only from the epilogue of context switching.
-pub unsafe fn set_current(space: Arc<Space>) {
-    let _pree = PREEMPT.lock();
-    space.load();
-    CURRENT = Some(space);
+pub unsafe fn set_current(space: Arc<Space>) -> Arc<Space> {
+    PREEMPT.scope(|| {
+        space.load();
+        CURRENT.replace(space).unwrap()
+    })
 }

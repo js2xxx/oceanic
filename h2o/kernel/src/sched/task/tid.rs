@@ -25,13 +25,15 @@ impl Tid {
     }
 
     pub fn child(&self, hdl: Handle) -> Option<Child> {
-        let _pree = super::PREEMPT.lock();
-        self.handles().read().get::<Child>(hdl).cloned()
+        super::PREEMPT.scope(|| {
+            self.handles()
+                .get::<Child>(hdl)
+                .map(|w| Child::clone(&w))
+        })
     }
 
     pub fn drop_child(&self, hdl: Handle) -> bool {
-        let _pree = super::PREEMPT.lock();
-        self.handles().write().remove::<Child>(hdl).is_some()
+        super::PREEMPT.scope(|| self.handles().drop_shared::<Child>(hdl))
     }
 }
 

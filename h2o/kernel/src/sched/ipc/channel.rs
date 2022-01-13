@@ -31,16 +31,17 @@ impl Packet {
     }
 
     #[inline]
-    pub fn object_count(&self) -> usize {
-        self.objects.len()
+    pub fn buffer_mut(&mut self) -> &mut Bytes {
+        &mut self.buffer
     }
 
     #[inline]
-    pub unsafe fn process(self, cur: &mut task::Ready) -> Vec<Handle> {
-        cur.tid().handles().write().receive(self.objects)
+    pub fn object_count(&self) -> usize {
+        self.objects.len()
     }
 }
 
+#[derive(Debug)]
 pub struct Channel {
     peer_id: u64,
     me: Arc<WaitQueue<Packet>>,
@@ -125,7 +126,7 @@ mod syscall {
         p2.check()?;
         let ret = SCHED.with_current(|cur| {
             let (c1, c2) = Channel::new();
-            let mut map = cur.tid().handles().write();
+            let map = cur.tid().handles();
             let h1 = map.insert(c1);
             let h2 = map.insert(c2);
             unsafe {
@@ -151,8 +152,7 @@ mod syscall {
         let buffer = unsafe { slice::from_raw_parts(packet.buffer, packet.buffer_size) };
 
         let ret = SCHED.with_current(|cur| {
-            let mut map = cur.tid().handles().write();
-
+            let map = cur.tid().handles();
             let (objects, channel) = unsafe { map.send_for_channel(handles, hdl) }?;
             let packet = Packet::new(objects, buffer);
             channel.send(packet).map_err(Into::into)
@@ -179,7 +179,7 @@ mod syscall {
             unsafe { slice::from_raw_parts_mut(user_packet.buffer, user_packet.buffer_cap) };
 
         let ret = SCHED.with_current(|cur| {
-            let mut map = cur.tid().handles().write();
+            let map = cur.tid().handles();
 
             let packet = {
                 let channel = map.get::<Channel>(hdl).ok_or(Error(EINVAL))?;

@@ -1,16 +1,34 @@
-use alloc::{
-    collections::{btree_map, BTreeMap},
-    vec::Vec,
+use alloc::vec::Vec;
+use core::{
+    hash::BuildHasherDefault,
+    ops::Deref,
+    sync::atomic::{AtomicU32, Ordering::SeqCst},
 };
 
+use collection_ex::{CHashMap, CHashMapReadGuard, FnvHasher};
 use solvent::Handle;
 
 use crate::sched::ipc::{Channel, Object};
 
+type BH = BuildHasherDefault<FnvHasher>;
+
+pub struct HandleGuard<'a, T> {
+    _inner: CHashMapReadGuard<'a, Handle, Object, BH>,
+    value: &'a T,
+}
+
+impl<'a, T> Deref for HandleGuard<'a, T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        unsafe { self.value }
+    }
+}
+
 #[derive(Debug)]
 pub struct HandleMap {
-    next_id: u32,
-    map: BTreeMap<Handle, Object>,
+    next_id: AtomicU32,
+    map: CHashMap<Handle, Object, BH>,
 }
 
 unsafe impl Send for HandleMap {}
@@ -20,18 +38,18 @@ impl HandleMap {
     #[inline]
     pub fn new() -> Self {
         HandleMap {
-            next_id: 1,
-            map: BTreeMap::new(),
+            next_id: AtomicU32::new(1),
+            map: CHashMap::new(BH::default()),
         }
     }
 
     #[inline]
-    pub fn insert<T: Send + 'static>(&mut self, obj: T) -> Handle {
+    pub fn insert<T: Send + 'static>(&self, obj: T) -> Handle {
         unsafe { self.insert_unchecked(obj, true, false) }
     }
 
     #[inline]
-    pub fn insert_shared<T: Send + Sync + 'static>(&mut self, obj: T) -> Handle {
+    pub fn insert_shared<T: Send + Sync + 'static>(&self, obj: T) -> Handle {
         unsafe { self.insert_unchecked(obj, true, true) }
     }
 
@@ -40,28 +58,19 @@ impl HandleMap {
     /// The caller is responsible for the usage of the inserted object if its
     /// `!Send`.
     #[inline]
-    pub unsafe fn insert_unchecked<T: 'static>(
-        &mut self,
-        obj: T,
-        send: bool,
-        shared: bool,
-    ) -> Handle {
+    pub unsafe fn insert_unchecked<T: 'static>(&self, obj: T, send: bool, shared: bool) -> Handle {
         self.insert_impl(Object::new_unchecked(obj, send, shared))
     }
 
-    unsafe fn insert_impl(&mut self, obj: Object) -> Handle {
-        let id = {
-            let new = self.next_id;
-            self.next_id += 1;
-            Handle::new(new)
-        };
+    unsafe fn insert_impl(&self, obj: Object) -> Handle {
+        let id = Handle::new(self.next_id.fetch_add(1, SeqCst));
         let _ret = self.map.insert(id, obj);
         debug_assert!(_ret.is_none());
         id
     }
 
     #[inline]
-    pub fn get<T: Send + 'static>(&self, hdl: Handle) -> Option<&T> {
+    pub fn get<T: Send + 'static>(&self, hdl: Handle) -> Option<HandleGuard<'_, T>> {
         unsafe { self.get_unchecked(hdl) }
     }
 
@@ -69,34 +78,43 @@ impl HandleMap {
     ///
     /// The caller must ensure the current task is the owner of the
     /// [`HandleMap`] if the returned object is `!Send`.
-    pub unsafe fn get_unchecked<T: 'static>(&self, hdl: Handle) -> Option<&T> {
-        self.map.get(&hdl).and_then(|k| k.deref_unchecked())
+    pub unsafe fn get_unchecked<T: 'static>(&self, hdl: Handle) -> Option<HandleGuard<'_, T>> {
+        self.map.get(&hdl).and_then(|inner| {
+            match inner.deref_unchecked().map(|value| value as *const _) {
+                Some(value) => Some(HandleGuard {
+                    _inner: inner,
+                    value: unsafe { &*value },
+                }),
+                None => None,
+            }
+        })
     }
 
-    pub fn clone_handle(&mut self, hdl: Handle) -> Option<Handle> {
-        match self.map.get(&hdl).and_then(|k| Object::clone(k)) {
+    pub fn clone_handle(&self, hdl: Handle) -> Option<Handle> {
+        match self.map.get(&hdl).and_then(|k| Object::clone(&*k)) {
             Some(o) => Some(unsafe { self.insert_impl(o) }),
             None => None,
         }
     }
 
-    pub fn remove<T: Send + 'static>(&mut self, hdl: Handle) -> Option<T> {
-        match self.map.entry(hdl) {
-            btree_map::Entry::Occupied(ent) if ent.get().deref::<T>().is_some() => {
-                Some(Object::into_inner(ent.remove()).unwrap())
-            }
-            _ => None,
-        }
+    pub fn remove<T: Send + 'static>(&self, hdl: Handle) -> Option<T> {
+        self.map
+            .remove_if(&hdl, |obj| obj.deref::<T>().is_some())
+            .map(|obj| Object::into_inner(obj).unwrap())
+    }
+
+    pub fn drop_shared<T: Send + Sync + 'static>(&self, hdl: Handle) -> bool {
+        self.map
+            .remove_if(&hdl, |obj| obj.deref::<T>().is_some())
+            .is_some()
     }
 
     /// # Safety
     ///
     /// The caller must ensure the current task is the owner of the
     /// [`HandleMap`] if the dropped object is `!Send`.
-    pub unsafe fn drop_unchecked(&mut self, hdl: Handle) {
-        if let btree_map::Entry::Occupied(ent) = self.map.entry(hdl) {
-            drop(ent.remove())
-        }
+    pub unsafe fn drop_unchecked(&self, hdl: Handle) -> bool {
+        self.map.remove(&hdl).is_some()
     }
 
     /// # Safety
@@ -105,38 +123,40 @@ impl HandleMap {
     /// `Send`, excluding:
     /// * [`crate::mem::space::Virt`].
     pub unsafe fn send_for_channel<'a, 'b>(
-        &'a mut self,
+        &'a self,
         handles: &'b [Handle],
         chan: Handle,
-    ) -> Result<(Vec<Object>, &'a Channel), solvent::Error> {
+    ) -> Result<(Vec<Object>, HandleGuard<'a, Channel>), solvent::Error> {
         debug_assert!(!handles.contains(&chan));
 
-        let chan = self
-            .get::<Channel>(chan)
-            .ok_or(solvent::Error(solvent::EINVAL))? as *const Channel;
+        let get_chan = || {
+            self.get::<Channel>(chan)
+                .ok_or(solvent::Error(solvent::EINVAL))
+        };
 
-        for hdl in handles {
-            match self.map.get(&hdl) {
-                None => return Err(solvent::Error(solvent::EINVAL)),
-                Some(obj) if !obj.is_send() => return Err(solvent::Error(solvent::EPERM)),
-                Some(obj) => match obj.deref::<Channel>() {
-                    Some(other) if unsafe { &*chan }.is_peer(other) => {
-                        return Err(solvent::Error(solvent::EPERM))
-                    }
-                    _ => (),
-                },
+        {
+            let chan = get_chan()?;
+            for hdl in handles {
+                match self.map.get(&hdl) {
+                    None => return Err(solvent::Error(solvent::EINVAL)),
+                    Some(obj) if !obj.is_send() => return Err(solvent::Error(solvent::EPERM)),
+                    Some(obj) => match (*obj).deref::<Channel>() {
+                        Some(other) if unsafe { &*chan }.is_peer(other) => {
+                            return Err(solvent::Error(solvent::EPERM))
+                        }
+                        _ => (),
+                    },
+                }
             }
         }
-        Ok((
-            handles
-                .into_iter()
-                .map(|hdl| self.map.remove(&hdl).unwrap())
-                .collect(),
-            unsafe { &*chan },
-        ))
+        let obj = handles
+            .into_iter()
+            .map(|hdl| self.map.remove(&hdl).unwrap())
+            .collect();
+        Ok((obj, get_chan().unwrap()))
     }
 
-    pub fn receive(&mut self, objects: Vec<Object>) -> Vec<Handle> {
+    pub fn receive(&self, objects: Vec<Object>) -> Vec<Handle> {
         objects
             .into_iter()
             .map(|obj| unsafe { self.insert_impl(obj) })
@@ -153,7 +173,7 @@ mod syscall {
     fn obj_clone(hdl: Handle) -> Handle {
         hdl.check_null()?;
         SCHED
-            .with_current(|cur| cur.tid().handles().write().clone_handle(hdl))
+            .with_current(|cur| cur.tid().handles().clone_handle(hdl))
             .ok_or(Error(ESRCH))
             .transpose()
             .ok_or(Error(EINVAL))
@@ -163,7 +183,7 @@ mod syscall {
     #[syscall]
     fn obj_drop(hdl: Handle) {
         hdl.check_null()?;
-        SCHED.with_current(|cur| unsafe { cur.tid().handles().write().drop_unchecked(hdl) });
+        SCHED.with_current(|cur| unsafe { cur.tid().handles().drop_unchecked(hdl) });
         Ok(())
     }
 }

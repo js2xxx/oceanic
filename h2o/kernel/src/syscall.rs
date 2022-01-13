@@ -41,15 +41,15 @@ static SYSCALL_TABLE: &[Option<SyscallWrapper>] = &[
     Some(syscall_wrapper!(log)),
     Some(syscall_wrapper!(task_exit)),
     Some(syscall_wrapper!(task_fn)),
-    None, // Reserved for future use of `task_file`.
+    None, // Reserved for future use of `task_image`.
     Some(syscall_wrapper!(task_join)),
     Some(syscall_wrapper!(task_ctl)),
+    Some(syscall_wrapper!(task_debug)),
     Some(syscall_wrapper!(task_sleep)),
     Some(syscall_wrapper!(virt_alloc)),
     Some(syscall_wrapper!(virt_prot)),
     Some(syscall_wrapper!(mem_alloc)),
     Some(syscall_wrapper!(mem_dealloc)),
-    None,
     Some(syscall_wrapper!(wo_new)),
     None,
     Some(syscall_wrapper!(wo_notify)),

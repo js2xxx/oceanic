@@ -87,7 +87,6 @@ mod syscall {
                 .with_current(|cur| unsafe {
                     cur.tid()
                         .handles()
-                        .write()
                         .insert_unchecked(virt, false, false)
                 })
                 .ok_or(Error(ESRCH))
@@ -107,7 +106,7 @@ mod syscall {
 
         crate::sched::SCHED
             .with_current(|cur| {
-                match unsafe { cur.tid().handles().read().get_unchecked::<space::Virt>(hdl) } {
+                match unsafe { cur.tid().handles().get_unchecked::<space::Virt>(hdl) } {
                     Some(virt) => unsafe { virt.modify(ptr, flags) }.map_err(Into::into),
                     None => Err(Error(EINVAL)),
                 }

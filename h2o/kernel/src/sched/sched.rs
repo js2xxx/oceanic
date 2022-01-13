@@ -15,8 +15,8 @@ use crate::cpu::{
     CpuLocalLazy,
 };
 
-const MINIMUM_TIME_GRANULARITY: Duration = Duration::from_millis(30);
-const WAKE_TIME_GRANULARITY: Duration = Duration::from_millis(1);
+pub(super) const MIN_TIME_GRAN: Duration = Duration::from_millis(30);
+const WAKE_TIME_GRAN: Duration = Duration::from_millis(1);
 
 static MIGRATION_QUEUE: Lazy<Vec<Injector<task::Ready>>> = Lazy::new(|| {
     let count = crate::cpu::count();
@@ -52,7 +52,7 @@ impl Scheduler {
 
         let affinity = task.tid().affinity();
 
-        let time_slice = MINIMUM_TIME_GRANULARITY;
+        let time_slice = MIN_TIME_GRAN;
         if !affinity.get(self.cpu).map_or(false, |r| *r) {
             let cpu = select_cpu(&affinity).expect("Zero affinity");
             let task = task::Ready::from_init(task, cpu, time_slice);
@@ -91,9 +91,8 @@ impl Scheduler {
     {
         self.canary.assert();
 
-        let _pree = PREEMPT.lock();
         // SAFE: We have `_pree`, which means preemption is disabled.
-        unsafe { (*self.current.get()).as_mut().map(func) }
+        PREEMPT.scope(|| unsafe { (*self.current.get()).as_mut().map(func) })
     }
 
     #[inline]
@@ -104,13 +103,12 @@ impl Scheduler {
     pub unsafe fn preempt_current(&self) {
         self.canary.assert();
 
-        let _pree = PREEMPT.lock();
-        unsafe {
+        PREEMPT.scope(|| unsafe {
             // SAFE: We have `_pree`, which means preemption is disabled.
             if let Some(ref mut cur) = *self.current.get() {
                 cur.running_state = task::RunningState::NeedResched;
             }
-        }
+        })
     }
 
     pub fn block_current<T>(
@@ -153,7 +151,7 @@ impl Scheduler {
         self.canary.assert();
         log::trace!("Unblocking task {:?}, P{}", task.tid().raw(), PREEMPT.raw());
 
-        let time_slice = MINIMUM_TIME_GRANULARITY;
+        let time_slice = MIN_TIME_GRAN;
         let task = task::Ready::unblock(task, time_slice);
         if task.cpu == self.cpu {
             let pree = PREEMPT.lock();
@@ -167,7 +165,7 @@ impl Scheduler {
 
     #[inline]
     fn should_preempt(cur: &task::Ready, task: &task::Ready) -> bool {
-        cur.runtime > task.runtime + WAKE_TIME_GRANULARITY
+        cur.runtime > task.runtime + WAKE_TIME_GRAN
     }
 
     pub fn exit_current(&self, retval: usize) -> ! {
@@ -232,11 +230,13 @@ impl Scheduler {
                 });
                 unreachable!("Dead task");
             }
-            Some(task::sig::Signal::Suspend(wo, ..)) => {
+            Some(task::sig::Signal::Suspend(slot)) => {
                 drop(ti);
 
                 log::trace!("Suspending task {:?}, P{}", cur.tid().raw(), PREEMPT.raw());
-                self.block_current(pree, Some(&wo), Duration::MAX, "task_ctl_suspend");
+                self.schedule_impl(cur_time, pree, None, |task| {
+                    *slot.lock() = Some(task::Ready::block(task, "task_ctl_suspend"));
+                });
 
                 None
             }

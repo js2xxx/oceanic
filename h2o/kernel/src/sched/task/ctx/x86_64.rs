@@ -1,6 +1,8 @@
 use alloc::sync::Arc;
 use core::{alloc::Layout, mem::size_of};
 
+use paging::LAddr;
+
 use super::Entry;
 use crate::{
     cpu::{
@@ -20,7 +22,7 @@ pub const DEFAULT_STACK_SIZE: usize = 64 * paging::PAGE_SIZE;
 pub const DEFAULT_STACK_LAYOUT: Layout =
     unsafe { Layout::from_size_align_unchecked(DEFAULT_STACK_SIZE, paging::PAGE_SIZE) };
 
-pub const EXTENDED_FRAME_SIZE: usize = 768;
+pub const EXTENDED_FRAME_SIZE: usize = 576;
 
 #[derive(Debug, Default)]
 #[repr(C)]
@@ -126,6 +128,69 @@ impl Frame {
         self.rip = rip;
         self.rax = errc;
         self.rdx = addr;
+    }
+
+    #[inline]
+    pub unsafe fn debug_get(
+        &self,
+        out: crate::syscall::UserPtr<crate::syscall::Out, solvent::task::ctx::Gpr>,
+    ) -> solvent::Result<()> {
+        out.write(solvent::task::ctx::Gpr {
+            rax: self.rax,
+            rcx: self.rcx,
+            rdx: self.rdx,
+            rbx: self.rbx,
+            rbp: self.rbp,
+            rsp: self.rsp,
+            rsi: self.rsi,
+            rdi: self.rdi,
+            r8: self.r8,
+            r9: self.r9,
+            r10: self.r10,
+            r11: self.r11,
+            r12: self.r12,
+            r13: self.r13,
+            r14: self.r14,
+            r15: self.r15,
+            rip: self.rip,
+            rflags: self.rflags,
+            fs_base: self.fs_base,
+            gs_base: self.gs_base,
+        })
+    }
+
+    #[inline]
+    pub fn debug_set(&mut self, gpr: &solvent::task::ctx::Gpr) -> solvent::Result<()> {
+        if !archop::canonical(LAddr::from(gpr.fs_base))
+            || !archop::canonical(LAddr::from(gpr.gs_base))
+        {
+            return Err(solvent::Error(solvent::EINVAL));
+        }
+        self.gs_base = gpr.gs_base;
+        self.fs_base = gpr.fs_base;
+
+        self.r15 = gpr.r15;
+        self.r14 = gpr.r14;
+        self.r13 = gpr.r13;
+        self.r12 = gpr.r12;
+        self.r11 = gpr.r11;
+        self.r10 = gpr.r10;
+        self.r9 = gpr.r9;
+        self.r8 = gpr.r8;
+        self.rsi = gpr.rsi;
+        self.rdi = gpr.rdi;
+        self.rbp = gpr.rbp;
+        self.rbx = gpr.rbx;
+        self.rdx = gpr.rdx;
+        self.rcx = gpr.rcx;
+        self.rax = gpr.rax;
+        self.rip = gpr.rip;
+        self.rsp = gpr.rsp;
+
+        self.rflags &= !archop::reg::rflags::USER_ACCESS;
+        self.rflags |= gpr.rflags & archop::reg::rflags::USER_ACCESS;
+
+        Ok(())
     }
 
     const RFLAGS: &'static str =

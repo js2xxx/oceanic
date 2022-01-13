@@ -1,11 +1,11 @@
-use core::{marker::PhantomData, mem, mem::MaybeUninit, num::NonZeroU64};
+use core::{fmt, marker::PhantomData, mem, mem::MaybeUninit, num::NonZeroU64};
 
 use solvent::{Result, SerdeReg};
 pub use types::*;
 
 use crate::{mem::space::PageFaultErrCode, sched::SCHED};
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Copy, Clone)]
 pub struct UserPtr<T: Type, D> {
     data: *mut D,
     _marker: PhantomData<T>,
@@ -34,6 +34,14 @@ impl<T: Type, D> UserPtr<T, D> {
             mem::size_of::<T>() * len,
             mem::align_of::<D>(),
         )
+    }
+
+    #[inline]
+    pub fn cast<U>(self) -> UserPtr<T, U> {
+        UserPtr {
+            data: self.data.cast(),
+            _marker: PhantomData,
+        }
     }
 }
 
@@ -126,6 +134,12 @@ impl<D> UserPtr<InOut, D> {
     }
 }
 
+impl<T: Type, D> fmt::Debug for UserPtr<T, D> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("UserPtr").field(&self.data).finish()
+    }
+}
+
 impl<T: Type, D> SerdeReg for UserPtr<T, D> {
     #[inline]
     fn encode(self) -> usize {
@@ -145,10 +159,12 @@ fn check_ptr(ptr: *mut u8, size: usize, align: usize) -> Result<()> {
     let is_in_range =
         minfo::USER_BASE <= ptr as usize && (ptr as usize).saturating_add(size) <= minfo::USER_END;
     let is_aligned = (ptr as usize) & (align - 1) == 0;
-    if is_in_range && is_aligned {
-        Ok(())
+    if !is_in_range {
+        Err(solvent::Error(solvent::ERANGE))
+    } else if !is_aligned {
+        Err(solvent::Error(solvent::EALIGN))
     } else {
-        Err(solvent::Error(solvent::EINVAL))
+        Ok(())
     }
 }
 
@@ -173,8 +189,9 @@ impl CheckedCopyRet {
     fn into_result(self) -> Result<()> {
         if self.errc != PageFaultErrCode::empty() || self.addr_p1 != 0 {
             log::warn!(
-                "Page fault at {:#x} during user pointer access",
-                self.addr_p1 - 1
+                "Page fault at {:#x} during user pointer access, error code: {:?}",
+                self.addr_p1 - 1,
+                self.errc
             );
             Err(solvent::Error(solvent::EPERM))
         } else {

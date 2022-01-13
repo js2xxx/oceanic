@@ -4,6 +4,7 @@ pub(super) mod def;
 use ::alloc::sync::{Arc, Weak};
 use spin::Mutex;
 
+pub use self::def::ExVec;
 use self::def::NR_VECTORS;
 use crate::{
     cpu::{
@@ -90,10 +91,12 @@ unsafe fn exception(frame_ptr: *mut Frame, vec: def::ExVec) {
         _ => {}
     }
 
-    // Kill the fucking task if it's the exception source instead of hanging here.
     match SCHED.with_current(|cur| cur.tid().ty()) {
         Some(task::Type::User) if frame.cs == USR_CODE_X64.into_val().into() => {
-            SCHED.exit_current((-solvent::EFAULT) as usize)
+            if !task::dispatch_exception(frame_ptr, vec) {
+                // Kill the fucking task.
+                SCHED.exit_current((-solvent::EFAULT) as usize)
+            }
             // unreachable!()
         }
         _ => {}

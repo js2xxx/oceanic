@@ -92,7 +92,7 @@ mod syscall {
 
         if futex.wo.wait_queue.is_empty() {
             drop(futex);
-            let _ = FUTEX.remove_entry_if(&addr, |futex| futex.wo.wait_queue.is_empty());
+            let _ = FUTEX.remove_if(&addr, |futex| futex.wo.wait_queue.is_empty());
         }
 
         ret
@@ -108,9 +108,7 @@ mod syscall {
             .ok_or(Error(ESRCH))
             .flatten()?;
 
-        let _pree = PREEMPT.lock();
-        let futex = Futex::get_or_insert(addr);
-        futex.wake(num)
+        PREEMPT.scope(|| Futex::get_or_insert(addr).wake(num))
     }
 
     #[syscall]

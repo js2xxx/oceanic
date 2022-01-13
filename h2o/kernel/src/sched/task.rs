@@ -1,6 +1,7 @@
 pub mod child;
 pub mod ctx;
 mod elf;
+mod excep;
 mod hdl;
 pub mod idle;
 pub mod prio;
@@ -18,11 +19,14 @@ use spin::{Lazy, Mutex, RwLock};
 #[cfg(target_arch = "x86_64")]
 pub use self::ctx::arch::{DEFAULT_STACK_LAYOUT, DEFAULT_STACK_SIZE};
 use self::{child::Child, sig::Signal};
-pub use self::{elf::from_elf, hdl::HandleMap, prio::Priority, tid::Tid};
+pub use self::{
+    elf::from_elf, excep::dispatch_exception, hdl::HandleMap, prio::Priority, tid::Tid,
+};
 use super::{ipc::Channel, PREEMPT};
 use crate::{
     cpu::{time::Instant, CpuLocalLazy, CpuMask},
     mem::space::{Space, SpaceError},
+    syscall::{In, Out, UserPtr},
 };
 
 static ROOT: Lazy<Tid> = Lazy::new(|| {
@@ -32,7 +36,7 @@ static ROOT: Lazy<Tid> = Lazy::new(|| {
         ty: Type::Kernel,
         affinity: crate::cpu::all_mask(),
         prio: prio::DEFAULT,
-        handles: RwLock::new(HandleMap::new()),
+        handles: HandleMap::new(),
         signal: Mutex::new(None),
     };
 
@@ -82,7 +86,7 @@ pub struct TaskInfo {
     ty: Type,
     affinity: CpuMask,
     prio: Priority,
-    handles: RwLock<HandleMap>,
+    handles: HandleMap,
     signal: Mutex<Option<Signal>>,
 }
 
@@ -110,7 +114,7 @@ impl TaskInfo {
     }
 
     #[inline]
-    pub fn handles(&self) -> &RwLock<HandleMap> {
+    pub fn handles(&self) -> &HandleMap {
         &self.handles
     }
 
@@ -140,12 +144,12 @@ impl TaskInfo {
         }
     }
 
+    #[inline]
     pub fn update_signal<F, R>(&self, func: F) -> R
     where
         F: FnOnce(&mut Option<Signal>) -> R,
     {
-        let _pree = super::PREEMPT.lock();
-        func(&mut *self.signal.lock())
+        super::PREEMPT.scope(|| func(&mut *self.signal.lock()))
     }
 }
 
@@ -318,6 +322,81 @@ impl Blocked {
     pub fn tid(&self) -> &Tid {
         &self.tid
     }
+
+    pub fn read_regs(
+        &self,
+        addr: usize,
+        data: UserPtr<Out, u8>,
+        len: usize,
+    ) -> solvent::Result<()> {
+        use solvent::{Error, EBUFFER, EINVAL};
+        match addr {
+            solvent::task::TASK_DBGADDR_GPR => {
+                if len < solvent::task::ctx::GPR_SIZE {
+                    Err(Error(EBUFFER))
+                } else {
+                    unsafe { self.kstack.task_frame().debug_get(data.cast()) }
+                }
+            }
+            solvent::task::TASK_DBGADDR_FPU => {
+                let size = archop::fpu::frame_size();
+                if len < size {
+                    Err(Error(EBUFFER))
+                } else {
+                    unsafe { data.write_slice(&self.ext_frame[..size]) }
+                }
+            }
+            _ => Err(Error(EINVAL)),
+        }
+    }
+
+    pub fn write_regs(
+        &mut self,
+        addr: usize,
+        data: UserPtr<In, u8>,
+        len: usize,
+    ) -> solvent::Result<()> {
+        use solvent::{Error, EBUFFER, EINVAL};
+        match addr {
+            solvent::task::TASK_DBGADDR_GPR => {
+                if len < solvent::task::ctx::GPR_SIZE {
+                    Err(Error(EBUFFER))
+                } else {
+                    let gpr = unsafe { data.cast().read()? };
+                    unsafe { self.kstack.task_frame_mut().debug_set(&gpr) }
+                }
+            }
+            solvent::task::TASK_DBGADDR_FPU => {
+                let size = archop::fpu::frame_size();
+                if len < size {
+                    Err(Error(EBUFFER))
+                } else {
+                    let ptr = self.ext_frame.as_mut_ptr();
+                    unsafe { data.read_slice(ptr, size) }
+                }
+            }
+            _ => Err(Error(EINVAL)),
+        }
+    }
+
+    pub fn create_excep_chan(&mut self) -> solvent::Result<Channel> {
+        use solvent::*;
+        let slot = unsafe { &*self.tid.from.get() }
+            .as_ref()
+            .and_then(|from| from.1.as_ref())
+            .map(|child| child.excep_chan())
+            .ok_or(Error(EPERM))?;
+
+        let chan = match slot.lock() {
+            mut g if g.is_none() => {
+                let (usr, krl) = Channel::new();
+                *g = Some(krl);
+                usr
+            }
+            _ => return Err(Error(EEXIST)),
+        };
+        Ok(chan)
+    }
 }
 
 #[derive(Debug)]
@@ -390,16 +469,20 @@ where
             ty,
             affinity,
             prio,
-            handles: RwLock::new(HandleMap::new()),
+            handles: HandleMap::new(),
             signal: Mutex::new(None),
         };
-        let init_handle = init_chan.map(|chan| new_ti.handles.get_mut().insert(chan));
+        let init_handle = init_chan.map(|chan| new_ti.handles.insert(chan));
         let tid = tid::allocate(new_ti).map_err(|_| TaskError::TidExhausted)?;
 
         let (ret_wo, child) = {
             let child = Child::new(tid.clone());
-            let _pree = PREEMPT.lock();
-            (cur_tid.handles().write().insert(child.clone()), child)
+            PREEMPT.scope(|| {
+                (
+                    cur_tid.handles().insert_shared(child.clone()),
+                    child,
+                )
+            })
         };
 
         unsafe { tid.from.get().write(Some((cur_tid, Some(child)))) };
