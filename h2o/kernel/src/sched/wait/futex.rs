@@ -92,7 +92,7 @@ mod syscall {
 
         if futex.wo.wait_queue.is_empty() {
             drop(futex);
-            let _ = FUTEX.remove_entry_if(&addr, |futex| futex.wo.wait_queue.is_empty());
+            let _ = FUTEX.remove_if(&addr, |futex| futex.wo.wait_queue.is_empty());
         }
 
         ret

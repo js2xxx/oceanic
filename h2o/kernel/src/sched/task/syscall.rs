@@ -85,8 +85,9 @@ fn task_fn(
 
     let init_chan = match ci.init_chan.check_null() {
         Ok(hdl) => SCHED.with_current(|cur| {
-            let mut map = cur.tid().handles().write();
-            map.remove::<crate::sched::ipc::Channel>(hdl)
+            cur.tid()
+                .handles()
+                .remove::<crate::sched::ipc::Channel>(hdl)
                 .ok_or(Error(EINVAL))
         }),
         Err(_) => None,
@@ -109,7 +110,7 @@ fn task_fn(
             tid,
         };
         let st = SCHED
-            .with_current(|cur| cur.tid.handles.write().insert(st))
+            .with_current(|cur| cur.tid.handles.insert(st))
             .unwrap();
         unsafe { extra.write(st) }?;
     } else {
@@ -161,7 +162,7 @@ fn task_ctl(hdl: Handle, op: u32, data: UserPtr<InOut, Handle>) {
 
             st.tid.replace_signal(Some(st.signal()));
 
-            let out = super::PREEMPT.scope(|| cur_tid.handles().write().insert(st));
+            let out = super::PREEMPT.scope(|| cur_tid.handles().insert(st));
             unsafe { data.out().write(out) }.unwrap();
 
             Ok(())
@@ -184,8 +185,8 @@ fn task_debug(hdl: Handle, op: u32, addr: usize, data: UserPtr<InOut, u8>, len: 
 
     let slot = SCHED
         .with_current(|cur| {
-            let handles = cur.tid.handles.read();
-            handles
+            cur.tid
+                .handles
                 .get::<SuspendToken>(hdl)
                 .map(|st| Arc::clone(&st.slot))
         })
@@ -220,7 +221,7 @@ fn task_debug(hdl: Handle, op: u32, addr: usize, data: UserPtr<InOut, u8>, len: 
                 let hdl = SCHED
                     .with_current(|cur| {
                         task.create_excep_chan()
-                            .map(|chan| cur.tid.handles.write().insert(chan))
+                            .map(|chan| cur.tid.handles.insert(chan))
                     })
                     .unwrap()?;
                 unsafe { data.out().cast().write(hdl) }

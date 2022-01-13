@@ -2,6 +2,7 @@ mod inner;
 
 use core::{
     borrow::Borrow,
+    fmt,
     hash::{BuildHasher, Hash},
     hint, mem,
     ops::{Deref, DerefMut},
@@ -233,6 +234,7 @@ impl<K, V, S: BuildHasher + Default> CHashMap<K, V, S> {
         ret.into()
     }
 
+    #[inline]
     pub fn remove_entry<Q>(&self, key: &Q) -> Option<(K, V)>
     where
         Q: Hash + PartialEq,
@@ -241,11 +243,28 @@ impl<K, V, S: BuildHasher + Default> CHashMap<K, V, S> {
         self.remove_entry_if(key, |_| true)
     }
 
+    #[inline]
+    pub fn remove_if<Q, F>(&self, key: &Q, predicate: F) -> Option<V>
+    where
+        Q: Hash + PartialEq,
+        K: Borrow<Q> + Hash,
+        F: FnOnce(&V) -> bool,
+    {
+        self.remove_entry_if(key, predicate).map(|(_, value)| value)
+    }
+
+    #[inline]
     pub fn remove<Q>(&self, key: &Q) -> Option<V>
     where
         Q: Hash + PartialEq,
         K: Borrow<Q> + Hash,
     {
         self.remove_entry(key).map(|ret| ret.1)
+    }
+}
+
+impl<K, V, S: BuildHasher + Default> fmt::Debug for CHashMap<K, V, S> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_list().entry(&"..").finish()
     }
 }

@@ -36,7 +36,7 @@ static ROOT: Lazy<Tid> = Lazy::new(|| {
         ty: Type::Kernel,
         affinity: crate::cpu::all_mask(),
         prio: prio::DEFAULT,
-        handles: RwLock::new(HandleMap::new()),
+        handles: HandleMap::new(),
         signal: Mutex::new(None),
     };
 
@@ -86,7 +86,7 @@ pub struct TaskInfo {
     ty: Type,
     affinity: CpuMask,
     prio: Priority,
-    handles: RwLock<HandleMap>,
+    handles: HandleMap,
     signal: Mutex<Option<Signal>>,
 }
 
@@ -114,7 +114,7 @@ impl TaskInfo {
     }
 
     #[inline]
-    pub fn handles(&self) -> &RwLock<HandleMap> {
+    pub fn handles(&self) -> &HandleMap {
         &self.handles
     }
 
@@ -469,17 +469,17 @@ where
             ty,
             affinity,
             prio,
-            handles: RwLock::new(HandleMap::new()),
+            handles: HandleMap::new(),
             signal: Mutex::new(None),
         };
-        let init_handle = init_chan.map(|chan| new_ti.handles.get_mut().insert(chan));
+        let init_handle = init_chan.map(|chan| new_ti.handles.insert(chan));
         let tid = tid::allocate(new_ti).map_err(|_| TaskError::TidExhausted)?;
 
         let (ret_wo, child) = {
             let child = Child::new(tid.clone());
             PREEMPT.scope(|| {
                 (
-                    cur_tid.handles().write().insert_shared(child.clone()),
+                    cur_tid.handles().insert_shared(child.clone()),
                     child,
                 )
             })

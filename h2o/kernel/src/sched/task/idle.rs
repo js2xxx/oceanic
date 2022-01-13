@@ -30,7 +30,7 @@ pub(super) static IDLE: CpuLocalLazy<Tid> = CpuLocalLazy::new(|| {
         ty: Type::Kernel,
         affinity: crate::cpu::current_mask(),
         prio: prio::IDLE,
-        handles: RwLock::new(HandleMap::new()),
+        handles: HandleMap::new(),
         signal: Mutex::new(None),
     };
 
