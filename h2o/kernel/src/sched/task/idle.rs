@@ -1,7 +1,7 @@
 use alloc::vec::Vec;
 use core::hint;
 
-use super::{ctx::Kstack, *};
+use super::*;
 use crate::{
     cpu::CpuLocalLazy,
     mem::space::{self, Space},
@@ -17,56 +17,61 @@ use crate::{
 ///
 /// [`task_exit`]: crate::sched::task::syscall::task_exit
 #[thread_local]
-pub(super) static CTX_DROPPER: CpuLocalLazy<deque::Injector<Kstack>> =
+pub(super) static CTX_DROPPER: CpuLocalLazy<deque::Injector<alloc::boxed::Box<Context>>> =
     CpuLocalLazy::new(|| deque::Injector::new());
 
 #[thread_local]
 pub(super) static IDLE: CpuLocalLazy<Tid> = CpuLocalLazy::new(|| {
     let cpu = unsafe { crate::cpu::id() };
 
-    let ti = TaskInfo {
-        from: UnsafeCell::new(Some((ROOT.clone(), None))),
-        name: format!("IDLE{}", cpu),
-        ty: Type::Kernel,
-        affinity: crate::cpu::current_mask(),
-        prio: prio::IDLE,
-        handles: HandleMap::new(),
-        signal: Mutex::new(None),
-    };
+    let ti = TaskInfo::builder()
+        .from(Some(ROOT.clone()))
+        .name(format!("IDLE{}", cpu))
+        .ty(Type::Kernel)
+        .affinity(crate::cpu::current_mask())
+        .prio(prio::IDLE)
+        .build()
+        .unwrap();
 
     let space = Space::clone(unsafe { space::current() }, Type::Kernel);
-    let entry = LAddr::new(idle as *mut u8);
 
-    let tid = super::tid::allocate(ti).expect("Tid exhausted");
-    let init = Init::new(
-        tid.clone(),
-        space,
-        entry,
+    let entry = create_entry(
+        &space,
+        LAddr::new(idle as *mut u8),
         DEFAULT_STACK_SIZE,
-        Some(paging::LAddr::from(
-            unsafe { archop::msr::read(archop::msr::FS_BASE) } as usize,
-        )),
-        [cpu as u64, 0],
+        [cpu as u64, unsafe {
+            archop::msr::read(archop::msr::FS_BASE)
+        }],
     )
     .expect("Failed to initialize IDLE");
+    let kstack = ctx::Kstack::new(entry, Type::Kernel);
 
-    crate::sched::SCHED.push(init);
+    let tid = tid::allocate(ti).expect("Tid exhausted");
+
+    let init = Init::new(tid.clone(), space, kstack, ctx::ExtFrame::zeroed());
+    crate::sched::SCHED.unblock(init);
+
     tid
 });
 
-fn idle(cpu: usize) -> ! {
+fn idle(cpu: usize, fs_base: u64) -> ! {
+    unsafe { archop::msr::write(archop::msr::FS_BASE, fs_base) };
+
     use crate::sched::{task, SCHED};
     log::debug!("IDLE #{}", cpu);
 
     let (ctx_dropper, ..) = task::create_fn(
         Some(String::from("CTXD")),
-        DEFAULT_STACK_SIZE,
+        Some(Type::Kernel),
+        None,
         None,
         LAddr::new(ctx_dropper as *mut u8),
-        unsafe { archop::msr::read(archop::msr::FS_BASE) } as *mut u8,
+        None,
+        unsafe { archop::msr::read(archop::msr::FS_BASE) },
+        DEFAULT_STACK_SIZE,
     )
     .expect("Failed to create context dropper");
-    SCHED.push(ctx_dropper);
+    SCHED.unblock(ctx_dropper);
 
     if cpu == 0 {
         let (me, chan) = Channel::new();
@@ -88,7 +93,7 @@ fn idle(cpu: usize) -> ! {
             Some(chan),
         )
         .expect("Failed to initialize TINIT");
-        SCHED.push(tinit);
+        SCHED.unblock(tinit);
     }
 
     unsafe { archop::halt_loop(Some(true)) };
@@ -103,12 +108,12 @@ fn ctx_dropper(_: u64, fs_base: u64) -> ! {
         match CTX_DROPPER.steal_batch(&worker) {
             deque::Steal::Empty | deque::Steal::Retry => hint::spin_loop(),
             deque::Steal::Success(_) => {
-                while let Some(kstack) = worker.pop() {
-                    drop(kstack);
+                while let Some(obj) = worker.pop() {
+                    drop(obj);
                 }
             }
         }
-        crate::sched::SCHED.with_current(|cur| cur.running_state = RunningState::NeedResched);
+        crate::sched::SCHED.with_current(|cur| cur.running_state = RunningState::NEED_RESCHED);
         unsafe { archop::resume_intr(None) };
     }
 }

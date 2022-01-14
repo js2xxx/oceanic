@@ -240,7 +240,7 @@ impl Frame {
 #[no_mangle]
 unsafe extern "C" fn save_regs() {
     if let Some(ref mut cur) = &mut *crate::sched::SCHED.current() {
-        debug_assert!(!matches!(cur.running_state, task::RunningState::NotRunning));
+        debug_assert!(!cur.running_state.not_running());
         cur.ext_frame.save();
     }
 }
@@ -249,13 +249,13 @@ unsafe extern "C" fn save_regs() {
 pub unsafe extern "C" fn switch_finishing() {
     if let Some(ref cur) = *crate::sched::SCHED.current() {
         log::trace!("Switched to task {:?}, P{}", cur.tid().raw(), PREEMPT.raw());
-        debug_assert!(!matches!(cur.running_state, task::RunningState::NotRunning));
+        debug_assert!(!cur.running_state.not_running());
 
         let tss_rsp0 = cur.kstack.top().val() as u64;
         KERNEL_GS.update_tss_rsp0(tss_rsp0);
         crate::mem::space::set_current(Arc::clone(&cur.space));
         cur.ext_frame.load();
-        if !cpu::arch::in_intr() && cur.tid.ty == task::Type::Kernel {
+        if !cpu::arch::in_intr() && cur.tid.ty() == task::Type::Kernel {
             KERNEL_GS.load();
         }
     }

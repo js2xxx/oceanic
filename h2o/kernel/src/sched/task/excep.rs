@@ -16,13 +16,8 @@ use crate::{
 };
 
 pub fn dispatch_exception(frame: *mut Frame, vec: ExVec) -> bool {
-    let slot = match SCHED.with_current(|cur| {
-        unsafe { &*cur.tid.from.get() }
-            .as_ref()
-            .and_then(|from| from.1.as_ref())
-            .map(|child| child.excep_chan())
-    }) {
-        Some(Some(slot)) => slot,
+    let slot = match SCHED.with_current(|cur| cur.tid.excep_chan()) {
+        Some(slot) => slot,
         _ => return false,
     };
 

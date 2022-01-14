@@ -157,37 +157,40 @@ impl Debug for Kstack {
 
 #[derive(Debug)]
 #[repr(align(16))]
-pub struct ExtendedFrame([u8; arch::EXTENDED_FRAME_SIZE]);
+struct ExtFrameData([u8; arch::EXTENDED_FRAME_SIZE]);
 
-impl ExtendedFrame {
-    pub fn zeroed() -> Box<Self> {
-        box ExtendedFrame([0; arch::EXTENDED_FRAME_SIZE])
+#[derive(Debug)]
+pub struct ExtFrame(Box<ExtFrameData>);
+
+impl ExtFrame {
+    pub fn zeroed() -> Self {
+        ExtFrame(box ExtFrameData([0; arch::EXTENDED_FRAME_SIZE]))
     }
 
     pub unsafe fn save(&mut self) {
-        let ptr = self.0.as_mut_ptr();
+        let ptr = (self.0).0.as_mut_ptr();
         archop::fpu::save(ptr);
     }
 
     pub unsafe fn load(&self) {
-        let ptr = self.0.as_ptr();
+        let ptr = (self.0).0.as_ptr();
         archop::fpu::load(ptr);
     }
 }
 
-impl Deref for ExtendedFrame {
+impl Deref for ExtFrame {
     type Target = [u8];
 
     #[inline]
     fn deref(&self) -> &Self::Target {
-        &self.0
+        &(self.0).0
     }
 }
 
-impl DerefMut for ExtendedFrame {
+impl DerefMut for ExtFrame {
     #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
+        &mut (self.0).0
     }
 }
 

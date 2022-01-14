@@ -80,20 +80,17 @@ fn load_tls(space: &Arc<Space>, size: usize, align: usize, file_base: LAddr) -> 
 
     log::trace!("Allocating TLS {:?}", alloc_layout);
     space
-        .alloc_tls(
-            alloc_layout,
-            |tls| unsafe {
-                tls.copy_from(*file_base, size);
-                tls.add(size).write_bytes(0, layout.size() - size);
+        .alloc_tls(alloc_layout, false, |ptr, tls| unsafe {
+            ptr.copy_from(*file_base, size);
+            ptr.add(size).write_bytes(0, layout.size() - size);
 
-                let self_ptr = tls.add(layout.size()).cast::<usize>();
-                // TLS's self-pointer is written its address there.
-                self_ptr.write(self_ptr as usize);
+            let self_ptr = ptr.add(layout.size()).cast::<usize>();
+            let base = tls.add(layout.size()).cast::<usize>();
+            // TLS's self-pointer is written its address there.
+            self_ptr.write(base as usize);
 
-                Ok(LAddr::new(self_ptr.cast()))
-            },
-            false,
-        )
+            Ok(LAddr::new(base.cast()))
+        })
         .map_err(TaskError::Memory)?
         .unwrap()
 }
@@ -160,14 +157,23 @@ pub fn from_elf<'a, 'b>(
             }
         })?;
 
-    super::create_common(
-        name,
-        Type::User,
-        affinity,
-        prio::DEFAULT,
-        false,
-        |space| load_elf(space, &file, image),
+    let tid = crate::sched::SCHED
+        .with_current(|cur| cur.tid.clone())
+        .ok_or(TaskError::NoCurrentTask)?;
+    let space = Space::new(Type::User);
+    let (entry, tls, stack_size) = load_elf(&space, &file, image)?;
+    debug_assert!(tls.is_none());
+
+    super::create_inner(
+        tid,
+        Some(name),
+        Some(Type::User),
+        Some(affinity),
+        None,
+        space,
+        entry,
         init_chan,
         0,
+        stack_size,
     )
 }

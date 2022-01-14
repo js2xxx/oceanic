@@ -82,7 +82,7 @@ mod syscall {
 
         let ptr = unsafe { NonNull::new_unchecked(ptr.as_ptr()) };
         let addr = SCHED
-            .with_current(|cur| cur.space().get(ptr.cast()).map_err(Into::into))
+            .with_current(|cur| cur.space.get(ptr.cast()).map_err(Into::into))
             .ok_or(Error(ESRCH))
             .flatten()?;
 
@@ -104,7 +104,7 @@ mod syscall {
 
         let ptr = unsafe { NonNull::new_unchecked(ptr.as_ptr()) };
         let addr = SCHED
-            .with_current(|cur| cur.space().get(ptr.cast()).map_err(Into::into))
+            .with_current(|cur| cur.space.get(ptr.cast()).map_err(Into::into))
             .ok_or(Error(ESRCH))
             .flatten()?;
 
@@ -131,7 +131,7 @@ mod syscall {
 
         let (addr, other) = SCHED
             .with_current(|cur| {
-                let space = cur.space();
+                let space = &cur.space;
                 space
                     .get(ptr.cast())
                     .and_then(|addr| space.get(other.cast()).map(|other| (addr, other)))

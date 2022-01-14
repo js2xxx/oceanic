@@ -33,6 +33,7 @@ crossbeam-epoch = {version = "0.9", default-features = false, features = ["alloc
 crossbeam-queue = {version = "0.3", default-features = false, features = ["alloc"]}
 crossbeam-utils = {version = "0.8", default-features = false}
 cty = "0.2"
+derive_builder = {version = "0.10", default-features = false}
 goblin = {version = "0.4", default-features = false, features = ["elf32", "elf64", "endian_fd"]}
 log = "0.4"
 modular-bitfield = "0.11"

@@ -8,7 +8,10 @@ use core::{
 use collection_ex::{CHashMap, CHashMapReadGuard, FnvHasher};
 use solvent::Handle;
 
-use crate::sched::ipc::{Channel, Object};
+use crate::sched::{
+    ipc::{Channel, Object},
+    PREEMPT,
+};
 
 type BH = BuildHasherDefault<FnvHasher>;
 
@@ -64,7 +67,7 @@ impl HandleMap {
 
     unsafe fn insert_impl(&self, obj: Object) -> Handle {
         let id = Handle::new(self.next_id.fetch_add(1, SeqCst));
-        let _ret = self.map.insert(id, obj);
+        let _ret = PREEMPT.scope(|| self.map.insert(id, obj));
         debug_assert!(_ret.is_none());
         id
     }
@@ -144,7 +147,7 @@ impl HandleMap {
                         Some(other) if unsafe { &*chan }.is_peer(other) => {
                             return Err(solvent::Error(solvent::EPERM))
                         }
-                        _ => (),
+                        _ => {}
                     },
                 }
             }
@@ -161,6 +164,13 @@ impl HandleMap {
             .into_iter()
             .map(|obj| unsafe { self.insert_impl(obj) })
             .collect()
+    }
+}
+
+impl Default for HandleMap {
+    #[inline]
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -183,7 +193,13 @@ mod syscall {
     #[syscall]
     fn obj_drop(hdl: Handle) {
         hdl.check_null()?;
-        SCHED.with_current(|cur| unsafe { cur.tid().handles().drop_unchecked(hdl) });
-        Ok(())
+        let ret = SCHED
+            .with_current(|cur| unsafe { cur.tid().handles().drop_unchecked(hdl) })
+            .ok_or(Error(ESRCH))?;
+        if ret {
+            Ok(())
+        } else {
+            Err(Error(EINVAL))
+        }
     }
 }

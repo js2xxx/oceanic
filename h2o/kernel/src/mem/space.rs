@@ -51,13 +51,18 @@ pub enum SpaceError {
 impl Into<solvent::Error> for SpaceError {
     fn into(self) -> solvent::Error {
         use solvent::*;
-        Error(match self {
-            SpaceError::OutOfMemory => ENOMEM,
-            SpaceError::AddressBusy => EBUSY,
-            SpaceError::InvalidFormat => EINVAL,
-            SpaceError::PagingError(_) => EFAULT,
-            SpaceError::Permission => EPERM,
-        })
+        match self {
+            SpaceError::OutOfMemory => Error(ENOMEM),
+            SpaceError::AddressBusy => Error(EBUSY),
+            SpaceError::InvalidFormat => Error(EINVAL),
+            SpaceError::PagingError(err) => match err {
+                paging::Error::OutOfMemory => Error(ENOMEM),
+                paging::Error::AddrMisaligned { .. } => Error(EALIGN),
+                paging::Error::RangeEmpty => Error(EBUFFER),
+                paging::Error::EntryExistent(b) => Error(if b { EEXIST } else { ENOENT }),
+            },
+            SpaceError::Permission => Error(EPERM),
+        }
     }
 }
 
@@ -200,11 +205,11 @@ impl Space {
     pub fn alloc_tls<F, R>(
         &self,
         layout: Layout,
-        init_func: F,
         realloc: bool,
+        init_func: F,
     ) -> Result<Option<R>, SpaceError>
     where
-        F: FnOnce(LAddr) -> R,
+        F: FnOnce(*mut u8, LAddr) -> R,
     {
         let _pree = PREEMPT.lock();
         if realloc {
@@ -244,7 +249,7 @@ impl Space {
                 })?;
 
             *tls = Some(layout);
-            Some(init_func(base))
+            Some(init_func(*phys.to_laddr(minfo::ID_OFFSET), base))
         } else {
             None
         };

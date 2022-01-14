@@ -54,6 +54,13 @@ impl WaitObject {
     }
 }
 
+impl Default for WaitObject {
+    #[inline]
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 mod syscall {
     use alloc::sync::Arc;
 

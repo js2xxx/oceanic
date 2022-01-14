@@ -42,18 +42,15 @@ pub struct Scheduler {
 }
 
 impl Scheduler {
-    pub fn push(&self, task: task::Init) {
+    pub fn unblock(&self, task: impl task::IntoReady) {
         self.canary.assert();
-        log::trace!(
-            "Pushing new task {:?}, P{}",
-            task.tid().raw(),
-            PREEMPT.raw(),
-        );
 
         let time_slice = MIN_TIME_GRAN;
-        let affinity = task.tid().affinity();
-        let cpu = select_cpu(&affinity, self.cpu, None).expect("Zero affinity");
-        let task = task::Ready::from_init(task, cpu, time_slice);
+        let affinity = task.affinity();
+        let cpu = select_cpu(&affinity, self.cpu, task.last_cpu()).expect("Zero affinity");
+        let task = task::IntoReady::into_ready(task, cpu, time_slice);
+
+        log::trace!("Unblocking task {:?}, P{}", task.tid.raw(), PREEMPT.raw());
         if cpu == self.cpu {
             self.enqueue(task, PREEMPT.lock());
         } else {
@@ -68,11 +65,11 @@ impl Scheduler {
             Some(ref cur) if Self::should_preempt(&cur, &task) => {
                 log::trace!(
                     "Preempting to task {:?}, P{}",
-                    task.tid().raw(),
+                    task.tid.raw(),
                     PREEMPT.raw(),
                 );
                 self.schedule_impl(Instant::now(), pree, Some(task), |mut task| {
-                    task.running_state = task::RunningState::NotRunning;
+                    task.running_state = task::RunningState::NOT_RUNNING;
                     self.run_queue.push(task);
                 });
             }
@@ -101,7 +98,7 @@ impl Scheduler {
         PREEMPT.scope(|| unsafe {
             // SAFE: We have `_pree`, which means preemption is disabled.
             if let Some(ref mut cur) = *self.current.get() {
-                cur.running_state = task::RunningState::NeedResched;
+                cur.running_state = task::RunningState::NEED_RESCHED;
             }
         })
     }
@@ -120,11 +117,7 @@ impl Scheduler {
         // SAFE: We have `pree`, which means preemption is disabled.
         log::trace!(
             "Blocking task {:?}, P{}",
-            unsafe { &*self.current.get() }
-                .as_ref()
-                .unwrap()
-                .tid()
-                .raw(),
+            unsafe { &*self.current.get() }.as_ref().unwrap().tid.raw(),
             PREEMPT.raw(),
         );
         self.schedule_impl(Instant::now(), pree, None, |task| {
@@ -142,22 +135,6 @@ impl Scheduler {
         })
     }
 
-    pub fn unblock(&self, task: task::Blocked) {
-        self.canary.assert();
-        log::trace!("Unblocking task {:?}, P{}", task.tid().raw(), PREEMPT.raw());
-
-        let time_slice = MIN_TIME_GRAN;
-        let affinity = task.tid().affinity();
-        let cpu = select_cpu(&affinity, self.cpu, Some(task.cpu)).expect("Zero affinity");
-        let task = task::Ready::unblock(task, cpu, time_slice);
-        if cpu == self.cpu {
-            self.enqueue(task, PREEMPT.lock());
-        } else {
-            MIGRATION_QUEUE[cpu].push(task);
-            unsafe { crate::cpu::arch::apic::ipi::task_migrate(cpu) };
-        }
-    }
-
     #[inline]
     fn should_preempt(cur: &task::Ready, task: &task::Ready) -> bool {
         cur.runtime > task.runtime + WAKE_TIME_GRAN
@@ -170,11 +147,7 @@ impl Scheduler {
         // SAFE: We have `pree`, which means preemption is disabled.
         log::trace!(
             "Exiting task {:?}, P{}",
-            unsafe { &*self.current.get() }
-                .as_ref()
-                .unwrap()
-                .tid()
-                .raw(),
+            unsafe { &*self.current.get() }.as_ref().unwrap().tid.raw(),
             PREEMPT.raw(),
         );
         self.schedule_impl(Instant::now(), pree, None, |task| {
@@ -209,17 +182,17 @@ impl Scheduler {
             Some(ref cur) => cur,
             None => return Some(pree),
         };
-        log::trace!("Checking task {:?}'s pending signal", cur.tid().raw());
-        let ti = cur.tid();
+        log::trace!("Checking task {:?}'s pending signal", cur.tid.raw());
+        let ti = &*cur.tid;
 
         if ti.ty() == task::Type::Kernel {
             return Some(pree);
         }
 
-        match unsafe { ti.take_signal() } {
+        match ti.with_signal(|sig| sig.take()) {
             Some(task::sig::Signal::Kill) => {
                 drop(ti);
-                log::trace!("Killing task {:?}, P{}", cur.tid().raw(), PREEMPT.raw());
+                log::trace!("Killing task {:?}, P{}", cur.tid.raw(), PREEMPT.raw());
                 self.schedule_impl(cur_time, pree, None, |task| {
                     task::Ready::exit(task, (-solvent::EKILLED) as usize)
                 });
@@ -228,7 +201,7 @@ impl Scheduler {
             Some(task::sig::Signal::Suspend(slot)) => {
                 drop(ti);
 
-                log::trace!("Suspending task {:?}, P{}", cur.tid().raw(), PREEMPT.raw());
+                log::trace!("Suspending task {:?}, P{}", cur.tid.raw(), PREEMPT.raw());
                 self.schedule_impl(cur_time, pree, None, |task| {
                     *slot.lock() = Some(task::Ready::block(task, "task_ctl_suspend"));
                 });
@@ -247,22 +220,24 @@ impl Scheduler {
             Some(ref mut task) => task,
             None => return !sole,
         };
-        log::trace!("Updating task {:?}'s timer slice", cur.tid().raw());
+        log::trace!("Updating task {:?}'s timer slice", cur.tid.raw());
 
-        match &cur.running_state {
-            task::RunningState::Running(start_time) => {
-                debug_assert!(cur_time > *start_time);
-                let runtime_delta = cur_time - *start_time;
+        match cur.running_state.start_time() {
+            Some(start_time) => {
+                debug_assert!(cur_time > start_time);
+                let runtime_delta = cur_time - start_time;
                 cur.runtime += runtime_delta;
-                if cur.time_slice() < runtime_delta && !sole {
-                    cur.running_state = task::RunningState::NeedResched;
+                if cur.time_slice < runtime_delta && !sole {
+                    cur.running_state = task::RunningState::NEED_RESCHED;
                     true
                 } else {
                     false
                 }
             }
-            task::RunningState::NotRunning => panic!("Not running"),
-            task::RunningState::NeedResched => true,
+            _ => {
+                assert!(cur.running_state.needs_resched(), "Not running");
+                true
+            }
         }
     }
 
@@ -271,15 +246,12 @@ impl Scheduler {
         #[cfg(debug_assertions)]
         // SAFE: We have `pree`, which means preemption is disabled.
         if let Some(ref cur) = unsafe { &*self.current.get() } {
-            log::trace!("Scheduling task {:?}, P{}", cur.tid().raw(), PREEMPT.raw());
+            log::trace!("Scheduling task {:?}, P{}", cur.tid.raw(), PREEMPT.raw());
         }
 
         self.schedule_impl(cur_time, pree, None, |mut task| {
-            debug_assert!(matches!(
-                task.running_state,
-                task::RunningState::NeedResched
-            ));
-            task.running_state = task::RunningState::NotRunning;
+            debug_assert!(task.running_state.needs_resched());
+            task.running_state = task::RunningState::NOT_RUNNING;
             self.run_queue.push(task);
         })
         .is_some()
@@ -304,9 +276,9 @@ impl Scheduler {
                 None => return None,
             },
         };
-        log::trace!("Switching to {:?}, P{}", next.tid().raw(), PREEMPT.raw());
+        log::trace!("Switching to {:?}, P{}", next.tid.raw(), PREEMPT.raw());
 
-        next.running_state = task::RunningState::Running(cur_time);
+        next.running_state = task::RunningState::running(cur_time);
         next.cpu = self.cpu;
         let new = next.kstack.kframe_ptr();
 

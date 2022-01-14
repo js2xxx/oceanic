@@ -75,6 +75,13 @@ pub struct CHashMap<K, V, S> {
 unsafe impl<K: Send, V: Send, S: Send> Send for CHashMap<K, V, S> {}
 unsafe impl<K: Sync + Send, V: Sync + Send, S> Sync for CHashMap<K, V, S> {}
 
+impl<K, V, S: Default> Default for CHashMap<K, V, S> {
+    #[inline]
+    fn default() -> Self {
+        Self::new(S::default())
+    }
+}
+
 impl<K, V, S> CHashMap<K, V, S> {
     pub fn new(hasher: S) -> Self {
         CHashMap {
