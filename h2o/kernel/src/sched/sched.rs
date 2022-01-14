@@ -50,20 +50,15 @@ impl Scheduler {
             PREEMPT.raw(),
         );
 
-        let affinity = task.tid().affinity();
-
         let time_slice = MIN_TIME_GRAN;
-        if !affinity.get(self.cpu).map_or(false, |r| *r) {
-            let cpu = select_cpu(&affinity).expect("Zero affinity");
-            let task = task::Ready::from_init(task, cpu, time_slice);
-            MIGRATION_QUEUE[cpu].push(task);
-
-            unsafe { crate::cpu::arch::apic::ipi::task_migrate(cpu) };
+        let affinity = task.tid().affinity();
+        let cpu = select_cpu(&affinity, self.cpu, None).expect("Zero affinity");
+        let task = task::Ready::from_init(task, cpu, time_slice);
+        if cpu == self.cpu {
+            self.enqueue(task, PREEMPT.lock());
         } else {
-            let task = task::Ready::from_init(task, self.cpu, time_slice);
-
-            let pree = PREEMPT.lock();
-            self.enqueue(task, pree);
+            MIGRATION_QUEUE[cpu].push(task);
+            unsafe { crate::cpu::arch::apic::ipi::task_migrate(cpu) };
         }
     }
 
@@ -152,12 +147,12 @@ impl Scheduler {
         log::trace!("Unblocking task {:?}, P{}", task.tid().raw(), PREEMPT.raw());
 
         let time_slice = MIN_TIME_GRAN;
-        let task = task::Ready::unblock(task, time_slice);
-        if task.cpu == self.cpu {
-            let pree = PREEMPT.lock();
-            unsafe { self.enqueue(task, pree) };
+        let affinity = task.tid().affinity();
+        let cpu = select_cpu(&affinity, self.cpu, Some(task.cpu)).expect("Zero affinity");
+        let task = task::Ready::unblock(task, cpu, time_slice);
+        if cpu == self.cpu {
+            self.enqueue(task, PREEMPT.lock());
         } else {
-            let cpu = task.cpu;
             MIGRATION_QUEUE[cpu].push(task);
             unsafe { crate::cpu::arch::apic::ipi::task_migrate(cpu) };
         }
@@ -335,8 +330,15 @@ impl Scheduler {
     }
 }
 
-fn select_cpu(affinity: &crate::cpu::CpuMask) -> Option<usize> {
-    affinity.iter_ones().next()
+fn select_cpu(
+    affinity: &crate::cpu::CpuMask,
+    cur_cpu: usize,
+    _last_cpu: Option<usize>,
+) -> Option<usize> {
+    match affinity.get(cur_cpu) {
+        Some(slot) if *slot => Some(cur_cpu),
+        _ => affinity.iter_ones().next(),
+    }
 }
 
 fn block_callback(_: Arc<Timer>, _: Instant, arg: *mut u8) {

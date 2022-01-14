@@ -85,9 +85,7 @@ mod syscall {
             unsafe { virt_ptr.out().write(ptr) }.unwrap();
             crate::sched::SCHED
                 .with_current(|cur| unsafe {
-                    cur.tid()
-                        .handles()
-                        .insert_unchecked(virt, false, false)
+                    cur.tid().handles().insert_unchecked(virt, false, false)
                 })
                 .ok_or(Error(ESRCH))
         })

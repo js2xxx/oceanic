@@ -75,7 +75,7 @@ impl core::fmt::Display for Instant {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         let ns = unsafe { self.raw() };
         let s = ns as f64 / 1_000_000_000.0;
-        write!(f, "{:.4} s", s)
+        write!(f, "{:.6}", s)
     }
 }
 

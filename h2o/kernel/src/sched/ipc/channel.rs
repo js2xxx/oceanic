@@ -5,11 +5,10 @@ use alloc::{
 use core::time::Duration;
 
 use bytes::Bytes;
-use solvent::Handle;
 use spin::{Mutex, MutexGuard};
 
 use super::{IpcError, Object};
-use crate::sched::{task, wait::WaitQueue, SCHED};
+use crate::sched::{wait::WaitQueue, SCHED};
 
 const MAX_QUEUE_SIZE: usize = 2048;
 

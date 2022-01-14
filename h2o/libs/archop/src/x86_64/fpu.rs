@@ -45,7 +45,7 @@ pub fn frame_size() -> usize {
     match *FPU_TYPE {
         FpuType::Fn => 160,
         FpuType::Fx => 512,
-        FpuType::X(_, _) => 576,
+        FpuType::X(..) => 576,
     }
 }
 

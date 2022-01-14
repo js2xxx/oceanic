@@ -14,7 +14,7 @@ use core::{cell::UnsafeCell, time::Duration};
 
 use paging::LAddr;
 use solvent::Handle;
-use spin::{Lazy, Mutex, RwLock};
+use spin::{Lazy, Mutex};
 
 #[cfg(target_arch = "x86_64")]
 pub use self::ctx::arch::{DEFAULT_STACK_LAYOUT, DEFAULT_STACK_SIZE};
@@ -226,13 +226,12 @@ impl Ready {
     }
 
     #[inline]
-    pub(in crate::sched) fn unblock(blocked: Blocked, time_slice: Duration) -> Self {
+    pub(in crate::sched) fn unblock(blocked: Blocked, cpu: usize, time_slice: Duration) -> Self {
         let Blocked {
             tid,
             space,
             kstack,
             ext_frame,
-            cpu,
             runtime,
             ..
         } = blocked;
@@ -271,10 +270,8 @@ impl Ready {
     }
 
     pub(in crate::sched) fn exit(this: Self, retval: usize) {
-        let Ready { tid, kstack, .. } = this;
-        let dead = Dead { tid, retval };
-        destroy(dead);
-        idle::CTX_DROPPER.push(kstack);
+        destroy(this.tid, retval);
+        idle::CTX_DROPPER.push(this.kstack);
     }
 
     #[inline]
@@ -312,7 +309,7 @@ pub struct Blocked {
     kstack: ctx::Kstack,
     ext_frame: Box<ctx::ExtendedFrame>,
 
-    cpu: usize,
+    pub(super) cpu: usize,
     block_desc: &'static str,
     runtime: Duration,
 }
@@ -399,24 +396,6 @@ impl Blocked {
     }
 }
 
-#[derive(Debug)]
-pub struct Dead {
-    tid: Tid,
-    retval: usize,
-}
-
-impl Dead {
-    #[inline]
-    pub fn tid(&self) -> &Tid {
-        &self.tid
-    }
-
-    #[inline]
-    pub fn retval(&self) -> usize {
-        self.retval
-    }
-}
-
 #[inline]
 pub(super) fn init() {
     CpuLocalLazy::force(&idle::IDLE);
@@ -463,7 +442,7 @@ where
         };
         let prio = prio.min(cur_tid.prio);
 
-        let mut new_ti = TaskInfo {
+        let new_ti = TaskInfo {
             from: UnsafeCell::new(None),
             name,
             ty,
@@ -477,12 +456,7 @@ where
 
         let (ret_wo, child) = {
             let child = Child::new(tid.clone());
-            PREEMPT.scope(|| {
-                (
-                    cur_tid.handles().insert_shared(child.clone()),
-                    child,
-                )
-            })
+            PREEMPT.scope(|| (cur_tid.handles().insert_shared(child.clone()), child))
         };
 
         unsafe { tid.from.get().write(Some((cur_tid, Some(child)))) };
@@ -530,9 +504,9 @@ pub fn create_fn(
     )
 }
 
-pub(super) fn destroy(task: Dead) {
-    tid::deallocate(&task.tid);
-    if let Some((_, Some(child))) = { unsafe { &*task.tid.from.get() }.clone() } {
-        let _ = child.cell().replace(task.retval);
+pub(super) fn destroy(tid: Tid, retval: usize) {
+    tid::deallocate(&tid);
+    if let Some((_, Some(child))) = { unsafe { &*tid.from.get() }.clone() } {
+        let _ = child.cell().replace(retval);
     }
 }

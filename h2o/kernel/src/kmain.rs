@@ -68,18 +68,18 @@ pub extern "C" fn kmain() {
     sched::init();
 
     // Test end
-    l::debug!("Reaching end of kernel");
+    l::trace!("Reaching end of kernel");
 }
 
 pub fn kmain_ap() {
     unsafe { cpu::set_id(false) };
-    l::debug!("Starting the kernel");
+    l::trace!("Starting the kernel");
 
     unsafe { mem::space::init() };
     unsafe { cpu::arch::init_ap() };
 
     sched::init();
 
-    l::debug!("Finished");
+    l::trace!("Finished");
     unsafe { archop::halt_loop(Some(true)) };
 }
