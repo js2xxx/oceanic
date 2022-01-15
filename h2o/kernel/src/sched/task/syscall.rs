@@ -9,7 +9,7 @@ use super::{Blocked, RunningState, Signal, Tid, DEFAULT_STACK_SIZE};
 use crate::{
     cpu::time::Instant,
     mem::space,
-    sched::{sched::MIN_TIME_GRAN, PREEMPT, SCHED},
+    sched::{imp::MIN_TIME_GRAN, PREEMPT, SCHED},
     syscall::{In, InOut, Out, UserPtr},
 };
 
@@ -199,7 +199,7 @@ fn read_regs(task: &Blocked, addr: usize, data: UserPtr<Out, u8>, len: usize) ->
             if len < task::ctx::GPR_SIZE {
                 Err(Error(EBUFFER))
             } else {
-                unsafe { task.kstack().task_frame().debug_get(data.cast()) }
+                unsafe { data.cast().write(task.kstack().task_frame().debug_get()) }
             }
         }
         task::TASK_DBGADDR_FPU => {

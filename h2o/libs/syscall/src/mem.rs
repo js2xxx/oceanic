@@ -49,6 +49,9 @@ pub fn mem_alloc(layout: Layout, flags: Flags) -> crate::Result<NonNull<[u8]>> {
     }
 }
 
+/// # Safety
+///
+/// The caller must ensure that `ptr` is previously allocated by [`mem_alloc`].
 pub unsafe fn mem_dealloc(ptr: NonNull<u8>) -> crate::Result<()> {
     crate::call::mem_dealloc(ptr.as_ptr())
 }

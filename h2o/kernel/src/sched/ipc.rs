@@ -11,7 +11,8 @@ pub enum IpcError {
     QueueFull(Packet),
     QueueEmpty,
     Task(TaskError),
-    ChannelClosed(Packet),
+    SendChannelClosed(Packet),
+    ReceiveChannelClosed,
 }
 
 impl From<IpcError> for solvent::Error {
@@ -20,7 +21,8 @@ impl From<IpcError> for solvent::Error {
             IpcError::QueueFull(_) => solvent::ENOSPC,
             IpcError::QueueEmpty => solvent::ENOENT,
             IpcError::Task(_) => solvent::ESRCH,
-            IpcError::ChannelClosed(_) => solvent::EPIPE,
+            IpcError::SendChannelClosed(_) => solvent::EPIPE,
+            IpcError::ReceiveChannelClosed => solvent::EPIPE,
         })
     }
 }

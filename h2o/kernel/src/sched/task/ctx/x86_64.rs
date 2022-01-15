@@ -128,11 +128,8 @@ impl Frame {
     }
 
     #[inline]
-    pub unsafe fn debug_get(
-        &self,
-        out: crate::syscall::UserPtr<crate::syscall::Out, solvent::task::ctx::Gpr>,
-    ) -> solvent::Result<()> {
-        out.write(solvent::task::ctx::Gpr {
+    pub fn debug_get(&self) -> solvent::task::ctx::Gpr {
+        solvent::task::ctx::Gpr {
             rax: self.rax,
             rcx: self.rcx,
             rdx: self.rdx,
@@ -153,9 +150,12 @@ impl Frame {
             rflags: self.rflags,
             fs_base: self.fs_base,
             gs_base: self.gs_base,
-        })
+        }
     }
 
+    /// # Errors
+    ///
+    /// Returns error if `fs_base` or `gs_base` is invalid.
     #[inline]
     pub fn debug_set(&mut self, gpr: &solvent::task::ctx::Gpr) -> solvent::Result<()> {
         if !archop::canonical(LAddr::from(gpr.fs_base))
@@ -243,7 +243,7 @@ unsafe extern "C" fn save_regs() {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn switch_finishing() {
+pub(super) unsafe extern "C" fn switch_finishing() {
     if let Some(ref cur) = *crate::sched::SCHED.current() {
         log::trace!("Switched to task {:?}, P{}", cur.tid().raw(), PREEMPT.raw());
         debug_assert!(!cur.running_state.not_running());

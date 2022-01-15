@@ -187,12 +187,17 @@ impl Segment {
 
     /// Create the higher half of a segment descriptor.
     ///
+    /// # Safety
+    ///
     /// The caller must ensure that the entry before it is a valid system
     /// segment descriptor.
     pub const unsafe fn new_high(base_high: u32) -> Self {
         core::mem::transmute(base_high as u64)
     }
 
+    /// # Safety
+    ///
+    /// See [`new_high`] for more details.
     pub unsafe fn new_fp_high(fp: FatPointer) -> Self {
         Self::new_high((fp.base.val() >> 32) as u32)
     }

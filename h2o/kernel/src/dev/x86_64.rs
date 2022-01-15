@@ -5,6 +5,10 @@ pub mod pit;
 
 /// Initialize interrupt chips.
 ///
+/// # Panics
+///
+/// Panics if the hardware don't support APIC interrupt model.
+///
 /// # Safety
 ///
 /// This function must be called only once from the bootstrap CPU.

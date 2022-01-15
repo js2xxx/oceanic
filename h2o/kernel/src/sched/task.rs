@@ -63,6 +63,10 @@ pub enum Type {
 }
 
 impl Type {
+    /// # Errors
+    ///
+    /// Returns error if current task's type is less privileged than the
+    /// expected type.
     #[inline]
     pub fn pass(this: Option<Self>, cur_ty: Type) -> Result<Type> {
         match (this, cur_ty) {

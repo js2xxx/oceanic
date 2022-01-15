@@ -24,6 +24,9 @@ impl Phys {
         unsafe { Arc::new(Self::new_manual(false, base, layout, flags)) }
     }
 
+    /// # Errors
+    ///
+    /// Returns error if the heap memory is exhausted.
     pub fn allocate(layout: Layout, flags: Flags) -> Result<Arc<Phys>, AllocError> {
         let mem = if flags.contains(Flags::ZEROED) {
             Global.allocate_zeroed(layout)
@@ -130,6 +133,10 @@ impl Virt {
         self.phys.flags
     }
 
+    /// # Errors
+    ///
+    /// Returns error if caller tries to support more features or the pointer is
+    /// out of bounds.
     pub unsafe fn modify(&self, ptr: NonNull<[u8]>, flags: Flags) -> Result<(), SpaceError> {
         if flags & !self.phys_flags() != Flags::empty() {
             return Err(SpaceError::Permission);

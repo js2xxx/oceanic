@@ -120,6 +120,10 @@ impl GateBuilder {
     }
 
     /// Build the descriptor.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if IST is out of range.
     pub fn build(&mut self) -> Result<Gate, &'static str> {
         self.validate()?;
         Ok(Gate {

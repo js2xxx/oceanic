@@ -21,10 +21,18 @@ impl Instant {
         Self::now() - *self
     }
 
+    /// # Safety
+    ///
+    /// The underlying data can be inconsistent and should not be used with
+    /// measurements.
     pub const unsafe fn raw(&self) -> u128 {
         self.0.raw()
     }
 
+    /// # Safety
+    ///
+    /// The underlying data can be inconsistent and should not be used with
+    /// measurements.
     pub const unsafe fn from_raw(data: u128) -> Self {
         Instant(solvent::time::Instant::from_raw(data))
     }

@@ -15,7 +15,7 @@ use crate::{
     sched::{ipc::Packet, PREEMPT, SCHED},
 };
 
-pub fn dispatch_exception(frame: *mut Frame, vec: ExVec) -> bool {
+pub fn dispatch_exception(frame: &mut Frame, vec: ExVec) -> bool {
     let slot = match SCHED.with_current(|cur| cur.tid.excep_chan()) {
         Some(slot) => slot,
         _ => return false,
@@ -29,7 +29,7 @@ pub fn dispatch_exception(frame: *mut Frame, vec: ExVec) -> bool {
     let data: [u8; mem::size_of::<Exception>()] = unsafe {
         mem::transmute(Exception {
             vec: vec as u8,
-            errc: (*frame).errc_vec,
+            errc: unsafe { frame.errc_vec },
             cr2: match vec {
                 ExVec::PageFault => cr2::read(),
                 _ => 0,
@@ -58,7 +58,7 @@ pub fn dispatch_exception(frame: *mut Frame, vec: ExVec) -> bool {
             Some(res.code == EXRES_CODE_OK)
         }
         Err(err) => match err {
-            crate::sched::ipc::IpcError::ChannelClosed(_) => None,
+            crate::sched::ipc::IpcError::SendChannelClosed(_) => None,
             _ => Some(false),
         },
     };

@@ -92,17 +92,6 @@ impl Scheduler {
         self.current.get()
     }
 
-    pub unsafe fn preempt_current(&self) {
-        self.canary.assert();
-
-        PREEMPT.scope(|| unsafe {
-            // SAFETY: We have `_pree`, which means preemption is disabled.
-            if let Some(ref mut cur) = *self.current.get() {
-                cur.running_state = task::RunningState::NEED_RESCHED;
-            }
-        })
-    }
-
     pub fn block_current<T>(
         &self,
         guard: T,
@@ -140,6 +129,9 @@ impl Scheduler {
         cur.runtime > task.runtime + WAKE_TIME_GRAN
     }
 
+    /// # Panics
+    ///
+    /// Panics if the scheduler unexpectedly returns.
     pub fn exit_current(&self, retval: usize) -> ! {
         self.canary.assert();
         let pree = PREEMPT.lock();

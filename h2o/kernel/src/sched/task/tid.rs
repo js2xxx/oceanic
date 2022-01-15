@@ -60,10 +60,16 @@ fn next() -> Option<NonZeroU32> {
         .map(|id| NonZeroU32::new((id + 1) as u32).unwrap())
 }
 
+/// # Errors
+///
+/// Returns error if TID is exhausted.
 pub fn allocate(ti: TaskInfo) -> Result<Tid, TaskInfo> {
     allocate_or(ti, |ti| ti)
 }
 
+/// # Errors
+///
+/// Returns error if TID is exhausted.
 pub fn allocate_or<F, R>(ti: TaskInfo, or_else: F) -> Result<Tid, R>
 where
     F: FnOnce(TaskInfo) -> R,

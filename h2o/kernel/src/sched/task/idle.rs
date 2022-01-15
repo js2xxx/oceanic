@@ -60,7 +60,7 @@ fn idle(cpu: usize, fs_base: u64) -> ! {
     use crate::sched::{task, SCHED};
     log::debug!("IDLE #{}", cpu);
 
-    let (c1, c2) = Channel::new();
+    let (_, ctx_chan) = Channel::new();
 
     let (ctx_dropper, ..) = task::create_fn(
         Some(String::from("CTXD")),
@@ -68,7 +68,7 @@ fn idle(cpu: usize, fs_base: u64) -> ! {
         None,
         None,
         LAddr::new(ctx_dropper as *mut u8),
-        c2,
+        ctx_chan,
         unsafe { archop::msr::read(archop::msr::FS_BASE) },
         DEFAULT_STACK_SIZE,
     )

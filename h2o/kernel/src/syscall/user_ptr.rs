@@ -24,10 +24,17 @@ impl<T: Type, D> UserPtr<T, D> {
         self.data
     }
 
+    /// # Errors
+    ///
+    /// Returns error if the pointer is unaligned or out of user address space.
     pub fn check(&self) -> Result<()> {
         check_ptr(self.data.cast(), mem::size_of::<D>(), mem::align_of::<D>())
     }
 
+    /// # Errors
+    ///
+    /// Returns error if the pointer range is unaligned or out of user address
+    /// space.
     pub fn check_slice(&self, len: usize) -> Result<()> {
         check_ptr(
             self.data.cast(),
@@ -46,6 +53,15 @@ impl<T: Type, D> UserPtr<T, D> {
 }
 
 impl<D> UserPtr<In, D> {
+    /// # Errors
+    ///
+    /// Returns error if the pointer is invalid for reads or if the pointer is
+    /// unaligned.
+    ///
+    /// # Safety
+    ///
+    /// Behavior is undefined if the pointer don't point to a properly
+    /// initialized value of type `T`.
     pub unsafe fn read(&self) -> Result<D> {
         self.check()?;
 
@@ -65,6 +81,15 @@ impl<D> UserPtr<In, D> {
         Ok(data.assume_init())
     }
 
+    /// # Errors
+    ///
+    /// Returns error if the pointer is invalid for reads for `len` or if the
+    /// pointer is unaligned.
+    ///
+    /// # Safety
+    ///
+    /// Behavior is undefined if the pointer don't point to a properly
+    /// initialized array of type `T`.
     pub unsafe fn read_slice(&self, out: *mut D, count: usize) -> Result<()> {
         self.check_slice(count)?;
 
@@ -83,36 +108,48 @@ impl<D> UserPtr<In, D> {
 }
 
 impl<D> UserPtr<Out, D> {
-    pub unsafe fn write(&self, value: D) -> Result<()> {
+    /// # Errors
+    ///
+    /// Returns error if the pointer is invalid for writes or if the pointer is
+    /// unaligned.
+    pub fn write(&self, value: D) -> Result<()> {
         self.check()?;
 
-        let pf_resume = SCHED
-            .with_current(|cur| cur.kstack_mut().pf_resume_mut())
-            .ok_or(solvent::Error(solvent::ESRCH))?;
+        unsafe {
+            let pf_resume = SCHED
+                .with_current(|cur| cur.kstack_mut().pf_resume_mut())
+                .ok_or(solvent::Error(solvent::ESRCH))?;
 
-        checked_copy(
-            self.data.cast(),
-            ((&value) as *const D).cast(),
-            pf_resume,
-            mem::size_of::<D>(),
-        )
-        .into_result()
+            checked_copy(
+                self.data.cast(),
+                ((&value) as *const D).cast(),
+                pf_resume,
+                mem::size_of::<D>(),
+            )
+            .into_result()
+        }
     }
 
-    pub unsafe fn write_slice(&self, value: &[D]) -> Result<()> {
+    /// # Errors
+    ///
+    /// Returns error if the pointer is invalid for writes or if the pointer is
+    /// unaligned.
+    pub fn write_slice(&self, value: &[D]) -> Result<()> {
         self.check_slice(value.len())?;
 
-        let pf_resume = SCHED
-            .with_current(|cur| cur.kstack_mut().pf_resume_mut())
-            .ok_or(solvent::Error(solvent::ESRCH))?;
+        unsafe {
+            let pf_resume = SCHED
+                .with_current(|cur| cur.kstack_mut().pf_resume_mut())
+                .ok_or(solvent::Error(solvent::ESRCH))?;
 
-        checked_copy(
-            self.data.cast(),
-            value.as_ptr().cast(),
-            pf_resume,
-            value.len() * mem::size_of::<D>(),
-        )
-        .into_result()
+            checked_copy(
+                self.data.cast(),
+                value.as_ptr().cast(),
+                pf_resume,
+                value.len() * mem::size_of::<D>(),
+            )
+            .into_result()
+        }
     }
 }
 

@@ -182,14 +182,12 @@ impl Lapic {
         }
     }
 
-    
     pub fn new() -> Self {
         let mut ty = {
-            let res = {
-                let cpuid = CpuId::new();
-                cpuid.get_feature_info().unwrap().has_x2apic()
-            };
-            if res {
+            let has_x2apic = CpuId::new()
+                .get_feature_info()
+                .map_or(false, |f| f.has_x2apic());
+            if has_x2apic {
                 // SAFETY: Enabling Local X2 APIC if possible.
                 unsafe {
                     let val = msr::read(msr::APIC_BASE);

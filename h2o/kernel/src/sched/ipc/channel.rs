@@ -73,9 +73,12 @@ impl Channel {
         self.peer_id == other.peer_id
     }
 
+    /// # Errors
+    ///
+    /// Returns error if the peer is closed or if the channel is full.
     pub fn send(&self, msg: Packet) -> Result<(), IpcError> {
         match self.peer.upgrade() {
-            None => Err(IpcError::ChannelClosed(msg)),
+            None => Err(IpcError::SendChannelClosed(msg)),
             Some(peer) => {
                 if peer.len() >= MAX_QUEUE_SIZE {
                     Err(IpcError::QueueFull(msg))
@@ -87,18 +90,24 @@ impl Channel {
         }
     }
 
+    /// # Errors
+    ///
+    /// Returns error if the peer is closed.
     pub fn receive(&self, timeout: Duration) -> Result<MutexGuard<Option<Packet>>, IpcError> {
         let mut head = self.head.lock();
         if head.is_none() {
             *head = Some(
                 self.me
                     .pop(timeout, "Channel::receive")
-                    .ok_or(IpcError::QueueEmpty)?,
+                    .ok_or(IpcError::ReceiveChannelClosed)?,
             );
         }
         Ok(head)
     }
 
+    /// # Errors
+    ///
+    /// Returns error if the channel is empty.
     pub fn try_receive(&self) -> Result<MutexGuard<Option<Packet>>, IpcError> {
         let mut head = self.head.lock();
         if head.is_none() {

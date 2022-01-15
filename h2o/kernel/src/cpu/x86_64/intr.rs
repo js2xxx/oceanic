@@ -85,7 +85,7 @@ pub unsafe fn try_unregister(intr: &Arc<Interrupt>) -> Result<(), RegisterError>
 unsafe fn exception(frame_ptr: *mut Frame, vec: def::ExVec) {
     use def::ExVec::*;
 
-    let frame = &*frame_ptr;
+    let frame = &mut *frame_ptr;
     match vec {
         PageFault if crate::mem::space::page_fault(&mut *frame_ptr, frame.errc_vec) => return,
         _ => {}
@@ -93,7 +93,7 @@ unsafe fn exception(frame_ptr: *mut Frame, vec: def::ExVec) {
 
     match SCHED.with_current(|cur| cur.tid().ty()) {
         Some(task::Type::User) if frame.cs == USR_CODE_X64.into_val().into() => {
-            if !task::dispatch_exception(frame_ptr, vec) {
+            if !task::dispatch_exception(frame, vec) {
                 // Kill the fucking task.
                 SCHED.exit_current((-solvent::EFAULT) as usize)
             }

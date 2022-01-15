@@ -59,7 +59,7 @@ unsafe impl Send for Hpet {}
 unsafe impl Sync for Hpet {}
 
 impl Hpet {
-    pub unsafe fn new(data: acpi::HpetInfo) -> Result<Self, &'static str> {
+    unsafe fn new(data: acpi::HpetInfo) -> Result<Self, &'static str> {
         let phys = Phys::new(
             PAddr::new(data.base_address),
             PAGE_LAYOUT,
