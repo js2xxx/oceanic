@@ -34,13 +34,14 @@ impl Phys {
             Global.allocate(layout)
         };
         mem.map(|ptr| unsafe {
-            Arc::new(Phys::new_manual(
+            Phys::new_manual(
                 true,
                 LAddr::from(ptr).to_paddr(minfo::ID_OFFSET),
                 layout,
                 flags,
-            ))
+            )
         })
+        .map(Arc::new)
     }
 
     pub(super) unsafe fn new_manual(
