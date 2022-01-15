@@ -86,7 +86,7 @@ fn create_inner(
     prio: Option<Priority>,
     space: Arc<Space>,
     entry: LAddr,
-    init_chan: Option<Channel>,
+    init_chan: Channel,
     arg: u64,
     stack_size: usize,
 ) -> Result<(Init, Handle)> {
@@ -100,10 +100,10 @@ fn create_inner(
         .build()
         .unwrap();
 
-    let init_chan = init_chan.map(|chan| ti.handles().insert(chan).raw() as u64);
+    let init_chan = ti.handles().insert(init_chan).raw() as u64;
     let tid = tid::allocate(ti).map_err(|_| TaskError::TidExhausted)?;
 
-    let entry = create_entry(&space, entry, stack_size, [init_chan.unwrap_or(0), arg])?;
+    let entry = create_entry(&space, entry, stack_size, [init_chan, arg])?;
     let kstack = ctx::Kstack::new(entry, ty);
 
     let ext_frame = ctx::ExtFrame::zeroed();
@@ -121,7 +121,7 @@ pub fn create_fn(
     affinity: Option<CpuMask>,
     prio: Option<Priority>,
     func: LAddr,
-    init_chan: Option<Channel>,
+    init_chan: Channel,
     arg: u64,
     stack_size: usize,
 ) -> Result<(Init, Handle)> {

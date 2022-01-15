@@ -60,13 +60,15 @@ fn idle(cpu: usize, fs_base: u64) -> ! {
     use crate::sched::{task, SCHED};
     log::debug!("IDLE #{}", cpu);
 
+    let (c1, c2) = Channel::new();
+
     let (ctx_dropper, ..) = task::create_fn(
         Some(String::from("CTXD")),
         Some(Type::Kernel),
         None,
         None,
         LAddr::new(ctx_dropper as *mut u8),
-        None,
+        c2,
         unsafe { archop::msr::read(archop::msr::FS_BASE) },
         DEFAULT_STACK_SIZE,
     )
@@ -90,7 +92,7 @@ fn idle(cpu: usize, fs_base: u64) -> ! {
             image,
             String::from("TINIT"),
             crate::cpu::all_mask(),
-            Some(chan),
+            chan,
         )
         .expect("Failed to initialize TINIT");
         SCHED.unblock(tinit);

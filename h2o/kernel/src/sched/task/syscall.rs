@@ -65,6 +65,7 @@ fn task_fn(
     if cf.contains(task::CreateFlags::SUSPEND_ON_START) {
         extra.check()?;
     }
+    ci.init_chan.check_null()?;
 
     let name = {
         let ptr = UserPtr::<In, _>::new(ci.name);
@@ -83,16 +84,14 @@ fn task_fn(
         ci.stack_size
     };
 
-    let init_chan = match ci.init_chan.check_null() {
-        Ok(hdl) => SCHED.with_current(|cur| {
+    let init_chan = SCHED
+        .with_current(|cur| {
             cur.tid()
                 .handles()
-                .remove::<crate::sched::ipc::Channel>(hdl)
-                .ok_or(Error(EINVAL))
-        }),
-        Err(_) => None,
-    }
-    .transpose()?;
+                .remove::<crate::sched::ipc::Channel>(ci.init_chan)
+        })
+        .ok_or(Error(ESRCH))?
+        .ok_or(Error(EINVAL))?;
 
     UserPtr::<In, _>::new(ci.func).check()?;
 

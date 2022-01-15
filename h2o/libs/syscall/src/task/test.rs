@@ -191,11 +191,15 @@ pub fn test() {
     assert_eq!(ret, Err(crate::Error(crate::EPERM)));
 
     let creator = |arg: u32, cf: Option<CreateFlags>, extra: *mut crate::Handle| {
+        let mut c1 = Handle::NULL;
+        let mut c2 = Handle::NULL;
+        chan_new(&mut c1, &mut c2).expect("Failed to create channel");
+        obj_drop(c1).expect("Failed to drop channel");
         let ci = CreateInfo {
             name: null_mut(),
             name_len: 0,
             stack_size: crate::task::DEFAULT_STACK_SIZE,
-            init_chan: Handle::NULL,
+            init_chan: c2,
             func: func as *mut u8,
             arg: arg as *mut u8,
         };
