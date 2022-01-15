@@ -34,11 +34,11 @@ pub unsafe fn activate(lapic: &mut super::Lapic, mode: TimerMode, div: u8, init_
 
     let vec = crate::cpu::intr::arch::def::ApicVec::Timer as u8;
 
-    // SAFE: `div` is valid.
+    // SAFETY: `div` is valid.
     let encdiv = unsafe { encode_div(div) };
     let timer_val = LocalEntry::new().with_timer_mode(mode).with_vec(vec);
 
-    // SAFE: Those MSRs are per-cpu and only 1 timer object is available in the
+    // SAFETY: Those MSRs are per-cpu and only 1 timer object is available in the
     // context.
     unsafe {
         use archop::msr;
@@ -59,7 +59,7 @@ pub unsafe fn activate(lapic: &mut super::Lapic, mode: TimerMode, div: u8, init_
 /// The caller must ensure that this function is called only by interrupt
 /// routines and when everything about interrupts is set up.
 pub unsafe fn timer_handler() {
-    // SAFE: Inside the timer interrupt handler.
+    // SAFETY: Inside the timer interrupt handler.
     super::lapic(|lapic| lapic.eoi());
 
     crate::cpu::time::timer_tick();

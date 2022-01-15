@@ -23,7 +23,7 @@ impl Instant {
     ///
     /// The underlying data can be inconsistent and should not be used with
     /// measurements.
-    pub unsafe fn raw(&self) -> u128 {
+    pub const unsafe fn raw(&self) -> u128 {
         self.0
     }
 
@@ -31,7 +31,7 @@ impl Instant {
     ///
     /// The underlying data can be inconsistent and should not be used with
     /// measurements.
-    pub unsafe fn from_raw(raw: u128) -> Self {
+    pub const unsafe fn from_raw(raw: u128) -> Self {
         Instant(raw)
     }
 }

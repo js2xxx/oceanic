@@ -52,13 +52,13 @@ impl log::Log for Logger {
         let mut os = self.output.lock();
         let cur_time = HAS_TIME
             .read()
-            .then(|| Instant::now())
+            .then(Instant::now)
             .unwrap_or(unsafe { Instant::from_raw(0) });
 
         let res = if record.level() < log::Level::Debug {
-            write!(
+            writeln!(
                 &mut *os,
-                "[{}] {}: {}\n",
+                "[{}] {}: {}",
                 cur_time,
                 record.level(),
                 record.args(),
@@ -66,9 +66,9 @@ impl log::Log for Logger {
         } else {
             let file = record.file().unwrap_or("<NULL>");
             let line = OptionU32Display(record.line());
-            write!(
+            writeln!(
                 &mut *os,
-                "[{}] {}: [#{} {}:{}] {}\n",
+                "[{}] {}: [#{} {}:{}] {}",
                 cur_time,
                 record.level(),
                 unsafe { crate::cpu::id() },

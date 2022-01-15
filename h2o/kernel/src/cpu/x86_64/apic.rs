@@ -182,19 +182,23 @@ impl Lapic {
         }
     }
 
+    
     pub fn new() -> Self {
-        let mut ty = if {
-            let cpuid = CpuId::new();
-            cpuid.get_feature_info().unwrap().has_x2apic()
-        } {
-            // SAFE: Enabling Local X2 APIC if possible.
-            unsafe {
-                let val = msr::read(msr::APIC_BASE);
-                msr::write(msr::APIC_BASE, val | (1 << 10));
+        let mut ty = {
+            let res = {
+                let cpuid = CpuId::new();
+                cpuid.get_feature_info().unwrap().has_x2apic()
+            };
+            if res {
+                // SAFETY: Enabling Local X2 APIC if possible.
+                unsafe {
+                    let val = msr::read(msr::APIC_BASE);
+                    msr::write(msr::APIC_BASE, val | (1 << 10));
+                }
+                LapicType::X2
+            } else {
+                LapicType::X1(LAPIC_BASE.base())
             }
-            LapicType::X2
-        } else {
-            LapicType::X1(LAPIC_BASE.base())
         };
 
         // Get the LAPIC ID.
@@ -341,7 +345,7 @@ pub unsafe fn spurious_handler() {
 /// The caller must ensure that this function is only called by the error
 /// handler.
 pub unsafe fn error_handler() {
-    // SAFE: Inside the interrupt error handler.
+    // SAFETY: Inside the interrupt error handler.
     lapic(|lapic| lapic.handle_error());
 }
 

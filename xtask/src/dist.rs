@@ -2,9 +2,7 @@ use std::{env, error::Error, fs, path::Path, process::Command};
 
 use structopt::StructOpt;
 
-const H2O_BOOT: &str = "h2o/boot";
-const H2O_KERNEL: &str = "h2o/kernel";
-const H2O_TINIT: &str = "h2o/tinit";
+use crate::{H2O_BOOT, H2O_KERNEL, H2O_TINIT};
 
 #[derive(Debug, StructOpt)]
 pub enum Type {

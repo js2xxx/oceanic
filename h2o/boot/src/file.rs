@@ -103,7 +103,7 @@ pub fn load(syst: &SystemTable<Boot>, filename: &str) -> *mut [u8] {
 }
 
 pub fn realloc_file(syst: &SystemTable<Boot>, data: &[u8]) -> *mut [u8] {
-    let (_, dest_ptr) = crate::mem::alloc(&syst)
+    let (_, dest_ptr) = crate::mem::alloc(syst)
         .alloc_into_slice(data.len(), crate::mem::EFI_ID_OFFSET)
         .expect("Failed to allocate memory");
     let dest = unsafe { &mut *dest_ptr };

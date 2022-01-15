@@ -104,8 +104,8 @@ fn load_elf(space: &Arc<Space>, file: &Elf, image: &[u8]) -> Result<(LAddr, usiz
     Ok((entry, stack_size))
 }
 
-pub fn from_elf<'a, 'b>(
-    image: &'b [u8],
+pub fn from_elf(
+    image: &[u8],
     name: String,
     affinity: CpuMask,
     init_chan: Channel,

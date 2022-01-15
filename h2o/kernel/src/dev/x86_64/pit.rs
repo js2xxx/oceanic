@@ -93,6 +93,13 @@ impl PitClock {
     }
 }
 
+impl Default for PitClock {
+    #[inline]
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 fn pit_handler(_: *mut u8) -> IrqReturn {
     PIT_TICKS.fetch_add(1, SeqCst);
     IrqReturn::SUCCESS

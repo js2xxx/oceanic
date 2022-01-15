@@ -60,9 +60,9 @@ impl Scheduler {
     }
 
     fn enqueue(&self, task: task::Ready, pree: PreemptStateGuard) {
-        // SAFE: We have `pree`, which means preemption is disabled.
+        // SAFETY: We have `pree`, which means preemption is disabled.
         match unsafe { &*self.current.get() } {
-            Some(ref cur) if Self::should_preempt(&cur, &task) => {
+            Some(ref cur) if Self::should_preempt(cur, &task) => {
                 log::trace!(
                     "Preempting to task {:?}, P{}",
                     task.tid.raw(),
@@ -83,7 +83,7 @@ impl Scheduler {
     {
         self.canary.assert();
 
-        // SAFE: We have `_pree`, which means preemption is disabled.
+        // SAFETY: We have `_pree`, which means preemption is disabled.
         PREEMPT.scope(|| unsafe { (*self.current.get()).as_mut().map(func) })
     }
 
@@ -96,7 +96,7 @@ impl Scheduler {
         self.canary.assert();
 
         PREEMPT.scope(|| unsafe {
-            // SAFE: We have `_pree`, which means preemption is disabled.
+            // SAFETY: We have `_pree`, which means preemption is disabled.
             if let Some(ref mut cur) = *self.current.get() {
                 cur.running_state = task::RunningState::NEED_RESCHED;
             }
@@ -114,7 +114,7 @@ impl Scheduler {
 
         let pree = PREEMPT.lock();
 
-        // SAFE: We have `pree`, which means preemption is disabled.
+        // SAFETY: We have `pree`, which means preemption is disabled.
         log::trace!(
             "Blocking task {:?}, P{}",
             unsafe { &*self.current.get() }.as_ref().unwrap().tid.raw(),
@@ -144,7 +144,7 @@ impl Scheduler {
         self.canary.assert();
         let pree = PREEMPT.lock();
 
-        // SAFE: We have `pree`, which means preemption is disabled.
+        // SAFETY: We have `pree`, which means preemption is disabled.
         log::trace!(
             "Exiting task {:?}, P{}",
             unsafe { &*self.current.get() }.as_ref().unwrap().tid.raw(),
@@ -177,7 +177,7 @@ impl Scheduler {
         cur_time: Instant,
         pree: PreemptStateGuard<'a>,
     ) -> Option<PreemptStateGuard<'a>> {
-        // SAFE: We have `pree`, which means preemption is disabled.
+        // SAFETY: We have `pree`, which means preemption is disabled.
         let cur = match unsafe { &*self.current.get() } {
             Some(ref cur) => cur,
             None => return Some(pree),
@@ -244,7 +244,7 @@ impl Scheduler {
     fn schedule(&self, cur_time: Instant, pree: PreemptStateGuard) -> bool {
         self.canary.assert();
         #[cfg(debug_assertions)]
-        // SAFE: We have `pree`, which means preemption is disabled.
+        // SAFETY: We have `pree`, which means preemption is disabled.
         if let Some(ref cur) = unsafe { &*self.current.get() } {
             log::trace!("Scheduling task {:?}, P{}", cur.tid.raw(), PREEMPT.raw());
         }
@@ -282,7 +282,7 @@ impl Scheduler {
         next.cpu = self.cpu;
         let new = next.kstack.kframe_ptr();
 
-        // SAFE: We have `pree`, which means preemption is disabled.
+        // SAFETY: We have `pree`, which means preemption is disabled.
         let cur_slot = unsafe { &mut *self.current.get() };
         let (old, ret) = match cur_slot.replace(next) {
             Some(mut prev) => {

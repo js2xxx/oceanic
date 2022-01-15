@@ -46,3 +46,10 @@ impl<T> WaitQueue<T> {
         self.wo.notify(1);
     }
 }
+
+impl<T> Default for WaitQueue<T> {
+    #[inline]
+    fn default() -> Self {
+        Self::new()
+    }
+}

@@ -87,10 +87,7 @@ impl Channel {
         }
     }
 
-    pub fn receive<'a>(
-        &'a self,
-        timeout: Duration,
-    ) -> Result<MutexGuard<'a, Option<Packet>>, IpcError> {
+    pub fn receive(&self, timeout: Duration) -> Result<MutexGuard<Option<Packet>>, IpcError> {
         let mut head = self.head.lock();
         if head.is_none() {
             *head = Some(
@@ -216,8 +213,6 @@ mod syscall {
             user_handles[..handles.len()].copy_from_slice(&handles);
 
             unsafe {
-                drop(user_buffer);
-                drop(user_handles);
                 packet_ptr.out().write(user_packet).unwrap();
             }
 

@@ -71,9 +71,9 @@ unsafe fn init_services(img: Handle, syst: &SystemTable<Boot>) {
     uefi::alloc::init(bs);
 
     if cfg!(debug_assertions) {
-        init_log(&syst, log::LevelFilter::Debug);
+        init_log(syst, log::LevelFilter::Debug);
     } else {
-        init_log(&syst, log::LevelFilter::Info);
+        init_log(syst, log::LevelFilter::Info);
     }
 
     bs.create_event(

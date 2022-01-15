@@ -140,7 +140,7 @@ impl HandleMap {
         {
             let chan = get_chan()?;
             for hdl in handles {
-                match self.map.get(&hdl) {
+                match self.map.get(hdl) {
                     None => return Err(solvent::Error(solvent::EINVAL)),
                     Some(obj) if !obj.is_send() => return Err(solvent::Error(solvent::EPERM)),
                     Some(obj) => match (*obj).deref::<Channel>() {
@@ -153,8 +153,8 @@ impl HandleMap {
             }
         }
         let obj = handles
-            .into_iter()
-            .map(|hdl| self.map.remove(&hdl).unwrap())
+            .iter()
+            .map(|hdl| self.map.remove(hdl).unwrap())
             .collect();
         Ok((obj, get_chan().unwrap()))
     }

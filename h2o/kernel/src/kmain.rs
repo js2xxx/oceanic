@@ -55,7 +55,7 @@ pub extern "C" fn kmain() {
         cpu::arch::reload_pls();
     }
 
-    // SAFE: Everything is uninitialized.
+    // SAFETY: Everything is uninitialized.
     unsafe { self::log::init(l::Level::Debug) };
     l::info!("Starting the kernel");
 

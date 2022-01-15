@@ -11,7 +11,7 @@ use super::Instant;
 use crate::{cpu::CpuLocalLazy, sched::deque::Worker};
 
 #[thread_local]
-static TIMER_QUEUE: CpuLocalLazy<Worker<Arc<Timer>>> = CpuLocalLazy::new(|| Worker::new_fifo());
+static TIMER_QUEUE: CpuLocalLazy<Worker<Arc<Timer>>> = CpuLocalLazy::new(Worker::new_fifo);
 
 #[derive(Debug)]
 pub struct Callback {

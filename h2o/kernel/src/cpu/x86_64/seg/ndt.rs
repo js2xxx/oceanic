@@ -53,7 +53,7 @@ pub static GDT: CpuLocalLazy<DescTable<10>> = CpuLocalLazy::new(|| {
 
 #[thread_local]
 pub(in crate::cpu::arch) static TSS: CpuLocalLazy<TssStruct> = CpuLocalLazy::new(|| {
-    // SAFE: No physical address specified.
+    // SAFETY: No physical address specified.
     let alloc_stack = || {
         crate::mem::alloc_system_stack()
             .expect("System memory allocation failed")

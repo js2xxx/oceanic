@@ -11,9 +11,9 @@ pub struct Output(Port<u8>);
 impl Output {
     /// Initialize the serial port. Copied from Osdev Wiki.
     pub unsafe fn new(port: u16) -> Output {
-        // SAFE: The port is present and available.
+        // SAFETY: The port is present and available.
         let mut sp = unsafe { Port::new(port) };
-        // SAFE: These offsets and values are valid.
+        // SAFETY: These offsets and values are valid.
         unsafe {
             sp.write_offset(1, 0x00); // Disable all interrupts
             sp.write_offset(3, 0x80); // Enable DLAB (set baud rate divisor)

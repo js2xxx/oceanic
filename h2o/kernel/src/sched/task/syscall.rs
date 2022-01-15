@@ -165,7 +165,7 @@ fn task_ctl(hdl: Handle, op: u32, data: UserPtr<InOut, Handle>) {
 
             let st = SuspendToken {
                 slot: Arc::new(Mutex::new(None)),
-                tid: child.clone(),
+                tid: child,
             };
 
             st.tid.with_signal(|sig| {

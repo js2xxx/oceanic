@@ -26,12 +26,12 @@ impl Allocator {
         }
     }
 
-    pub fn allocate<'a, 'b>(
-        &'a self,
+    pub fn allocate(
+        &self,
         ty: AllocType,
         phys: &mut Option<Arc<Phys>>,
         flags: Flags,
-        arch: &'b ArchSpace,
+        arch: &ArchSpace,
     ) -> Result<NonNull<[u8]>, SpaceError> {
         self.canary.assert();
 
@@ -104,10 +104,10 @@ impl Allocator {
 
         range.remove(prefix.start);
         if !prefix.is_empty() {
-            let _ = range.insert(prefix.clone());
+            let _ = range.insert(prefix);
         }
         if !suffix.is_empty() {
-            let _ = range.insert(suffix.clone());
+            let _ = range.insert(suffix);
         }
         drop(range);
 
@@ -180,7 +180,7 @@ impl Allocator {
     ///
     /// This function is called only inside `<space::Space as Drop>::drop`.
     pub unsafe fn dispose(self: &alloc::sync::Arc<Self>, arch: &ArchSpace) {
-        // SAFE: This expression ensures the memory safety of page tables and will not
+        // SAFETY: This expression ensures the memory safety of page tables and will not
         // cause any double-free faults.
         //
         // This is called only inside `<space::Space as Drop>::drop`, which means that:

@@ -21,11 +21,11 @@ impl Instant {
         Self::now() - *self
     }
 
-    pub unsafe fn raw(&self) -> u128 {
+    pub const unsafe fn raw(&self) -> u128 {
         self.0.raw()
     }
 
-    pub unsafe fn from_raw(data: u128) -> Self {
+    pub const unsafe fn from_raw(data: u128) -> Self {
         Instant(solvent::time::Instant::from_raw(data))
     }
 }
