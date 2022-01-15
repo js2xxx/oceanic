@@ -116,7 +116,7 @@ impl TssStruct {
     pub unsafe fn set_rsp0(&self, rsp0: u64) -> u64 {
         let ret = self.rsp0();
         let addr = addr_of!(self.rsp0);
-        (addr as *mut u64).write_unaligned(rsp0.into());
+        (addr as *mut u64).write_unaligned(rsp0);
         ret
     }
 

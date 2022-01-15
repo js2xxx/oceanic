@@ -191,7 +191,6 @@ impl Scheduler {
 
         match ti.with_signal(|sig| sig.take()) {
             Some(task::sig::Signal::Kill) => {
-                drop(ti);
                 log::trace!("Killing task {:?}, P{}", cur.tid.raw(), PREEMPT.raw());
                 self.schedule_impl(cur_time, pree, None, |task| {
                     task::Ready::exit(task, (-solvent::EKILLED) as usize)
@@ -199,8 +198,6 @@ impl Scheduler {
                 unreachable!("Dead task");
             }
             Some(task::sig::Signal::Suspend(slot)) => {
-                drop(ti);
-
                 log::trace!("Suspending task {:?}, P{}", cur.tid.raw(), PREEMPT.raw());
                 self.schedule_impl(cur_time, pree, None, |task| {
                     *slot.lock() = Some(task::Ready::block(task, "task_ctl_suspend"));

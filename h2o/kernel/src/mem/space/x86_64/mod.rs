@@ -209,26 +209,19 @@ impl ErrCode {
 pub unsafe fn page_fault(frame: &mut Frame, errc: u64) -> bool {
     let addr = archop::reg::cr2::read();
 
-    loop {
-        let code = match ErrCode::from_bits(errc) {
-            Some(code) => code,
-            None => break,
-        };
-
+    match ErrCode::from_bits(errc) {
         // So far neither has been supported.
-        if code.contains(ErrCode::PROT_KEY | ErrCode::SHADOW_STACK) {
-            break;
-        }
+        Some(code) if !code.contains(ErrCode::PROT_KEY | ErrCode::SHADOW_STACK) => {
+            if matches!(
+                SCHED.with_current(|cur| cur.kstack_mut().pf_resume(frame, errc, addr)),
+                Some(true)
+            ) {
+                return true;
+            }
 
-        if matches!(
-            SCHED.with_current(|cur| cur.kstack_mut().pf_resume(frame, errc, addr)),
-            Some(true)
-        ) {
-            return true;
+            // TODO: Add some handling code.
         }
-
-        // TODO: Add some handling code.
-        break;
+        _ => {}
     }
 
     // No more available remedies.

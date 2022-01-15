@@ -60,7 +60,7 @@ impl TaskInfo {
 
     #[inline]
     pub fn affinity(&self) -> crate::cpu::CpuMask {
-        self.affinity.clone()
+        self.affinity
     }
 
     #[inline]

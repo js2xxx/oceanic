@@ -38,7 +38,7 @@ pub fn dispatch_exception(frame: *mut Frame, vec: ExVec) -> bool {
     };
 
     let excep = Packet::new(vec![], &data);
-    if let Err(_) = excep_chan.send(excep) {
+    if excep_chan.send(excep).is_err() {
         PREEMPT.scope(|| *slot.lock() = Some(excep_chan));
         return false;
     }

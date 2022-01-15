@@ -20,7 +20,7 @@ pub unsafe fn init() -> Option<LAddr> {
 
     let star = (USR_CODE_X86.into_val() as u64) << 48 | (INTR_CODE.into_val() as u64) << 32;
     msr::write(msr::STAR, star);
-    msr::write(msr::LSTAR, rout_syscall as u64);
+    msr::write(msr::LSTAR, rout_syscall as usize as u64);
     msr::write(msr::FMASK, reg::rflags::IF | reg::rflags::TF);
 
     let efer = msr::read(msr::EFER);

@@ -18,7 +18,7 @@ use crate::{
 /// [`task_exit`]: crate::sched::task::syscall::task_exit
 #[thread_local]
 pub(super) static CTX_DROPPER: CpuLocalLazy<deque::Injector<alloc::boxed::Box<Context>>> =
-    CpuLocalLazy::new(|| deque::Injector::new());
+    CpuLocalLazy::new(deque::Injector::new);
 
 #[thread_local]
 pub(super) static IDLE: CpuLocalLazy<Tid> = CpuLocalLazy::new(|| {

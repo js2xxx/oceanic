@@ -99,7 +99,7 @@ impl Channel {
         Ok(head)
     }
 
-    pub fn try_receive<'a>(&'a self) -> Result<MutexGuard<'a, Option<Packet>>, IpcError> {
+    pub fn try_receive(&self) -> Result<MutexGuard<Option<Packet>>, IpcError> {
         let mut head = self.head.lock();
         if head.is_none() {
             *head = Some(self.me.try_pop().ok_or(IpcError::QueueEmpty)?);
@@ -185,7 +185,7 @@ mod syscall {
                 } else {
                     channel.try_receive()
                 }
-                .map_err(Into::into)?;
+                .map_err(Error::from)?;
 
                 let data = packet.as_ref().unwrap().buffer();
                 let object_count = packet.as_ref().unwrap().object_count();

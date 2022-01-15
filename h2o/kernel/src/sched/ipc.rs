@@ -14,9 +14,9 @@ pub enum IpcError {
     ChannelClosed(Packet),
 }
 
-impl Into<solvent::Error> for IpcError {
-    fn into(self) -> solvent::Error {
-        solvent::Error(match self {
+impl From<IpcError> for solvent::Error {
+    fn from(val: IpcError) -> Self {
+        solvent::Error(match val {
             IpcError::QueueFull(_) => solvent::ENOSPC,
             IpcError::QueueEmpty => solvent::ENOENT,
             IpcError::Task(_) => solvent::ESRCH,

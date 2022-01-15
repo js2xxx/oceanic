@@ -105,7 +105,7 @@ fn task_fn(
         ci.arg as u64,
         stack_size,
     )
-    .map_err(Into::into)?;
+    .map_err(Error::from)?;
 
     if cf.contains(task::CreateFlags::SUSPEND_ON_START) {
         let task = super::Ready::block(
@@ -276,13 +276,13 @@ fn task_debug(hdl: Handle, op: u32, addr: usize, data: UserPtr<InOut, u8>, len: 
         task::TASK_DBG_READ_REG => read_regs(&task, addr, data.out(), len),
         task::TASK_DBG_WRITE_REG => write_regs(&mut task, addr, data.r#in(), len),
         task::TASK_DBG_READ_MEM => unsafe {
-            space::with(&task.space(), |_| {
+            space::with(task.space(), |_| {
                 let slice = slice::from_raw_parts(addr as *mut u8, len);
                 data.out().write_slice(slice)
             })
         },
         task::TASK_DBG_WRITE_MEM => unsafe {
-            space::with(&task.space(), |_| {
+            space::with(task.space(), |_| {
                 data.r#in().read_slice(addr as *mut u8, len)
             })
         },

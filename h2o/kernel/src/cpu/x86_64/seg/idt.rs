@@ -133,6 +133,13 @@ impl GateBuilder {
     }
 }
 
+impl Default for GateBuilder {
+    #[inline]
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Gate {
     /// Construct a zeroed gate descriptor.
     pub const fn zeroed() -> Gate {

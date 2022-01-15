@@ -83,21 +83,18 @@ impl HandleMap {
     /// [`HandleMap`] if the returned object is `!Send`.
     pub unsafe fn get_unchecked<T: 'static>(&self, hdl: Handle) -> Option<HandleGuard<'_, T>> {
         self.map.get(&hdl).and_then(|inner| {
-            match inner.deref_unchecked().map(|value| value as *const _) {
-                Some(value) => Some(HandleGuard {
+            inner
+                .deref_unchecked()
+                .map(|value| value as *const _)
+                .map(|value| HandleGuard {
                     _inner: inner,
                     value: unsafe { &*value },
-                }),
-                None => None,
-            }
+                })
         })
     }
 
     pub fn clone_handle(&self, hdl: Handle) -> Option<Handle> {
-        match self.map.get(&hdl).and_then(|k| Object::clone(&*k)) {
-            Some(o) => Some(unsafe { self.insert_impl(o) }),
-            None => None,
-        }
+        self.map.get(&hdl).and_then(|k| Object::clone(&*k)).map(|o| unsafe { self.insert_impl(o) })
     }
 
     pub fn remove<T: Send + 'static>(&self, hdl: Handle) -> Option<T> {

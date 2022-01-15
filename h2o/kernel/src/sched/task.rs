@@ -38,10 +38,10 @@ pub enum TaskError {
     Other(&'static str),
 }
 
-impl Into<solvent::Error> for TaskError {
-    fn into(self) -> solvent::Error {
+impl From<TaskError> for solvent::Error {
+    fn from(val: TaskError) -> Self {
         use solvent::*;
-        match self {
+        match val {
             TaskError::Permission => Error(EPERM),
             TaskError::NotSupported(_) => Error(EPERM),
             TaskError::InvalidFormat => Error(EINVAL),

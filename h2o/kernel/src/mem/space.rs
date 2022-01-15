@@ -48,10 +48,10 @@ pub enum SpaceError {
     Permission,
 }
 
-impl Into<solvent::Error> for SpaceError {
-    fn into(self) -> solvent::Error {
+impl From<SpaceError> for solvent::Error {
+    fn from(val: SpaceError) -> Self {
         use solvent::*;
-        match self {
+        match val {
             SpaceError::OutOfMemory => Error(ENOMEM),
             SpaceError::AddressBusy => Error(EBUSY),
             SpaceError::InvalidFormat => Error(EINVAL),

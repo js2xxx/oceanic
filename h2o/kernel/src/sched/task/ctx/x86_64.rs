@@ -42,7 +42,7 @@ impl Kframe {
     pub fn new(ptr: *const u8, cs: u64) -> Self {
         Kframe {
             cs,
-            ret_addr: task_fresh as u64,
+            ret_addr: task_fresh as usize as u64,
             rbp: ptr as u64 + 1,
             ..Default::default()
         }
@@ -203,7 +203,7 @@ impl Frame {
 
         info!("Frame dump on CPU #{}", unsafe { crate::cpu::id() });
 
-        if self.errc_vec != 0u64.wrapping_sub(1) && errc_format != "" {
+        if self.errc_vec != 0u64.wrapping_sub(1) && !errc_format.is_empty() {
             info!("> Error Code = {}", Flags::new(self.errc_vec, errc_format));
             if errc_format == Self::ERRC_PF {
                 info!("> cr2 (PF addr) = {:#018x}", unsafe {
