@@ -13,7 +13,6 @@ use alloc::{format, string::String, sync::Arc};
 
 use paging::LAddr;
 use solvent::Handle;
-use spin::Lazy;
 
 #[cfg(target_arch = "x86_64")]
 pub use self::ctx::arch::{DEFAULT_STACK_LAYOUT, DEFAULT_STACK_SIZE};
@@ -23,22 +22,9 @@ pub use self::{
 };
 use super::{ipc::Channel, PREEMPT};
 use crate::{
-    cpu::{self, CpuLocalLazy, CpuMask},
+    cpu::{CpuLocalLazy, CpuMask},
     mem::space::{Space, SpaceError},
 };
-
-static ROOT: Lazy<Tid> = Lazy::new(|| {
-    let ti = TaskInfo::builder()
-        .from(None)
-        .name(String::from("ROOT"))
-        .ty(Type::Kernel)
-        .affinity(cpu::all_mask())
-        .prio(prio::DEFAULT)
-        .build()
-        .unwrap();
-
-    tid::allocate(ti).expect("Failed to acquire a valid TID")
-});
 
 #[derive(Debug)]
 pub enum TaskError {

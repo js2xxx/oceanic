@@ -8,7 +8,7 @@ use paging::{LAddr, PAddr};
 use super::*;
 use crate::{
     cpu::CpuMask,
-    mem::space::{AllocType, Flags, Phys, Space, SpaceError},
+    mem::space::{AllocType, Flags, Phys, Space},
 };
 
 fn load_prog(
@@ -68,34 +68,7 @@ fn load_prog(
     Ok(())
 }
 
-fn load_tls(space: &Arc<Space>, size: usize, align: usize, file_base: LAddr) -> Result<LAddr> {
-    log::trace!("Loading TLS phdr (size = {:?}, align = {:?})", size, align);
-    let layout =
-        core::alloc::Layout::from_size_align(size, align).map_err(|_| TaskError::InvalidFormat)?;
-
-    let (alloc_layout, off) = layout
-        .extend(core::alloc::Layout::new::<*mut u8>())
-        .map_err(|_| TaskError::Memory(SpaceError::InvalidFormat))?;
-    assert_eq!(off, layout.size());
-
-    log::trace!("Allocating TLS {:?}", alloc_layout);
-    space
-        .alloc_tls(alloc_layout, false, |ptr, tls| unsafe {
-            ptr.copy_from(*file_base, size);
-            ptr.add(size).write_bytes(0, layout.size() - size);
-
-            let self_ptr = ptr.add(layout.size()).cast::<usize>();
-            let base = tls.add(layout.size()).cast::<usize>();
-            // TLS's self-pointer is written its address there.
-            self_ptr.write(base as usize);
-
-            Ok(LAddr::new(base.cast()))
-        })
-        .map_err(TaskError::Memory)?
-        .unwrap()
-}
-
-fn load_elf(space: &Arc<Space>, file: &Elf, image: &[u8]) -> Result<(LAddr, Option<LAddr>, usize)> {
+fn load_elf(space: &Arc<Space>, file: &Elf, image: &[u8]) -> Result<(LAddr, usize)> {
     log::trace!(
         "Loading ELF file from image {:?}, space = {:?}",
         image.as_ptr(),
@@ -103,7 +76,6 @@ fn load_elf(space: &Arc<Space>, file: &Elf, image: &[u8]) -> Result<(LAddr, Opti
     );
     let entry = LAddr::new(file.entry as *mut u8);
     let mut stack_size = DEFAULT_STACK_SIZE;
-    let mut tls = None;
 
     for phdr in file.program_headers.iter() {
         match phdr.p_type {
@@ -126,19 +98,10 @@ fn load_elf(space: &Arc<Space>, file: &Elf, image: &[u8]) -> Result<(LAddr, Opti
                 (phdr.p_memsz as usize).round_up_bit(paging::PAGE_SHIFT),
             )?,
 
-            program_header::PT_TLS => {
-                tls = Some(load_tls(
-                    space,
-                    phdr.p_memsz as usize,
-                    phdr.p_align as usize,
-                    LAddr::new(unsafe { image.as_ptr().add(phdr.p_offset as usize) } as *mut u8),
-                )?)
-            }
-
             x => return Err(TaskError::NotSupported(x)),
         }
     }
-    Ok((entry, tls, stack_size))
+    Ok((entry, stack_size))
 }
 
 pub fn from_elf<'a, 'b>(
@@ -161,8 +124,7 @@ pub fn from_elf<'a, 'b>(
         .with_current(|cur| cur.tid.clone())
         .ok_or(TaskError::NoCurrentTask)?;
     let space = Space::new(Type::User);
-    let (entry, tls, stack_size) = load_elf(&space, &file, image)?;
-    debug_assert!(tls.is_none());
+    let (entry, stack_size) = load_elf(&space, &file, image)?;
 
     super::create_inner(
         tid,

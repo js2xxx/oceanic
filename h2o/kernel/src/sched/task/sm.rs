@@ -356,7 +356,6 @@ pub fn create_entry(
         stack: space
             .init_stack(stack_size)
             .map_err(TaskError::StackError)?,
-        tls: None,
         args,
     })
 }

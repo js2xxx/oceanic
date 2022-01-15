@@ -74,7 +74,7 @@ impl Into<solvent::Error> for SpaceError {
 fn ty_to_range_set(ty: task::Type) -> RangeSet<LAddr> {
     let range = match ty {
         task::Type::Kernel => minfo::KERNEL_ALLOCABLE_RANGE,
-        task::Type::User => LAddr::from(minfo::USER_BASE)..LAddr::from(minfo::USER_TLS_BASE),
+        task::Type::User => LAddr::from(minfo::USER_BASE)..LAddr::from(minfo::USER_STACK_BASE),
     };
 
     let mut range_set = RangeSet::new();
@@ -107,8 +107,6 @@ pub struct Space {
     /// The general allocator.
     allocator: Arc<alloc::Allocator>,
 
-    tls: Mutex<Option<Layout>>,
-
     stack_blocks: Mutex<BTreeMap<LAddr, Layout>>,
 }
 
@@ -123,7 +121,6 @@ impl Space {
             ty,
             arch: ArchSpace::new(),
             allocator: Arc::new(alloc::Allocator::new(ty_to_range_set(ty))),
-            tls: Mutex::new(None),
             stack_blocks: Mutex::new(BTreeMap::new()),
         })
     }
@@ -200,74 +197,6 @@ impl Space {
     pub unsafe fn load(&self) {
         self.canary.assert();
         self.arch.load()
-    }
-
-    pub fn alloc_tls<F, R>(
-        &self,
-        layout: Layout,
-        realloc: bool,
-        init_func: F,
-    ) -> Result<Option<R>, SpaceError>
-    where
-        F: FnOnce(*mut u8, LAddr) -> R,
-    {
-        let _pree = PREEMPT.lock();
-        if realloc {
-            self.dealloc_tls();
-        }
-
-        let base = LAddr::from(minfo::USER_TLS_BASE);
-        let mut tls = self.tls.lock();
-
-        let ret = if tls.is_none() {
-            let layout = layout
-                .align_to(paging::PAGE_SIZE)
-                .map_err(|_| SpaceError::InvalidFormat)?
-                .pad_to_align();
-            let size = layout.size();
-
-            if minfo::USER_TLS_BASE + size > minfo::USER_TLS_END {
-                return Err(SpaceError::OutOfMemory);
-            }
-
-            let alloc_ptr = unsafe { mem_alloc(layout) };
-            if alloc_ptr.is_null() {
-                return Err(SpaceError::OutOfMemory);
-            }
-
-            let virt = base..LAddr::from(base.val() + size);
-            let phys = LAddr::new(alloc_ptr).to_paddr(minfo::ID_OFFSET);
-            self.arch
-                .maps(
-                    virt,
-                    phys,
-                    Flags::READABLE | Flags::WRITABLE | Flags::EXECUTABLE | Flags::USER_ACCESS,
-                )
-                .map_err(|e| {
-                    unsafe { mem_dealloc(alloc_ptr, layout) };
-                    SpaceError::PagingError(e)
-                })?;
-
-            *tls = Some(layout);
-            Some(init_func(*phys.to_laddr(minfo::ID_OFFSET), base))
-        } else {
-            None
-        };
-        Ok(ret)
-    }
-
-    pub fn dealloc_tls(&self) {
-        PREEMPT.scope(|| {
-            if let Some(layout) = self.tls.lock().take() {
-                let base = LAddr::from(minfo::USER_TLS_BASE);
-                let virt = base..LAddr::from(base.val() + layout.size());
-
-                if let Ok(Some(phys)) = self.arch.unmaps(virt) {
-                    let alloc_ptr = *phys.to_laddr(minfo::ID_OFFSET);
-                    unsafe { mem_dealloc(alloc_ptr, layout) };
-                }
-            }
-        })
     }
 
     fn alloc_stack(
@@ -403,8 +332,6 @@ impl Space {
                 ty,
                 arch: ArchSpace::clone(&this.arch),
                 allocator: Arc::clone(&this.allocator),
-                // TODO: Add an image field to `TaskInfo` to get TLS init block.
-                tls: Mutex::new(None),
                 stack_blocks: Mutex::new(BTreeMap::new()),
             })
         })
@@ -415,7 +342,6 @@ impl Drop for Space {
     fn drop(&mut self) {
         PREEMPT.scope(|| {
             let _ = self.clear_stack();
-            self.dealloc_tls();
             unsafe { self.allocator.dispose(&self.arch) };
         })
     }

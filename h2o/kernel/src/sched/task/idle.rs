@@ -25,7 +25,7 @@ pub(super) static IDLE: CpuLocalLazy<Tid> = CpuLocalLazy::new(|| {
     let cpu = unsafe { crate::cpu::id() };
 
     let ti = TaskInfo::builder()
-        .from(Some(ROOT.clone()))
+        .from(None)
         .name(format!("IDLE{}", cpu))
         .ty(Type::Kernel)
         .affinity(crate::cpu::current_mask())

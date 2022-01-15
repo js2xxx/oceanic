@@ -27,7 +27,6 @@ pub const KSTACK_SIZE: usize = paging::PAGE_SIZE * 13;
 pub struct Entry {
     pub entry: LAddr,
     pub stack: LAddr,
-    pub tls: Option<LAddr>,
     pub args: [u64; 2],
 }
 
@@ -57,8 +56,8 @@ impl KstackData {
 pub struct Kstack {
     ptr: NonNull<KstackData>,
     virt: KernelVirt,
-    kframe_ptr: Box<*mut u8>,
-    pf_resume: Box<Option<NonZeroU64>>,
+    kframe_ptr: *mut u8,
+    pf_resume: Option<NonZeroU64>,
 }
 
 unsafe impl Send for Kstack {}
@@ -85,7 +84,7 @@ impl Kstack {
         let kframe_ptr = unsafe {
             let this = kstack.as_mut();
             let frame = this.task_frame_mut();
-            frame.set_entry(entry, ty);
+            frame.set_entry(&entry, ty);
             let kframe = (frame as *mut arch::Frame).cast::<arch::Kframe>().sub(1);
             kframe.write(arch::Kframe::new(
                 (frame as *mut arch::Frame).cast(),
@@ -96,21 +95,21 @@ impl Kstack {
         Kstack {
             ptr: kstack,
             virt,
-            kframe_ptr: box kframe_ptr,
-            pf_resume: box None,
+            kframe_ptr,
+            pf_resume: None,
         }
     }
 
     #[cfg(target_arch = "x86_64")]
     #[inline]
     pub fn kframe_ptr(&self) -> *mut u8 {
-        *self.kframe_ptr
+        self.kframe_ptr
     }
 
     #[cfg(target_arch = "x86_64")]
     #[inline]
     pub fn kframe_ptr_mut(&mut self) -> *mut *mut u8 {
-        &mut *self.kframe_ptr
+        &mut self.kframe_ptr
     }
 
     #[inline]
@@ -120,7 +119,7 @@ impl Kstack {
 
     #[inline]
     pub unsafe fn pf_resume_mut(&mut self) -> *mut Option<NonZeroU64> {
-        &mut *self.pf_resume
+        &mut self.pf_resume
     }
 
     #[cfg(target_arch = "x86_64")]

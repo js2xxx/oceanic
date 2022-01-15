@@ -72,7 +72,7 @@ fn load_prog(
 
 /// Load a Processor-Local Storage (PLS) segment.
 fn load_pls(syst: &SystemTable<Boot>, size: usize, align: usize) -> Layout {
-    log::trace!("file::map: loading TLS: size = {:?}", size);
+    log::trace!("file::map: loading PLS: size = {:?}", size);
 
     let layout = Layout::from_size_align(size, align)
         .expect("Failed to create the PLS layout")
@@ -90,7 +90,7 @@ fn load_pls(syst: &SystemTable<Boot>, size: usize, align: usize) -> Layout {
 
     unsafe {
         let self_ptr = pls.add(size).cast::<usize>();
-        // TLS's self-pointer is written its physical address there,
+        // PLS's self-pointer is written its physical address there,
         // and therefore should be modified in the kernel.
         self_ptr.write(self_ptr as usize);
 
@@ -112,7 +112,7 @@ fn load_pls(syst: &SystemTable<Boot>, size: usize, align: usize) -> Layout {
 /// # Returns
 ///
 /// This function returns a tuple with 2 elements where the first element is the
-/// entry point of the ELF executable and the second element is the TLS size of
+/// entry point of the ELF executable and the second element is the PLS size of
 /// it.
 pub fn map_elf(syst: &SystemTable<Boot>, data: &[u8]) -> (*mut u8, Option<Layout>) {
     log::trace!(

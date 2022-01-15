@@ -87,12 +87,9 @@ impl Space {
             let self_rt = this.root_table.lock();
             rt.copy_from_slice(&self_rt[..]);
 
-            let idx_tls = paging::Level::P4.addr_idx(LAddr::from(minfo::USER_TLS_BASE), false);
             let idx_stack = paging::Level::P4.addr_idx(LAddr::from(minfo::USER_STACK_BASE), false);
-            debug_assert!(idx_tls == paging::NR_ENTRIES / 2 - 2);
             debug_assert!(idx_stack == paging::NR_ENTRIES / 2 - 1);
 
-            rt[idx_tls].reset();
             rt[idx_stack].reset();
         }
 
