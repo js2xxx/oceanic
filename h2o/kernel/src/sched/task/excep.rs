@@ -1,4 +1,3 @@
-use alloc::vec;
 use core::{
     mem::{self, MaybeUninit},
     slice,
@@ -9,7 +8,7 @@ use archop::reg::cr2;
 use bytes::Buf;
 use solvent::task::excep::{Exception, ExceptionResult, EXRES_CODE_OK};
 
-use super::ctx::x86_64::Frame;
+use super::{ctx::x86_64::Frame, hdl};
 use crate::{
     cpu::intr::arch::ExVec,
     sched::{ipc::Packet, PREEMPT, SCHED},
@@ -37,7 +36,7 @@ pub fn dispatch_exception(frame: &mut Frame, vec: ExVec) -> bool {
         })
     };
 
-    let excep = Packet::new(vec![], &data);
+    let excep = Packet::new(hdl::List::default(), &data);
     if excep_chan.send(excep).is_err() {
         PREEMPT.scope(|| *slot.lock() = Some(excep_chan));
         return false;

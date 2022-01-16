@@ -1,5 +1,5 @@
-pub mod ipc;
 mod imp;
+pub mod ipc;
 pub mod task;
 pub mod wait;
 

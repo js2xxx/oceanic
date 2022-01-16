@@ -72,7 +72,7 @@ mod syscall {
     fn wo_new() -> u32 {
         let wo = Arc::new(WaitObject::new());
         SCHED
-            .with_current(|cur| cur.tid().handles().insert(wo).raw())
+            .with_current(|cur| cur.tid().handles().insert(wo).unwrap().raw())
             .map_or(Err(Error(ESRCH)), Ok)
     }
 
@@ -84,7 +84,7 @@ mod syscall {
                 cur.tid()
                     .handles()
                     .get::<Arc<WaitObject>>(hdl)
-                    .map(|w| Arc::clone(&w))
+                    .map(|w| Arc::clone(w))
             })
             .flatten()
             .ok_or(Error(EINVAL))?;

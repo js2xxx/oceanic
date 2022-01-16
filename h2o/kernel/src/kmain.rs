@@ -1,14 +1,16 @@
 #![no_std]
 #![no_main]
 #![allow(unused_unsafe)]
-#![warn(clippy::missing_errors_doc)]
-#![warn(clippy::missing_panics_doc)]
+// #![warn(clippy::missing_errors_doc)]
+// #![warn(clippy::missing_panics_doc)]
+#![allow(clippy::missing_safety_doc)]
 #![feature(alloc_layout_extra)]
 #![feature(alloc_error_handler)]
 #![feature(allocator_api)]
 #![feature(bool_to_option)]
 #![feature(box_into_inner)]
 #![feature(box_syntax)]
+#![feature(coerce_unsized)]
 #![feature(const_btree_new)]
 #![feature(const_fn_fn_ptr_basics)]
 #![feature(core_intrinsics)]
@@ -18,11 +20,13 @@
 #![feature(nonnull_slice_from_raw_parts)]
 #![feature(once_cell)]
 #![feature(result_flattening)]
+#![feature(result_into_ok_or_err)]
 #![feature(result_option_inspect)]
 #![feature(slice_ptr_get)]
 #![feature(slice_ptr_len)]
 #![feature(thread_local)]
 #![feature(trace_macros)]
+#![feature(unsize)]
 #![feature(unzip_option)]
 #![feature(vec_into_raw_parts)]
 
@@ -61,6 +65,7 @@ pub extern "C" fn kmain() {
     l::info!("Starting the kernel");
 
     mem::init();
+    sched::task::hdl::init();
 
     unsafe { cpu::arch::init() };
 

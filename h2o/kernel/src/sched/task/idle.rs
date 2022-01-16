@@ -1,4 +1,3 @@
-use alloc::vec::Vec;
 use core::hint;
 
 use super::*;
@@ -61,6 +60,7 @@ fn idle(cpu: usize, fs_base: u64) -> ! {
     log::debug!("IDLE #{}", cpu);
 
     let (_, ctx_chan) = Channel::new();
+    let ctx_chan = unsafe { Ref::new(ctx_chan).coerce_unchecked() };
 
     let (ctx_dropper, ..) = task::create_fn(
         Some(String::from("CTXD")),
@@ -77,8 +77,9 @@ fn idle(cpu: usize, fs_base: u64) -> ! {
 
     if cpu == 0 {
         let (me, chan) = Channel::new();
+        let chan = unsafe { Ref::new(chan).coerce_unchecked() };
 
-        me.send(crate::sched::ipc::Packet::new(Vec::new(), &[]))
+        me.send(crate::sched::ipc::Packet::new(hdl::List::default(), &[]))
             .expect("Failed to send message");
 
         let image = unsafe {
@@ -88,13 +89,9 @@ fn idle(cpu: usize, fs_base: u64) -> ! {
             )
         };
 
-        let (tinit, ..) = task::from_elf(
-            image,
-            String::from("TINIT"),
-            crate::cpu::all_mask(),
-            chan,
-        )
-        .expect("Failed to initialize TINIT");
+        let (tinit, ..) =
+            task::from_elf(image, String::from("TINIT"), crate::cpu::all_mask(), chan)
+                .expect("Failed to initialize TINIT");
         SCHED.unblock(tinit);
     }
 

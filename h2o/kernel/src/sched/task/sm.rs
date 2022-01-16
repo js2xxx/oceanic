@@ -9,7 +9,7 @@ use derive_builder::Builder;
 use paging::LAddr;
 use spin::Mutex;
 
-use super::{ctx, sig::Signal, HandleMap, Priority, TaskError, Tid, Type, idle, tid};
+use super::{ctx, hdl::HandleMap, idle, sig::Signal, tid, Priority, TaskError, Tid, Type};
 use crate::{
     cpu::{time::Instant, CpuMask},
     mem::space::Space,

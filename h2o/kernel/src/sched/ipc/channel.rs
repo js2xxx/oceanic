@@ -1,25 +1,22 @@
-use alloc::{
-    sync::{Arc, Weak},
-    vec::Vec,
-};
+use alloc::sync::{Arc, Weak};
 use core::time::Duration;
 
 use bytes::Bytes;
 use spin::{Mutex, MutexGuard};
 
-use super::{IpcError, Object};
-use crate::sched::{wait::WaitQueue, SCHED};
+use super::IpcError;
+use crate::sched::{task::hdl, wait::WaitQueue, SCHED};
 
 const MAX_QUEUE_SIZE: usize = 2048;
 
 #[derive(Debug)]
 pub struct Packet {
-    objects: Vec<Object>,
+    objects: hdl::List,
     buffer: Bytes,
 }
 
 impl Packet {
-    pub fn new(objects: Vec<Object>, data: &[u8]) -> Self {
+    pub fn new(objects: hdl::List, data: &[u8]) -> Self {
         let buffer = Bytes::copy_from_slice(data);
         Packet { objects, buffer }
     }
@@ -70,6 +67,11 @@ impl Channel {
     }
 
     pub fn is_peer(&self, other: &Self) -> bool {
+        self.peer_eq(other)
+    }
+
+    #[inline]
+    pub fn peer_eq(&self, other: &Self) -> bool {
         self.peer_id == other.peer_id
     }
 
@@ -132,8 +134,8 @@ mod syscall {
         let ret = SCHED.with_current(|cur| {
             let (c1, c2) = Channel::new();
             let map = cur.tid().handles();
-            let h1 = map.insert(c1);
-            let h2 = map.insert(c2);
+            let h1 = map.insert(c1).unwrap();
+            let h2 = map.insert(c2).unwrap();
             unsafe {
                 p1.write(h1).unwrap();
                 p2.write(h2).unwrap();
@@ -158,7 +160,8 @@ mod syscall {
 
         let ret = SCHED.with_current(|cur| {
             let map = cur.tid().handles();
-            let (objects, channel) = unsafe { map.send_for_channel(handles, hdl) }?;
+            let channel = map.get::<Channel>(hdl).ok_or(Error(EINVAL))?;
+            let objects = unsafe { map.send(handles, channel) }.ok_or(Error(EPERM))?;
             let packet = Packet::new(objects, buffer);
             channel.send(packet).map_err(Into::into)
         });
@@ -218,8 +221,9 @@ mod syscall {
                 packet.take()
             };
 
-            let handles = packet.map(|p| map.receive(p.objects)).unwrap();
-            user_handles[..handles.len()].copy_from_slice(&handles);
+            packet
+                .map(|mut p| map.receive(&mut p.objects, user_handles))
+                .unwrap();
 
             unsafe {
                 packet_ptr.out().write(user_packet).unwrap();

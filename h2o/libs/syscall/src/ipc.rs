@@ -53,7 +53,7 @@ pub fn test() {
             hdl[0] = Handle::NULL;
             let mut sendee = rp(&mut hdl, &mut buf);
             let ret = crate::call::chan_send(c1, &sendee);
-            assert_eq!(ret, Err(Error(EINVAL)));
+            assert_eq!(ret, Err(Error(EPERM)));
 
             // The channel itself can't be sent.
             // To make connections to other tasks, use `init_chan`.

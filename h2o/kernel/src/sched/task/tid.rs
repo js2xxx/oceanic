@@ -38,11 +38,15 @@ impl Tid {
     }
 
     pub fn child(&self, hdl: Handle) -> Option<Tid> {
-        super::PREEMPT.scope(|| self.handles().get::<Tid>(hdl).map(|w| Tid::clone(&w)))
+        super::PREEMPT.scope(|| self.handles().get::<Tid>(hdl).map(|w| Tid::clone(w)))
     }
 
     pub fn drop_child(&self, hdl: Handle) -> Option<Tid> {
-        super::PREEMPT.scope(|| self.handles().remove::<Tid>(hdl))
+        super::PREEMPT.scope(|| {
+            self.handles()
+                .remove::<Tid>(hdl)
+                .and_then(|w| w.downcast_ref::<Tid>().map(|w| Tid::clone(w)))
+        })
     }
 }
 

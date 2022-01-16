@@ -1,7 +1,7 @@
 pub mod ctx;
 mod elf;
 mod excep;
-mod hdl;
+pub mod hdl;
 pub mod idle;
 pub mod prio;
 pub mod sig;
@@ -10,16 +10,15 @@ mod syscall;
 pub mod tid;
 
 use alloc::{format, string::String, sync::Arc};
+use core::any::Any;
 
 use paging::LAddr;
 use solvent::Handle;
 
 #[cfg(target_arch = "x86_64")]
 pub use self::ctx::arch::{DEFAULT_STACK_LAYOUT, DEFAULT_STACK_SIZE};
-use self::sig::Signal;
-pub use self::{
-    elf::from_elf, excep::dispatch_exception, hdl::HandleMap, prio::Priority, sm::*, tid::Tid,
-};
+pub use self::{elf::from_elf, excep::dispatch_exception, prio::Priority, sm::*, tid::Tid};
+use self::{hdl::Ref, sig::Signal};
 use super::{ipc::Channel, PREEMPT};
 use crate::{
     cpu::{CpuLocalLazy, CpuMask},
@@ -90,7 +89,7 @@ fn create_inner(
     prio: Option<Priority>,
     space: Arc<Space>,
     entry: LAddr,
-    init_chan: Channel,
+    init_chan: hdl::Ref<dyn Any>,
     arg: u64,
     stack_size: usize,
 ) -> Result<(Init, Handle)> {
@@ -104,15 +103,15 @@ fn create_inner(
         .build()
         .unwrap();
 
-    let init_chan = ti.handles().insert(init_chan).raw() as u64;
+    let init_chan = unsafe { ti.handles().insert_ref(init_chan) }.unwrap();
     let tid = tid::allocate(ti).map_err(|_| TaskError::TidExhausted)?;
 
-    let entry = create_entry(&space, entry, stack_size, [init_chan, arg])?;
+    let entry = create_entry(&space, entry, stack_size, [init_chan.raw() as u64, arg])?;
     let kstack = ctx::Kstack::new(entry, ty);
 
     let ext_frame = ctx::ExtFrame::zeroed();
 
-    let handle = cur.handles().insert(tid.clone());
+    let handle = cur.handles().insert(tid.clone()).unwrap();
 
     let init = Init::new(tid, space, kstack, ext_frame);
 
@@ -125,7 +124,7 @@ pub fn create_fn(
     affinity: Option<CpuMask>,
     prio: Option<Priority>,
     func: LAddr,
-    init_chan: Channel,
+    init_chan: hdl::Ref<dyn Any>,
     arg: u64,
     stack_size: usize,
 ) -> Result<(Init, Handle)> {

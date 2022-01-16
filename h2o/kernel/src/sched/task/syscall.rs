@@ -119,7 +119,8 @@ fn task_fn(
         };
         let st = SCHED
             .with_current(|cur| cur.tid.handles().insert(st))
-            .unwrap();
+            .unwrap()
+            .ok_or(Error(ENOMEM))?;
         unsafe { extra.write(st) }?;
     } else {
         SCHED.unblock(task);
@@ -177,7 +178,9 @@ fn task_ctl(hdl: Handle, op: u32, data: UserPtr<InOut, Handle>) {
                 }
             })?;
 
-            let out = super::PREEMPT.scope(|| cur_tid.handles().insert(st));
+            let out = super::PREEMPT
+                .scope(|| cur_tid.handles().insert(st))
+                .ok_or(Error(ENOMEM))?;
             unsafe { data.out().write(out) }.unwrap();
 
             Ok(())
@@ -294,7 +297,9 @@ fn task_debug(hdl: Handle, op: u32, addr: usize, data: UserPtr<InOut, u8>, len: 
                     .with_current(|cur| {
                         create_excep_chan(&task).map(|chan| cur.tid.handles().insert(chan))
                     })
-                    .unwrap()?;
+                    .unwrap()?
+                    .ok_or(Error(ENOMEM))?;
+
                 unsafe { data.out().cast().write(hdl) }
             }
         }

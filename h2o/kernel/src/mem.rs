@@ -1,3 +1,4 @@
+mod arena;
 pub mod heap;
 pub mod space;
 
@@ -7,6 +8,7 @@ use core::{alloc::Allocator, ptr::NonNull};
 use iter_ex::PointerIterator;
 use spin::Lazy;
 
+pub use self::arena::Arena;
 use crate::kargs;
 
 pub static MMAP: Lazy<PointerIterator<pmm::boot::MemRange>> = Lazy::new(|| {
@@ -87,7 +89,8 @@ mod syscall {
                 .with_current(|cur| unsafe {
                     cur.tid().handles().insert_unchecked(virt, false, false)
                 })
-                .ok_or(Error(ESRCH))
+                .ok_or(Error(ESRCH))?
+                .ok_or(Error(ENOMEM))
         })
     }
 
@@ -103,9 +106,12 @@ mod syscall {
         let ptr = NonNull::slice_from_raw_parts(ptr, size);
 
         crate::sched::SCHED
-            .with_current(|cur| {
-                match unsafe { cur.tid().handles().get_unchecked::<space::Virt>(hdl) } {
-                    Some(virt) => unsafe { virt.modify(ptr, flags) }.map_err(Into::into),
+            .with_current(|cur| unsafe {
+                match cur.tid().handles().get_unchecked::<space::Virt>(hdl) {
+                    Some(virt) => virt
+                        .deref_unchecked()
+                        .modify(ptr, flags)
+                        .map_err(Into::into),
                     None => Err(Error(EINVAL)),
                 }
             })

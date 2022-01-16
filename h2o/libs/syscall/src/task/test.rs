@@ -126,7 +126,7 @@ fn debug_excep(task: Handle, st: Handle) {
         chan
     };
 
-    let mut hdl_buf = [Handle::NULL; 1];
+    let mut hdl_buf = [Handle::NULL; 0];
     let mut excep = MaybeUninit::<Exception>::uninit();
     let mut packet = crate::ipc::RawPacket {
         handles: hdl_buf.as_mut_ptr(),

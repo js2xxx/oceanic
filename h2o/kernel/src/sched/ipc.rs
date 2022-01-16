@@ -1,8 +1,6 @@
 mod channel;
-mod obj;
 
 pub use channel::{Channel, Packet};
-pub use obj::Object;
 
 use super::task::TaskError;
 
