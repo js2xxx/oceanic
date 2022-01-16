@@ -40,7 +40,7 @@ impl Object {
         }
     }
 
-    pub fn clone(this: &Self) -> Option<Self> {
+    pub fn try_clone(this: &Self) -> Option<Self> {
         if this.send && this.shared {
             let arc = unsafe { Arc::from_raw(this.ptr) };
             let other = Arc::into_raw(Arc::clone(&arc));

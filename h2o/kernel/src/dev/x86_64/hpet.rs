@@ -125,6 +125,14 @@ impl Hpet {
     pub fn virt(&self) -> &KernelVirt {
         &self.virt
     }
+
+    pub fn block_id(&self) -> u8 {
+        self.block_id
+    }
+
+    pub fn num_comparators(&self) -> usize {
+        self.num_comparators
+    }
 }
 
 pub struct HpetClock {

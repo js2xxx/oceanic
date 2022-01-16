@@ -35,18 +35,25 @@ pub enum Shorthand {
 #[derive(Clone, Copy)]
 #[bitfield]
 pub struct IcrEntry {
+    #[skip(getters)]
     pub(super) vec: u8,
+    #[skip(getters)]
     #[bits = 3]
     pub(super) deliv_mode: DelivMode,
+    #[skip(getters)]
     pub(super) dest_logical: bool,
+    #[skip(getters)]
     pub(super) pending: bool,
     #[skip]
     __: B1,
+    #[skip(getters)]
     pub(super) level_assert: bool,
+    #[skip(getters)]
     #[bits = 1]
     pub(super) trigger_mode: TriggerMode,
     #[skip]
     __: B2,
+    #[skip(getters)]
     pub(super) shorthand: Shorthand,
     #[skip]
     __: B12,

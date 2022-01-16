@@ -94,7 +94,7 @@ impl HandleMap {
     }
 
     pub fn clone_handle(&self, hdl: Handle) -> Option<Handle> {
-        self.map.get(&hdl).and_then(|k| Object::clone(&*k)).map(|o| unsafe { self.insert_impl(o) })
+        self.map.get(&hdl).and_then(|k| Object::try_clone(&*k)).map(|o| unsafe { self.insert_impl(o) })
     }
 
     pub fn remove<T: Send + 'static>(&self, hdl: Handle) -> Option<T> {

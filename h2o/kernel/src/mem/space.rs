@@ -241,7 +241,7 @@ impl Space {
                     SpaceError::PagingError(e)
                 })?;
 
-                if let Some(_) = stack_blocks.insert(base, layout) {
+                if stack_blocks.insert(base, layout).is_some() {
                     panic!("Duplicate allocation");
                 }
 

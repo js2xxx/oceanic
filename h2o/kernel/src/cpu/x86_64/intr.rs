@@ -18,6 +18,7 @@ use crate::{
     },
 };
 
+#[allow(clippy::declare_interior_mutable_const)]
 const VEC_INTR_INIT: Mutex<Option<Weak<Interrupt>>> = Mutex::new(None);
 #[thread_local]
 static VEC_INTR: [Mutex<Option<Weak<Interrupt>>>; NR_VECTORS] = [VEC_INTR_INIT; NR_VECTORS];

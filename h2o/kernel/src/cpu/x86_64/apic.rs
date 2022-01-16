@@ -73,19 +73,27 @@ pub enum TriggerMode {
 
 #[derive(Clone, Copy)]
 #[bitfield]
-pub struct LocalEntry {
+struct LocalEntry {
+    #[skip(getters)]
     vec: u8,
     #[bits = 3]
+    #[skip(getters)]
     deliv_mode: DelivMode,
     #[skip]
     __: B1,
+    #[skip(getters)]
     pending: bool,
+    #[skip(getters)]
     #[bits = 1]
     polarity: Polarity,
+    #[skip(getters)]
     remote_irr: bool,
+    #[skip(getters)]
     #[bits = 1]
     trigger_mode: TriggerMode,
+    #[skip(getters)]
     mask: bool,
+    #[skip(getters)]
     timer_mode: timer::TimerMode,
     #[skip]
     __: B13,

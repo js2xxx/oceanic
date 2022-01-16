@@ -68,10 +68,13 @@ pub struct FatPointer {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SegSelector {
     /// The Request Privilege Level.
+    #[allow(clippy::return_self_not_must_use)]
     pub rpl: B2,
     /// The Table Index - 0 for GDT and 1 for LDT.
+    #[allow(clippy::return_self_not_must_use)]
     pub ti: bool,
     /// The numeric index of the descriptor table.
+    #[allow(clippy::return_self_not_must_use)]
     pub index: B13,
 }
 const_assert_eq!(size_of::<SegSelector>(), size_of::<u16>());
