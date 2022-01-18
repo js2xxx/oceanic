@@ -37,7 +37,7 @@ unsafe extern "C" fn hdl_syscall(frame: *const Frame) {
     let res = crate::syscall::handler(&arg);
     archop::pause_intr();
 
-    if !matches!(res, Err(solvent::Error(0))) {
+    if !matches!(res, Err(solvent::Error::INVALID)) {
         let val = solvent::Error::encode(res);
         crate::sched::SCHED
             .with_current(|cur| cur.kstack_mut().task_frame_mut().set_syscall_retval(val));

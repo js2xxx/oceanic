@@ -3,11 +3,11 @@ use core::{fmt::Debug, ops::Range};
 pub const ERRC_RANGE: Range<i32> = 1..35;
 pub const CUSTOM_RANGE: Range<i32> = 1001..1005;
 
-pub type Result<T> = core::result::Result<T, Error>;
+pub type Result<T = ()> = core::result::Result<T, Error>;
 
 #[derive(Copy, Clone, PartialEq, Eq)]
 #[repr(transparent)]
-pub struct Error(pub i32);
+pub struct Error(i32);
 
 impl Error {
     pub fn encode(res: Result<usize>) -> usize {
@@ -25,8 +25,13 @@ impl Error {
         if ERRC_RANGE.contains(&self.0) {
             ERRC_DESC[self.0 as usize]
         } else {
-            CUSTOM_DESC[(self.0 - CUSTOM_OFFSET) as usize]
+            CUSTOM_DESC[(self.0 - Self::CUSTOM_OFFSET) as usize]
         }
+    }
+
+    #[inline]
+    pub fn raw(&self) -> i32 {
+        self.0
     }
 }
 
@@ -36,80 +41,56 @@ impl Debug for Error {
     }
 }
 
-/// Operation not permitted
-pub const EPERM: i32 = 1;
-/// No such file or directory
-pub const ENOENT: i32 = 2;
-/// No such process
-pub const ESRCH: i32 = 3;
-/// Interrupted system call
-pub const EINTR: i32 = 4;
-/// I/O error
-pub const EIO: i32 = 5;
-/// No such device or address
-pub const ENXIO: i32 = 6;
-/// Argument list too long
-pub const E2BIG: i32 = 7;
-/// Exec format error
-pub const ENOEXEC: i32 = 8;
-/// Bad file number
-pub const EBADF: i32 = 9;
-/// No child processes
-pub const ECHILD: i32 = 10;
-/// Try again
-pub const EAGAIN: i32 = 11;
-/// Out of memory
-pub const ENOMEM: i32 = 12;
-/// Permission denied
-pub const EACCES: i32 = 13;
-/// Bad address
-pub const EFAULT: i32 = 14;
-/// Block device required
-pub const ENOTBLK: i32 = 15;
-/// Device or resource busy
-pub const EBUSY: i32 = 16;
-/// File exists
-pub const EEXIST: i32 = 17;
-/// Cross-device link
-pub const EXDEV: i32 = 18;
-/// No such device
-pub const ENODEV: i32 = 19;
-/// Not a directory
-pub const ENOTDIR: i32 = 20;
-/// Is a directory
-pub const EISDIR: i32 = 21;
-/// Invalid argument
-pub const EINVAL: i32 = 22;
-/// File table overflow
-pub const ENFILE: i32 = 23;
-/// Too many open files
-pub const EMFILE: i32 = 24;
-/// Not a typewriter
-pub const ENOTTY: i32 = 25;
-/// Text file busy
-pub const ETXTBSY: i32 = 26;
-/// File too large
-pub const EFBIG: i32 = 27;
-/// No space left on device
-pub const ENOSPC: i32 = 28;
-/// Illegal seek
-pub const ESPIPE: i32 = 29;
-/// Read-only file system
-pub const EROFS: i32 = 30;
-/// Too many links
-pub const EMLINK: i32 = 31;
-/// Broken pipe
-pub const EPIPE: i32 = 32;
-/// Math argument out of domain of func
-pub const EDOM: i32 = 33;
-/// Range not available
-pub const ERANGE: i32 = 34;
+macro_rules! declare_error {
+    ($e:ident, $v:literal, $desc:literal) => {
+        #[doc = $desc]
+        pub const $e: Error = Error($v);
+    };
+}
 
-pub const CUSTOM_OFFSET: i32 = CUSTOM_RANGE.start;
-pub const EKILLED: i32 = 1001;
-pub const EBUFFER: i32 = 1002;
-pub const ETIME: i32 = 1003;
-pub const EALIGN: i32 = 1004;
+impl Error {
+    declare_error!(INVALID, 0, "(Invalid value)");
+    declare_error!(EPERM, 1, "Operation not permitted");
+    declare_error!(ENOENT, 2, "No such file or directory");
+    declare_error!(ESRCH, 3, "No such process");
+    declare_error!(EINTR, 4, "Interrupted system call");
+    declare_error!(EIO, 5, "I/O error");
+    declare_error!(ENXIO, 6, "No such device or address");
+    declare_error!(E2BIG, 7, "Argument list too long");
+    declare_error!(ENOEXEC, 8, "Exec format error");
+    declare_error!(EBADF, 9, "Bad file number");
+    declare_error!(ECHILD, 10, "No child processes");
+    declare_error!(EAGAIN, 11, "Try again");
+    declare_error!(ENOMEM, 12, "Out of memory");
+    declare_error!(EACCES, 13, "Permission denied");
+    declare_error!(EFAULT, 14, "Bad address");
+    declare_error!(ENOTBLK, 15, "Block device required");
+    declare_error!(EBUSY, 16, "Device or resource busy");
+    declare_error!(EEXIST, 17, "File exists");
+    declare_error!(EXDEV, 18, "Cross-device link");
+    declare_error!(ENODEV, 19, "No such device");
+    declare_error!(ENOTDIR, 20, "Not a directory");
+    declare_error!(EISDIR, 21, "Is a directory");
+    declare_error!(EINVAL, 22, "Invalid argument");
+    declare_error!(ENFILE, 23, "File table overflow");
+    declare_error!(EMFILE, 24, "Too many open files");
+    declare_error!(ENOTTY, 25, "Not a typewriter");
+    declare_error!(ETXTBSY, 26, "Text file busy");
+    declare_error!(EFBIG, 27, "File too large");
+    declare_error!(ENOSPC, 28, "No space left on device");
+    declare_error!(ESPIPE, 29, "Illegal seek");
+    declare_error!(EROFS, 30, "Read-only file system");
+    declare_error!(EMLINK, 31, "Too many links");
+    declare_error!(EPIPE, 32, "Broken pipe");
+    declare_error!(EDOM, 33, "Math argument out of domain of func");
+    declare_error!(ERANGE, 34, "Range not available");
+
+    const CUSTOM_OFFSET: i32 = CUSTOM_RANGE.start;
+    declare_error!(EKILLED, 1001, "Task already killed");
+    declare_error!(EBUFFER, 1002, "Buffer range exceeded");
+    declare_error!(ETIME, 1003, "Timed out");
+    declare_error!(EALIGN, 1004, "Pointer unaligned");
+}
 
 const ERRC_DESC: &[&str] = &[
     "OK",

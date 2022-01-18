@@ -67,9 +67,9 @@ static SYSCALL_TABLE: &[Option<SyscallWrapper>] = &[
 
 pub fn handler(arg: &Arguments) -> solvent::Result<usize> {
     let h = if (0..SYSCALL_TABLE.len()).contains(&arg.fn_num) {
-        SYSCALL_TABLE[arg.fn_num].ok_or(Error(EINVAL))?
+        SYSCALL_TABLE[arg.fn_num].ok_or(Error::EINVAL)?
     } else {
-        return Err(Error(EINVAL));
+        return Err(Error::EINVAL);
     };
 
     let ret = unsafe {

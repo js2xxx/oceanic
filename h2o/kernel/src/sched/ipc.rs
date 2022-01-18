@@ -15,12 +15,12 @@ pub enum IpcError {
 
 impl From<IpcError> for solvent::Error {
     fn from(val: IpcError) -> Self {
-        solvent::Error(match val {
-            IpcError::QueueFull(_) => solvent::ENOSPC,
-            IpcError::QueueEmpty => solvent::ENOENT,
-            IpcError::Task(_) => solvent::ESRCH,
-            IpcError::SendChannelClosed(_) => solvent::EPIPE,
-            IpcError::ReceiveChannelClosed => solvent::EPIPE,
-        })
+        match val {
+            IpcError::QueueFull(_) => solvent::Error::ENOSPC,
+            IpcError::QueueEmpty => solvent::Error::ENOENT,
+            IpcError::Task(_) => solvent::Error::ESRCH,
+            IpcError::SendChannelClosed(_) => solvent::Error::EPIPE,
+            IpcError::ReceiveChannelClosed => solvent::Error::EPIPE,
+        }
     }
 }

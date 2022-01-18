@@ -50,10 +50,10 @@ mod syscall {
 
     fn check_options(size: usize, align: usize, flags: u32) -> Result<(Layout, space::Flags)> {
         if size.contains_bit(paging::PAGE_MASK) || !align.is_power_of_two() {
-            return Err(Error(EINVAL));
+            return Err(Error::EINVAL);
         }
-        let layout = Layout::from_size_align(size, align).map_err(|_| Error(EINVAL))?;
-        let flags = space::Flags::from_bits(flags).ok_or(Error(EINVAL))?;
+        let layout = Layout::from_size_align(size, align).map_err(|_| Error::EINVAL)?;
+        let flags = space::Flags::from_bits(flags).ok_or(Error::EINVAL)?;
 
         Ok((layout, flags))
     }
@@ -89,8 +89,8 @@ mod syscall {
                 .with_current(|cur| unsafe {
                     cur.tid().handles().insert_unchecked(virt, false, false)
                 })
-                .ok_or(Error(ESRCH))?
-                .ok_or(Error(ENOMEM))
+                .ok_or(Error::ESRCH)?
+                .ok_or(Error::ENOMEM)
         })
     }
 
@@ -99,10 +99,10 @@ mod syscall {
         hdl.check_null()?;
 
         if size.contains_bit(paging::PAGE_MASK) {
-            return Err(Error(EINVAL));
+            return Err(Error::EINVAL);
         }
-        let flags = space::Flags::from_bits(flags).ok_or(Error(EINVAL))?;
-        let ptr = NonNull::new(ptr).ok_or(Error(EINVAL))?;
+        let flags = space::Flags::from_bits(flags).ok_or(Error::EINVAL)?;
+        let ptr = NonNull::new(ptr).ok_or(Error::EINVAL)?;
         let ptr = NonNull::slice_from_raw_parts(ptr, size);
 
         crate::sched::SCHED
@@ -112,10 +112,10 @@ mod syscall {
                         .deref_unchecked()
                         .modify(ptr, flags)
                         .map_err(Into::into),
-                    None => Err(Error(EINVAL)),
+                    None => Err(Error::EINVAL),
                 }
             })
-            .unwrap_or(Err(Error(ESRCH)))
+            .unwrap_or(Err(Error::ESRCH))
     }
 
     #[syscall]
@@ -129,7 +129,7 @@ mod syscall {
     #[syscall]
     fn mem_dealloc(ptr: *mut u8) {
         let ret = unsafe {
-            let ptr = NonNull::new(ptr).ok_or(Error(EINVAL))?;
+            let ptr = NonNull::new(ptr).ok_or(Error::EINVAL)?;
             space::with_current(|cur| cur.deallocate(ptr))
         };
         ret.map_err(Into::into).map(|_| {})

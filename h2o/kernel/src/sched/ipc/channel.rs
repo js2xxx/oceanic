@@ -141,7 +141,7 @@ mod syscall {
                 p2.write(h2).unwrap();
             }
         });
-        ret.ok_or(Error(ESRCH))
+        ret.ok_or(Error::ESRCH)
     }
 
     #[syscall]
@@ -154,18 +154,18 @@ mod syscall {
 
         let handles = unsafe { slice::from_raw_parts(packet.handles, packet.handle_count) };
         if handles.contains(&hdl) {
-            return Err(Error(EPERM));
+            return Err(Error::EPERM);
         }
         let buffer = unsafe { slice::from_raw_parts(packet.buffer, packet.buffer_size) };
 
         let ret = SCHED.with_current(|cur| {
             let map = cur.tid().handles();
-            let channel = map.get::<Channel>(hdl).ok_or(Error(EINVAL))?;
-            let objects = unsafe { map.send(handles, channel) }.ok_or(Error(EPERM))?;
+            let channel = map.get::<Channel>(hdl).ok_or(Error::EINVAL)?;
+            let objects = unsafe { map.send(handles, channel) }.ok_or(Error::EPERM)?;
             let packet = Packet::new(objects, buffer);
             channel.send(packet).map_err(Into::into)
         });
-        ret.ok_or(Error(ESRCH)).flatten()
+        ret.ok_or(Error::ESRCH).flatten()
     }
 
     #[syscall]
@@ -190,7 +190,7 @@ mod syscall {
             let map = cur.tid().handles();
 
             let packet = {
-                let channel = map.get::<Channel>(hdl).ok_or(Error(EINVAL))?;
+                let channel = map.get::<Channel>(hdl).ok_or(Error::EINVAL)?;
 
                 let mut packet = if !timeout.is_zero() {
                     channel.receive(timeout)
@@ -213,7 +213,7 @@ mod syscall {
                         ebuf = true;
                     }
                     if ebuf {
-                        return Err(Error(EBUFFER));
+                        return Err(Error::EBUFFER);
                     }
                 }
 
@@ -231,7 +231,7 @@ mod syscall {
 
             Ok(())
         });
-        let u = ret.ok_or(Error(ESRCH));
+        let u = ret.ok_or(Error::ESRCH);
         u.flatten()
     }
 }

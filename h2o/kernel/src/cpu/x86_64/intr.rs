@@ -96,7 +96,7 @@ unsafe fn exception(frame_ptr: *mut Frame, vec: def::ExVec) {
         Some(task::Type::User) if frame.cs == USR_CODE_X64.into_val().into() => {
             if !task::dispatch_exception(frame, vec) {
                 // Kill the fucking task.
-                SCHED.exit_current((-solvent::EFAULT) as usize)
+                SCHED.exit_current((-solvent::Error::EFAULT.raw()) as usize)
             }
             // unreachable!()
         }

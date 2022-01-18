@@ -52,16 +52,16 @@ impl From<SpaceError> for solvent::Error {
     fn from(val: SpaceError) -> Self {
         use solvent::*;
         match val {
-            SpaceError::OutOfMemory => Error(ENOMEM),
-            SpaceError::AddressBusy => Error(EBUSY),
-            SpaceError::InvalidFormat => Error(EINVAL),
+            SpaceError::OutOfMemory => Error::ENOMEM,
+            SpaceError::AddressBusy => Error::EBUSY,
+            SpaceError::InvalidFormat => Error::EINVAL,
             SpaceError::PagingError(err) => match err {
-                paging::Error::OutOfMemory => Error(ENOMEM),
-                paging::Error::AddrMisaligned { .. } => Error(EALIGN),
-                paging::Error::RangeEmpty => Error(EBUFFER),
-                paging::Error::EntryExistent(b) => Error(if b { EEXIST } else { ENOENT }),
+                paging::Error::OutOfMemory => Error::ENOMEM,
+                paging::Error::AddrMisaligned { .. } => Error::EALIGN,
+                paging::Error::RangeEmpty => Error::EBUFFER,
+                paging::Error::EntryExistent(b) => if b { Error::EEXIST } else { Error::ENOENT },
             },
-            SpaceError::Permission => Error(EPERM),
+            SpaceError::Permission => Error::EPERM,
         }
     }
 }

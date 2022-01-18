@@ -42,7 +42,7 @@ fn join(normal: Handle, fault: Handle) {
     assert_eq!(ret, Ok(12345));
 
     let ret = task_join(fault);
-    assert_eq!(ret, Err(crate::Error(crate::EFAULT)));
+    assert_eq!(ret, Err(crate::Error::EFAULT));
 }
 
 fn sleep() {
@@ -63,7 +63,7 @@ fn debug_mem(st: Handle) {
         buf.as_mut_ptr(),
         buf.len(),
     );
-    assert_eq!(ret, Err(crate::Error(crate::EPERM)));
+    assert_eq!(ret, Err(crate::Error::EPERM));
 }
 
 fn debug_reg_gpr(st: Handle) {
@@ -147,7 +147,7 @@ fn debug_excep(task: Handle, st: Handle) {
     chan_send(chan, &packet).expect("Failed to send exception result");
 
     let ret = task_join(task);
-    assert_eq!(ret, Err(crate::Error(crate::EFAULT)));
+    assert_eq!(ret, Err(crate::Error::EFAULT));
 }
 
 fn suspend(task: Handle) {
@@ -171,7 +171,7 @@ fn kill(task: Handle) {
     task_ctl(task, TASK_CTL_KILL, null_mut()).expect("Failed to kill a task");
 
     let ret = task_join(task);
-    assert_eq!(ret, Err(crate::Error(crate::EKILLED)));
+    assert_eq!(ret, Err(crate::Error::EKILLED));
 }
 
 fn ctl(task: Handle) {
@@ -188,7 +188,7 @@ pub fn test() {
         CreateFlags::empty(),
         null_mut(),
     );
-    assert_eq!(ret, Err(crate::Error(crate::EPERM)));
+    assert_eq!(ret, Err(crate::Error::EPERM));
 
     let creator = |arg: u32, cf: Option<CreateFlags>, extra: *mut crate::Handle| {
         let mut c1 = Handle::NULL;

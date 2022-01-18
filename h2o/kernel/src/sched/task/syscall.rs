@@ -72,7 +72,7 @@ fn task_fn(
         if !ptr.as_ptr().is_null() {
             let mut buf = Vec::<u8>::with_capacity(ci.name_len);
             unsafe { ptr.read_slice(buf.as_mut_ptr(), buf.len()) }?;
-            Some(String::from_utf8(buf).map_err(|_| Error(EINVAL))?)
+            Some(String::from_utf8(buf).map_err(|_| Error::EINVAL)?)
         } else {
             None
         }
@@ -90,8 +90,8 @@ fn task_fn(
                 .handles()
                 .remove::<crate::sched::ipc::Channel>(ci.init_chan)
         })
-        .ok_or(Error(ESRCH))?
-        .ok_or(Error(EINVAL))?;
+        .ok_or(Error::ESRCH)?
+        .ok_or(Error::EINVAL)?;
 
     UserPtr::<In, _>::new(ci.func).check()?;
 
@@ -120,7 +120,7 @@ fn task_fn(
         let st = SCHED
             .with_current(|cur| cur.tid.handles().insert(st))
             .unwrap()
-            .ok_or(Error(ENOMEM))?;
+            .ok_or(Error::ENOMEM)?;
         unsafe { extra.write(st) }?;
     } else {
         SCHED.unblock(task);
@@ -136,9 +136,9 @@ fn task_join(hdl: Handle) -> usize {
     let child = {
         let tid = SCHED
             .with_current(|cur| cur.tid.clone())
-            .ok_or(Error(ESRCH))?;
+            .ok_or(Error::ESRCH)?;
 
-        tid.drop_child(hdl).ok_or(Error(ECHILD))?
+        tid.drop_child(hdl).ok_or(Error::ECHILD)?
     };
 
     Error::decode(child.ret_cell().take(Duration::MAX, "task_join").unwrap())
@@ -150,11 +150,11 @@ fn task_ctl(hdl: Handle, op: u32, data: UserPtr<InOut, Handle>) {
 
     let cur_tid = SCHED
         .with_current(|cur| cur.tid.clone())
-        .ok_or(Error(ESRCH))?;
+        .ok_or(Error::ESRCH)?;
 
     match op {
         task::TASK_CTL_KILL => {
-            let child = cur_tid.child(hdl).ok_or(Error(ECHILD))?;
+            let child = cur_tid.child(hdl).ok_or(Error::ECHILD)?;
             child.with_signal(|sig| *sig = Some(Signal::Kill));
 
             Ok(())
@@ -162,7 +162,7 @@ fn task_ctl(hdl: Handle, op: u32, data: UserPtr<InOut, Handle>) {
         task::TASK_CTL_SUSPEND => {
             data.out().check()?;
 
-            let child = cur_tid.child(hdl).ok_or(Error(ECHILD))?;
+            let child = cur_tid.child(hdl).ok_or(Error::ECHILD)?;
 
             let st = SuspendToken {
                 slot: Arc::new(Mutex::new(None)),
@@ -171,7 +171,7 @@ fn task_ctl(hdl: Handle, op: u32, data: UserPtr<InOut, Handle>) {
 
             st.tid.with_signal(|sig| {
                 if sig == &Some(Signal::Kill) {
-                    Err(Error(EPERM))
+                    Err(Error::EPERM)
                 } else {
                     *sig = Some(st.signal());
                     Ok(())
@@ -180,7 +180,7 @@ fn task_ctl(hdl: Handle, op: u32, data: UserPtr<InOut, Handle>) {
 
             let out = super::PREEMPT
                 .scope(|| cur_tid.handles().insert(st))
-                .ok_or(Error(ENOMEM))?;
+                .ok_or(Error::ENOMEM)?;
             unsafe { data.out().write(out) }.unwrap();
 
             Ok(())
@@ -189,10 +189,10 @@ fn task_ctl(hdl: Handle, op: u32, data: UserPtr<InOut, Handle>) {
             if cur_tid.drop_child(hdl).is_some() {
                 Ok(())
             } else {
-                Err(Error(ECHILD))
+                Err(Error::ECHILD)
             }
         }
-        _ => Err(Error(EINVAL)),
+        _ => Err(Error::EINVAL),
     }
 }
 
@@ -200,7 +200,7 @@ fn read_regs(task: &Blocked, addr: usize, data: UserPtr<Out, u8>, len: usize) ->
     match addr {
         task::TASK_DBGADDR_GPR => {
             if len < task::ctx::GPR_SIZE {
-                Err(Error(EBUFFER))
+                Err(Error::EBUFFER)
             } else {
                 unsafe { data.cast().write(task.kstack().task_frame().debug_get()) }
             }
@@ -208,12 +208,12 @@ fn read_regs(task: &Blocked, addr: usize, data: UserPtr<Out, u8>, len: usize) ->
         task::TASK_DBGADDR_FPU => {
             let size = archop::fpu::frame_size();
             if len < size {
-                Err(Error(EBUFFER))
+                Err(Error::EBUFFER)
             } else {
                 unsafe { data.write_slice(&task.ext_frame()[..size]) }
             }
         }
-        _ => Err(Error(EINVAL)),
+        _ => Err(Error::EINVAL),
     }
 }
 
@@ -221,7 +221,7 @@ fn write_regs(task: &mut Blocked, addr: usize, data: UserPtr<In, u8>, len: usize
     match addr {
         task::TASK_DBGADDR_GPR => {
             if len < solvent::task::ctx::GPR_SIZE {
-                Err(Error(EBUFFER))
+                Err(Error::EBUFFER)
             } else {
                 let gpr = unsafe { data.cast().read()? };
                 unsafe { task.kstack_mut().task_frame_mut().debug_set(&gpr) }
@@ -230,13 +230,13 @@ fn write_regs(task: &mut Blocked, addr: usize, data: UserPtr<In, u8>, len: usize
         task::TASK_DBGADDR_FPU => {
             let size = archop::fpu::frame_size();
             if len < size {
-                Err(Error(EBUFFER))
+                Err(Error::EBUFFER)
             } else {
                 let ptr = task.ext_frame_mut().as_mut_ptr();
                 unsafe { data.read_slice(ptr, size) }
             }
         }
-        _ => Err(Error(EINVAL)),
+        _ => Err(Error::EINVAL),
     }
 }
 
@@ -248,7 +248,7 @@ fn create_excep_chan(task: &Blocked) -> Result<crate::sched::ipc::Channel> {
             *g = Some(krl);
             usr
         }
-        _ => return Err(Error(EEXIST)),
+        _ => return Err(Error::EEXIST),
     };
     Ok(chan)
 }
@@ -265,8 +265,8 @@ fn task_debug(hdl: Handle, op: u32, addr: usize, data: UserPtr<InOut, u8>, len: 
                 .get::<SuspendToken>(hdl)
                 .map(|st| Arc::clone(&st.slot))
         })
-        .ok_or(Error(ESRCH))?
-        .ok_or(Error(EINVAL))?;
+        .ok_or(Error::ESRCH)?
+        .ok_or(Error::EINVAL)?;
 
     let mut task = loop {
         match super::PREEMPT.scope(|| slot.lock().take()) {
@@ -291,19 +291,19 @@ fn task_debug(hdl: Handle, op: u32, addr: usize, data: UserPtr<InOut, u8>, len: 
         },
         task::TASK_DBG_EXCEP_HDL => {
             if len < core::mem::size_of::<Handle>() {
-                Err(Error(EBUFFER))
+                Err(Error::EBUFFER)
             } else {
                 let hdl = SCHED
                     .with_current(|cur| {
                         create_excep_chan(&task).map(|chan| cur.tid.handles().insert(chan))
                     })
                     .unwrap()?
-                    .ok_or(Error(ENOMEM))?;
+                    .ok_or(Error::ENOMEM)?;
 
                 unsafe { data.out().cast().write(hdl) }
             }
         }
-        _ => Err(Error(EINVAL)),
+        _ => Err(Error::EINVAL),
     };
 
     PREEMPT.scope(|| *slot.lock() = Some(task));

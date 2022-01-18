@@ -67,7 +67,7 @@ impl<D> UserPtr<In, D> {
 
         let pf_resume = SCHED
             .with_current(|cur| cur.kstack_mut().pf_resume_mut())
-            .ok_or(solvent::Error(solvent::ESRCH))?;
+            .ok_or(solvent::Error::ESRCH)?;
 
         let mut data = MaybeUninit::<D>::uninit();
         checked_copy(
@@ -95,7 +95,7 @@ impl<D> UserPtr<In, D> {
 
         let pf_resume = SCHED
             .with_current(|cur| cur.kstack_mut().pf_resume_mut())
-            .ok_or(solvent::Error(solvent::ESRCH))?;
+            .ok_or(solvent::Error::ESRCH)?;
 
         checked_copy(
             out.cast(),
@@ -118,7 +118,7 @@ impl<D> UserPtr<Out, D> {
         unsafe {
             let pf_resume = SCHED
                 .with_current(|cur| cur.kstack_mut().pf_resume_mut())
-                .ok_or(solvent::Error(solvent::ESRCH))?;
+                .ok_or(solvent::Error::ESRCH)?;
 
             checked_copy(
                 self.data.cast(),
@@ -140,7 +140,7 @@ impl<D> UserPtr<Out, D> {
         unsafe {
             let pf_resume = SCHED
                 .with_current(|cur| cur.kstack_mut().pf_resume_mut())
-                .ok_or(solvent::Error(solvent::ESRCH))?;
+                .ok_or(solvent::Error::ESRCH)?;
 
             checked_copy(
                 self.data.cast(),
@@ -197,9 +197,9 @@ fn check_ptr(ptr: *mut u8, size: usize, align: usize) -> Result<()> {
         minfo::USER_BASE <= ptr as usize && (ptr as usize).saturating_add(size) <= minfo::USER_END;
     let is_aligned = (ptr as usize) & (align - 1) == 0;
     if !is_in_range {
-        Err(solvent::Error(solvent::ERANGE))
+        Err(solvent::Error::ERANGE)
     } else if !is_aligned {
-        Err(solvent::Error(solvent::EALIGN))
+        Err(solvent::Error::EALIGN)
     } else {
         Ok(())
     }
@@ -230,7 +230,7 @@ impl CheckedCopyRet {
                 self.addr_p1 - 1,
                 self.errc
             );
-            Err(solvent::Error(solvent::EPERM))
+            Err(solvent::Error::EPERM)
         } else {
             Ok(())
         }

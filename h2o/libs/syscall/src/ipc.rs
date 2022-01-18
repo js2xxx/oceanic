@@ -53,30 +53,30 @@ pub fn test() {
             hdl[0] = Handle::NULL;
             let mut sendee = rp(&mut hdl, &mut buf);
             let ret = crate::call::chan_send(c1, &sendee);
-            assert_eq!(ret, Err(Error(EPERM)));
+            assert_eq!(ret, Err(Error::EPERM));
 
             // The channel itself can't be sent.
             // To make connections to other tasks, use `init_chan`.
             hdl[0] = c1;
             sendee = rp(&mut hdl, &mut buf);
             let ret = crate::call::chan_send(c1, &sendee);
-            assert_eq!(ret, Err(Error(EPERM)));
+            assert_eq!(ret, Err(Error::EPERM));
 
             // Neither can its peer.
             hdl[0] = c2;
             sendee = rp(&mut hdl, &mut buf);
             let ret = crate::call::chan_send(c1, &sendee);
-            assert_eq!(ret, Err(Error(EPERM)));
+            assert_eq!(ret, Err(Error::EPERM));
         }
 
         {
             let mut receivee = rp(&mut [], &mut buf);
             let ret = crate::call::chan_recv(c2, &mut receivee, u64::MAX);
-            assert_eq!(ret, Err(Error(EBUFFER)));
+            assert_eq!(ret, Err(Error::EBUFFER));
 
             receivee = rp(&mut hdl, &mut []);
             let ret = crate::call::chan_recv(c2, &mut receivee, u64::MAX);
-            assert_eq!(ret, Err(Error(EBUFFER)));
+            assert_eq!(ret, Err(Error::EBUFFER));
         }
 
         buf.fill(0);
@@ -90,7 +90,7 @@ pub fn test() {
 
         receivee = rp(&mut hdl, &mut buf);
         let ret = crate::call::chan_recv(c2, &mut receivee, 0);
-        assert_eq!(ret, Err(Error(ENOENT)));
+        assert_eq!(ret, Err(Error::ENOENT));
 
         wo
     };

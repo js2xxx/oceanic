@@ -35,7 +35,7 @@ impl Futex {
         if unsafe { intrinsics::atomic_load(ptr) } == val {
             Ok(self.wo.wait((), timeout, "Futex::wait"))
         } else {
-            Err(Error(EINVAL))
+            Err(Error::EINVAL)
         }
     }
 
@@ -83,7 +83,7 @@ mod syscall {
         let ptr = unsafe { NonNull::new_unchecked(ptr.as_ptr()) };
         let addr = SCHED
             .with_current(|cur| cur.space.get(ptr.cast()).map_err(Into::into))
-            .ok_or(Error(ESRCH))
+            .ok_or(Error::ESRCH)
             .flatten()?;
 
         let _pree = PREEMPT.lock();
@@ -105,7 +105,7 @@ mod syscall {
         let ptr = unsafe { NonNull::new_unchecked(ptr.as_ptr()) };
         let addr = SCHED
             .with_current(|cur| cur.space.get(ptr.cast()).map_err(Into::into))
-            .ok_or(Error(ESRCH))
+            .ok_or(Error::ESRCH)
             .flatten()?;
 
         PREEMPT.scope(|| Futex::get_or_insert(addr).wake(num))
@@ -137,7 +137,7 @@ mod syscall {
                     .and_then(|addr| space.get(other.cast()).map(|other| (addr, other)))
                     .map_err(Into::into)
             })
-            .ok_or(Error(ESRCH))
+            .ok_or(Error::ESRCH)
             .flatten()?;
 
         let pree = PREEMPT.lock();

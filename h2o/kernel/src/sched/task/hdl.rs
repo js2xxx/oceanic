@@ -186,11 +186,11 @@ mod syscall {
         hdl.check_null()?;
         let ret = SCHED
             .with_current(|cur| unsafe { cur.tid().handles().remove_ref(hdl) })
-            .ok_or(Error(ESRCH))?;
+            .ok_or(Error::ESRCH)?;
         if ret.is_some() {
             Ok(())
         } else {
-            Err(Error(EINVAL))
+            Err(Error::EINVAL)
         }
     }
 }

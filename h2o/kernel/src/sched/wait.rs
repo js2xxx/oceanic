@@ -73,7 +73,7 @@ mod syscall {
         let wo = Arc::new(WaitObject::new());
         SCHED
             .with_current(|cur| cur.tid().handles().insert(wo).unwrap().raw())
-            .map_or(Err(Error(ESRCH)), Ok)
+            .map_or(Err(Error::ESRCH), Ok)
     }
 
     #[syscall]
@@ -87,7 +87,7 @@ mod syscall {
                     .map(|w| Arc::clone(w))
             })
             .flatten()
-            .ok_or(Error(EINVAL))?;
+            .ok_or(Error::EINVAL)?;
         Ok(wo.notify(n))
     }
 }

@@ -41,14 +41,14 @@ impl From<TaskError> for solvent::Error {
     fn from(val: TaskError) -> Self {
         use solvent::*;
         match val {
-            TaskError::Permission => Error(EPERM),
-            TaskError::NotSupported(_) => Error(EPERM),
-            TaskError::InvalidFormat => Error(EINVAL),
+            TaskError::Permission => Error::EPERM,
+            TaskError::NotSupported(_) => Error::EPERM,
+            TaskError::InvalidFormat => Error::EINVAL,
             TaskError::Memory(err) => err.into(),
-            TaskError::NoCurrentTask => Error(ESRCH),
-            TaskError::TidExhausted => Error(EFAULT),
+            TaskError::NoCurrentTask => Error::ESRCH,
+            TaskError::TidExhausted => Error::EFAULT,
             TaskError::StackError(err) => err.into(),
-            TaskError::Other(_) => Error(EFAULT),
+            TaskError::Other(_) => Error::EFAULT,
         }
     }
 }

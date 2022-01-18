@@ -185,7 +185,7 @@ impl Scheduler {
             Some(task::sig::Signal::Kill) => {
                 log::trace!("Killing task {:?}, P{}", cur.tid.raw(), PREEMPT.raw());
                 self.schedule_impl(cur_time, pree, None, |task| {
-                    task::Ready::exit(task, (-solvent::EKILLED) as usize)
+                    task::Ready::exit(task, (-solvent::Error::EKILLED.raw()) as usize)
                 });
                 unreachable!("Dead task");
             }
