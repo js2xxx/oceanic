@@ -1,26 +1,37 @@
 use core::{fmt::Debug, ops::Range};
 
+use crate::SerdeReg;
+
 pub const ERRC_RANGE: Range<i32> = 1..35;
 pub const CUSTOM_RANGE: Range<i32> = 1001..1005;
 
 pub type Result<T = ()> = core::result::Result<T, Error>;
+
+impl<T: SerdeReg> SerdeReg for Result<T> {
+    #[inline]
+    fn encode(self) -> usize {
+        match self {
+            Ok(t) => t.encode(),
+            Err(e) => (-e.raw()) as usize,
+        }
+    }
+
+    #[inline]
+    fn decode(val: usize) -> Self {
+        let err = -(val as i32);
+        if ERRC_RANGE.contains(&err) || CUSTOM_RANGE.contains(&err) {
+            Err(Error(err))
+        } else {
+            Ok(T::decode(val))
+        }
+    }
+}
 
 #[derive(Copy, Clone, PartialEq, Eq)]
 #[repr(transparent)]
 pub struct Error(i32);
 
 impl Error {
-    pub fn encode(res: Result<usize>) -> usize {
-        res.map_err(|err| -err.0 as usize).into_ok_or_err()
-    }
-
-    pub fn decode(val: usize) -> Result<usize> {
-        let errc = -(val as i32);
-        (!ERRC_RANGE.contains(&errc) && !(CUSTOM_RANGE.contains(&errc)))
-            .then_some(val)
-            .ok_or(Error(errc))
-    }
-
     pub fn desc(&self) -> &'static str {
         if ERRC_RANGE.contains(&self.0) {
             ERRC_DESC[self.0 as usize]
@@ -33,11 +44,44 @@ impl Error {
     pub fn raw(&self) -> i32 {
         self.0
     }
+
+    #[inline]
+    pub fn into_retval(self) -> usize {
+        Err::<(), _>(self).encode()
+    }
 }
 
 impl Debug for Error {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "Error: {}", self.desc())
+    }
+}
+
+impl From<core::alloc::AllocError> for Error {
+    #[inline]
+    fn from(_: core::alloc::AllocError) -> Self {
+        Error::ENOMEM
+    }
+}
+
+impl From<core::alloc::LayoutError> for Error {
+    #[inline]
+    fn from(_: core::alloc::LayoutError) -> Self {
+        Error::ENOMEM
+    }
+}
+
+impl From<core::num::TryFromIntError> for Error {
+    #[inline]
+    fn from(_: core::num::TryFromIntError) -> Self {
+        Error::EINVAL
+    }
+}
+
+impl From<core::str::Utf8Error> for Error {
+    #[inline]
+    fn from(_: core::str::Utf8Error) -> Self {
+        Error::EINVAL
     }
 }
 
@@ -90,6 +134,8 @@ impl Error {
     declare_error!(EBUFFER, 1002, "Buffer range exceeded");
     declare_error!(ETIME, 1003, "Timed out");
     declare_error!(EALIGN, 1004, "Pointer unaligned");
+    declare_error!(ETYPE, 1005, "Object type mismatch");
+    declare_error!(ESPRT, 1006, "Function not supported");
 }
 
 const ERRC_DESC: &[&str] = &[

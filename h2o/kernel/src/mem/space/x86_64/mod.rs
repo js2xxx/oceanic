@@ -212,10 +212,10 @@ pub unsafe fn page_fault(frame: &mut Frame, errc: u64) -> bool {
     match ErrCode::from_bits(errc) {
         // So far neither has been supported.
         Some(code) if !code.contains(ErrCode::PROT_KEY | ErrCode::SHADOW_STACK) => {
-            if matches!(
-                SCHED.with_current(|cur| cur.kstack_mut().pf_resume(frame, errc, addr)),
-                Some(true)
-            ) {
+            if SCHED
+                .with_current(|cur| cur.kstack_mut().pf_resume(frame, errc, addr))
+                .is_ok()
+            {
                 return true;
             }
 

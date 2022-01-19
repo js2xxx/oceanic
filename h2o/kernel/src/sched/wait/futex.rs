@@ -72,7 +72,7 @@ mod syscall {
     };
 
     #[syscall]
-    fn futex_wait(ptr: UserPtr<In, u64>, expected: u64, timeout_us: u64) -> bool {
+    fn futex_wait(ptr: UserPtr<In, u64>, expected: u64, timeout_us: u64) -> Result<bool> {
         ptr.check()?;
         let timeout = if timeout_us == u64::MAX {
             Duration::MAX
@@ -81,10 +81,7 @@ mod syscall {
         };
 
         let ptr = unsafe { NonNull::new_unchecked(ptr.as_ptr()) };
-        let addr = SCHED
-            .with_current(|cur| cur.space.get(ptr.cast()).map_err(Into::into))
-            .ok_or(Error::ESRCH)
-            .flatten()?;
+        let addr = SCHED.with_current(|cur| cur.space.get(ptr.cast()).map_err(Into::into))?;
 
         let _pree = PREEMPT.lock();
         let futex = Futex::get_or_insert(addr);
@@ -99,14 +96,11 @@ mod syscall {
     }
 
     #[syscall]
-    fn futex_wake(ptr: UserPtr<In, u64>, num: usize) -> usize {
+    fn futex_wake(ptr: UserPtr<In, u64>, num: usize) -> Result<usize> {
         ptr.check()?;
 
         let ptr = unsafe { NonNull::new_unchecked(ptr.as_ptr()) };
-        let addr = SCHED
-            .with_current(|cur| cur.space.get(ptr.cast()).map_err(Into::into))
-            .ok_or(Error::ESRCH)
-            .flatten()?;
+        let addr = SCHED.with_current(|cur| cur.space.get(ptr.cast()).map_err(Into::into))?;
 
         PREEMPT.scope(|| Futex::get_or_insert(addr).wake(num))
     }
@@ -117,7 +111,7 @@ mod syscall {
         wake_num: UserPtr<InOut, usize>,
         other: UserPtr<In, u64>,
         requeue_num: UserPtr<InOut, usize>,
-    ) {
+    ) -> Result {
         ptr.check()?;
         other.check()?;
         let (wake, requeue, ptr, other) = unsafe {
@@ -129,16 +123,13 @@ mod syscall {
             )
         };
 
-        let (addr, other) = SCHED
-            .with_current(|cur| {
-                let space = &cur.space;
-                space
-                    .get(ptr.cast())
-                    .and_then(|addr| space.get(other.cast()).map(|other| (addr, other)))
-                    .map_err(Into::into)
-            })
-            .ok_or(Error::ESRCH)
-            .flatten()?;
+        let (addr, other) = SCHED.with_current(|cur| {
+            let space = &cur.space;
+            space
+                .get(ptr.cast())
+                .and_then(|addr| space.get(other.cast()).map(|other| (addr, other)))
+                .map_err(Into::into)
+        })?;
 
         let pree = PREEMPT.lock();
         let futex = Futex::get_or_insert(addr);

@@ -1,6 +1,6 @@
 use alloc::{alloc::Global, sync::Arc};
 use core::{
-    alloc::{AllocError, Allocator, Layout},
+    alloc::{Allocator, Layout},
     mem,
     ops::{Deref, Range},
     ptr::NonNull,
@@ -8,7 +8,7 @@ use core::{
 
 use paging::{LAddr, PAddr};
 
-use super::{Flags, Space, SpaceError};
+use super::{Flags, Space};
 use crate::sched::task::Type;
 
 #[derive(Debug)]
@@ -27,21 +27,21 @@ impl Phys {
     /// # Errors
     ///
     /// Returns error if the heap memory is exhausted.
-    pub fn allocate(layout: Layout, flags: Flags) -> Result<Arc<Phys>, AllocError> {
+    pub fn allocate(layout: Layout, flags: Flags) -> solvent::Result<Arc<Phys>> {
         let mem = if flags.contains(Flags::ZEROED) {
             Global.allocate_zeroed(layout)
         } else {
             Global.allocate(layout)
         };
         mem.map(|ptr| unsafe {
-            Phys::new_manual(
+            Arc::new(Phys::new_manual(
                 true,
                 LAddr::from(ptr).to_paddr(minfo::ID_OFFSET),
                 layout,
                 flags,
-            )
+            ))
         })
-        .map(Arc::new)
+        .map_err(solvent::Error::from)
     }
 
     pub(super) unsafe fn new_manual(
@@ -138,20 +138,20 @@ impl Virt {
     ///
     /// Returns error if caller tries to support more features or the pointer is
     /// out of bounds.
-    pub unsafe fn modify(&self, ptr: NonNull<[u8]>, flags: Flags) -> Result<(), SpaceError> {
+    pub unsafe fn modify(&self, ptr: NonNull<[u8]>, flags: Flags) -> solvent::Result {
         if flags & !self.phys_flags() != Flags::empty() {
-            return Err(SpaceError::Permission);
+            return Err(solvent::Error::EPERM);
         }
         let (base, len) = (ptr.as_non_null_ptr(), ptr.len());
         let base = if base.as_ptr() >= *self.base() {
             base
         } else {
-            return Err(SpaceError::InvalidFormat);
+            return Err(solvent::Error::EINVAL);
         };
         let len = if base.as_ptr().add(len) <= *self.range().end {
             len
         } else {
-            return Err(SpaceError::InvalidFormat);
+            return Err(solvent::Error::EINVAL);
         };
 
         let ptr = NonNull::slice_from_raw_parts(base, len);

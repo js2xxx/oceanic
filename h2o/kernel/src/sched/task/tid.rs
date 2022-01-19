@@ -37,11 +37,11 @@ impl Tid {
         self.raw.get()
     }
 
-    pub fn child(&self, hdl: Handle) -> Option<Tid> {
+    pub fn child(&self, hdl: Handle) -> solvent::Result<Tid> {
         super::PREEMPT.scope(|| self.handles().get::<Tid>(hdl).map(|w| Tid::clone(w)))
     }
 
-    pub fn drop_child(&self, hdl: Handle) -> Option<Tid> {
+    pub fn drop_child(&self, hdl: Handle) -> solvent::Result<Tid> {
         super::PREEMPT.scope(|| {
             self.handles()
                 .remove::<Tid>(hdl)

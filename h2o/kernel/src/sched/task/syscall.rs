@@ -45,9 +45,12 @@ fn task_exit(retval: usize) {
 }
 
 #[syscall]
-fn task_sleep(ms: u32) {
+fn task_sleep(ms: u32) -> Result {
     if ms == 0 {
-        SCHED.with_current(|cur| cur.running_state = RunningState::NEED_RESCHED);
+        let _ = SCHED.with_current(|cur| {
+            cur.running_state = RunningState::NEED_RESCHED;
+            Ok(())
+        });
         SCHED.tick(Instant::now());
     } else {
         SCHED.block_current((), None, Duration::from_millis(u64::from(ms)), "task_sleep");
@@ -60,7 +63,7 @@ fn task_fn(
     ci: UserPtr<In, task::CreateInfo>,
     cf: task::CreateFlags,
     extra: UserPtr<Out, Handle>,
-) -> Handle {
+) -> Result<Handle> {
     let ci = unsafe { ci.read()? };
     if cf.contains(task::CreateFlags::SUSPEND_ON_START) {
         extra.check()?;
@@ -84,14 +87,11 @@ fn task_fn(
         ci.stack_size
     };
 
-    let init_chan = SCHED
-        .with_current(|cur| {
-            cur.tid()
-                .handles()
-                .remove::<crate::sched::ipc::Channel>(ci.init_chan)
-        })
-        .ok_or(Error::ESRCH)?
-        .ok_or(Error::EINVAL)?;
+    let init_chan = SCHED.with_current(|cur| {
+        cur.tid()
+            .handles()
+            .remove::<crate::sched::ipc::Channel>(ci.init_chan)
+    })?;
 
     UserPtr::<In, _>::new(ci.func).check()?;
 
@@ -117,10 +117,7 @@ fn task_fn(
             slot: Arc::new(Mutex::new(Some(task))),
             tid,
         };
-        let st = SCHED
-            .with_current(|cur| cur.tid.handles().insert(st))
-            .unwrap()
-            .ok_or(Error::ENOMEM)?;
+        let st = SCHED.with_current(|cur| cur.tid.handles().insert(st))?;
         unsafe { extra.write(st) }?;
     } else {
         SCHED.unblock(task);
@@ -130,31 +127,22 @@ fn task_fn(
 }
 
 #[syscall]
-fn task_join(hdl: Handle) -> usize {
+fn task_join(hdl: Handle) -> Result<usize> {
     hdl.check_null()?;
 
-    let child = {
-        let tid = SCHED
-            .with_current(|cur| cur.tid.clone())
-            .ok_or(Error::ESRCH)?;
-
-        tid.drop_child(hdl).ok_or(Error::ECHILD)?
-    };
-
-    Error::decode(child.ret_cell().take(Duration::MAX, "task_join").unwrap())
+    let child = SCHED.with_current(|cur| cur.tid.drop_child(hdl))?;
+    Ok(child.ret_cell().take(Duration::MAX, "task_join").unwrap())
 }
 
 #[syscall]
-fn task_ctl(hdl: Handle, op: u32, data: UserPtr<InOut, Handle>) {
+fn task_ctl(hdl: Handle, op: u32, data: UserPtr<InOut, Handle>) -> Result {
     hdl.check_null()?;
 
-    let cur_tid = SCHED
-        .with_current(|cur| cur.tid.clone())
-        .ok_or(Error::ESRCH)?;
+    let cur_tid = SCHED.with_current(|cur| Ok(cur.tid.clone()))?;
 
     match op {
         task::TASK_CTL_KILL => {
-            let child = cur_tid.child(hdl).ok_or(Error::ECHILD)?;
+            let child = cur_tid.child(hdl)?;
             child.with_signal(|sig| *sig = Some(Signal::Kill));
 
             Ok(())
@@ -162,7 +150,7 @@ fn task_ctl(hdl: Handle, op: u32, data: UserPtr<InOut, Handle>) {
         task::TASK_CTL_SUSPEND => {
             data.out().check()?;
 
-            let child = cur_tid.child(hdl).ok_or(Error::ECHILD)?;
+            let child = cur_tid.child(hdl)?;
 
             let st = SuspendToken {
                 slot: Arc::new(Mutex::new(None)),
@@ -178,20 +166,12 @@ fn task_ctl(hdl: Handle, op: u32, data: UserPtr<InOut, Handle>) {
                 }
             })?;
 
-            let out = super::PREEMPT
-                .scope(|| cur_tid.handles().insert(st))
-                .ok_or(Error::ENOMEM)?;
+            let out = super::PREEMPT.scope(|| cur_tid.handles().insert(st))?;
             unsafe { data.out().write(out) }.unwrap();
 
             Ok(())
         }
-        task::TASK_CTL_DETACH => {
-            if cur_tid.drop_child(hdl).is_some() {
-                Ok(())
-            } else {
-                Err(Error::ECHILD)
-            }
-        }
+        task::TASK_CTL_DETACH => cur_tid.drop_child(hdl).map(|_| ()),
         _ => Err(Error::EINVAL),
     }
 }
@@ -254,19 +234,16 @@ fn create_excep_chan(task: &Blocked) -> Result<crate::sched::ipc::Channel> {
 }
 
 #[syscall]
-fn task_debug(hdl: Handle, op: u32, addr: usize, data: UserPtr<InOut, u8>, len: usize) {
+fn task_debug(hdl: Handle, op: u32, addr: usize, data: UserPtr<InOut, u8>, len: usize) -> Result {
     hdl.check_null()?;
     data.check_slice(len)?;
 
-    let slot = SCHED
-        .with_current(|cur| {
-            cur.tid
-                .handles()
-                .get::<SuspendToken>(hdl)
-                .map(|st| Arc::clone(&st.slot))
-        })
-        .ok_or(Error::ESRCH)?
-        .ok_or(Error::EINVAL)?;
+    let slot = SCHED.with_current(|cur| {
+        cur.tid
+            .handles()
+            .get::<SuspendToken>(hdl)
+            .map(|st| Arc::clone(&st.slot))
+    })?;
 
     let mut task = loop {
         match super::PREEMPT.scope(|| slot.lock().take()) {
@@ -293,14 +270,11 @@ fn task_debug(hdl: Handle, op: u32, addr: usize, data: UserPtr<InOut, u8>, len: 
             if len < core::mem::size_of::<Handle>() {
                 Err(Error::EBUFFER)
             } else {
-                let hdl = SCHED
-                    .with_current(|cur| {
-                        create_excep_chan(&task).map(|chan| cur.tid.handles().insert(chan))
-                    })
-                    .unwrap()?
-                    .ok_or(Error::ENOMEM)?;
+                let hdl = SCHED.with_current(|cur| {
+                    create_excep_chan(&task).and_then(|chan| cur.tid.handles().insert(chan))
+                })?;
 
-                unsafe { data.out().cast().write(hdl) }
+                unsafe { data.out().cast::<Handle>().write(hdl) }
             }
         }
         _ => Err(Error::EINVAL),

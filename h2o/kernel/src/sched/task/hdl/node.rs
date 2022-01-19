@@ -9,6 +9,7 @@ use core::{
     ptr::NonNull,
 };
 
+use solvent::Result;
 use spin::Lazy;
 
 use super::Object;
@@ -95,11 +96,11 @@ impl<T: ?Sized + Send + Sync> Clone for Ref<T> {
 }
 
 impl Ref<dyn Any> {
-    pub fn downcast_ref<T: Any>(&self) -> Option<&Ref<T>> {
+    pub fn downcast_ref<T: Any>(&self) -> Result<&Ref<T>> {
         if self.obj.data.is::<T>() {
-            Some(unsafe { &*(self as *const Ref<dyn Any> as *const Ref<T>) })
+            Ok(unsafe { &*(self as *const Ref<dyn Any> as *const Ref<T>) })
         } else {
-            None
+            Err(solvent::Error::ETYPE)
         }
     }
 
@@ -118,12 +119,12 @@ impl Ref<dyn Any> {
         }
     }
 
-    pub fn try_clone(&self) -> Option<Ref<dyn Any>> {
+    pub fn try_clone(&self) -> Result<Ref<dyn Any>> {
         if self.obj.send && self.obj.sync {
             // SAFETY: The underlying object is `send` and `sync`.
-            Some(unsafe { self.clone_unchecked() })
+            Ok(unsafe { self.clone_unchecked() })
         } else {
-            None
+            Err(solvent::Error::EPERM)
         }
     }
 
@@ -221,7 +222,7 @@ impl List {
     ///
     /// The caller must ensure that `value` comes from the current task if its
     /// not [`Send`].
-    pub(super) unsafe fn insert_impl(&mut self, value: Ref<dyn Any>) -> Option<Ptr> {
+    pub(super) unsafe fn insert_impl(&mut self, value: Ref<dyn Any>) -> Result<Ptr> {
         let link = HR_ARENA.allocate()?;
         // SAFETY: The pointer is allocated from the arena.
         unsafe { link.as_ptr().write(value) };
@@ -229,14 +230,14 @@ impl List {
         self.insert_node(link);
         self.len += 1;
 
-        Some(link)
+        Ok(link)
     }
 
     /// # Safety
     ///
     /// The caller must ensure that the list belongs to the current task if
     /// `link` is not [`Send`].
-    pub(super) unsafe fn remove_impl(&mut self, link: Ptr) -> Option<Ref<dyn Any>> {
+    pub(super) unsafe fn remove_impl(&mut self, link: Ptr) -> Result<Ref<dyn Any>> {
         let mut cur = self.head;
         loop {
             cur = match cur {
@@ -249,36 +250,38 @@ impl List {
                     // to `value`.
                     let value = unsafe { cur.as_ptr().read() };
                     // SAFETY: The pointer is ours.
-                    unsafe { HR_ARENA.deallocate(cur) };
+                    let _ = unsafe { HR_ARENA.deallocate(cur) };
 
-                    break Some(value);
+                    break Ok(value);
                 }
                 // SAFETY: The pointer is allocated from the arena.
                 Some(cur) => unsafe { cur.as_ref().next },
-                None => break None,
+                None => break Err(solvent::Error::ERANGE),
             }
         }
     }
 
-    pub(super) fn split<I, F>(&mut self, iter: I, all: F) -> Option<List>
+    pub(super) fn split<I, F>(&mut self, iter: I, check: F) -> Result<List>
     where
-        I: Iterator<Item = Option<Ptr>>,
-        F: Fn(&Ref<dyn Any>) -> bool,
+        I: Iterator<Item = Result<Ptr>>,
+        F: Fn(&Ref<dyn Any>) -> Result,
     {
         let mut ret = List::new();
 
         let mut cnt = 0;
         for ptr in iter {
             let link = match ptr {
-                None => {
+                Err(err) => {
                     self.merge(&mut ret);
-                    return None;
+                    return Err(err);
                 }
-                Some(link) if !all(unsafe { link.as_ref() }) => {
-                    self.merge(&mut ret);
-                    return None;
-                }
-                Some(link) => link,
+                Ok(link) => match check(unsafe { link.as_ref() }) {
+                    Ok(()) => link,
+                    Err(err) => {
+                        self.merge(&mut ret);
+                        return Err(err);
+                    }
+                },
             };
             unsafe {
                 self.splice_nodes(link, link);
@@ -289,17 +292,17 @@ impl List {
         ret.len = cnt;
         self.len -= cnt;
 
-        Some(ret)
+        Ok(ret)
     }
 
-    pub(super) fn merge(&mut self, other: &mut List) -> Option<Iter> {
+    pub(super) fn merge(&mut self, other: &mut List) -> Iter {
         let mut start = match other.head {
             Some(head) => head,
-            None => return None,
+            None => return Iter::empty(),
         };
         let mut end = match other.tail {
             Some(tail) => tail,
-            None => return None,
+            None => return Iter::empty(),
         };
         let list = mem::take(other);
         let len = list.len;
@@ -320,11 +323,11 @@ impl List {
         self.tail = end;
         self.len += len;
 
-        Some(Iter {
+        Iter {
             head: start,
             len,
             _marker: PhantomData,
-        })
+        }
     }
 
     pub fn iter(&self) -> Iter {
@@ -357,6 +360,17 @@ pub struct Iter<'a> {
     _marker: PhantomData<&'a Ref<dyn Any>>,
 }
 
+impl<'a> Iter<'a> {
+    #[inline]
+    pub fn empty() -> Self {
+        Iter {
+            head: None,
+            len: 0,
+            _marker: PhantomData,
+        }
+    }
+}
+
 impl<'a> Iterator for Iter<'a> {
     type Item = &'a Ref<dyn Any>;
 
@@ -385,11 +399,11 @@ impl<'a> ExactSizeIterator for Iter<'a> {}
 impl<'a> FusedIterator for Iter<'a> {}
 
 #[inline]
-pub fn decode(index: usize) -> Option<Ptr> {
+pub fn decode(index: usize) -> Result<Ptr> {
     PREEMPT.scope(|| HR_ARENA.from_index(index))
 }
 
 #[inline]
-pub fn encode(value: Ptr) -> Option<usize> {
+pub fn encode(value: Ptr) -> Result<usize> {
     PREEMPT.scope(|| HR_ARENA.to_index(value))
 }

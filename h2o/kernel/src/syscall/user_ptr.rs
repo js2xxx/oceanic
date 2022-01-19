@@ -65,9 +65,7 @@ impl<D> UserPtr<In, D> {
     pub unsafe fn read(&self) -> Result<D> {
         self.check()?;
 
-        let pf_resume = SCHED
-            .with_current(|cur| cur.kstack_mut().pf_resume_mut())
-            .ok_or(solvent::Error::ESRCH)?;
+        let pf_resume = SCHED.with_current(|cur| Ok(cur.kstack_mut().pf_resume_mut()))?;
 
         let mut data = MaybeUninit::<D>::uninit();
         checked_copy(
@@ -93,9 +91,7 @@ impl<D> UserPtr<In, D> {
     pub unsafe fn read_slice(&self, out: *mut D, count: usize) -> Result<()> {
         self.check_slice(count)?;
 
-        let pf_resume = SCHED
-            .with_current(|cur| cur.kstack_mut().pf_resume_mut())
-            .ok_or(solvent::Error::ESRCH)?;
+        let pf_resume = SCHED.with_current(|cur| Ok(cur.kstack_mut().pf_resume_mut()))?;
 
         checked_copy(
             out.cast(),
@@ -116,9 +112,7 @@ impl<D> UserPtr<Out, D> {
         self.check()?;
 
         unsafe {
-            let pf_resume = SCHED
-                .with_current(|cur| cur.kstack_mut().pf_resume_mut())
-                .ok_or(solvent::Error::ESRCH)?;
+            let pf_resume = SCHED.with_current(|cur| Ok(cur.kstack_mut().pf_resume_mut()))?;
 
             checked_copy(
                 self.data.cast(),
@@ -138,9 +132,7 @@ impl<D> UserPtr<Out, D> {
         self.check_slice(value.len())?;
 
         unsafe {
-            let pf_resume = SCHED
-                .with_current(|cur| cur.kstack_mut().pf_resume_mut())
-                .ok_or(solvent::Error::ESRCH)?;
+            let pf_resume = SCHED.with_current(|cur| Ok(cur.kstack_mut().pf_resume_mut()))?;
 
             checked_copy(
                 self.data.cast(),

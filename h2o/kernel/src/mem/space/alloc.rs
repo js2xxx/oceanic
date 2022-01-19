@@ -7,7 +7,7 @@ use collection_ex::RangeSet;
 use paging::LAddr;
 use spin::Mutex;
 
-use super::{AllocType, ArchSpace, Flags, SpaceError};
+use super::{paging_error, AllocType, ArchSpace, Flags};
 use crate::mem::space::Phys;
 
 #[derive(Debug)]
@@ -32,7 +32,7 @@ impl Allocator {
         phys: &mut Option<Arc<Phys>>,
         flags: Flags,
         arch: &ArchSpace,
-    ) -> Result<NonNull<[u8]>, SpaceError> {
+    ) -> solvent::Result<NonNull<[u8]>> {
         self.canary.assert();
 
         // Get the virtual address.
@@ -49,7 +49,7 @@ impl Allocator {
                     .as_ref()
                     .map_or(false, |phys| phys.base().contains_bit(layout.align() - 1))
                 {
-                    return Err(SpaceError::InvalidFormat);
+                    return Err(solvent::Error::EINVAL);
                 }
 
                 let (prefix, virt, suffix) = {
@@ -70,14 +70,14 @@ impl Allocator {
                             None
                         }
                     });
-                    res.ok_or(SpaceError::AddressBusy)?
+                    res.ok_or(solvent::Error::EBUSY)?
                 };
                 (layout, prefix, virt, suffix)
             }
             AllocType::Virt(virt) => {
                 let size = unsafe { virt.end.offset_from(*virt.start) } as usize;
                 let layout = Layout::from_size_align(size, paging::PAGE_SIZE)
-                    .map_err(|_| SpaceError::InvalidFormat)?;
+                    .map_err(solvent::Error::from)?;
 
                 let (prefix, suffix) = {
                     let res = range.range_iter().find_map(|r| {
@@ -85,7 +85,7 @@ impl Allocator {
                             .then_some((r.start..virt.start, virt.end..r.end))
                     });
 
-                    res.ok_or(SpaceError::AddressBusy)?
+                    res.ok_or(solvent::Error::EBUSY)?
                 };
                 (layout, prefix, virt, suffix)
             }
@@ -94,13 +94,13 @@ impl Allocator {
         // Get the physical address mapped to.
         let new_phys = match phys {
             Some(phys) => Arc::clone(phys),
-            None => Phys::allocate(layout, flags).map_err(|_| SpaceError::OutOfMemory)?,
+            None => Phys::allocate(layout, flags)?,
         };
 
         // Map it.
         let base = virt.start;
         arch.maps(virt, new_phys.base(), flags)
-            .map_err(SpaceError::PagingError)?;
+            .map_err(paging_error)?;
 
         range.remove(prefix.start);
         if !prefix.is_empty() {
@@ -123,7 +123,7 @@ impl Allocator {
         mut ptr: NonNull<[u8]>,
         flags: Flags,
         arch: &ArchSpace,
-    ) -> Result<(), SpaceError> {
+    ) -> solvent::Result {
         self.canary.assert();
 
         let virt = {
@@ -131,17 +131,14 @@ impl Allocator {
             LAddr::new(ptr.start)..LAddr::new(ptr.end)
         };
 
-        arch.reprotect(virt, flags)
-            .map_err(SpaceError::PagingError)?;
-
-        Ok(())
+        arch.reprotect(virt, flags).map_err(paging_error)
     }
 
     pub unsafe fn deallocate(
         &self,
         ptr: NonNull<u8>,
         arch: &ArchSpace,
-    ) -> Result<Arc<Phys>, SpaceError> {
+    ) -> solvent::Result<Arc<Phys>> {
         self.canary.assert();
 
         // Get the virtual address range from the given memory block.
@@ -150,13 +147,13 @@ impl Allocator {
             let mut record = self.record.lock();
             match record.remove(&virt_start) {
                 Some(phys) => phys,
-                None => return Err(SpaceError::InvalidFormat),
+                None => return Err(solvent::Error::EINVAL),
             }
         };
         let mut virt = virt_start..LAddr::new(virt_start.add(phys.layout().pad_to_align().size()));
 
         // Unmap the virtual address & get the physical address.
-        let _ = arch.unmaps(virt.clone()).map_err(SpaceError::PagingError)?;
+        let _ = arch.unmaps(virt.clone()).map_err(paging_error)?;
 
         // Deallocate the virtual address range.
         let mut range = self.free_range.lock();
@@ -171,7 +168,7 @@ impl Allocator {
         }
         range
             .insert(virt)
-            .map_or(Err(SpaceError::AddressBusy), |_| Ok(phys))
+            .map_or(Err(solvent::Error::EBUSY), |_| Ok(phys))
     }
 
     /// The manual dropping function, replacing `Drop::drop` with `arch`.

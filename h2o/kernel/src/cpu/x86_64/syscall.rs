@@ -2,6 +2,7 @@ use core::mem::size_of;
 
 use archop::{msr, reg};
 use paging::LAddr;
+use solvent::SerdeReg;
 
 use super::seg::ndt::{INTR_CODE, USR_CODE_X86};
 use crate::sched::task::ctx::arch::Frame;
@@ -13,7 +14,7 @@ extern "C" {
 /// # Safety
 ///
 /// This function should only be called once per CPU.
-pub unsafe fn init() -> Option<LAddr> {
+pub unsafe fn init() -> solvent::Result<LAddr> {
     let stack = crate::mem::alloc_system_stack()?
         .as_ptr()
         .sub(size_of::<usize>());
@@ -26,7 +27,7 @@ pub unsafe fn init() -> Option<LAddr> {
     let efer = msr::read(msr::EFER);
     msr::write(msr::EFER, efer | 1);
 
-    Some(LAddr::new(stack))
+    Ok(LAddr::new(stack))
 }
 
 #[no_mangle]
@@ -37,9 +38,10 @@ unsafe extern "C" fn hdl_syscall(frame: *const Frame) {
     let res = crate::syscall::handler(&arg);
     archop::pause_intr();
 
-    if !matches!(res, Err(solvent::Error::INVALID)) {
-        let val = solvent::Error::encode(res);
-        crate::sched::SCHED
-            .with_current(|cur| cur.kstack_mut().task_frame_mut().set_syscall_retval(val));
-    }
+    let _ = crate::sched::SCHED.with_current(|cur| {
+        cur.kstack_mut()
+            .task_frame_mut()
+            .set_syscall_retval(res.encode());
+        Ok(())
+    });
 }

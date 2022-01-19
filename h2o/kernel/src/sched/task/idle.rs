@@ -79,8 +79,11 @@ fn idle(cpu: usize, fs_base: u64) -> ! {
         let (me, chan) = Channel::new();
         let chan = unsafe { Ref::new(chan).coerce_unchecked() };
 
-        me.send(crate::sched::ipc::Packet::new(hdl::List::default(), &[]))
-            .expect("Failed to send message");
+        me.send(&mut crate::sched::ipc::Packet::new(
+            hdl::List::default(),
+            &[],
+        ))
+        .expect("Failed to send message");
 
         let image = unsafe {
             core::slice::from_raw_parts(
@@ -112,7 +115,10 @@ fn ctx_dropper(_: u64, fs_base: u64) -> ! {
                 }
             }
         }
-        crate::sched::SCHED.with_current(|cur| cur.running_state = RunningState::NEED_RESCHED);
+        let _ = crate::sched::SCHED.with_current(|cur| {
+            cur.running_state = RunningState::NEED_RESCHED;
+            Ok(())
+        });
         unsafe { archop::resume_intr(None) };
     }
 }

@@ -92,11 +92,11 @@ unsafe fn exception(frame_ptr: *mut Frame, vec: def::ExVec) {
         _ => {}
     }
 
-    match SCHED.with_current(|cur| cur.tid().ty()) {
-        Some(task::Type::User) if frame.cs == USR_CODE_X64.into_val().into() => {
+    match SCHED.with_current(|cur| Ok(cur.tid().ty())) {
+        Ok(task::Type::User) if frame.cs == USR_CODE_X64.into_val().into() => {
             if !task::dispatch_exception(frame, vec) {
                 // Kill the fucking task.
-                SCHED.exit_current((-solvent::Error::EFAULT.raw()) as usize)
+                SCHED.exit_current(solvent::Error::EFAULT.into_retval())
             }
             // unreachable!()
         }

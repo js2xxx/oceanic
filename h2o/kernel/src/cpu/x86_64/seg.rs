@@ -129,7 +129,7 @@ pub unsafe fn reload_pls() {
 }
 
 /// Allocate and initialize a new PLS for application CPU.
-pub fn alloc_pls() -> Option<NonNull<u8>> {
+pub fn alloc_pls() -> solvent::Result<NonNull<u8>> {
     extern "C" {
         static TDATA_START: u8;
         static TBSS_START: u8;
@@ -137,7 +137,7 @@ pub fn alloc_pls() -> Option<NonNull<u8>> {
 
     let pls_layout = match crate::kargs().pls_layout {
         Some(layout) => layout,
-        None => return None,
+        None => return Err(solvent::Error::ENOENT),
     };
 
     let base = Global
@@ -148,7 +148,7 @@ pub fn alloc_pls() -> Option<NonNull<u8>> {
                 .0,
         )
         .map(NonNull::as_non_null_ptr)
-        .ok()?;
+        .map_err(solvent::Error::from)?;
     unsafe {
         let size = (&TBSS_START as *const u8).offset_from(&TDATA_START) as usize;
         base.as_ptr().copy_from_nonoverlapping(&TDATA_START, size);
@@ -156,7 +156,7 @@ pub fn alloc_pls() -> Option<NonNull<u8>> {
         let self_ptr = base.as_ptr().add(pls_layout.size());
         self_ptr.cast::<*mut u8>().write(self_ptr);
 
-        NonNull::new(self_ptr)
+        Ok(NonNull::new_unchecked(self_ptr))
     }
 }
 

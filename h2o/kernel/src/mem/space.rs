@@ -39,29 +39,18 @@ pub static KRL: Lazy<Arc<Space>> = Lazy::new(|| Space::new(task::Type::Kernel));
 #[thread_local]
 static mut CURRENT: Option<Arc<Space>> = None;
 
-#[derive(Debug)]
-pub enum SpaceError {
-    OutOfMemory,
-    AddressBusy,
-    InvalidFormat,
-    PagingError(paging::Error),
-    Permission,
-}
-
-impl From<SpaceError> for solvent::Error {
-    fn from(val: SpaceError) -> Self {
-        use solvent::*;
-        match val {
-            SpaceError::OutOfMemory => Error::ENOMEM,
-            SpaceError::AddressBusy => Error::EBUSY,
-            SpaceError::InvalidFormat => Error::EINVAL,
-            SpaceError::PagingError(err) => match err {
-                paging::Error::OutOfMemory => Error::ENOMEM,
-                paging::Error::AddrMisaligned { .. } => Error::EALIGN,
-                paging::Error::RangeEmpty => Error::EBUFFER,
-                paging::Error::EntryExistent(b) => if b { Error::EEXIST } else { Error::ENOENT },
-            },
-            SpaceError::Permission => Error::EPERM,
+fn paging_error(err: paging::Error) -> solvent::Error {
+    use solvent::Error;
+    match err {
+        paging::Error::OutOfMemory => Error::ENOMEM,
+        paging::Error::AddrMisaligned { .. } => Error::EALIGN,
+        paging::Error::RangeEmpty => Error::EBUFFER,
+        paging::Error::EntryExistent(b) => {
+            if b {
+                Error::EEXIST
+            } else {
+                Error::ENOENT
+            }
         }
     }
 }
@@ -131,7 +120,7 @@ impl Space {
         ty: AllocType,
         mut phys: Option<Arc<Phys>>,
         flags: Flags,
-    ) -> Result<Virt, SpaceError> {
+    ) -> solvent::Result<Virt> {
         self.canary.assert();
 
         PREEMPT.scope(|| {
@@ -149,21 +138,19 @@ impl Space {
         ty: AllocType,
         phys: Option<Arc<Phys>>,
         flags: Flags,
-    ) -> Result<KernelVirt, SpaceError> {
+    ) -> solvent::Result<KernelVirt> {
         self.canary.assert();
         match self.ty {
             task::Type::Kernel => self
                 .allocate(ty, phys, flags)
                 .map(|virt| KernelVirt::new(virt).unwrap()),
-            task::Type::User => Err(SpaceError::Permission),
+            task::Type::User => Err(solvent::Error::EPERM),
         }
     }
 
     /// Get the mapped physical address of the specified pointer.
-    pub fn get(&self, ptr: NonNull<u8>) -> Result<paging::PAddr, SpaceError> {
-        self.arch
-            .query(LAddr::from(ptr))
-            .map_err(SpaceError::PagingError)
+    pub fn get(&self, ptr: NonNull<u8>) -> solvent::Result<paging::PAddr> {
+        self.arch.query(LAddr::from(ptr)).map_err(paging_error)
     }
 
     /// Modify the access flags of an address range without a specific type.
@@ -173,7 +160,7 @@ impl Space {
     /// The caller must ensure that `ptr` was allocated by this `Space` and no
     /// pointers or references within the address range are present (or will be
     /// influenced by the modification).
-    pub unsafe fn modify(&self, ptr: NonNull<[u8]>, flags: Flags) -> Result<(), SpaceError> {
+    pub unsafe fn modify(&self, ptr: NonNull<[u8]>, flags: Flags) -> solvent::Result {
         self.canary.assert();
 
         PREEMPT.scope(|| self.allocator.modify(ptr, flags, &self.arch))
@@ -184,7 +171,7 @@ impl Space {
     /// # Safety
     ///
     /// The caller must ensure that `ptr` was allocated by this `Space`.
-    pub unsafe fn deallocate(&self, ptr: NonNull<u8>) -> Result<Arc<Phys>, SpaceError> {
+    pub unsafe fn deallocate(&self, ptr: NonNull<u8>) -> solvent::Result<Arc<Phys>> {
         self.canary.assert();
 
         PREEMPT.scope(|| self.allocator.deallocate(ptr, &self.arch))
@@ -205,7 +192,7 @@ impl Space {
         stack_blocks: &mut MutexGuard<BTreeMap<LAddr, Layout>>,
         base: LAddr,
         size: usize,
-    ) -> Result<LAddr, SpaceError> {
+    ) -> solvent::Result<LAddr> {
         let layout = {
             let n = size.div_ceil_bit(paging::PAGE_SHIFT);
             paging::PAGE_LAYOUT
@@ -215,7 +202,7 @@ impl Space {
         };
 
         if base.val() < minfo::USER_STACK_BASE {
-            return Err(SpaceError::OutOfMemory);
+            return Err(solvent::Error::ENOMEM);
         }
 
         match ty {
@@ -224,7 +211,7 @@ impl Space {
                     let ptr = mem_alloc(layout);
 
                     if ptr.is_null() {
-                        return Err(SpaceError::OutOfMemory);
+                        return Err(solvent::Error::ENOMEM);
                     }
 
                     (LAddr::new(ptr).to_paddr(minfo::ID_OFFSET), ptr)
@@ -238,7 +225,7 @@ impl Space {
                 )
                 .map_err(|e| unsafe {
                     mem_dealloc(alloc_ptr, layout);
-                    SpaceError::PagingError(e)
+                    paging_error(e)
                 })?;
 
                 if stack_blocks.insert(base, layout).is_some() {
@@ -254,7 +241,7 @@ impl Space {
         }
     }
 
-    pub fn init_stack(&self, size: usize) -> Result<LAddr, SpaceError> {
+    pub fn init_stack(&self, size: usize) -> solvent::Result<LAddr> {
         self.canary.assert();
         // if matches!(self.ty, task::Type::Kernel) {
         //       return Err("Stack allocation is not allowed in kernel");
@@ -275,10 +262,10 @@ impl Space {
         Ok(LAddr::from(base.val() + size))
     }
 
-    pub fn grow_stack(&self, addr: LAddr) -> Result<(), SpaceError> {
+    pub fn grow_stack(&self, addr: LAddr) -> solvent::Result {
         self.canary.assert();
         if matches!(self.ty, task::Type::Kernel) {
-            return Err(SpaceError::Permission);
+            return Err(solvent::Error::EPERM);
         }
 
         PREEMPT.scope(|| {
@@ -299,7 +286,7 @@ impl Space {
         Ok(())
     }
 
-    pub fn clear_stack(&self) -> Result<(), SpaceError> {
+    pub fn clear_stack(&self) -> solvent::Result {
         self.canary.assert();
 
         PREEMPT.scope(|| {

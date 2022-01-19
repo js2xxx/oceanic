@@ -61,7 +61,8 @@ pub fn exit<T>(res: crate::Result<T>) -> !
 where
     T: crate::SerdeReg,
 {
-    let retval = crate::Error::encode(res.map(|o| o.encode()));
-    let _ = crate::call::task_exit(retval);
+    use crate::SerdeReg;
+
+    let _ = crate::call::task_exit(res.encode());
     unreachable!();
 }

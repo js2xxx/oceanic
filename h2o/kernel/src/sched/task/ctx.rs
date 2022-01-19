@@ -123,12 +123,17 @@ impl Kstack {
     }
 
     #[cfg(target_arch = "x86_64")]
-    pub unsafe fn pf_resume(&mut self, cur_frame: &mut arch::Frame, errc: u64, addr: u64) -> bool {
+    pub unsafe fn pf_resume(
+        &mut self,
+        cur_frame: &mut arch::Frame,
+        errc: u64,
+        addr: u64,
+    ) -> solvent::Result {
         match self.pf_resume.take() {
-            None => false,
+            None => Err(solvent::Error::ENOENT),
             Some(ret) => {
                 cur_frame.set_pf_resume(ret.into(), errc, addr);
-                true
+                Ok(())
             }
         }
     }

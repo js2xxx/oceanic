@@ -69,25 +69,20 @@ mod syscall {
     use super::*;
 
     #[syscall]
-    fn wo_new() -> u32 {
+    fn wo_new() -> Result<u32> {
         let wo = Arc::new(WaitObject::new());
-        SCHED
-            .with_current(|cur| cur.tid().handles().insert(wo).unwrap().raw())
-            .map_or(Err(Error::ESRCH), Ok)
+        SCHED.with_current(|cur| cur.tid().handles().insert(wo).map(|h| h.raw()))
     }
 
     #[syscall]
-    fn wo_notify(hdl: Handle, n: usize) -> usize {
+    fn wo_notify(hdl: Handle, n: usize) -> Result<usize> {
         hdl.check_null()?;
-        let wo = SCHED
-            .with_current(|cur| {
-                cur.tid()
-                    .handles()
-                    .get::<Arc<WaitObject>>(hdl)
-                    .map(|w| Arc::clone(w))
-            })
-            .flatten()
-            .ok_or(Error::EINVAL)?;
+        let wo = SCHED.with_current(|cur| {
+            cur.tid()
+                .handles()
+                .get::<Arc<WaitObject>>(hdl)
+                .map(|w| Arc::clone(w))
+        })?;
         Ok(wo.notify(n))
     }
 }

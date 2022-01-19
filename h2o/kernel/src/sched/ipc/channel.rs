@@ -1,15 +1,14 @@
 use alloc::sync::{Arc, Weak};
-use core::time::Duration;
+use core::{mem, time::Duration};
 
 use bytes::Bytes;
 use spin::{Mutex, MutexGuard};
 
-use super::IpcError;
 use crate::sched::{task::hdl, wait::WaitQueue, SCHED};
 
 const MAX_QUEUE_SIZE: usize = 2048;
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Packet {
     objects: hdl::List,
     buffer: Bytes,
@@ -78,14 +77,14 @@ impl Channel {
     /// # Errors
     ///
     /// Returns error if the peer is closed or if the channel is full.
-    pub fn send(&self, msg: Packet) -> Result<(), IpcError> {
+    pub fn send(&self, msg: &mut Packet) -> solvent::Result {
         match self.peer.upgrade() {
-            None => Err(IpcError::SendChannelClosed(msg)),
+            None => Err(solvent::Error::EPIPE),
             Some(peer) => {
                 if peer.len() >= MAX_QUEUE_SIZE {
-                    Err(IpcError::QueueFull(msg))
+                    Err(solvent::Error::ENOSPC)
                 } else {
-                    peer.push(msg);
+                    peer.push(mem::take(msg));
                     Ok(())
                 }
             }
@@ -95,13 +94,13 @@ impl Channel {
     /// # Errors
     ///
     /// Returns error if the peer is closed.
-    pub fn receive(&self, timeout: Duration) -> Result<MutexGuard<Option<Packet>>, IpcError> {
+    pub fn receive(&self, timeout: Duration) -> solvent::Result<MutexGuard<Option<Packet>>> {
         let mut head = self.head.lock();
         if head.is_none() {
             *head = Some(
                 self.me
                     .pop(timeout, "Channel::receive")
-                    .ok_or(IpcError::ReceiveChannelClosed)?,
+                    .ok_or(solvent::Error::EPIPE)?,
             );
         }
         Ok(head)
@@ -110,10 +109,10 @@ impl Channel {
     /// # Errors
     ///
     /// Returns error if the channel is empty.
-    pub fn try_receive(&self) -> Result<MutexGuard<Option<Packet>>, IpcError> {
+    pub fn try_receive(&self) -> solvent::Result<MutexGuard<Option<Packet>>> {
         let mut head = self.head.lock();
         if head.is_none() {
-            *head = Some(self.me.try_pop().ok_or(IpcError::QueueEmpty)?);
+            *head = Some(self.me.try_pop().ok_or(solvent::Error::ENOENT)?);
         }
         Ok(head)
     }
@@ -128,24 +127,23 @@ mod syscall {
     use crate::syscall::{In, InOut, Out, UserPtr};
 
     #[syscall]
-    fn chan_new(p1: UserPtr<Out, Handle>, p2: UserPtr<Out, Handle>) {
+    fn chan_new(p1: UserPtr<Out, Handle>, p2: UserPtr<Out, Handle>) -> Result {
         p1.check()?;
         p2.check()?;
-        let ret = SCHED.with_current(|cur| {
+        SCHED.with_current(|cur| {
             let (c1, c2) = Channel::new();
             let map = cur.tid().handles();
-            let h1 = map.insert(c1).unwrap();
-            let h2 = map.insert(c2).unwrap();
+            let h1 = map.insert(c1)?;
+            let h2 = map.insert(c2)?;
             unsafe {
-                p1.write(h1).unwrap();
-                p2.write(h2).unwrap();
+                p1.write(h1)?;
+                p2.write(h2)
             }
-        });
-        ret.ok_or(Error::ESRCH)
+        })
     }
 
     #[syscall]
-    fn chan_send(hdl: Handle, packet: UserPtr<In, RawPacket>) {
+    fn chan_send(hdl: Handle, packet: UserPtr<In, RawPacket>) -> Result {
         hdl.check_null()?;
 
         let packet = unsafe { packet.read()? };
@@ -158,18 +156,17 @@ mod syscall {
         }
         let buffer = unsafe { slice::from_raw_parts(packet.buffer, packet.buffer_size) };
 
-        let ret = SCHED.with_current(|cur| {
+        SCHED.with_current(|cur| {
             let map = cur.tid().handles();
-            let channel = map.get::<Channel>(hdl).ok_or(Error::EINVAL)?;
-            let objects = unsafe { map.send(handles, channel) }.ok_or(Error::EPERM)?;
-            let packet = Packet::new(objects, buffer);
-            channel.send(packet).map_err(Into::into)
-        });
-        ret.ok_or(Error::ESRCH).flatten()
+            let channel = map.get::<Channel>(hdl)?;
+            let objects = unsafe { map.send(handles, channel) }?;
+            let mut packet = Packet::new(objects, buffer);
+            channel.send(&mut packet).map_err(Into::into)
+        })
     }
 
     #[syscall]
-    fn chan_recv(hdl: Handle, packet_ptr: UserPtr<InOut, RawPacket>, timeout_us: u64) {
+    fn chan_recv(hdl: Handle, packet_ptr: UserPtr<InOut, RawPacket>, timeout_us: u64) -> Result {
         hdl.check_null()?;
         let timeout = if timeout_us == u64::MAX {
             Duration::MAX
@@ -186,11 +183,11 @@ mod syscall {
         let user_buffer =
             unsafe { slice::from_raw_parts_mut(user_packet.buffer, user_packet.buffer_cap) };
 
-        let ret = SCHED.with_current(|cur| {
+        SCHED.with_current(|cur| {
             let map = cur.tid().handles();
 
             let packet = {
-                let channel = map.get::<Channel>(hdl).ok_or(Error::EINVAL)?;
+                let channel = map.get::<Channel>(hdl)?;
 
                 let mut packet = if !timeout.is_zero() {
                     channel.receive(timeout)
@@ -230,8 +227,6 @@ mod syscall {
             }
 
             Ok(())
-        });
-        let u = ret.ok_or(Error::ESRCH);
-        u.flatten()
+        })
     }
 }

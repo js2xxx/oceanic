@@ -22,38 +22,8 @@ use self::{hdl::Ref, sig::Signal};
 use super::{ipc::Channel, PREEMPT};
 use crate::{
     cpu::{CpuLocalLazy, CpuMask},
-    mem::space::{Space, SpaceError},
+    mem::space::Space,
 };
-
-#[derive(Debug)]
-pub enum TaskError {
-    Permission,
-    NotSupported(u32),
-    InvalidFormat,
-    Memory(SpaceError),
-    NoCurrentTask,
-    TidExhausted,
-    StackError(SpaceError),
-    Other(&'static str),
-}
-
-impl From<TaskError> for solvent::Error {
-    fn from(val: TaskError) -> Self {
-        use solvent::*;
-        match val {
-            TaskError::Permission => Error::EPERM,
-            TaskError::NotSupported(_) => Error::EPERM,
-            TaskError::InvalidFormat => Error::EINVAL,
-            TaskError::Memory(err) => err.into(),
-            TaskError::NoCurrentTask => Error::ESRCH,
-            TaskError::TidExhausted => Error::EFAULT,
-            TaskError::StackError(err) => err.into(),
-            TaskError::Other(_) => Error::EFAULT,
-        }
-    }
-}
-
-pub type Result<T> = core::result::Result<T, TaskError>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Type {
@@ -67,9 +37,9 @@ impl Type {
     /// Returns error if current task's type is less privileged than the
     /// expected type.
     #[inline]
-    pub fn pass(this: Option<Self>, cur_ty: Type) -> Result<Type> {
+    pub fn pass(this: Option<Self>, cur_ty: Type) -> solvent::Result<Type> {
         match (this, cur_ty) {
-            (Some(Self::Kernel), Self::User) => Err(TaskError::Permission),
+            (Some(Self::Kernel), Self::User) => Err(solvent::Error::EPERM),
             (Some(ty), _) => Ok(ty),
             _ => Ok(cur_ty),
         }
@@ -92,7 +62,7 @@ fn create_inner(
     init_chan: hdl::Ref<dyn Any>,
     arg: u64,
     stack_size: usize,
-) -> Result<(Init, Handle)> {
+) -> solvent::Result<(Init, Handle)> {
     let ty = Type::pass(ty, cur.ty())?;
     let ti = TaskInfo::builder()
         .from(Some(cur.clone()))
@@ -104,7 +74,7 @@ fn create_inner(
         .unwrap();
 
     let init_chan = unsafe { ti.handles().insert_ref(init_chan) }.unwrap();
-    let tid = tid::allocate(ti).map_err(|_| TaskError::TidExhausted)?;
+    let tid = tid::allocate(ti).map_err(|_| solvent::Error::EBUSY)?;
 
     let entry = create_entry(&space, entry, stack_size, [init_chan.raw() as u64, arg])?;
     let kstack = ctx::Kstack::new(entry, ty);
@@ -127,12 +97,10 @@ pub fn create_fn(
     init_chan: hdl::Ref<dyn Any>,
     arg: u64,
     stack_size: usize,
-) -> Result<(Init, Handle)> {
-    let (cur, space) = super::SCHED
-        .with_current(|cur| {
-            Type::pass(ty, cur.tid.ty()).map(|ty| (cur.tid.clone(), Space::clone(&cur.space, ty)))
-        })
-        .ok_or(TaskError::NoCurrentTask)??;
+) -> solvent::Result<(Init, Handle)> {
+    let (cur, space) = super::SCHED.with_current(|cur| {
+        Type::pass(ty, cur.tid.ty()).map(|ty| (cur.tid.clone(), Space::clone(&cur.space, ty)))
+    })?;
 
     create_inner(
         cur, name, ty, affinity, prio, space, func, init_chan, arg, stack_size,

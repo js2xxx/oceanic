@@ -15,8 +15,8 @@ use crate::{
 };
 
 pub fn dispatch_exception(frame: &mut Frame, vec: ExVec) -> bool {
-    let slot = match SCHED.with_current(|cur| cur.tid.excep_chan()) {
-        Some(slot) => slot,
+    let slot = match SCHED.with_current(|cur| Ok(cur.tid.excep_chan())) {
+        Ok(slot) => slot,
         _ => return false,
     };
 
@@ -36,8 +36,8 @@ pub fn dispatch_exception(frame: &mut Frame, vec: ExVec) -> bool {
         })
     };
 
-    let excep = Packet::new(hdl::List::default(), &data);
-    if excep_chan.send(excep).is_err() {
+    let mut excep = Packet::new(hdl::List::default(), &data);
+    if excep_chan.send(&mut excep).is_err() {
         PREEMPT.scope(|| *slot.lock() = Some(excep_chan));
         return false;
     }
@@ -57,7 +57,7 @@ pub fn dispatch_exception(frame: &mut Frame, vec: ExVec) -> bool {
             Some(res.code == EXRES_CODE_OK)
         }
         Err(err) => match err {
-            crate::sched::ipc::IpcError::SendChannelClosed(_) => None,
+            solvent::Error::EPIPE => None,
             _ => Some(false),
         },
     };

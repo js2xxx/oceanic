@@ -19,12 +19,12 @@ pub static MMAP: Lazy<PointerIterator<pmm::boot::MemRange>> = Lazy::new(|| {
     )
 });
 
-pub fn alloc_system_stack() -> Option<NonNull<u8>> {
+pub fn alloc_system_stack() -> solvent::Result<NonNull<u8>> {
     let layout = crate::sched::task::DEFAULT_STACK_LAYOUT;
     Global
         .allocate(layout)
-        .ok()
-        .and_then(|ptr| NonNull::new(unsafe { ptr.as_mut_ptr().add(layout.size()) }))
+        .map(|ptr| unsafe { NonNull::new_unchecked(ptr.as_mut_ptr().add(layout.size())) })
+        .map_err(Into::into)
 }
 
 /// Initialize the PMM and the kernel heap (Rust global allocator).
@@ -65,7 +65,7 @@ mod syscall {
         size: usize,
         align: usize,
         flags: u32,
-    ) -> Handle {
+    ) -> Result<Handle> {
         let (layout, flags) = check_options(size, align, flags)?;
         let ptr = unsafe { virt_ptr.r#in().read()? };
 
@@ -85,17 +85,14 @@ mod syscall {
         ret.map_err(Into::into).and_then(|virt| {
             let ptr = virt.as_ptr().as_mut_ptr();
             unsafe { virt_ptr.out().write(ptr) }.unwrap();
-            crate::sched::SCHED
-                .with_current(|cur| unsafe {
-                    cur.tid().handles().insert_unchecked(virt, false, false)
-                })
-                .ok_or(Error::ESRCH)?
-                .ok_or(Error::ENOMEM)
+            crate::sched::SCHED.with_current(|cur| unsafe {
+                cur.tid().handles().insert_unchecked(virt, false, false)
+            })
         })
     }
 
     #[syscall]
-    fn virt_prot(hdl: Handle, ptr: *mut u8, size: usize, flags: u32) {
+    fn virt_prot(hdl: Handle, ptr: *mut u8, size: usize, flags: u32) -> Result {
         hdl.check_null()?;
 
         if size.contains_bit(paging::PAGE_MASK) {
@@ -105,21 +102,20 @@ mod syscall {
         let ptr = NonNull::new(ptr).ok_or(Error::EINVAL)?;
         let ptr = NonNull::slice_from_raw_parts(ptr, size);
 
-        crate::sched::SCHED
-            .with_current(|cur| unsafe {
-                match cur.tid().handles().get_unchecked::<space::Virt>(hdl) {
-                    Some(virt) => virt
-                        .deref_unchecked()
+        crate::sched::SCHED.with_current(|cur| unsafe {
+            cur.tid()
+                .handles()
+                .get_unchecked::<space::Virt>(hdl)
+                .and_then(|virt| {
+                    virt.deref_unchecked()
                         .modify(ptr, flags)
-                        .map_err(Into::into),
-                    None => Err(Error::EINVAL),
-                }
-            })
-            .unwrap_or(Err(Error::ESRCH))
+                        .map_err(Into::into)
+                })
+        })
     }
 
     #[syscall]
-    fn mem_alloc(size: usize, align: usize, flags: u32) -> *mut u8 {
+    fn mem_alloc(size: usize, align: usize, flags: u32) -> Result<*mut u8> {
         let (layout, flags) = check_options(size, align, flags)?;
         let ty = space::AllocType::Layout(layout);
         let ret = space::with_current(|cur| cur.allocate(ty, None, flags));
@@ -127,7 +123,7 @@ mod syscall {
     }
 
     #[syscall]
-    fn mem_dealloc(ptr: *mut u8) {
+    fn mem_dealloc(ptr: *mut u8) -> Result {
         let ret = unsafe {
             let ptr = NonNull::new(ptr).ok_or(Error::EINVAL)?;
             space::with_current(|cur| cur.deallocate(ptr))

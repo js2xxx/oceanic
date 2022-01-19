@@ -9,7 +9,7 @@ use derive_builder::Builder;
 use paging::LAddr;
 use spin::Mutex;
 
-use super::{ctx, hdl::HandleMap, idle, sig::Signal, tid, Priority, TaskError, Tid, Type};
+use super::{ctx, hdl::HandleMap, idle, sig::Signal, tid, Priority, Tid, Type};
 use crate::{
     cpu::{time::Instant, CpuMask},
     mem::space::Space,
@@ -350,12 +350,10 @@ pub fn create_entry(
     entry: LAddr,
     stack_size: usize,
     args: [u64; 2],
-) -> super::Result<ctx::Entry> {
+) -> solvent::Result<ctx::Entry> {
     Ok(ctx::Entry {
         entry,
-        stack: space
-            .init_stack(stack_size)
-            .map_err(TaskError::StackError)?,
+        stack: space.init_stack(stack_size)?,
         args,
     })
 }

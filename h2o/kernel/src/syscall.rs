@@ -65,21 +65,17 @@ static SYSCALL_TABLE: &[Option<SyscallWrapper>] = &[
     Some(syscall_wrapper!(chan_recv)),
 ];
 
-pub fn handler(arg: &Arguments) -> solvent::Result<usize> {
-    let h = if (0..SYSCALL_TABLE.len()).contains(&arg.fn_num) {
-        SYSCALL_TABLE[arg.fn_num].ok_or(Error::EINVAL)?
-    } else {
-        return Err(Error::EINVAL);
-    };
-
-    let ret = unsafe {
-        h(
-            arg.args[0],
-            arg.args[1],
-            arg.args[2],
-            arg.args[3],
-            arg.args[4],
-        )
-    };
-    Error::decode(ret)
+pub fn handler(arg: &Arguments) -> usize {
+    match SYSCALL_TABLE.get(arg.fn_num).copied().flatten() {
+        Some(handler) => unsafe {
+            handler(
+                arg.args[0],
+                arg.args[1],
+                arg.args[2],
+                arg.args[3],
+                arg.args[4],
+            )
+        },
+        None => Error::EINVAL.into_retval(),
+    }
 }

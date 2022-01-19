@@ -18,7 +18,7 @@ fn load_prog(
     phys: PAddr,
     fsize: usize,
     msize: usize,
-) -> Result<()> {
+) -> solvent::Result {
     fn flags_to_pg_attr(flags: u32) -> Flags {
         let mut ret = Flags::USER_ACCESS;
         if (flags & program_header::PF_R) != 0 {
@@ -48,8 +48,7 @@ fn load_prog(
         let virt = LAddr::from(vstart)..LAddr::from(vend);
         log::trace!("Mapping {:?}", virt);
         let phys = Phys::new(phys, paging::PAGE_LAYOUT, flags);
-        let virt = unsafe { space.allocate(AllocType::Virt(virt), Some(phys), flags) }
-            .map_err(TaskError::Memory)?;
+        let virt = unsafe { space.allocate(AllocType::Virt(virt), Some(phys), flags) }?;
         // TODO: add `virt` to `image` field of `TaskInfo` in the future.
         mem::forget(virt);
     }
@@ -59,8 +58,7 @@ fn load_prog(
 
         let virt = LAddr::from(vend)..LAddr::from(vend + extra);
         log::trace!("Allocating {:?}", virt);
-        let virt = unsafe { space.allocate(AllocType::Virt(virt), None, flags | Flags::ZEROED) }
-            .map_err(TaskError::Memory)?;
+        let virt = unsafe { space.allocate(AllocType::Virt(virt), None, flags | Flags::ZEROED) }?;
         // TODO: add `virt` to `image` field of `TaskInfo` in the future.
         mem::forget(virt);
     }
@@ -68,7 +66,7 @@ fn load_prog(
     Ok(())
 }
 
-fn load_elf(space: &Arc<Space>, file: &Elf, image: &[u8]) -> Result<(LAddr, usize)> {
+fn load_elf(space: &Arc<Space>, file: &Elf, image: &[u8]) -> solvent::Result<(LAddr, usize)> {
     log::trace!(
         "Loading ELF file from image {:?}, space = {:?}",
         image.as_ptr(),
@@ -98,7 +96,7 @@ fn load_elf(space: &Arc<Space>, file: &Elf, image: &[u8]) -> Result<(LAddr, usiz
                 (phdr.p_memsz as usize).round_up_bit(paging::PAGE_SHIFT),
             )?,
 
-            x => return Err(TaskError::NotSupported(x)),
+            _ => return Err(solvent::Error::ESPRT),
         }
     }
     Ok((entry, stack_size))
@@ -109,20 +107,18 @@ pub fn from_elf(
     name: String,
     affinity: CpuMask,
     init_chan: Ref<dyn Any>,
-) -> Result<(Init, Handle)> {
+) -> solvent::Result<(Init, Handle)> {
     let file = Elf::parse(image)
-        .map_err(|_| TaskError::InvalidFormat)
+        .map_err(|_| solvent::Error::EINVAL)
         .and_then(|file| {
             if file.is_64 {
                 Ok(file)
             } else {
-                Err(TaskError::InvalidFormat)
+                Err(solvent::Error::EPERM)
             }
         })?;
 
-    let tid = crate::sched::SCHED
-        .with_current(|cur| cur.tid.clone())
-        .ok_or(TaskError::NoCurrentTask)?;
+    let tid = crate::sched::SCHED.with_current(|cur| Ok(cur.tid.clone()))?;
     let space = Space::new(Type::User);
     let (entry, stack_size) = load_elf(&space, &file, image)?;
 

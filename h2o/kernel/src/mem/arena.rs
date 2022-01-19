@@ -69,12 +69,12 @@ impl<T> Arena<T> {
         }
     }
 
-    pub fn allocate(&self) -> Option<NonNull<T>> {
+    pub fn allocate(&self) -> solvent::Result<NonNull<T>> {
         let mut head = self.head.load_acquire();
         let ptr = loop {
             let head_ptr = match NonNull::new(head.0 as *mut Node<T>) {
                 Some(head) => head,
-                None => break None,
+                None => break Err(solvent::Error::ENOMEM),
             };
 
             let next = unsafe { head_ptr.as_ref().next };
@@ -82,21 +82,21 @@ impl<T> Arena<T> {
                 .head
                 .compare_exchange_acqrel(head, (next as u64, head.0 + 1))
             {
-                Ok(_) => break Some(head_ptr.cast::<T>()),
+                Ok(_) => break Ok(head_ptr.cast::<T>()),
                 Err(new) => head = new,
             }
         };
 
-        ptr.or_else(|| {
+        ptr.or_else(|err| {
             let mut top = self.top.load(Acquire);
             loop {
                 if top >= self.end.as_ptr() {
-                    break None;
+                    break Err(err);
                 }
 
                 let next = unsafe { top.cast::<u8>().add(self.off).cast() };
                 match self.top.compare_exchange(top, next, AcqRel, Acquire) {
-                    Ok(_) => break NonNull::new(top),
+                    Ok(_) => break Ok(unsafe { NonNull::new_unchecked(top) }),
                     Err(new) => top = new,
                 }
             }
@@ -109,9 +109,9 @@ impl<T> Arena<T> {
     /// # Safety
     ///
     /// The caller must ensure that `ptr` is previously allocated by this arena.
-    pub unsafe fn deallocate(&self, ptr: NonNull<T>) -> bool {
+    pub unsafe fn deallocate(&self, ptr: NonNull<T>) -> solvent::Result {
         if !self.check_ptr(ptr) {
-            return false;
+            return Err(solvent::Error::EINVAL);
         }
 
         let mut next = self.head.load_acquire();
@@ -130,7 +130,7 @@ impl<T> Arena<T> {
             {
                 Ok(_) => {
                     self.count.fetch_sub(1, SeqCst);
-                    return true;
+                    return Ok(());
                 }
                 Err(new) => next = new,
             }
@@ -148,24 +148,28 @@ impl<T> Arena<T> {
         index < self.max_count
     }
 
-    pub fn to_index(&self, ptr: NonNull<T>) -> Option<usize> {
+    pub fn to_index(&self, ptr: NonNull<T>) -> solvent::Result<usize> {
         if self.check_ptr(ptr) {
             let base = self.base.as_ptr() as usize;
             let addr = ptr.as_ptr() as usize;
             let index = addr.wrapping_sub(base).wrapping_div(self.off);
-            Some(index).filter(|&index| self.check_index(index))
+            Some(index)
+                .filter(|&index| self.check_index(index))
+                .ok_or(solvent::Error::EINVAL)
         } else {
-            None
+            Err(solvent::Error::EINVAL)
         }
     }
 
-    pub fn from_index(&self, index: usize) -> Option<NonNull<T>> {
+    pub fn from_index(&self, index: usize) -> solvent::Result<NonNull<T>> {
         if self.check_index(index) {
             let base = self.base.as_ptr() as usize;
             let addr = index.wrapping_mul(self.off).wrapping_add(base);
-            NonNull::new(addr as *mut T).filter(|&ptr| self.check_ptr(ptr))
+            NonNull::new(addr as *mut T)
+                .filter(|&ptr| self.check_ptr(ptr))
+                .ok_or(solvent::Error::EINVAL)
         } else {
-            None
+            Err(solvent::Error::EINVAL)
         }
     }
 

@@ -77,14 +77,20 @@ impl Scheduler {
         }
     }
 
-    pub fn with_current<F, R>(&self, func: F) -> Option<R>
+    #[inline]
+    pub fn with_current<F, R>(&self, func: F) -> solvent::Result<R>
     where
-        F: FnOnce(&mut task::Ready) -> R,
+        F: FnOnce(&mut task::Ready) -> solvent::Result<R>,
     {
         self.canary.assert();
 
         // SAFETY: We have `_pree`, which means preemption is disabled.
-        PREEMPT.scope(|| unsafe { (*self.current.get()).as_mut().map(func) })
+        PREEMPT.scope(|| unsafe {
+            (*self.current.get())
+                .as_mut()
+                .ok_or(solvent::Error::ESRCH)
+                .and_then(func)
+        })
     }
 
     #[inline]
@@ -185,7 +191,7 @@ impl Scheduler {
             Some(task::sig::Signal::Kill) => {
                 log::trace!("Killing task {:?}, P{}", cur.tid.raw(), PREEMPT.raw());
                 self.schedule_impl(cur_time, pree, None, |task| {
-                    task::Ready::exit(task, (-solvent::Error::EKILLED.raw()) as usize)
+                    task::Ready::exit(task, solvent::Error::EKILLED.into_retval())
                 });
                 unreachable!("Dead task");
             }

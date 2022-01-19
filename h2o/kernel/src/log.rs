@@ -102,7 +102,7 @@ mod syscall {
     use crate::syscall::{In, UserPtr};
 
     #[syscall]
-    fn log(rec: UserPtr<In, ::log::Record>) {
+    fn log(rec: UserPtr<In, ::log::Record>) -> Result {
         let logger = unsafe { super::LOGGER.assume_init_ref() } as &dyn ::log::Log;
         logger.log(unsafe { &rec.read()? });
         Ok(())
