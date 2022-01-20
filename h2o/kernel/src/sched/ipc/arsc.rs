@@ -228,3 +228,25 @@ impl<T: ?Sized, A: Allocator> Drop for Arsc<T, A> {
         }
     }
 }
+
+impl<T: ?Sized + PartialEq, A: Allocator> PartialEq for Arsc<T, A> {
+    #[inline]
+    fn eq(&self, other: &Self) -> bool {
+        self.deref() == other.deref()
+    }
+}
+
+impl<T: ?Sized + Eq, A: Allocator> Eq for Arsc<T, A> {}
+
+impl<T: ?Sized + PartialOrd, A: Allocator> PartialOrd for Arsc<T, A> {
+    #[inline]
+    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
+        self.deref().partial_cmp(other)
+    }
+}
+
+impl<T: ?Sized + Ord, A: Allocator> Ord for Arsc<T, A> {
+    fn cmp(&self, other: &Self) -> core::cmp::Ordering {
+        self.deref().cmp(other)
+    }
+}
