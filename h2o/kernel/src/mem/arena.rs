@@ -1,7 +1,7 @@
 mod atomic;
 
 use core::{
-    alloc::Layout,
+    alloc::{AllocError, Allocator, Layout},
     mem,
     ptr::NonNull,
     sync::atomic::{AtomicPtr, AtomicUsize, Ordering::*},
@@ -69,12 +69,12 @@ impl<T> Arena<T> {
         }
     }
 
-    pub fn allocate(&self) -> solvent::Result<NonNull<T>> {
+    pub fn allocate(&self) -> Result<NonNull<T>, AllocError> {
         let mut head = self.head.load_acquire();
         let ptr = loop {
             let head_ptr = match NonNull::new(head.0 as *mut Node<T>) {
                 Some(head) => head,
-                None => break Err(solvent::Error::ENOMEM),
+                None => break Err(AllocError),
             };
 
             let next = unsafe { head_ptr.as_ref().next };
@@ -183,5 +183,22 @@ impl<T> Arena<T> {
 
     pub fn count(&self) -> usize {
         self.count.load(SeqCst)
+    }
+}
+
+unsafe impl<T> Allocator for Arena<T> {
+    fn allocate(&self, layout: Layout) -> Result<NonNull<[u8]>, core::alloc::AllocError> {
+        if layout == Layout::new::<T>() {
+            self.allocate()
+                .map(|ptr| NonNull::slice_from_raw_parts(ptr.cast(), mem::size_of::<T>()))
+        } else {
+            Err(AllocError)
+        }
+    }
+
+    unsafe fn deallocate(&self, ptr: NonNull<u8>, layout: Layout) {
+        if layout == Layout::new::<T>() {
+            let _ = self.deallocate(ptr.cast());
+        }
     }
 }

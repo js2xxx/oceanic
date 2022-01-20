@@ -52,10 +52,13 @@ fn task_sleep(ms: u32) -> Result {
             Ok(())
         });
         SCHED.tick(Instant::now());
+
+        Ok(())
     } else {
-        SCHED.block_current((), None, Duration::from_millis(u64::from(ms)), "task_sleep");
+        SCHED
+            .block_current((), None, Duration::from_millis(u64::from(ms)), "task_sleep")
+            .map(|_| ())
     }
-    Ok(())
 }
 
 #[syscall]

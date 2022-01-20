@@ -30,12 +30,15 @@ pub type Ptr = NonNull<Ref<dyn Any>>;
 
 unsafe impl<T: ?Sized> Send for Ref<T> {}
 
-impl<T: 'static> Ref<T> {
+impl<T: ?Sized> Ref<T> {
     /// # Safety
     ///
     /// The caller must ensure that `T` is [`Send`] if `send` and [`Sync`] if
     /// `sync`.
-    pub unsafe fn new_unchecked(data: T, send: bool, sync: bool) -> Self {
+    pub unsafe fn new_unchecked(data: T, send: bool, sync: bool) -> Self
+    where
+        T: Sized,
+    {
         Ref {
             obj: Arc::new(Object { send, sync, data }),
             next: None,
@@ -47,7 +50,10 @@ impl<T: 'static> Ref<T> {
     /// # Safety
     ///
     /// The caller must ensure that `self` is not inserted in any handle list.
-    pub unsafe fn coerce_unchecked(self) -> Ref<dyn Any> {
+    pub unsafe fn coerce_unchecked(self) -> Ref<dyn Any>
+    where
+        T: Sized + Any,
+    {
         Ref {
             obj: self.obj,
             next: None,
@@ -55,9 +61,7 @@ impl<T: 'static> Ref<T> {
             _marker: PhantomPinned,
         }
     }
-}
 
-impl<T: ?Sized + 'static> Ref<T> {
     /// # Safety
     ///
     /// The caller must ensure that `self` is owned by the current task if its
@@ -67,13 +71,37 @@ impl<T: ?Sized + 'static> Ref<T> {
     }
 }
 
-impl<T: Send + 'static> Ref<T> {
-    pub fn new(data: T) -> Self {
+impl<T: ?Sized + Send> Ref<T> {
+    #[inline]
+    pub fn new(data: T) -> Self
+    where
+        T: Sized,
+    {
         unsafe { Self::new_unchecked(data, true, false) }
+    }
+
+    #[inline]
+    pub fn raw(&self) -> &Arc<Object<T>> {
+        &self.obj
+    }
+
+    #[inline]
+    pub fn into_raw(self) -> Arc<Object<T>> {
+        self.obj
+    }
+
+    #[inline]
+    pub fn from_raw(obj: Arc<Object<T>>) -> Self {
+        Self {
+            obj,
+            next: None,
+            prev: None,
+            _marker: PhantomPinned,
+        }
     }
 }
 
-impl<T: ?Sized + Send + 'static> Deref for Ref<T> {
+impl<T: ?Sized + Send> Deref for Ref<T> {
     type Target = T;
 
     #[inline]

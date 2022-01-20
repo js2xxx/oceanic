@@ -2,18 +2,18 @@ mod cell;
 mod futex;
 mod queue;
 
-use alloc::{boxed::Box, sync::Arc};
+use alloc::boxed::Box;
 use core::time::Duration;
 
 pub use cell::WaitCell;
 pub use queue::WaitQueue;
 
-use super::*;
+use super::{ipc::Arsc, *};
 use crate::cpu::time::Timer;
 
 #[derive(Debug)]
 pub struct WaitObject {
-    pub(super) wait_queue: deque::Injector<Arc<Timer>>,
+    pub(super) wait_queue: deque::Injector<Arsc<Timer>>,
 }
 
 unsafe impl Send for WaitObject {}

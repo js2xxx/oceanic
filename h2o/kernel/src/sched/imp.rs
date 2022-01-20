@@ -1,15 +1,15 @@
 pub mod deque;
 pub mod epoch;
 
-use alloc::{boxed::Box, sync::Arc, vec::Vec};
-use core::{cell::UnsafeCell, mem, time::Duration};
+use alloc::{boxed::Box, vec::Vec};
+use core::{assert_matches::assert_matches, cell::UnsafeCell, mem, time::Duration};
 
 use archop::{PreemptState, PreemptStateGuard};
 use canary::Canary;
 use deque::{Injector, Steal, Worker};
 use spin::Lazy;
 
-use super::{task, wait::WaitObject};
+use super::{ipc::Arsc, task, wait::WaitObject};
 use crate::cpu::{
     time::{Instant, Timer, TimerCallback, TimerType},
     CpuLocalLazy,
@@ -68,9 +68,10 @@ impl Scheduler {
                     task.tid.raw(),
                     PREEMPT.raw(),
                 );
-                self.schedule_impl(Instant::now(), pree, Some(task), |mut task| {
+                let _ = self.schedule_impl(Instant::now(), pree, Some(task), |mut task| {
                     task.running_state = task::RunningState::NOT_RUNNING;
                     self.run_queue.push(task);
+                    Ok(())
                 });
             }
             _ => self.run_queue.push(task),
@@ -104,7 +105,7 @@ impl Scheduler {
         wo: Option<&WaitObject>,
         duration: Duration,
         block_desc: &'static str,
-    ) -> Option<Arc<Timer>> {
+    ) -> solvent::Result<Arsc<Timer>> {
         self.canary.assert();
 
         let pree = PREEMPT.lock();
@@ -121,12 +122,12 @@ impl Scheduler {
                 TimerType::Oneshot,
                 duration,
                 TimerCallback::new(block_callback, Box::into_raw(box blocked).cast()),
-            );
+            )?;
             if let Some(wo) = wo {
-                wo.wait_queue.push(Arc::clone(&timer));
+                wo.wait_queue.push(Arsc::clone(&timer));
             }
             drop(guard);
-            timer
+            Ok(timer)
         })
     }
 
@@ -148,8 +149,9 @@ impl Scheduler {
             unsafe { &*self.current.get() }.as_ref().unwrap().tid.raw(),
             PREEMPT.raw(),
         );
-        self.schedule_impl(Instant::now(), pree, None, |task| {
-            task::Ready::exit(task, retval)
+        let _ = self.schedule_impl(Instant::now(), pree, None, |task| {
+            task::Ready::exit(task, retval);
+            Ok(())
         });
         unreachable!("Dead task");
     }
@@ -166,7 +168,10 @@ impl Scheduler {
         };
 
         if unsafe { self.update(cur_time) } {
-            self.schedule(cur_time, pree);
+            let ret = self.schedule(cur_time, pree);
+            if let Err(err) = ret {
+                log::warn!("Scheduling failed: {:?}", err);
+            }
         }
     }
 
@@ -190,16 +195,19 @@ impl Scheduler {
         match ti.with_signal(|sig| sig.take()) {
             Some(task::sig::Signal::Kill) => {
                 log::trace!("Killing task {:?}, P{}", cur.tid.raw(), PREEMPT.raw());
-                self.schedule_impl(cur_time, pree, None, |task| {
-                    task::Ready::exit(task, solvent::Error::EKILLED.into_retval())
+                let _ = self.schedule_impl(cur_time, pree, None, |task| {
+                    task::Ready::exit(task, solvent::Error::EKILLED.into_retval());
+                    Ok(())
                 });
                 unreachable!("Dead task");
             }
             Some(task::sig::Signal::Suspend(slot)) => {
                 log::trace!("Suspending task {:?}, P{}", cur.tid.raw(), PREEMPT.raw());
-                self.schedule_impl(cur_time, pree, None, |task| {
+                let ret = self.schedule_impl(cur_time, pree, None, |task| {
                     *slot.lock() = Some(task::Ready::block(task, "task_ctl_suspend"));
+                    Ok(())
                 });
+                assert_matches!(ret, Ok(()) | Err(solvent::Error::ENOENT));
 
                 None
             }
@@ -236,7 +244,7 @@ impl Scheduler {
         }
     }
 
-    fn schedule(&self, cur_time: Instant, pree: PreemptStateGuard) -> bool {
+    fn schedule(&self, cur_time: Instant, pree: PreemptStateGuard) -> solvent::Result {
         self.canary.assert();
         #[cfg(debug_assertions)]
         // SAFETY: We have `pree`, which means preemption is disabled.
@@ -248,8 +256,8 @@ impl Scheduler {
             debug_assert!(task.running_state.needs_resched());
             task.running_state = task::RunningState::NOT_RUNNING;
             self.run_queue.push(task);
+            Ok(())
         })
-        .is_some()
     }
 
     fn schedule_impl<F, R>(
@@ -258,9 +266,9 @@ impl Scheduler {
         pree: PreemptStateGuard,
         next: Option<task::Ready>,
         func: F,
-    ) -> Option<R>
+    ) -> solvent::Result<R>
     where
-        F: FnOnce(task::Ready) -> R,
+        F: FnOnce(task::Ready) -> solvent::Result<R>,
     {
         self.canary.assert();
 
@@ -268,7 +276,7 @@ impl Scheduler {
             Some(next) => next,
             None => match self.run_queue.pop() {
                 Some(task) => task,
-                None => return None,
+                None => return Err(solvent::Error::ENOENT),
             },
         };
         log::trace!("Switching to {:?}, P{}", next.tid.raw(), PREEMPT.raw());
@@ -293,7 +301,8 @@ impl Scheduler {
         // We will enable preemption in `switch_ctx`.
         mem::forget(pree);
         unsafe { task::ctx::switch_ctx(old, new) };
-        ret
+        ret.transpose()
+            .and_then(|res| res.ok_or(solvent::Error::ESRCH))
     }
 }
 
@@ -308,7 +317,7 @@ fn select_cpu(
     }
 }
 
-fn block_callback(_: Arc<Timer>, _: Instant, arg: *mut u8) {
+fn block_callback(_: Arsc<Timer>, _: Instant, arg: *mut u8) {
     let blocked = unsafe { Box::from_raw(arg.cast::<task::Blocked>()) };
     SCHED.unblock(Box::into_inner(blocked));
 }
