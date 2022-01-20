@@ -27,7 +27,7 @@ pub(super) static IDLE: CpuLocalLazy<Tid> = CpuLocalLazy::new(|| {
         .build()
         .unwrap();
 
-    let space = Arc::clone(unsafe { space::current() });
+    let space = Arsc::clone(unsafe { space::current() });
 
     let entry = create_entry(
         &space,

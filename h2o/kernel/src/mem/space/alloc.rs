@@ -176,28 +176,11 @@ impl Allocator {
     /// # Safety
     ///
     /// This function is called only inside `<space::Space as Drop>::drop`.
-    pub unsafe fn dispose(self: &alloc::sync::Arc<Self>, arch: &ArchSpace) {
-        // SAFETY: This expression ensures the memory safety of page tables and will not
-        // cause any double-free faults.
-        //
-        // This is called only inside `<space::Space as Drop>::drop`, which means that:
-        //
-        // 1. If at that point there's only one `Space` referring to the allocator,
-        // there is, and will always be only one `Space` until that one is dropped, and
-        // the reference count will not be incremented to any value greater than 1.
-        // That's because cloning operations are unavailable after the variable starts
-        // the dropping process.
-        //
-        // 2. If at that point there's more than one `Space` referring to the allocator,
-        // no page tables or mappings will be disposed until other `Space`s are dropped,
-        // reaching condition 1.
-        if alloc::sync::Arc::strong_count(self) == 1 {
-            // The actual dropping process.
-            let mut record = self.record.lock();
-            while let Some((base, phys)) = record.pop_first() {
-                let virt = base.to_range(phys.layout());
-                let _ = arch.unmaps(virt);
-            }
+    pub(super) unsafe fn dispose(&self, arch: &ArchSpace) {
+        let mut record = self.record.lock();
+        while let Some((base, phys)) = record.pop_first() {
+            let virt = base.to_range(phys.layout());
+            let _ = arch.unmaps(virt);
         }
     }
 }

@@ -8,7 +8,7 @@ mod sm;
 mod syscall;
 pub mod tid;
 
-use alloc::{format, string::String, sync::Arc};
+use alloc::{format, string::String};
 use core::any::Any;
 
 use paging::LAddr;
@@ -18,7 +18,10 @@ use solvent::Handle;
 pub use self::ctx::arch::{DEFAULT_STACK_LAYOUT, DEFAULT_STACK_SIZE};
 pub use self::{elf::from_elf, excep::dispatch_exception, sm::*, tid::Tid};
 use self::{hdl::Ref, sig::Signal};
-use super::{ipc::Channel, PREEMPT};
+use super::{
+    ipc::{Arsc, Channel},
+    PREEMPT,
+};
 use crate::{
     cpu::{CpuLocalLazy, CpuMask},
     mem::space::Space,
@@ -55,7 +58,7 @@ fn create_inner(
     name: Option<String>,
     ty: Option<Type>,
     affinity: Option<CpuMask>,
-    space: Arc<Space>,
+    space: Arsc<Space>,
     entry: LAddr,
     init_chan: hdl::Ref<dyn Any>,
     arg: u64,
@@ -95,7 +98,7 @@ pub fn create_fn(
     stack_size: usize,
 ) -> solvent::Result<(Init, Handle)> {
     let (cur, space) =
-        super::SCHED.with_current(|cur| Ok((cur.tid.clone(), Arc::clone(&cur.space))))?;
+        super::SCHED.with_current(|cur| Ok((cur.tid.clone(), Arsc::clone(&cur.space))))?;
 
     create_inner(
         cur, name, ty, affinity, space, func, init_chan, arg, stack_size,

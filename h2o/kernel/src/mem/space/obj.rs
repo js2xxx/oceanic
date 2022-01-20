@@ -9,7 +9,7 @@ use core::{
 use paging::{LAddr, PAddr};
 
 use super::{Flags, Space};
-use crate::sched::task::Type;
+use crate::sched::{ipc::Arsc, task::Type};
 
 #[derive(Debug)]
 pub struct Phys {
@@ -96,11 +96,11 @@ pub struct Virt {
     ty: Type,
     ptr: NonNull<[u8]>,
     phys: Arc<Phys>,
-    space: Arc<Space>,
+    space: Arsc<Space>,
 }
 
 impl Virt {
-    pub(super) fn new(ty: Type, ptr: NonNull<[u8]>, phys: Arc<Phys>, space: Arc<Space>) -> Self {
+    pub(super) fn new(ty: Type, ptr: NonNull<[u8]>, phys: Arc<Phys>, space: Arsc<Space>) -> Self {
         Virt {
             ty,
             ptr,

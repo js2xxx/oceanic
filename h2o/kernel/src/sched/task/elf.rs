@@ -12,7 +12,7 @@ use crate::{
 };
 
 fn load_prog(
-    space: &Arc<Space>,
+    space: &Arsc<Space>,
     flags: u32,
     virt: LAddr,
     phys: PAddr,
@@ -66,7 +66,7 @@ fn load_prog(
     Ok(())
 }
 
-fn load_elf(space: &Arc<Space>, file: &Elf, image: &[u8]) -> solvent::Result<(LAddr, usize)> {
+fn load_elf(space: &Arsc<Space>, file: &Elf, image: &[u8]) -> solvent::Result<(LAddr, usize)> {
     log::trace!(
         "Loading ELF file from image {:?}, space = {:?}",
         image.as_ptr(),
@@ -119,7 +119,7 @@ pub fn from_elf(
         })?;
 
     let tid = crate::sched::SCHED.with_current(|cur| Ok(cur.tid.clone()))?;
-    let space = Space::new(Type::User);
+    let space = Space::try_new(Type::User)?;
     let (entry, stack_size) = load_elf(&space, &file, image)?;
 
     super::create_inner(
