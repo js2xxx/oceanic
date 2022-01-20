@@ -27,17 +27,21 @@ pub(super) static IDLE: CpuLocalLazy<Tid> = CpuLocalLazy::new(|| {
         .build()
         .unwrap();
 
-    let space = Arsc::clone(unsafe { space::current() });
+    let space = Arc::clone(unsafe { space::current() });
+
+    let (stack_virt, stack) = space
+        .init_stack(DEFAULT_STACK_SIZE)
+        .expect("Failed to initialize stack for IDLE");
+    unsafe { ti.handles().insert_unchecked(stack_virt, false, false) }
+        .expect("Failed to insert stack for IDLE");
 
     let entry = create_entry(
-        &space,
         LAddr::new(idle as *mut u8),
-        DEFAULT_STACK_SIZE,
+        stack,
         [cpu as u64, unsafe {
             archop::msr::read(archop::msr::FS_BASE)
         }],
-    )
-    .expect("Failed to initialize IDLE");
+    );
     let kstack = ctx::Kstack::new(entry, Type::Kernel);
 
     let tid = tid::allocate(ti).expect("Tid exhausted");

@@ -1,4 +1,7 @@
-use alloc::{alloc::Global, sync::Arc};
+use alloc::{
+    alloc::Global,
+    sync::{Arc, Weak},
+};
 use core::{
     alloc::{Allocator, Layout},
     mem,
@@ -9,7 +12,7 @@ use core::{
 use paging::{LAddr, PAddr};
 
 use super::{Flags, Space};
-use crate::sched::{ipc::Arsc, task::Type};
+use crate::sched::task::Type;
 
 #[derive(Debug)]
 pub struct Phys {
@@ -96,11 +99,11 @@ pub struct Virt {
     ty: Type,
     ptr: NonNull<[u8]>,
     phys: Arc<Phys>,
-    space: Arsc<Space>,
+    space: Weak<Space>,
 }
 
 impl Virt {
-    pub(super) fn new(ty: Type, ptr: NonNull<[u8]>, phys: Arc<Phys>, space: Arsc<Space>) -> Self {
+    pub(super) fn new(ty: Type, ptr: NonNull<[u8]>, phys: Arc<Phys>, space: Weak<Space>) -> Self {
         Virt {
             ty,
             ptr,
@@ -154,8 +157,10 @@ impl Virt {
             return Err(solvent::Error::EINVAL);
         };
 
-        let ptr = NonNull::slice_from_raw_parts(base, len);
-        self.space.modify(ptr, flags)
+        match self.space.upgrade() {
+            Some(space) => space.modify(NonNull::slice_from_raw_parts(base, len), flags),
+            _ => Err(solvent::Error::ENOENT),
+        }
     }
 
     pub fn leak(self) -> NonNull<[u8]> {
@@ -167,8 +172,10 @@ impl Virt {
 
 impl Drop for Virt {
     fn drop(&mut self) {
-        unsafe {
-            let _ = self.space.deallocate(self.base().as_non_null().unwrap());
+        if let Some(space) = self.space.upgrade() {
+            unsafe {
+                let _ = space.deallocate(self.base().as_non_null().unwrap());
+            }
         }
     }
 }

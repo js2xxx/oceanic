@@ -1,3 +1,4 @@
+use alloc::sync::Arc;
 use core::{alloc::Layout, mem::size_of};
 
 use paging::LAddr;
@@ -14,7 +15,7 @@ use crate::{
             KERNEL_GS,
         },
     },
-    sched::{ipc::Arsc, task, PREEMPT},
+    sched::{task, PREEMPT},
 };
 
 pub const DEFAULT_STACK_SIZE: usize = 64 * paging::PAGE_SIZE;
@@ -249,7 +250,7 @@ pub(super) unsafe extern "C" fn switch_finishing() {
 
         let tss_rsp0 = cur.kstack.top().val() as u64;
         KERNEL_GS.update_tss_rsp0(tss_rsp0);
-        crate::mem::space::set_current(Arsc::clone(&cur.space));
+        crate::mem::space::set_current(Arc::clone(&cur.space));
         cur.ext_frame.load();
         if !cpu::arch::in_intr() && cur.tid.ty() == task::Type::Kernel {
             KERNEL_GS.load();

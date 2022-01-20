@@ -13,11 +13,7 @@ use super::{ctx, hdl::HandleMap, idle, sig::Signal, tid, Tid, Type};
 use crate::{
     cpu::{time::Instant, CpuMask},
     mem::space::Space,
-    sched::{
-        ipc::{Arsc, Channel},
-        wait::WaitCell,
-        PREEMPT,
-    },
+    sched::{ipc::Channel, wait::WaitCell, PREEMPT},
 };
 
 #[derive(Debug, Builder)]
@@ -102,7 +98,7 @@ impl TaskInfo {
 pub struct Context {
     pub(in crate::sched) tid: Tid,
 
-    pub(in crate::sched) space: Arsc<Space>,
+    pub(in crate::sched) space: Arc<Space>,
     pub(in crate::sched) kstack: ctx::Kstack,
     pub(in crate::sched) ext_frame: ctx::ExtFrame,
 
@@ -210,12 +206,7 @@ impl IntoReady for Init {
 }
 
 impl Init {
-    pub fn new(
-        tid: Tid,
-        space: Arsc<Space>,
-        kstack: ctx::Kstack,
-        ext_frame: ctx::ExtFrame,
-    ) -> Self {
+    pub fn new(tid: Tid, space: Arc<Space>, kstack: ctx::Kstack, ext_frame: ctx::ExtFrame) -> Self {
         Init {
             ctx: Box::new(Context {
                 tid,
@@ -323,7 +314,7 @@ impl Blocked {
     }
 
     #[inline]
-    pub fn space(&self) -> &Arsc<Space> {
+    pub fn space(&self) -> &Arc<Space> {
         &self.ctx.space
     }
 
@@ -348,15 +339,7 @@ impl Blocked {
     }
 }
 
-pub fn create_entry(
-    space: &Arsc<Space>,
-    entry: LAddr,
-    stack_size: usize,
-    args: [u64; 2],
-) -> solvent::Result<ctx::Entry> {
-    Ok(ctx::Entry {
-        entry,
-        stack: space.init_stack(stack_size)?,
-        args,
-    })
+#[inline]
+pub fn create_entry(entry: LAddr, stack: LAddr, args: [u64; 2]) -> ctx::Entry {
+    ctx::Entry { entry, stack, args }
 }

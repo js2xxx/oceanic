@@ -8,7 +8,7 @@ mod sm;
 mod syscall;
 pub mod tid;
 
-use alloc::{format, string::String};
+use alloc::{format, string::String, sync::Arc};
 use core::any::Any;
 
 use paging::LAddr;
@@ -18,10 +18,7 @@ use solvent::Handle;
 pub use self::ctx::arch::{DEFAULT_STACK_LAYOUT, DEFAULT_STACK_SIZE};
 pub use self::{elf::from_elf, excep::dispatch_exception, sm::*, tid::Tid};
 use self::{hdl::Ref, sig::Signal};
-use super::{
-    ipc::{Arsc, Channel},
-    PREEMPT,
-};
+use super::{ipc::Channel, PREEMPT};
 use crate::{
     cpu::{CpuLocalLazy, CpuMask},
     mem::space::Space,
@@ -58,7 +55,7 @@ fn create_inner(
     name: Option<String>,
     ty: Option<Type>,
     affinity: Option<CpuMask>,
-    space: Arsc<Space>,
+    space: Arc<Space>,
     entry: LAddr,
     init_chan: hdl::Ref<dyn Any>,
     arg: u64,
@@ -74,9 +71,12 @@ fn create_inner(
         .unwrap();
 
     let init_chan = unsafe { ti.handles().insert_ref(init_chan) }.unwrap();
-    let tid = tid::allocate(ti).map_err(|_| solvent::Error::EBUSY)?;
 
-    let entry = create_entry(&space, entry, stack_size, [init_chan.raw() as u64, arg])?;
+    let (stack_virt, stack) = space.init_stack(stack_size)?;
+    unsafe { ti.handles().insert_unchecked(stack_virt, false, false) }?;
+
+    let tid = tid::allocate(ti).map_err(|_| solvent::Error::EBUSY)?;
+    let entry = create_entry(entry, stack, [init_chan.raw() as u64, arg]);
     let kstack = ctx::Kstack::new(entry, ty);
 
     let ext_frame = ctx::ExtFrame::zeroed();
@@ -98,7 +98,7 @@ pub fn create_fn(
     stack_size: usize,
 ) -> solvent::Result<(Init, Handle)> {
     let (cur, space) =
-        super::SCHED.with_current(|cur| Ok((cur.tid.clone(), Arsc::clone(&cur.space))))?;
+        super::SCHED.with_current(|cur| Ok((cur.tid.clone(), Arc::clone(&cur.space))))?;
 
     create_inner(
         cur, name, ty, affinity, space, func, init_chan, arg, stack_size,

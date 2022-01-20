@@ -26,15 +26,14 @@ use paging::LAddr;
 pub use solvent::mem::Flags;
 use spin::Lazy;
 
-use crate::sched::{ipc::Arsc, task, PREEMPT};
+use crate::sched::{task, PREEMPT};
 
 type ArchSpace = arch::Space;
 
-pub static KRL: Lazy<Arsc<Space>> =
-    Lazy::new(|| Space::try_new(task::Type::Kernel).expect("Failed to create kernel space"));
+pub static KRL: Lazy<Arc<Space>> = Lazy::new(|| Space::new(task::Type::Kernel));
 
 #[thread_local]
-static mut CURRENT: Option<Arsc<Space>> = None;
+static mut CURRENT: Option<Arc<Space>> = None;
 
 fn paging_error(err: paging::Error) -> solvent::Error {
     use solvent::Error;
@@ -99,19 +98,18 @@ unsafe impl Sync for Space {}
 
 impl Space {
     /// Create a new address space.
-    pub fn try_new(ty: task::Type) -> solvent::Result<Arsc<Self>> {
-        Arsc::try_new(Space {
+    pub fn new(ty: task::Type) -> Arc<Self> {
+        Arc::new(Space {
             canary: Canary::new(),
             ty,
             arch: ArchSpace::new(),
             allocator: alloc::Allocator::new(ty_to_range_set(ty)),
         })
-        .map_err(solvent::Error::from)
     }
 
     /// Allocate an address range in the space.
     pub fn allocate(
-        self: &Arsc<Self>,
+        self: &Arc<Self>,
         ty: AllocType,
         mut phys: Option<Arc<Phys>>,
         flags: Flags,
@@ -121,7 +119,7 @@ impl Space {
         PREEMPT.scope(|| {
             self.allocator
                 .allocate(ty.clone(), &mut phys, flags, &self.arch)
-                .map(|ptr| Virt::new(self.ty, ptr, phys.unwrap(), Arsc::clone(self)))
+                .map(|ptr| Virt::new(self.ty, ptr, phys.unwrap(), Arc::downgrade(self)))
         })
     }
 
@@ -129,7 +127,7 @@ impl Space {
     ///
     /// Used for sharing kernel variables of [`KernelVirt`].
     pub fn allocate_kernel(
-        self: &Arsc<Self>,
+        self: &Arc<Self>,
         ty: AllocType,
         phys: Option<Arc<Phys>>,
         flags: Flags,
@@ -181,7 +179,7 @@ impl Space {
         self.arch.load()
     }
 
-    pub fn init_stack(self: &Arsc<Self>, size: usize) -> solvent::Result<LAddr> {
+    pub fn init_stack(self: &Arc<Self>, size: usize) -> solvent::Result<(Virt, LAddr)> {
         self.canary.assert();
 
         let cnt = size.div_ceil_bit(paging::PAGE_SHIFT);
@@ -204,9 +202,7 @@ impl Space {
             virt.modify(suffix, Flags::READABLE)?;
         }
 
-        core::mem::forget(virt);
-
-        Ok(LAddr::from(actual_end))
+        Ok((virt, LAddr::from(actual_end)))
     }
 }
 
@@ -222,7 +218,7 @@ impl Drop for Space {
 ///
 /// The function must be called only once from each application CPU.
 pub unsafe fn init() {
-    let space = Arsc::clone(&KRL);
+    let space = Arc::clone(&KRL);
     unsafe { space.load() };
     CURRENT = Some(space);
 }
@@ -233,26 +229,26 @@ pub unsafe fn init() {
 ///
 /// The caller must ensure that [`CURRENT`] will not be modified where the
 /// reference is alive.
-pub unsafe fn current<'a>() -> &'a Arsc<Space> {
+pub unsafe fn current<'a>() -> &'a Arc<Space> {
     unsafe { CURRENT.as_ref().expect("No current space available") }
 }
 
 /// Get the reference of the per-CPU current space.
 pub fn with_current<'a, F, R>(func: F) -> R
 where
-    F: FnOnce(&'a Arsc<Space>) -> R,
+    F: FnOnce(&'a Arc<Space>) -> R,
     R: 'a,
 {
     let cur = unsafe { CURRENT.as_ref().expect("No current space available") };
     func(cur)
 }
 
-pub unsafe fn with<F, R>(space: &Arsc<Space>, func: F) -> R
+pub unsafe fn with<F, R>(space: &Arc<Space>, func: F) -> R
 where
-    F: FnOnce(&Arsc<Space>) -> R,
+    F: FnOnce(&Arc<Space>) -> R,
 {
     PREEMPT.scope(|| {
-        let old = set_current(Arsc::clone(space));
+        let old = set_current(Arc::clone(space));
         let ret = func(space);
         set_current(old);
         ret
@@ -264,9 +260,9 @@ where
 /// # Safety
 ///
 /// The function must be called only from the epilogue of context switching.
-pub unsafe fn set_current(space: Arsc<Space>) -> Arsc<Space> {
+pub unsafe fn set_current(space: Arc<Space>) -> Arc<Space> {
     PREEMPT.scope(|| {
-        if !Arsc::ptr_eq(current(), &space) {
+        if !Arc::ptr_eq(current(), &space) {
             space.load();
             CURRENT.replace(space).unwrap()
         } else {
