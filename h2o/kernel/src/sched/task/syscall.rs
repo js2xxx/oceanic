@@ -102,7 +102,6 @@ fn task_fn(
         name,
         None,
         None,
-        None,
         LAddr::new(ci.func),
         init_chan,
         ci.arg as u64,

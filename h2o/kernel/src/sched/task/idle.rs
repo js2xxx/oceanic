@@ -24,7 +24,6 @@ pub(super) static IDLE: CpuLocalLazy<Tid> = CpuLocalLazy::new(|| {
         .name(format!("IDLE{}", cpu))
         .ty(Type::Kernel)
         .affinity(crate::cpu::current_mask())
-        .prio(prio::IDLE)
         .build()
         .unwrap();
 
@@ -61,7 +60,6 @@ fn idle(cpu: usize, fs_base: u64) -> ! {
     let (ctx_dropper, ..) = task::create_fn(
         Some(String::from("CTXD")),
         Some(Type::Kernel),
-        None,
         None,
         LAddr::new(ctx_dropper as *mut u8),
         ctx_chan,

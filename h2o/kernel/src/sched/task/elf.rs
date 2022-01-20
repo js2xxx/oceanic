@@ -127,7 +127,6 @@ pub fn from_elf(
         Some(name),
         Some(Type::User),
         Some(affinity),
-        None,
         space,
         entry,
         init_chan,

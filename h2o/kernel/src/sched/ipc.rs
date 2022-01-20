@@ -1,5 +1,5 @@
-mod channel;
 mod arsc;
+mod channel;
 
-pub use channel::{Channel, Packet};
 pub use arsc::Arsc;
+pub use channel::{Channel, Packet};

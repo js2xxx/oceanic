@@ -9,7 +9,7 @@ use derive_builder::Builder;
 use paging::LAddr;
 use spin::Mutex;
 
-use super::{ctx, hdl::HandleMap, idle, sig::Signal, tid, Priority, Tid, Type};
+use super::{ctx, hdl::HandleMap, idle, sig::Signal, tid, Tid, Type};
 use crate::{
     cpu::{time::Instant, CpuMask},
     mem::space::Space,
@@ -29,7 +29,6 @@ pub struct TaskInfo {
     ty: Type,
 
     affinity: CpuMask,
-    prio: Priority,
 
     #[builder(setter(skip))]
     handles: HandleMap,
@@ -61,11 +60,6 @@ impl TaskInfo {
     #[inline]
     pub fn affinity(&self) -> crate::cpu::CpuMask {
         self.affinity
-    }
-
-    #[inline]
-    pub fn prio(&self) -> Priority {
-        self.prio
     }
 
     #[inline]

@@ -3,7 +3,6 @@ mod elf;
 mod excep;
 pub mod hdl;
 pub mod idle;
-pub mod prio;
 pub mod sig;
 mod sm;
 mod syscall;
@@ -17,7 +16,7 @@ use solvent::Handle;
 
 #[cfg(target_arch = "x86_64")]
 pub use self::ctx::arch::{DEFAULT_STACK_LAYOUT, DEFAULT_STACK_SIZE};
-pub use self::{elf::from_elf, excep::dispatch_exception, prio::Priority, sm::*, tid::Tid};
+pub use self::{elf::from_elf, excep::dispatch_exception, sm::*, tid::Tid};
 use self::{hdl::Ref, sig::Signal};
 use super::{ipc::Channel, PREEMPT};
 use crate::{
@@ -56,7 +55,6 @@ fn create_inner(
     name: Option<String>,
     ty: Option<Type>,
     affinity: Option<CpuMask>,
-    prio: Option<Priority>,
     space: Arc<Space>,
     entry: LAddr,
     init_chan: hdl::Ref<dyn Any>,
@@ -69,7 +67,6 @@ fn create_inner(
         .name(name.unwrap_or(format!("{}.func{}", cur.name(), archop::rand::get())))
         .ty(ty)
         .affinity(affinity.unwrap_or_else(|| cur.affinity()))
-        .prio(prio.unwrap_or_else(|| cur.prio()))
         .build()
         .unwrap();
 
@@ -92,7 +89,6 @@ pub fn create_fn(
     name: Option<String>,
     ty: Option<Type>,
     affinity: Option<CpuMask>,
-    prio: Option<Priority>,
     func: LAddr,
     init_chan: hdl::Ref<dyn Any>,
     arg: u64,
@@ -102,6 +98,6 @@ pub fn create_fn(
         super::SCHED.with_current(|cur| Ok((cur.tid.clone(), Arc::clone(&cur.space))))?;
 
     create_inner(
-        cur, name, ty, affinity, prio, space, func, init_chan, arg, stack_size,
+        cur, name, ty, affinity, space, func, init_chan, arg, stack_size,
     )
 }
