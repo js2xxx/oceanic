@@ -98,9 +98,8 @@ pub fn create_fn(
     arg: u64,
     stack_size: usize,
 ) -> solvent::Result<(Init, Handle)> {
-    let (cur, space) = super::SCHED.with_current(|cur| {
-        Type::pass(ty, cur.tid.ty()).map(|ty| (cur.tid.clone(), Space::clone(&cur.space, ty)))
-    })?;
+    let (cur, space) =
+        super::SCHED.with_current(|cur| Ok((cur.tid.clone(), Arc::clone(&cur.space))))?;
 
     create_inner(
         cur, name, ty, affinity, prio, space, func, init_chan, arg, stack_size,

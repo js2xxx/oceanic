@@ -16,11 +16,7 @@ cfg_if::cfg_if! {
 
 use core::{alloc::Layout, ops::Range, ptr::NonNull};
 
-use ::alloc::{
-    alloc::{alloc as mem_alloc, dealloc as mem_dealloc},
-    collections::BTreeMap,
-    sync::Arc,
-};
+use ::alloc::sync::Arc;
 pub use arch::init_pgc;
 use bitop_ex::BitOpEx;
 use canary::Canary;
@@ -28,7 +24,7 @@ use collection_ex::RangeSet;
 pub use obj::*;
 use paging::LAddr;
 pub use solvent::mem::Flags;
-use spin::{Lazy, Mutex, MutexGuard};
+use spin::Lazy;
 
 use crate::sched::{task, PREEMPT};
 
@@ -63,7 +59,7 @@ fn paging_error(err: paging::Error) -> solvent::Error {
 fn ty_to_range_set(ty: task::Type) -> RangeSet<LAddr> {
     let range = match ty {
         task::Type::Kernel => minfo::KERNEL_ALLOCABLE_RANGE,
-        task::Type::User => LAddr::from(minfo::USER_BASE)..LAddr::from(minfo::USER_STACK_BASE),
+        task::Type::User => LAddr::from(minfo::USER_BASE)..LAddr::from(minfo::USER_END),
     };
 
     let mut range_set = RangeSet::new();
@@ -95,8 +91,6 @@ pub struct Space {
 
     /// The general allocator.
     allocator: Arc<alloc::Allocator>,
-
-    stack_blocks: Mutex<BTreeMap<LAddr, Layout>>,
 }
 
 unsafe impl Send for Space {}
@@ -110,7 +104,6 @@ impl Space {
             ty,
             arch: ArchSpace::new(),
             allocator: Arc::new(alloc::Allocator::new(ty_to_range_set(ty))),
-            stack_blocks: Mutex::new(BTreeMap::new()),
         })
     }
 
@@ -186,151 +179,38 @@ impl Space {
         self.arch.load()
     }
 
-    fn alloc_stack(
-        ty: task::Type,
-        arch: &ArchSpace,
-        stack_blocks: &mut MutexGuard<BTreeMap<LAddr, Layout>>,
-        base: LAddr,
-        size: usize,
-    ) -> solvent::Result<LAddr> {
-        let layout = {
-            let n = size.div_ceil_bit(paging::PAGE_SHIFT);
-            paging::PAGE_LAYOUT
-                .repeat(n)
-                .expect("Failed to get layout")
-                .0
-        };
-
-        if base.val() < minfo::USER_STACK_BASE {
-            return Err(solvent::Error::ENOMEM);
-        }
-
-        match ty {
-            task::Type::User => {
-                let (phys, alloc_ptr) = unsafe {
-                    let ptr = mem_alloc(layout);
-
-                    if ptr.is_null() {
-                        return Err(solvent::Error::ENOMEM);
-                    }
-
-                    (LAddr::new(ptr).to_paddr(minfo::ID_OFFSET), ptr)
-                };
-                let virt = base..LAddr::from(base.val() + size);
-
-                arch.maps(
-                    virt,
-                    phys,
-                    Flags::READABLE | Flags::WRITABLE | Flags::USER_ACCESS,
-                )
-                .map_err(|e| unsafe {
-                    mem_dealloc(alloc_ptr, layout);
-                    paging_error(e)
-                })?;
-
-                if stack_blocks.insert(base, layout).is_some() {
-                    panic!("Duplicate allocation");
-                }
-
-                Ok(base)
-            }
-            task::Type::Kernel => {
-                let ptr = unsafe { mem_alloc(layout) };
-                Ok(LAddr::new(ptr))
-            }
-        }
-    }
-
-    pub fn init_stack(&self, size: usize) -> solvent::Result<LAddr> {
-        self.canary.assert();
-        // if matches!(self.ty, task::Type::Kernel) {
-        //       return Err("Stack allocation is not allowed in kernel");
-        // }
-
-        let size = size.round_up_bit(paging::PAGE_SHIFT);
-
-        let base = PREEMPT.scope(|| {
-            Self::alloc_stack(
-                self.ty,
-                &self.arch,
-                &mut self.stack_blocks.lock(),
-                LAddr::from(minfo::USER_END - size),
-                size,
-            )
-        })?;
-
-        Ok(LAddr::from(base.val() + size))
-    }
-
-    pub fn grow_stack(&self, addr: LAddr) -> solvent::Result {
-        self.canary.assert();
-        if matches!(self.ty, task::Type::Kernel) {
-            return Err(solvent::Error::EPERM);
-        }
-
-        PREEMPT.scope(|| {
-            let addr = LAddr::from(addr.val().round_down_bit(paging::PAGE_SHIFT));
-
-            let mut stack_blocks = self.stack_blocks.lock();
-
-            let last = stack_blocks
-                .iter()
-                .next()
-                .map_or(LAddr::from(minfo::USER_END), |(&k, _v)| k);
-
-            let size = unsafe { last.offset_from(*addr) } as usize;
-
-            Self::alloc_stack(self.ty, &self.arch, &mut stack_blocks, addr, size)
-        })?;
-
-        Ok(())
-    }
-
-    pub fn clear_stack(&self) -> solvent::Result {
+    pub fn init_stack(self: &Arc<Self>, size: usize) -> solvent::Result<LAddr> {
         self.canary.assert();
 
-        PREEMPT.scope(|| {
-            let mut stack_blocks = self.stack_blocks.lock();
-            while let Some((base, layout)) = stack_blocks.pop_first() {
-                match self.ty {
-                    task::Type::Kernel => unsafe { mem_dealloc(*base, layout) },
-                    task::Type::User => {
-                        let virt = base..LAddr::from(base.val() + layout.pad_to_align().size());
-                        if let Ok(Some(phys)) = self.arch.unmaps(virt) {
-                            let ptr = phys.to_laddr(minfo::ID_OFFSET);
-                            unsafe { mem_dealloc(*ptr, layout) };
-                        }
-                    }
-                }
-            }
-        });
-        Ok(())
-    }
+        let cnt = size.div_ceil_bit(paging::PAGE_SHIFT);
+        let (layout, _) = paging::PAGE_LAYOUT.repeat(cnt + 2)?;
 
-    pub fn clone(this: &Arc<Self>, ty: task::Type) -> Arc<Self> {
-        let ty = match this.ty {
-            task::Type::Kernel => ty,
-            task::Type::User => task::Type::User,
-        };
+        let virt = self.allocate(
+            AllocType::Layout(layout),
+            None,
+            Flags::READABLE | Flags::WRITABLE | Flags::USER_ACCESS,
+        )?;
+        let base = virt.base();
+        let actual_end = unsafe { NonNull::new_unchecked(base.add(paging::PAGE_SIZE * (cnt + 1))) };
 
-        PREEMPT.scope(|| {
-            Arc::new(Space {
-                canary: Canary::new(),
-                ty,
-                arch: ArchSpace::clone(&this.arch),
-                allocator: Arc::clone(&this.allocator),
-                stack_blocks: Mutex::new(BTreeMap::new()),
-            })
-        })
+        let prefix =
+            NonNull::slice_from_raw_parts(virt.as_ptr().as_non_null_ptr(), paging::PAGE_SIZE);
+        let suffix = NonNull::slice_from_raw_parts(actual_end, paging::PAGE_SIZE);
+
+        unsafe {
+            virt.modify(prefix, Flags::READABLE)?;
+            virt.modify(suffix, Flags::READABLE)?;
+        }
+
+        core::mem::forget(virt);
+
+        Ok(LAddr::from(actual_end))
     }
 }
 
 impl Drop for Space {
     fn drop(&mut self) {
-        PREEMPT.scope(|| {
-            let _ = self.clear_stack();
-            unsafe { self.allocator.dispose(&self.arch) };
-        })
+        PREEMPT.scope(|| unsafe { self.allocator.dispose(&self.arch) })
     }
 }
 
@@ -384,7 +264,11 @@ where
 /// The function must be called only from the epilogue of context switching.
 pub unsafe fn set_current(space: Arc<Space>) -> Arc<Space> {
     PREEMPT.scope(|| {
-        space.load();
-        CURRENT.replace(space).unwrap()
+        if !Arc::ptr_eq(current(), &space) {
+            space.load();
+            CURRENT.replace(space).unwrap()
+        } else {
+            space
+        }
     })
 }

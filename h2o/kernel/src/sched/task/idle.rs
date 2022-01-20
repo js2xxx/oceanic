@@ -1,11 +1,7 @@
 use core::hint;
 
 use super::*;
-use crate::{
-    cpu::CpuLocalLazy,
-    mem::space::{self, Space},
-    sched::deque,
-};
+use crate::{cpu::CpuLocalLazy, mem::space, sched::deque};
 
 /// Context dropper - used for dropping kernel stacks of threads.
 ///
@@ -32,7 +28,7 @@ pub(super) static IDLE: CpuLocalLazy<Tid> = CpuLocalLazy::new(|| {
         .build()
         .unwrap();
 
-    let space = Space::clone(unsafe { space::current() }, Type::Kernel);
+    let space = Arc::clone(unsafe { space::current() });
 
     let entry = create_entry(
         &space,

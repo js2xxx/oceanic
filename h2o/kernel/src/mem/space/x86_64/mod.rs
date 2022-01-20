@@ -76,30 +76,6 @@ impl Space {
         space
     }
 
-    pub fn clone(this: &Self) -> Self {
-        this.canary.assert();
-
-        let rt = box Table::zeroed();
-        let cr3 = Box::into_raw(rt);
-        let mut rt = unsafe { Box::from_raw(cr3) };
-
-        {
-            let self_rt = this.root_table.lock();
-            rt.copy_from_slice(&self_rt[..]);
-
-            let idx_stack = paging::Level::P4.addr_idx(LAddr::from(minfo::USER_STACK_BASE), false);
-            debug_assert!(idx_stack == paging::NR_ENTRIES / 2 - 1);
-
-            rt[idx_stack].reset();
-        }
-
-        Space {
-            canary: Canary::new(),
-            root_table: Mutex::new(rt),
-            cr3: LAddr::new(cr3.cast()).to_paddr(minfo::ID_OFFSET),
-        }
-    }
-
     pub(in crate::mem) fn maps(
         &self,
         virt: Range<LAddr>,
