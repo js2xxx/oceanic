@@ -1,4 +1,5 @@
 #![no_std]
+#![feature(allocator_api)]
 #![feature(bool_to_option)]
 #![feature(lang_items)]
 #![feature(negative_impls)]

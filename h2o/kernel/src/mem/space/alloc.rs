@@ -1,9 +1,9 @@
-use alloc::{collections::BTreeMap, sync::Arc};
-use core::{alloc::Layout, ptr::NonNull};
+use alloc::sync::Arc;
+use core::{alloc::Layout, mem, ops::Range, ptr::NonNull};
 
 use bitop_ex::BitOpEx;
 use canary::Canary;
-use collection_ex::RangeSet;
+use collection_ex::RangeMap;
 use paging::LAddr;
 use spin::Mutex;
 
@@ -13,16 +13,14 @@ use crate::mem::space::Phys;
 #[derive(Debug)]
 pub struct Allocator {
     canary: Canary<Allocator>,
-    free_range: Mutex<RangeSet<LAddr>>,
-    record: Mutex<BTreeMap<LAddr, Arc<Phys>>>,
+    range: Mutex<RangeMap<usize, Arc<Phys>>>,
 }
 
 impl Allocator {
-    pub const fn new(free_range: RangeSet<LAddr>) -> Self {
+    pub const fn new(range: RangeMap<usize, Arc<Phys>>) -> Self {
         Allocator {
             canary: Canary::new(),
-            free_range: Mutex::new(free_range),
-            record: Mutex::new(BTreeMap::new()),
+            range: Mutex::new(range),
         }
     }
 
@@ -37,85 +35,67 @@ impl Allocator {
 
         // Get the virtual address.
         // `prefix` and `suffix` are the gaps beside the allocated address range.
-        let mut range = self.free_range.lock();
+        let mut range = self.range.lock();
 
-        let (layout, prefix, virt, suffix) = match ty {
+        let (phys_layout, phys_base) = phys
+            .as_ref()
+            .map(|phys| (phys.layout(), phys.base()))
+            .unzip();
+        let mut new_phys = |layout, virt: Range<LAddr>| {
+            // Get the physical address mapped to.
+            let new_phys = match phys {
+                Some(phys) => Arc::clone(phys),
+                None => Phys::allocate(layout, flags)?,
+            };
+
+            // Map it.
+            arch.maps(virt, new_phys.base(), flags)
+                .map_err(paging_error)?;
+            Ok(new_phys)
+        };
+
+        let ret = match ty {
             AllocType::Layout(layout) => {
                 // Calculate the real size used.
                 let layout = layout.align_to(paging::PAGE_LAYOUT.align()).unwrap();
-                debug_assert!(!matches!(&phys, Some(phys) if phys.layout() != layout));
+                debug_assert!(!matches!(phys_layout, Some(l) if l != layout));
 
-                if phys
-                    .as_ref()
-                    .map_or(false, |phys| phys.base().contains_bit(layout.align() - 1))
-                {
+                if phys_base.map_or(false, |base| base.contains_bit(layout.align() - 1)) {
                     return Err(solvent::Error::EINVAL);
                 }
 
-                let (prefix, virt, suffix) = {
-                    let size = layout.pad_to_align().size();
+                let size = layout.pad_to_align().size();
 
-                    let res = range.range_iter().find_map(|r| {
-                        let mut start = r.start.val();
-                        while start & (layout.align() - 1) != 0 {
-                            start += 1 << start.trailing_zeros();
-                        }
-                        if start + size <= r.end.val() {
-                            Some((
-                                r.start..LAddr::from(start),
-                                LAddr::from(start)..LAddr::from(start + size),
-                                LAddr::from(start + size)..r.end,
-                            ))
-                        } else {
-                            None
-                        }
-                    });
-                    res.ok_or(solvent::Error::EBUSY)?
-                };
-                (layout, prefix, virt, suffix)
+                range
+                    .allocate_with(
+                        size,
+                        |range| new_phys(layout, LAddr::from(range.start)..LAddr::from(range.end)),
+                        solvent::Error::ENOMEM,
+                    )
+                    .map(|(start, phys)| (layout, LAddr::from(start), Arc::clone(phys)))
             }
             AllocType::Virt(virt) => {
                 let size = unsafe { virt.end.offset_from(*virt.start) } as usize;
                 let layout = Layout::from_size_align(size, paging::PAGE_SIZE)
                     .map_err(solvent::Error::from)?;
 
-                let (prefix, suffix) = {
-                    let res = range.range_iter().find_map(|r| {
-                        (r.start <= virt.start && virt.end <= r.end)
-                            .then_some((r.start..virt.start, virt.end..r.end))
-                    });
-
-                    res.ok_or(solvent::Error::EBUSY)?
-                };
-                (layout, prefix, virt, suffix)
+                let start = virt.start;
+                range
+                    .try_insert_with(
+                        virt.start.val()..virt.end.val(),
+                        || new_phys(layout, virt),
+                        solvent::Error::EEXIST,
+                    )
+                    .map(|phys| (layout, start, Arc::clone(phys)))
             }
         };
 
-        // Get the physical address mapped to.
-        let new_phys = match phys {
-            Some(phys) => Arc::clone(phys),
-            None => Phys::allocate(layout, flags)?,
-        };
-
-        // Map it.
-        let base = virt.start;
-        arch.maps(virt, new_phys.base(), flags)
-            .map_err(paging_error)?;
-
-        range.remove(prefix.start);
-        if !prefix.is_empty() {
-            let _ = range.insert(prefix);
-        }
-        if !suffix.is_empty() {
-            let _ = range.insert(suffix);
-        }
         drop(range);
 
-        let ret =
-            unsafe { NonNull::slice_from_raw_parts(base.as_non_null().unwrap(), layout.size()) };
-        self.record.lock().insert(base, Arc::clone(&new_phys));
-        *phys = Some(new_phys);
-        Ok(ret)
+        ret.map(|(layout, base, new_phys)| {
+            *phys = Some(new_phys);
+            unsafe { NonNull::slice_from_raw_parts(base.as_non_null().unwrap(), layout.size()) }
+        })
     }
 
     pub unsafe fn modify(
@@ -143,32 +123,20 @@ impl Allocator {
 
         // Get the virtual address range from the given memory block.
         let virt_start = LAddr::from(ptr);
+
         let phys = {
-            let mut record = self.record.lock();
-            match record.remove(&virt_start) {
+            let mut record = self.range.lock();
+            match record.remove(&virt_start.val()) {
                 Some(phys) => phys,
                 None => return Err(solvent::Error::EINVAL),
             }
         };
-        let mut virt = virt_start..LAddr::new(virt_start.add(phys.layout().pad_to_align().size()));
+        let virt = virt_start..LAddr::new(virt_start.add(phys.layout().pad_to_align().size()));
 
         // Unmap the virtual address & get the physical address.
-        let _ = arch.unmaps(virt.clone()).map_err(paging_error)?;
+        let _ = arch.unmaps(virt).map_err(paging_error)?;
 
-        // Deallocate the virtual address range.
-        let mut range = self.free_range.lock();
-        let (prefix, suffix) = range.neighbors(virt.clone());
-        if let Some(prefix) = prefix {
-            virt.start = prefix.start;
-            range.remove(prefix.start);
-        }
-        if let Some(suffix) = suffix {
-            virt.end = suffix.end;
-            range.remove(suffix.start);
-        }
-        range
-            .insert(virt)
-            .map_or(Err(solvent::Error::EBUSY), |_| Ok(phys))
+        Ok(phys)
     }
 
     /// The manual dropping function, replacing `Drop::drop` with `arch`.
@@ -177,9 +145,9 @@ impl Allocator {
     ///
     /// This function is called only inside `<space::Space as Drop>::drop`.
     pub(super) unsafe fn dispose(&self, arch: &ArchSpace) {
-        let mut record = self.record.lock();
-        while let Some((base, phys)) = record.pop_first() {
-            let virt = base.to_range(phys.layout());
+        let record = mem::take(&mut *self.range.lock());
+        for (_base, (range, _phys)) in record {
+            let virt = LAddr::from(range.start)..LAddr::from(range.end);
             let _ = arch.unmaps(virt);
         }
     }

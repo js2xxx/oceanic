@@ -20,7 +20,7 @@ use ::alloc::sync::Arc;
 pub use arch::init_pgc;
 use bitop_ex::BitOpEx;
 use canary::Canary;
-use collection_ex::RangeSet;
+use collection_ex::RangeMap;
 pub use obj::*;
 use paging::LAddr;
 pub use solvent::mem::Flags;
@@ -56,15 +56,13 @@ fn paging_error(err: paging::Error) -> solvent::Error {
 /// We cannot simply pass a [`Range`] to [`Space`]'s constructor because without
 /// control arbitrary, even incanonical ranges would be passed and cause
 /// unrecoverable errors.
-fn ty_to_range_set(ty: task::Type) -> RangeSet<LAddr> {
+fn ty_to_range_map(ty: task::Type) -> RangeMap<usize, Arc<Phys>> {
     let range = match ty {
         task::Type::Kernel => minfo::KERNEL_ALLOCABLE_RANGE,
-        task::Type::User => LAddr::from(minfo::USER_BASE)..LAddr::from(minfo::USER_END),
+        task::Type::User => minfo::USER_BASE..minfo::USER_END,
     };
 
-    let mut range_set = RangeSet::new();
-    let _ = range_set.insert(range);
-    range_set
+    RangeMap::new(range)
 }
 
 #[derive(Debug, Clone)]
@@ -103,7 +101,7 @@ impl Space {
             canary: Canary::new(),
             ty,
             arch: ArchSpace::new(),
-            allocator: alloc::Allocator::new(ty_to_range_set(ty)),
+            allocator: alloc::Allocator::new(ty_to_range_map(ty)),
         })
     }
 
