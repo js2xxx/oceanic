@@ -107,15 +107,6 @@ mod syscall {
     }
 
     #[syscall]
-    fn mem_alloc(size: usize, align: usize, flags: u32) -> Result<*mut u8> {
-        let layout = check_layout(size, align)?;
-        let flags = check_flags(flags)?;
-        let ret = space::with_current(|cur| cur.allocate(layout, flags));
-        ret.map_err(Into::into)
-            .map(|addr| addr.as_non_null_ptr().as_ptr())
-    }
-
-    #[syscall]
     fn mem_unmap(ptr: *mut u8) -> Result {
         unsafe {
             let ptr = NonNull::new(ptr).ok_or(Error::EINVAL)?;

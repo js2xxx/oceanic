@@ -25,7 +25,17 @@ use core::{alloc::Layout, ptr::NonNull};
 
 pub fn mem_alloc(layout: Layout, flags: Flags) -> crate::Result<NonNull<[u8]>> {
     let (size, align) = (layout.size(), layout.align());
-    let ptr = crate::call::mem_alloc(size, align, flags.bits)?;
+    let phys = crate::call::phys_alloc(size, align, flags.bits)?;
+    let mi = MapInfo {
+        addr: 0,
+        map_addr: false,
+        phys,
+        phys_offset: 0,
+        len: size,
+        flags,
+    };
+    let ptr = crate::call::mem_map(&mi)?;
+    let _ = crate::call::obj_drop(phys);
     unsafe {
         Ok(NonNull::slice_from_raw_parts(
             NonNull::new_unchecked(ptr),

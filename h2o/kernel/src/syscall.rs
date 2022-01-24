@@ -49,7 +49,7 @@ static SYSCALL_TABLE: &[Option<SyscallWrapper>] = &[
     Some(syscall_wrapper!(phys_alloc)),
     Some(syscall_wrapper!(mem_map)),
     Some(syscall_wrapper!(mem_reprot)),
-    Some(syscall_wrapper!(mem_alloc)),
+    None,
     Some(syscall_wrapper!(mem_unmap)),
     Some(syscall_wrapper!(wo_new)),
     Some(syscall_wrapper!(wo_notify)),

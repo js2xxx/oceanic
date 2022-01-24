@@ -95,11 +95,11 @@ unsafe fn exception(frame_ptr: *mut Frame, vec: def::ExVec) {
     match SCHED.with_current(|cur| Ok(cur.tid().ty())) {
         Ok(task::Type::User) if frame.cs == USR_CODE_X64.into_val().into() => {
             if !task::dispatch_exception(frame, vec) {
-                #[cfg(debug_assertions)]
-                let _ = SCHED.with_current(|cur| {
-                    log::warn!("Unhandled exception from task {}.", cur.tid().raw());
-                    Ok(())
-                });
+                // #[cfg(debug_assertions)]
+                // let _ = SCHED.with_current(|cur| {
+                //     log::warn!("Unhandled exception from task {}.", cur.tid().raw());
+                //     Ok(())
+                // });
                 // Kill the fucking task.
                 SCHED.exit_current(solvent::Error::EFAULT.into_retval())
             }
