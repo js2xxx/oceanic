@@ -97,6 +97,16 @@ mod syscall {
     }
 
     #[syscall]
+    fn mem_reprot(ptr: *mut u8, len: usize, flags: u32) -> Result {
+        let flags = check_flags(flags)?;
+        unsafe {
+            let ptr = NonNull::new(ptr).ok_or(Error::EINVAL)?;
+            let ptr = NonNull::slice_from_raw_parts(ptr, len);
+            space::with_current(|cur| cur.reprotect(ptr, flags))
+        }
+    }
+
+    #[syscall]
     fn mem_alloc(size: usize, align: usize, flags: u32) -> Result<*mut u8> {
         let layout = check_layout(size, align)?;
         let flags = check_flags(flags)?;
