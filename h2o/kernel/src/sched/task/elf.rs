@@ -1,5 +1,4 @@
 use alloc::string::String;
-use core::mem;
 
 use bitop_ex::BitOpEx;
 use goblin::elf::*;
@@ -8,7 +7,7 @@ use paging::{LAddr, PAddr};
 use super::*;
 use crate::{
     cpu::CpuMask,
-    mem::space::{AllocType, Flags, Phys, Space},
+    mem::space::{Flags, Phys, Space},
 };
 
 fn load_prog(
@@ -47,10 +46,10 @@ fn load_prog(
     if fsize > 0 {
         let virt = LAddr::from(vstart)..LAddr::from(vend);
         log::trace!("Mapping {:?}", virt);
-        let phys = Phys::new(phys, paging::PAGE_LAYOUT, flags);
-        let virt = unsafe { space.allocate(AllocType::Virt(virt), Some(phys), flags) }?;
-        // TODO: add `virt` to `image` field of `TaskInfo` in the future.
-        mem::forget(virt);
+        let cnt = fsize.div_ceil_bit(paging::PAGE_SHIFT);
+        let (layout, _) = paging::PAGE_LAYOUT.repeat(cnt)?;
+        let phys = Phys::new(phys, layout, flags);
+        unsafe { space.map_addr(virt, Some(phys), flags) }?;
     }
 
     if msize > fsize {
@@ -58,9 +57,7 @@ fn load_prog(
 
         let virt = LAddr::from(vend)..LAddr::from(vend + extra);
         log::trace!("Allocating {:?}", virt);
-        let virt = unsafe { space.allocate(AllocType::Virt(virt), None, flags | Flags::ZEROED) }?;
-        // TODO: add `virt` to `image` field of `TaskInfo` in the future.
-        mem::forget(virt);
+        unsafe { space.map_addr(virt, None, flags | Flags::ZEROED) }?;
     }
 
     Ok(())

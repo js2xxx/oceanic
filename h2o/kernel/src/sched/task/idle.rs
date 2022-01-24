@@ -29,11 +29,9 @@ pub(super) static IDLE: CpuLocalLazy<Tid> = CpuLocalLazy::new(|| {
 
     let space = Arc::clone(unsafe { space::current() });
 
-    let (stack_virt, stack) = space
+    let stack = space
         .init_stack(DEFAULT_STACK_SIZE)
         .expect("Failed to initialize stack for IDLE");
-    unsafe { ti.handles().insert_unchecked(stack_virt, false, false) }
-        .expect("Failed to insert stack for IDLE");
 
     let entry = create_entry(
         LAddr::new(idle as *mut u8),

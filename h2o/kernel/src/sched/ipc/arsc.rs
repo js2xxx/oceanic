@@ -246,6 +246,7 @@ impl<T: ?Sized + PartialOrd, A: Allocator> PartialOrd for Arsc<T, A> {
 }
 
 impl<T: ?Sized + Ord, A: Allocator> Ord for Arsc<T, A> {
+    #[inline]
     fn cmp(&self, other: &Self) -> core::cmp::Ordering {
         self.deref().cmp(other)
     }

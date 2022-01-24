@@ -11,7 +11,7 @@ use crate::{
         chip::{factor_from_freq, CalibrationClock, ClockChip},
         Instant,
     },
-    mem::space::{self, AllocType, Flags, KernelVirt, Phys},
+    mem::space::{self, Flags, Phys},
 };
 
 #[repr(C, packed)]
@@ -47,7 +47,6 @@ pub static HPET_CLOCK: Lazy<Option<HpetClock>> = Lazy::new(HpetClock::new);
 
 pub struct Hpet {
     base_ptr: *mut HpetReg,
-    virt: KernelVirt,
 
     block_id: u8,
     period_fs: u64,
@@ -65,14 +64,16 @@ impl Hpet {
             PAGE_LAYOUT,
             Flags::READABLE | Flags::WRITABLE | Flags::UNCACHED,
         );
-        let virt = space::KRL
-            .allocate_kernel(
-                AllocType::Layout(phys.layout()),
-                Some(Arc::clone(&phys)),
+        let addr = space::KRL
+            .map(
+                None,
+                Arc::clone(&phys),
+                0,
+                phys.layout().size(),
                 phys.flags(),
             )
             .expect("Failed to allocate memory");
-        let base_ptr = virt.as_ptr().cast::<HpetReg>().as_ptr();
+        let base_ptr = addr.cast::<HpetReg>();
 
         let num_comparators = data.num_comparators() as usize;
         if num_comparators < 2 {
@@ -87,7 +88,6 @@ impl Hpet {
         let period_fs = (*base_ptr).caps >> 32;
         Ok(Hpet {
             base_ptr,
-            virt,
             block_id: data.hpet_number,
             period_fs,
             num_comparators,
@@ -120,10 +120,6 @@ impl Hpet {
         let a = unsafe { ptr.read_volatile() };
         let b = unsafe { ptr.read_volatile() };
         a.min(b)
-    }
-
-    pub fn virt(&self) -> &KernelVirt {
-        &self.virt
     }
 
     pub fn block_id(&self) -> u8 {

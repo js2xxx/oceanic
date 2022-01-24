@@ -4,7 +4,7 @@ use alloc::collections::{
 };
 use core::{
     borrow::Borrow,
-    ops::{Add, Range, Sub},
+    ops::{Add, Bound, Range, RangeBounds, Sub},
 };
 
 #[derive(Debug)]
@@ -24,15 +24,15 @@ impl<K, V> RangeMap<K, V> {
         }
     }
 
-    pub fn allocate_with<F, E>(
+    pub fn allocate_with<F, E, R>(
         &mut self,
         size: K,
         value: F,
         no_fit: impl Into<E>,
-    ) -> Result<(K, &mut V), E>
+    ) -> Result<(K, R), E>
     where
         K: Ord + Sub<Output = K> + Add<Output = K> + Copy,
-        F: FnOnce(Range<K>) -> Result<V, E>,
+        F: FnOnce(Range<K>) -> Result<(V, R), E>,
     {
         let mut range = None;
 
@@ -51,25 +51,23 @@ impl<K, V> RangeMap<K, V> {
 
         if let Some(range) = range {
             let start = range.start;
-            let (_, value) = self
-                .inner
-                .entry(start)
-                .or_insert((range.clone(), value(range)?));
-            Ok((start, value))
+            let (value, ret) = value(range.clone())?;
+            self.inner.entry(start).or_insert((range, value));
+            Ok((start, ret))
         } else {
             Err(no_fit.into())
         }
     }
 
-    pub fn try_insert_with<F, E>(
+    pub fn try_insert_with<F, E, R>(
         &mut self,
         range: Range<K>,
         value: F,
         exist: impl Into<E>,
-    ) -> Result<&mut V, E>
+    ) -> Result<R, E>
     where
         K: Ord + Copy,
-        F: FnOnce() -> Result<V, E>,
+        F: FnOnce() -> Result<(V, R), E>,
     {
         if range.start < range.end
             && self.range.contains(&range.start)
@@ -78,8 +76,9 @@ impl<K, V> RangeMap<K, V> {
             let start = range.start;
             match self.inner.entry(start) {
                 Entry::Vacant(ent) => {
-                    let (_, value) = ent.insert((range, value()?));
-                    Ok(value)
+                    let (value, ret) = value()?;
+                    ent.insert((range, value));
+                    Ok(ret)
                 }
                 Entry::Occupied(_) => Err(exist.into()),
             }
@@ -104,11 +103,23 @@ impl<K, V> RangeMap<K, V> {
         self.inner.get_mut(start).map(|(_, value)| value)
     }
 
-    pub fn remove(&mut self, start: &K) -> Option<V>
+    pub fn remove_if<F>(&mut self, start: K, predicate: F) -> Option<(Range<K>, V)>
+    where
+        K: Ord,
+        F: Fn(&V) -> bool,
+    {
+        match self.inner.entry(start) {
+            Entry::Occupied(ent) if predicate(&ent.get().1) => Some(ent.remove()),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    pub fn remove(&mut self, start: K) -> Option<(Range<K>, V)>
     where
         K: Ord,
     {
-        self.inner.remove(start).map(|(_, value)| value)
+        self.remove_if(start, |_| true)
     }
 
     #[inline]
@@ -119,6 +130,64 @@ impl<K, V> RangeMap<K, V> {
     #[inline]
     pub fn iter_mut(&mut self) -> IterMut<K, (Range<K>, V)> {
         self.inner.iter_mut()
+    }
+
+    #[inline]
+    pub fn get_contained(&self, key: &K) -> Option<&(Range<K>, V)>
+    where
+        K: Ord,
+    {
+        self.inner
+            .range(..=key)
+            .next_back()
+            .map(|(_, value)| value)
+            .filter(|(range, _)| key < &range.end)
+    }
+
+    #[inline]
+    pub fn get_contained_mut(&mut self, key: &K) -> Option<&mut (Range<K>, V)>
+    where
+        K: Ord,
+    {
+        self.inner
+            .range_mut(..=key)
+            .next_back()
+            .map(|(_, value)| value)
+            .filter(|(range, _)| key < &range.end)
+    }
+
+    pub fn get_contained_range<R>(&self, range: R) -> Option<&(Range<K>, V)>
+    where
+        K: Ord,
+        R: RangeBounds<K>,
+    {
+        let start = match range.start_bound() {
+            Bound::Included(start) | Bound::Excluded(start) => start,
+            Bound::Unbounded => return None,
+        };
+        match range.end_bound() {
+            Bound::Included(end) => self
+                .inner
+                .range(..=end)
+                .next_back()
+                .map(|(_, value)| value)
+                .filter(|(range, _)| end < &range.end && range.contains(start)),
+            Bound::Excluded(end) => self
+                .inner
+                .range(..end)
+                .next_back()
+                .map(|(_, value)| value)
+                .filter(|(range, _)| end <= &range.end && range.contains(start)),
+            Bound::Unbounded => None,
+        }
+    }
+
+    #[inline]
+    pub fn pop(&mut self) -> Option<(Range<K>, V)>
+    where
+        K: Ord,
+    {
+        self.inner.pop_first().map(|(_, value)| value)
     }
 }
 

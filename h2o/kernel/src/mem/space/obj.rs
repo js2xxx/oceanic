@@ -1,18 +1,9 @@
-use alloc::{
-    alloc::Global,
-    sync::{Arc, Weak},
-};
-use core::{
-    alloc::{Allocator, Layout},
-    mem,
-    ops::{Deref, Range},
-    ptr::NonNull,
-};
+use alloc::{alloc::Global, sync::Arc};
+use core::alloc::{Allocator, Layout};
 
 use paging::{LAddr, PAddr};
 
-use super::{Flags, Space};
-use crate::sched::task::Type;
+use super::Flags;
 
 #[derive(Debug)]
 pub struct Phys {
@@ -23,6 +14,7 @@ pub struct Phys {
 }
 
 impl Phys {
+    #[inline]
     pub fn new(base: PAddr, layout: Layout, flags: Flags) -> Arc<Phys> {
         unsafe { Arc::new(Self::new_manual(false, base, layout, flags)) }
     }
@@ -64,18 +56,22 @@ impl Phys {
         }
     }
 
+    #[inline]
     pub fn base(&self) -> PAddr {
         self.base
     }
 
+    #[inline]
     pub fn layout(&self) -> Layout {
         self.layout
     }
 
+    #[inline]
     pub fn flags(&self) -> Flags {
         self.flags
     }
 
+    #[inline]
     pub fn raw_ptr(&self) -> *mut u8 {
         *self.base.to_laddr(minfo::ID_OFFSET)
     }
@@ -91,116 +87,5 @@ impl Drop for Phys {
             let ptr = self.base.to_laddr(minfo::ID_OFFSET).as_non_null().unwrap();
             unsafe { Global.deallocate(ptr, self.layout) };
         }
-    }
-}
-
-#[derive(Debug)]
-pub struct Virt {
-    ty: Type,
-    ptr: NonNull<[u8]>,
-    phys: Arc<Phys>,
-    space: Weak<Space>,
-}
-
-impl Virt {
-    pub(super) fn new(ty: Type, ptr: NonNull<[u8]>, phys: Arc<Phys>, space: Weak<Space>) -> Self {
-        Virt {
-            ty,
-            ptr,
-            phys,
-            space,
-        }
-    }
-
-    pub fn ty(&self) -> Type {
-        self.ty
-    }
-
-    pub fn base(&self) -> LAddr {
-        LAddr::new(self.ptr.as_mut_ptr())
-    }
-
-    pub fn as_ptr(&self) -> NonNull<[u8]> {
-        self.ptr
-    }
-
-    pub fn range(&self) -> Range<LAddr> {
-        let (ptr, len) = (self.ptr.as_mut_ptr(), self.ptr.len());
-        self.base()..LAddr::new(unsafe { ptr.add(len) })
-    }
-
-    pub fn layout(&self) -> Layout {
-        self.phys.layout
-    }
-
-    pub fn phys_flags(&self) -> Flags {
-        self.phys.flags
-    }
-
-    /// # Errors
-    ///
-    /// Returns error if caller tries to support more features or the pointer is
-    /// out of bounds.
-    pub unsafe fn modify(&self, ptr: NonNull<[u8]>, flags: Flags) -> solvent::Result {
-        if flags & !self.phys_flags() != Flags::empty() {
-            return Err(solvent::Error::EPERM);
-        }
-        let (base, len) = (ptr.as_non_null_ptr(), ptr.len());
-        let base = if base.as_ptr() >= *self.base() {
-            base
-        } else {
-            return Err(solvent::Error::EINVAL);
-        };
-        let len = if base.as_ptr().add(len) <= *self.range().end {
-            len
-        } else {
-            return Err(solvent::Error::EINVAL);
-        };
-
-        match self.space.upgrade() {
-            Some(space) => space.modify(NonNull::slice_from_raw_parts(base, len), flags),
-            _ => Err(solvent::Error::ENOENT),
-        }
-    }
-
-    pub fn leak(self) -> NonNull<[u8]> {
-        let inner = self.ptr;
-        mem::forget(self);
-        inner
-    }
-}
-
-impl Drop for Virt {
-    fn drop(&mut self) {
-        if let Some(space) = self.space.upgrade() {
-            unsafe {
-                let _ = space.deallocate(self.base().as_non_null().unwrap());
-            }
-        }
-    }
-}
-
-#[derive(Debug)]
-#[repr(transparent)]
-pub struct KernelVirt(Virt);
-
-// [`KernelVirt`] lives in the kernel space and should share its data.
-unsafe impl Send for KernelVirt {}
-unsafe impl Sync for KernelVirt {}
-
-impl KernelVirt {
-    pub(super) fn new(virt: Virt) -> Result<Self, Virt> {
-        match virt.ty {
-            Type::Kernel => Ok(KernelVirt(virt)),
-            Type::User => Err(virt),
-        }
-    }
-}
-
-impl Deref for KernelVirt {
-    type Target = Virt;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
     }
 }

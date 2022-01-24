@@ -3,7 +3,6 @@
 //! This module is responsible for managing system memory and address space in a
 //! higher level, especially for large objects like APIC.
 
-mod alloc;
 mod obj;
 
 cfg_if::cfg_if! {
@@ -14,7 +13,12 @@ cfg_if::cfg_if! {
     }
 }
 
-use core::{alloc::Layout, ops::Range, ptr::NonNull};
+use core::{
+    alloc::Layout,
+    mem,
+    ops::{Add, Range},
+    ptr::NonNull,
+};
 
 use ::alloc::sync::Arc;
 pub use arch::init_pgc;
@@ -22,9 +26,9 @@ use bitop_ex::BitOpEx;
 use canary::Canary;
 use collection_ex::RangeMap;
 pub use obj::*;
-use paging::LAddr;
+use paging::{LAddr, PAddr, PAGE_LAYOUT};
 pub use solvent::mem::Flags;
-use spin::Lazy;
+use spin::{Lazy, Mutex};
 
 use crate::sched::{task, PREEMPT};
 
@@ -56,19 +60,11 @@ fn paging_error(err: paging::Error) -> solvent::Error {
 /// We cannot simply pass a [`Range`] to [`Space`]'s constructor because without
 /// control arbitrary, even incanonical ranges would be passed and cause
 /// unrecoverable errors.
-fn ty_to_range_map(ty: task::Type) -> RangeMap<usize, Arc<Phys>> {
-    let range = match ty {
+fn ty_to_range(ty: task::Type) -> Range<usize> {
+    match ty {
         task::Type::Kernel => minfo::KERNEL_ALLOCABLE_RANGE,
         task::Type::User => minfo::USER_BASE..minfo::USER_END,
-    };
-
-    RangeMap::new(range)
-}
-
-#[derive(Debug, Clone)]
-pub enum AllocType {
-    Layout(Layout),
-    Virt(Range<LAddr>),
+    }
 }
 
 /// The structure that represents an address space.
@@ -88,7 +84,8 @@ pub struct Space {
     arch: ArchSpace,
 
     /// The general allocator.
-    allocator: alloc::Allocator,
+    range: Range<usize>,
+    map: Mutex<RangeMap<usize, Arc<Phys>>>,
 }
 
 unsafe impl Send for Space {}
@@ -97,45 +94,114 @@ unsafe impl Sync for Space {}
 impl Space {
     /// Create a new address space.
     pub fn new(ty: task::Type) -> Arc<Self> {
+        let range = ty_to_range(ty);
         Arc::new(Space {
             canary: Canary::new(),
             ty,
             arch: ArchSpace::new(),
-            allocator: alloc::Allocator::new(ty_to_range_map(ty)),
+            range: range.clone(),
+            map: Mutex::new(RangeMap::new(range)),
         })
     }
 
-    /// Allocate an address range in the space.
-    pub fn allocate(
-        self: &Arc<Self>,
-        ty: AllocType,
-        mut phys: Option<Arc<Phys>>,
-        flags: Flags,
-    ) -> solvent::Result<Virt> {
+    #[inline]
+    pub fn ty(&self) -> task::Type {
+        self.ty
+    }
+
+    /// Allocate an address range in the space for mapping.
+    pub fn allocate(&self, layout: Layout, flags: Flags) -> solvent::Result<NonNull<[u8]>> {
         self.canary.assert();
 
-        PREEMPT.scope(|| {
-            self.allocator
-                .allocate(ty.clone(), &mut phys, flags, &self.arch)
-                .map(|ptr| Virt::new(self.ty, ptr, phys.unwrap(), Arc::downgrade(self)))
+        let phys = Phys::allocate(layout, flags)?;
+        let layout = phys.layout();
+
+        self.map(None, phys, 0, layout.size(), flags).map(|addr| {
+            let ptr = unsafe { NonNull::new_unchecked(*addr) };
+            NonNull::slice_from_raw_parts(ptr, layout.size())
         })
     }
 
-    /// Allocate an address range in the kernel space.
-    ///
-    /// Used for sharing kernel variables of [`KernelVirt`].
-    pub fn allocate_kernel(
-        self: &Arc<Self>,
-        ty: AllocType,
+    #[inline]
+    pub fn map_addr(
+        &self,
+        virt: Range<LAddr>,
         phys: Option<Arc<Phys>>,
         flags: Flags,
-    ) -> solvent::Result<KernelVirt> {
+    ) -> solvent::Result {
         self.canary.assert();
-        match self.ty {
-            task::Type::Kernel => self
-                .allocate(ty, phys, flags)
-                .map(|virt| KernelVirt::new(virt).unwrap()),
-            task::Type::User => Err(solvent::Error::EPERM),
+
+        let offset = virt
+            .start
+            .val()
+            .checked_sub(self.range.start)
+            .ok_or(solvent::Error::ERANGE)?;
+        let len = virt
+            .end
+            .val()
+            .checked_sub(virt.start.val())
+            .ok_or(solvent::Error::ERANGE)?;
+        let phys = match phys {
+            Some(phys) => phys,
+            None => Phys::allocate(Layout::from_size_align(len, PAGE_LAYOUT.align())?, flags)?,
+        };
+        self.map(Some(offset), phys, 0, len, flags & !Flags::ZEROED)
+            .map(|_| {})
+    }
+
+    /// Map a physical memory to a virtual address.
+    pub fn map(
+        &self,
+        offset: Option<usize>,
+        phys: Arc<Phys>,
+        phys_offset: usize,
+        len: usize,
+        flags: Flags,
+    ) -> solvent::Result<LAddr> {
+        self.canary.assert();
+
+        if flags & !phys.flags() != Flags::empty() || flags.contains(Flags::ZEROED) {
+            return Err(solvent::Error::EPERM);
+        }
+
+        let phys_offset_end = phys_offset.wrapping_add(len);
+        if !(phys_offset < phys_offset_end && phys_offset_end <= phys.layout().size()) {
+            return Err(solvent::Error::ERANGE);
+        }
+
+        let phys_start = PAddr::new(phys.base().add(phys_offset));
+        let arch_map = |range: Range<usize>| {
+            let virt = LAddr::from(range.start)..LAddr::from(range.end);
+            self.arch
+                .maps(virt, phys_start, flags)
+                .map_err(paging_error)
+        };
+
+        if let Some(offset) = offset {
+            let start = offset.wrapping_add(self.range.start);
+            let end = start.wrapping_add(len);
+            if !(self.range.start <= start && start < end && end <= self.range.end) {
+                return Err(solvent::Error::ERANGE);
+            }
+
+            PREEMPT.scope(|| {
+                self.map.lock().try_insert_with(
+                    start..end,
+                    || arch_map(start..end).map(|_| (phys, LAddr::from(start))),
+                    solvent::Error::EBUSY,
+                )
+            })
+        } else {
+            PREEMPT.scope(|| {
+                self.map
+                    .lock()
+                    .allocate_with(
+                        len,
+                        |range| arch_map(range).map(|_| (phys, ())),
+                        solvent::Error::ENOMEM,
+                    )
+                    .map(|(start, _)| LAddr::from(start))
+            })
         }
     }
 
@@ -144,28 +210,46 @@ impl Space {
         self.arch.query(LAddr::from(ptr)).map_err(paging_error)
     }
 
-    /// Modify the access flags of an address range without a specific type.
+    /// Modify the access flags of an address range.
     ///
     /// # Safety
     ///
-    /// The caller must ensure that `ptr` was allocated by this `Space` and no
-    /// pointers or references within the address range are present (or will be
-    /// influenced by the modification).
-    pub unsafe fn modify(&self, ptr: NonNull<[u8]>, flags: Flags) -> solvent::Result {
+    /// The caller must ensure that no pointers or references within the address
+    /// range are present (or will be influenced by the modification).
+    pub unsafe fn reprotect(&self, mut ptr: NonNull<[u8]>, flags: Flags) -> solvent::Result {
         self.canary.assert();
 
-        PREEMPT.scope(|| self.allocator.modify(ptr, flags, &self.arch))
+        let virt = {
+            let ptr = ptr.as_mut().as_mut_ptr_range();
+            LAddr::new(ptr.start)..LAddr::new(ptr.end)
+        };
+
+        PREEMPT.scope(|| {
+            let map = self.map.lock();
+            match map.get_contained_range(virt.start.val()..virt.end.val()) {
+                Some(_) => self.arch.reprotect(virt, flags).map_err(paging_error),
+                None => Err(solvent::Error::ENOENT),
+            }
+        })
     }
 
     /// Deallocate an address range in the space without a specific type.
     ///
     /// # Safety
     ///
-    /// The caller must ensure that `ptr` was allocated by this `Space`.
-    pub unsafe fn deallocate(&self, ptr: NonNull<u8>) -> solvent::Result<Arc<Phys>> {
+    /// The caller must ensure that no more references are pointing at the
+    /// address range to be deallocated.
+    pub unsafe fn unmap(&self, ptr: NonNull<u8>) -> solvent::Result {
         self.canary.assert();
 
-        PREEMPT.scope(|| self.allocator.deallocate(ptr, &self.arch))
+        let ret = PREEMPT.scope(|| self.map.lock().remove(LAddr::from(ptr).val()));
+        ret.map_or(Err(solvent::Error::ENOENT), |(range, _phys)| {
+            let _ = PREEMPT.scope(|| {
+                self.arch
+                    .unmaps(LAddr::from(range.start)..LAddr::from(range.end))
+            });
+            Ok(())
+        })
     }
 
     /// # Safety
@@ -177,36 +261,39 @@ impl Space {
         self.arch.load()
     }
 
-    pub fn init_stack(self: &Arc<Self>, size: usize) -> solvent::Result<(Virt, LAddr)> {
+    pub fn init_stack(self: &Arc<Self>, size: usize) -> solvent::Result<LAddr> {
         self.canary.assert();
 
         let cnt = size.div_ceil_bit(paging::PAGE_SHIFT);
         let (layout, _) = paging::PAGE_LAYOUT.repeat(cnt + 2)?;
 
-        let virt = self.allocate(
-            AllocType::Layout(layout),
-            None,
-            Flags::READABLE | Flags::WRITABLE | Flags::USER_ACCESS,
-        )?;
-        let base = virt.base();
-        let actual_end = unsafe { NonNull::new_unchecked(base.add(paging::PAGE_SIZE * (cnt + 1))) };
+        let flags = Flags::READABLE | Flags::WRITABLE | Flags::USER_ACCESS;
+        let ptr = self.allocate(layout, flags)?;
+        let base = unsafe { ptr.as_non_null_ptr() };
+        let actual_end =
+            unsafe { NonNull::new_unchecked(base.as_ptr().add(paging::PAGE_SIZE * (cnt + 1))) };
 
-        let prefix =
-            NonNull::slice_from_raw_parts(virt.as_ptr().as_non_null_ptr(), paging::PAGE_SIZE);
+        let prefix = NonNull::slice_from_raw_parts(base, paging::PAGE_SIZE);
         let suffix = NonNull::slice_from_raw_parts(actual_end, paging::PAGE_SIZE);
 
         unsafe {
-            virt.modify(prefix, Flags::READABLE)?;
-            virt.modify(suffix, Flags::READABLE)?;
+            self.reprotect(prefix, Flags::READABLE)?;
+            self.reprotect(suffix, Flags::READABLE)?;
         }
 
-        Ok((virt, LAddr::from(actual_end)))
+        Ok(LAddr::from(actual_end))
     }
 }
 
 impl Drop for Space {
     fn drop(&mut self) {
-        PREEMPT.scope(|| unsafe { self.allocator.dispose(&self.arch) })
+        let map = PREEMPT.scope(|| mem::take(&mut *self.map.lock()));
+        for (_, (range, _)) in map {
+            let _ = PREEMPT.scope(|| {
+                self.arch
+                    .unmaps(LAddr::from(range.start)..LAddr::from(range.end))
+            });
+        }
     }
 }
 

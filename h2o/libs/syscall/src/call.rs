@@ -33,23 +33,6 @@ syscall_stub!(7 =>
 );
 syscall_stub!(8 => pub(crate) fn task_sleep(ms: u32));
 
-syscall_stub!(9 =>
-    pub(crate) fn virt_alloc(
-        virt: *mut *mut u8,
-        phys: usize,
-        size: usize,
-        align: usize,
-        flags: u32
-    ) -> Handle
-);
-syscall_stub!(10 =>
-    pub(crate) unsafe fn virt_prot(
-        hdl: Handle,
-        ptr: *mut u8,
-        size: usize,
-        flags: u32
-    )
-);
 syscall_stub!(11 => pub(crate) fn mem_alloc(size: usize, align: usize, flags: u32) -> *mut u8);
 syscall_stub!(12 => pub(crate) fn mem_dealloc(ptr: *mut u8));
 

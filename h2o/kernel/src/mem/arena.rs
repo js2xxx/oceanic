@@ -10,8 +10,7 @@ use core::{
 use static_assertions::const_assert_eq;
 
 use self::atomic::AtomicDoubleU64;
-use super::space::KernelVirt;
-use crate::mem::space::{AllocType, Flags, KRL};
+use crate::mem::space::{Flags, KRL};
 
 #[derive(Clone, Copy)]
 #[repr(align(16))]
@@ -27,7 +26,6 @@ pub struct Arena<T> {
     top: AtomicPtr<T>,
     off: usize,
     end: NonNull<T>,
-    virt: KernelVirt,
     count: AtomicUsize,
 }
 
@@ -40,20 +38,16 @@ impl<T> Arena<T> {
             .align_to(16)
             .and_then(|layout| layout.repeat(max_count))
             .expect("Layout error");
-        assert!(off >= 16);
-        let virt = KRL
-            .allocate_kernel(
-                AllocType::Layout(layout),
-                None,
-                Flags::READABLE | Flags::WRITABLE,
-            )
+        debug_assert!(off >= 16);
+        let ptr = KRL
+            .allocate(layout, Flags::READABLE | Flags::WRITABLE)
             .expect("Failed to allocate memory");
 
         let (base, end) = unsafe {
-            let range = virt.range();
+            let range = ptr.as_ref().as_ptr_range();
             (
-                NonNull::new_unchecked(range.start.cast::<T>()),
-                NonNull::new_unchecked(range.end.cast::<T>()),
+                NonNull::new_unchecked(range.start.cast::<T>() as *mut _),
+                NonNull::new_unchecked(range.end.cast::<T>() as *mut _),
             )
         };
 
@@ -64,7 +58,6 @@ impl<T> Arena<T> {
             top: AtomicPtr::new(base.as_ptr()),
             off,
             end,
-            virt,
             count: AtomicUsize::default(),
         }
     }
@@ -177,12 +170,15 @@ impl<T> Arena<T> {
         self.max_count
     }
 
-    pub fn virt(&self) -> &KernelVirt {
-        &self.virt
-    }
-
     pub fn count(&self) -> usize {
         self.count.load(SeqCst)
+    }
+}
+
+impl<T> Drop for Arena<T> {
+    #[inline]
+    fn drop(&mut self) {
+        let _ = unsafe { KRL.unmap(self.base.cast()) };
     }
 }
 

@@ -2,6 +2,7 @@
 #![feature(build_hasher_simple_hash_one)]
 #![feature(const_btree_new)]
 #![feature(const_fn_trait_bound)]
+#![feature(map_first_last)]
 #![feature(map_try_insert)]
 
 mod chash_map;

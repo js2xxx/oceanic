@@ -18,7 +18,7 @@ use paging::{LAddr, PAGE_SIZE};
 
 use crate::{
     cpu::arch::seg::ndt::INTR_CODE,
-    mem::space::{self, AllocType, Flags, KernelVirt},
+    mem::space::{self, Flags},
 };
 
 pub const KSTACK_SIZE: usize = paging::PAGE_SIZE * 13;
@@ -55,7 +55,6 @@ impl KstackData {
 
 pub struct Kstack {
     ptr: NonNull<KstackData>,
-    virt: KernelVirt,
     kframe_ptr: *mut u8,
     pf_resume: Option<NonZeroU64>,
 }
@@ -64,22 +63,19 @@ unsafe impl Send for Kstack {}
 
 impl Kstack {
     pub fn new(entry: Entry, ty: super::Type) -> Self {
-        let (virt, ptr) = {
-            let virt = space::KRL
-                .allocate_kernel(
-                    AllocType::Layout(Layout::new::<KstackData>()),
-                    None,
-                    Flags::READABLE | Flags::WRITABLE,
-                )
-                .expect("Failed to allocate kernel stack");
-            let ptr = virt.as_ptr();
+        let ptr = space::KRL
+            .allocate(
+                Layout::new::<KstackData>(),
+                Flags::READABLE | Flags::WRITABLE,
+            )
+            .expect("Failed to allocate kernel stack");
+        unsafe {
             let pad = NonNull::slice_from_raw_parts(ptr.as_non_null_ptr(), PAGE_SIZE);
-            unsafe {
-                virt.modify(pad, Flags::READABLE)
-                    .expect("Failed to set padding");
-            }
-            (virt, ptr)
-        };
+            space::KRL
+                .reprotect(pad, Flags::READABLE)
+                .expect("Failed to set padding");
+        }
+
         let mut kstack = ptr.cast::<KstackData>();
         let kframe_ptr = unsafe {
             let this = kstack.as_mut();
@@ -94,7 +90,6 @@ impl Kstack {
         };
         Kstack {
             ptr: kstack,
-            virt,
             kframe_ptr,
             pf_resume: None,
         }
@@ -110,11 +105,6 @@ impl Kstack {
     #[inline]
     pub fn kframe_ptr_mut(&mut self) -> *mut *mut u8 {
         &mut self.kframe_ptr
-    }
-
-    #[inline]
-    pub fn virt(&self) -> &KernelVirt {
-        &self.virt
     }
 
     #[inline]
@@ -144,6 +134,13 @@ impl Deref for Kstack {
 
     fn deref(&self) -> &Self::Target {
         unsafe { self.ptr.as_ref() }
+    }
+}
+
+impl Drop for Kstack {
+    #[inline]
+    fn drop(&mut self) {
+        let _ = unsafe { space::KRL.unmap(self.ptr.cast()) };
     }
 }
 

@@ -46,7 +46,6 @@ mod syscall {
     use solvent::*;
 
     use super::space;
-    use crate::syscall::{InOut, UserPtr};
 
     fn check_options(size: usize, align: usize, flags: u32) -> Result<(Layout, space::Flags)> {
         if size.contains_bit(paging::PAGE_MASK) || !align.is_power_of_two() {
@@ -59,74 +58,18 @@ mod syscall {
     }
 
     #[syscall]
-    fn virt_alloc(
-        virt_ptr: UserPtr<InOut, *mut u8>,
-        phys: usize,
-        size: usize,
-        align: usize,
-        flags: u32,
-    ) -> Result<Handle> {
-        let (layout, flags) = check_options(size, align, flags)?;
-        let ptr = unsafe { virt_ptr.r#in().read()? };
-
-        // TODO: Check whether the physical address is permitted.
-        let phys = (phys != 0).then_some(paging::PAddr::new(phys));
-        let phys = phys.map(|phys| space::Phys::new(phys, layout, flags));
-
-        let ty = if ptr.is_null() {
-            space::AllocType::Layout(layout)
-        } else {
-            space::AllocType::Virt(
-                paging::LAddr::new(ptr)..paging::LAddr::new(unsafe { ptr.add(size) }),
-            )
-        };
-
-        let ret = space::with_current(|cur| cur.allocate(ty, phys, flags));
-        ret.map_err(Into::into).and_then(|virt| {
-            let ptr = virt.as_ptr().as_mut_ptr();
-            unsafe { virt_ptr.out().write(ptr) }.unwrap();
-            crate::sched::SCHED.with_current(|cur| unsafe {
-                cur.tid().handles().insert_unchecked(virt, false, false)
-            })
-        })
-    }
-
-    #[syscall]
-    fn virt_prot(hdl: Handle, ptr: *mut u8, size: usize, flags: u32) -> Result {
-        hdl.check_null()?;
-
-        if size.contains_bit(paging::PAGE_MASK) {
-            return Err(Error::EINVAL);
-        }
-        let flags = space::Flags::from_bits(flags).ok_or(Error::EINVAL)?;
-        let ptr = NonNull::new(ptr).ok_or(Error::EINVAL)?;
-        let ptr = NonNull::slice_from_raw_parts(ptr, size);
-
-        crate::sched::SCHED.with_current(|cur| unsafe {
-            cur.tid()
-                .handles()
-                .get_unchecked::<space::Virt>(hdl)
-                .and_then(|virt| {
-                    virt.deref_unchecked()
-                        .modify(ptr, flags)
-                        .map_err(Into::into)
-                })
-        })
-    }
-
-    #[syscall]
     fn mem_alloc(size: usize, align: usize, flags: u32) -> Result<*mut u8> {
         let (layout, flags) = check_options(size, align, flags)?;
-        let ty = space::AllocType::Layout(layout);
-        let ret = space::with_current(|cur| cur.allocate(ty, None, flags));
-        ret.map_err(Into::into).map(|virt| virt.leak().as_mut_ptr())
+        let ret = space::with_current(|cur| cur.allocate(layout, flags));
+        ret.map_err(Into::into)
+            .map(|addr| addr.as_non_null_ptr().as_ptr())
     }
 
     #[syscall]
     fn mem_dealloc(ptr: *mut u8) -> Result {
         let ret = unsafe {
             let ptr = NonNull::new(ptr).ok_or(Error::EINVAL)?;
-            space::with_current(|cur| cur.deallocate(ptr))
+            space::with_current(|cur| cur.unmap(ptr))
         };
         ret.map_err(Into::into).map(|_| {})
     }

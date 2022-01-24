@@ -72,8 +72,7 @@ fn create_inner(
 
     let init_chan = unsafe { ti.handles().insert_ref(init_chan) }.unwrap();
 
-    let (stack_virt, stack) = space.init_stack(stack_size)?;
-    unsafe { ti.handles().insert_unchecked(stack_virt, false, false) }?;
+    let stack = space.init_stack(stack_size)?;
 
     let tid = tid::allocate(ti).map_err(|_| solvent::Error::EBUSY)?;
     let entry = create_entry(entry, stack, [init_chan.raw() as u64, arg]);
