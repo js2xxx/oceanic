@@ -39,5 +39,6 @@ pub fn test() {
     {
         task::test::test();
         ipc::test();
+        mem::test();
     }
 }

@@ -69,6 +69,13 @@ impl HandleMap {
             .and_then(|ptr| unsafe { ptr.as_ref().downcast_ref::<T>() })
     }
 
+    #[inline]
+    pub fn clone_ref(&self, handle: solvent::Handle) -> Result<solvent::Handle> {
+        let old_ptr = self.decode(handle)?;
+        let new = unsafe { old_ptr.as_ref() }.try_clone()?;
+        unsafe { self.insert_ref(new) }
+    }
+
     pub fn encode(&self, value: Ptr) -> Result<solvent::Handle> {
         let index =
             node::encode(value).and_then(|index| u32::try_from(index).map_err(Into::into))?;
@@ -182,8 +189,9 @@ mod syscall {
     use crate::sched::SCHED;
 
     #[syscall]
-    fn obj_clone(_hdl: Handle) -> Result<Handle> {
-        todo!()
+    fn obj_clone(hdl: Handle) -> Result<Handle> {
+        hdl.check_null()?;
+        SCHED.with_current(|cur| cur.tid().handles().clone_ref(hdl))
     }
 
     #[syscall]
@@ -191,6 +199,6 @@ mod syscall {
         hdl.check_null()?;
         SCHED
             .with_current(|cur| unsafe { cur.tid().handles().remove_ref(hdl) })
-            .map(|_| ())
+            .map(|_| {})
     }
 }

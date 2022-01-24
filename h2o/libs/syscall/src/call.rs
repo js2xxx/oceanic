@@ -33,11 +33,14 @@ syscall_stub!(7 =>
 );
 syscall_stub!(8 => pub(crate) fn task_sleep(ms: u32));
 
-syscall_stub!(11 => pub(crate) fn mem_alloc(size: usize, align: usize, flags: u32) -> *mut u8);
-syscall_stub!(12 => pub(crate) fn mem_dealloc(ptr: *mut u8));
+syscall_stub!(9 => pub(crate) fn phys_alloc(size: usize, align: usize, flags: u32) -> Handle);
+syscall_stub!(10 => pub(crate) fn mem_map(mi: *const crate::mem::MapInfo) -> *mut u8);
+
+syscall_stub!(12 => pub(crate) fn mem_alloc(size: usize, align: usize, flags: u32) -> *mut u8);
+syscall_stub!(13 => pub(crate) fn mem_unmap(ptr: *mut u8));
 
 // #[cfg(debug_assertions)]
-syscall_stub!(13 => pub(crate) fn wo_new() -> Handle);
+syscall_stub!(14 => pub(crate) fn wo_new() -> Handle);
 // #[cfg(debug_assertions)]
 syscall_stub!(15 => pub(crate) fn wo_notify(hdl: Handle, n: usize) -> usize);
 

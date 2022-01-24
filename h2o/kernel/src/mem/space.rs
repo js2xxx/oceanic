@@ -84,7 +84,7 @@ pub struct Space {
     arch: ArchSpace,
 
     /// The general allocator.
-    range: Range<usize>,
+    pub(super) range: Range<usize>,
     map: Mutex<RangeMap<usize, Arc<Phys>>>,
 }
 
@@ -319,13 +319,16 @@ pub unsafe fn current<'a>() -> &'a Arc<Space> {
 }
 
 /// Get the reference of the per-CPU current space.
+#[inline]
 pub fn with_current<'a, F, R>(func: F) -> R
 where
     F: FnOnce(&'a Arc<Space>) -> R,
     R: 'a,
 {
-    let cur = unsafe { CURRENT.as_ref().expect("No current space available") };
-    func(cur)
+    PREEMPT.scope(|| {
+        let cur = unsafe { CURRENT.as_ref().expect("No current space available") };
+        func(cur)
+    })
 }
 
 pub unsafe fn with<F, R>(space: &Arc<Space>, func: F) -> R
