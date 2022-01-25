@@ -67,7 +67,7 @@ pub extern "C" fn kmain() {
     l::info!("Starting the kernel");
 
     mem::init();
-    sched::task::hdl::init();
+    sched::task::init_early();
 
     unsafe { cpu::arch::init() };
 
@@ -81,6 +81,7 @@ pub extern "C" fn kmain() {
 
 pub fn kmain_ap() {
     unsafe { cpu::set_id(false) };
+    cpu::arch::seg::test_pls();
     l::trace!("Starting the kernel");
 
     unsafe { mem::space::init() };

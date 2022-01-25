@@ -179,7 +179,8 @@ impl Default for HandleMap {
     }
 }
 
-pub fn init() {
+#[inline]
+pub(super) fn init() {
     Lazy::force(&node::HR_ARENA);
 }
 

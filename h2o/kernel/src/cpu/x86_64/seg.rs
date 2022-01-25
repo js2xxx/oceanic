@@ -126,6 +126,8 @@ pub unsafe fn reload_pls() {
 
         msr::write(msr::FS_BASE, ptr as u64);
     }
+
+    test_pls();
 }
 
 /// Allocate and initialize a new PLS for application CPU.
@@ -157,6 +159,25 @@ pub fn alloc_pls() -> solvent::Result<NonNull<u8>> {
         self_ptr.cast::<*mut u8>().write(self_ptr);
 
         Ok(NonNull::new_unchecked(self_ptr))
+    }
+}
+
+#[inline]
+pub fn test_pls() {
+    #[cfg(debug_assertions)]
+    {
+        #[thread_local]
+        static mut A: usize = 0;
+        #[thread_local]
+        static mut B: usize = 5;
+        unsafe {
+            debug_assert_eq!(A, 0);
+            A += 1;
+            debug_assert_eq!(A, 1);
+            debug_assert_eq!(B, 5);
+            B -= 1;
+            debug_assert_eq!(B, 4);
+        }
     }
 }
 

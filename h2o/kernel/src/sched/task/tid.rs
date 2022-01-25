@@ -89,3 +89,9 @@ pub fn deallocate(tid: &Tid) -> bool {
         true
     })
 }
+
+#[inline]
+pub fn init() {
+    Lazy::force(&TI_MAP);
+    Lazy::force(&TID_ALLOC);
+}
