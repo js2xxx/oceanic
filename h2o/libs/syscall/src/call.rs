@@ -34,9 +34,9 @@ syscall_stub!(7 =>
 syscall_stub!(8 => pub(crate) fn task_sleep(ms: u32));
 
 syscall_stub!(9 => pub(crate) fn phys_alloc(size: usize, align: usize, flags: u32) -> Handle);
-syscall_stub!(10 => pub(crate) fn mem_map(mi: *const crate::mem::MapInfo) -> *mut u8);
-syscall_stub!(11 => pub(crate) fn mem_reprot(ptr: *mut u8, len: usize, flags: u32));
-syscall_stub!(13 => pub(crate) fn mem_unmap(ptr: *mut u8));
+syscall_stub!(10 => pub(crate) fn mem_map(space: Handle, mi: *const crate::mem::MapInfo) -> *mut u8);
+syscall_stub!(11 => pub(crate) fn mem_reprot(space: Handle, ptr: *mut u8, len: usize, flags: u32));
+syscall_stub!(13 => pub(crate) fn mem_unmap(space: Handle, ptr: *mut u8));
 
 // #[cfg(debug_assertions)]
 syscall_stub!(14 => pub(crate) fn wo_new() -> Handle);

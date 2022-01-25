@@ -34,7 +34,7 @@ pub fn mem_alloc(layout: Layout, flags: Flags) -> crate::Result<NonNull<[u8]>> {
         len: size,
         flags,
     };
-    let ptr = crate::call::mem_map(&mi)?;
+    let ptr = crate::call::mem_map(crate::Handle::NULL, &mi)?;
     let _ = crate::call::obj_drop(phys);
     unsafe {
         Ok(NonNull::slice_from_raw_parts(
@@ -48,7 +48,7 @@ pub fn mem_alloc(layout: Layout, flags: Flags) -> crate::Result<NonNull<[u8]>> {
 ///
 /// The caller must ensure that `ptr` is previously allocated by [`mem_alloc`].
 pub unsafe fn mem_dealloc(ptr: NonNull<u8>) -> crate::Result<()> {
-    crate::call::mem_unmap(ptr.as_ptr())
+    crate::call::mem_unmap(crate::Handle::NULL, ptr.as_ptr())
 }
 
 }}
@@ -66,8 +66,9 @@ pub fn test() {
         len: 4096,
         flags,
     };
-    let ptr = crate::call::mem_map(&mi).expect("Failed to map the physical memory");
+    let ptr =
+        crate::call::mem_map(crate::Handle::NULL, &mi).expect("Failed to map the physical memory");
     unsafe { ptr.cast::<u32>().write(12345) };
-    crate::call::mem_unmap(ptr).expect("Failed to unmap the memory");
+    crate::call::mem_unmap(crate::Handle::NULL, ptr).expect("Failed to unmap the memory");
     crate::call::obj_drop(phys).expect("Failed to deallocate the physical object");
 }

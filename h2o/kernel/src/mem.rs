@@ -1,4 +1,5 @@
 mod arena;
+mod syscall;
 pub mod heap;
 pub mod space;
 
@@ -37,80 +38,4 @@ pub fn init() {
     );
     heap::test_global();
     unsafe { space::init() };
-}
-
-mod syscall {
-    use alloc::sync::Arc;
-    use core::{alloc::Layout, ptr::NonNull};
-
-    use bitop_ex::BitOpEx;
-    use solvent::{mem::MapInfo, *};
-
-    use super::space;
-    use crate::{
-        sched::{PREEMPT, SCHED},
-        syscall::{In, UserPtr},
-    };
-
-    fn check_layout(size: usize, align: usize) -> Result<Layout> {
-        if size.contains_bit(paging::PAGE_MASK) || !align.is_power_of_two() {
-            return Err(Error::EINVAL);
-        }
-        Layout::from_size_align(size, align).map_err(Error::from)
-    }
-
-    fn check_flags(flags: u32) -> Result<space::Flags> {
-        let flags = space::Flags::from_bits(flags).ok_or(Error::EINVAL)?;
-        if !flags.contains(space::Flags::USER_ACCESS) {
-            return Err(Error::EPERM);
-        }
-        Ok(flags)
-    }
-
-    #[syscall]
-    fn phys_alloc(size: usize, align: usize, flags: u32) -> Result<Handle> {
-        let layout = check_layout(size, align)?;
-        let flags = check_flags(flags)?;
-        let phys = PREEMPT.scope(|| space::Phys::allocate(layout, flags))?;
-        SCHED.with_current(|cur| cur.tid().handles().insert(phys))
-    }
-
-    #[syscall]
-    fn mem_map(mi: UserPtr<In, MapInfo>) -> Result<*mut u8> {
-        let mi = unsafe { mi.read() }?;
-        let flags = check_flags(mi.flags.bits())?;
-        let phys = SCHED.with_current(|cur| {
-            cur.tid()
-                .handles()
-                .get::<Arc<space::Phys>>(mi.phys)
-                .map(|obj| Arc::clone(obj))
-        })?;
-        space::with_current(|cur| {
-            let offset = if mi.map_addr {
-                Some(mi.addr.checked_sub(cur.range.start).ok_or(Error::ERANGE)?)
-            } else {
-                None
-            };
-            cur.map(offset, phys, mi.phys_offset, mi.len, flags)
-        })
-        .map(|addr| *addr)
-    }
-
-    #[syscall]
-    fn mem_reprot(ptr: *mut u8, len: usize, flags: u32) -> Result {
-        let flags = check_flags(flags)?;
-        unsafe {
-            let ptr = NonNull::new(ptr).ok_or(Error::EINVAL)?;
-            let ptr = NonNull::slice_from_raw_parts(ptr, len);
-            space::with_current(|cur| cur.reprotect(ptr, flags))
-        }
-    }
-
-    #[syscall]
-    fn mem_unmap(ptr: *mut u8) -> Result {
-        unsafe {
-            let ptr = NonNull::new(ptr).ok_or(Error::EINVAL)?;
-            space::with_current(|cur| cur.unmap(ptr))
-        }
-    }
 }
