@@ -120,15 +120,18 @@ pub fn from_elf(
     let (entry, stack_size) = load_elf(&space, &file, image)?;
     let stack = space.init_stack(stack_size)?;
 
-    super::create_inner(
+    let starter = super::Starter {
+        entry,
+        stack,
+        arg: 0,
+    };
+    super::exec_inner(
         tid,
         Some(name),
         Some(Type::User),
         Some(affinity),
         space,
-        entry,
-        stack,
         init_chan,
-        0,
+        &starter,
     )
 }

@@ -183,11 +183,7 @@ fn ctl(task: Handle) {
 
 pub fn test() -> (*mut u8, *mut u8, Handle) {
     // Test the defence of invalid user pointer access.
-    let ret = task_new(
-        0x100000000 as *const CreateInfo,
-        CreateFlags::empty(),
-        null_mut(),
-    );
+    let ret = task_exec(0x100000000 as *const ExecInfo);
     assert_eq!(ret, Err(crate::Error::EPERM));
 
     let flags = Flags::READABLE | Flags::WRITABLE | Flags::USER_ACCESS;
@@ -204,12 +200,12 @@ pub fn test() -> (*mut u8, *mut u8, Handle) {
     let stack_base = mem_map(Handle::NULL, &mi).expect("Failed to map memory");
     let stack_ptr = unsafe { stack_base.add(DEFAULT_STACK_SIZE - 4096) };
 
-    let creator = |arg: u32, cf: Option<CreateFlags>, extra: *mut crate::Handle| {
+    let creator = |arg: u32| {
         let mut c1 = Handle::NULL;
         let mut c2 = Handle::NULL;
         chan_new(&mut c1, &mut c2).expect("Failed to create channel");
         obj_drop(c1).expect("Failed to drop channel");
-        let ci = CreateInfo {
+        let ci = ExecInfo {
             name: null_mut(),
             name_len: 0,
             space: Handle::NULL,
@@ -218,19 +214,37 @@ pub fn test() -> (*mut u8, *mut u8, Handle) {
             init_chan: c2,
             arg: arg.into(),
         };
-        task_new(&ci, cf.unwrap_or(CreateFlags::empty()), extra)
+        task_exec(&ci)
     };
 
     join(
-        creator(100, None, null_mut()).expect("Failed to create task"),
-        creator(1, None, null_mut()).expect("Failed to create task"),
+        creator(100).expect("Failed to create task"),
+        creator(1).expect("Failed to create task"),
     );
 
-    ctl(creator(0, None, null_mut()).expect("Failed to create task"));
+    ctl(creator(0).expect("Failed to create task"));
 
     let mut st = Handle::NULL;
-    let task =
-        creator(1, Some(CreateFlags::SUSPEND_ON_START), &mut st).expect("Failed to create task");
+    let task = {
+        let t = task_new(null_mut(), 0, Handle::NULL, &mut st).expect("Failed to create task");
+        let frame = Gpr {
+            rip: func as usize as u64,
+            rsp: stack_ptr as u64,
+            rflags: 1 << 9,
+            rdi: 0,
+            rsi: 1,
+            ..Default::default()
+        };
+        task_debug(
+            st,
+            TASK_DBG_WRITE_REG,
+            TASK_DBGADDR_GPR,
+            (&frame as *const Gpr) as *mut u8,
+            core::mem::size_of::<Gpr>(),
+        )
+        .expect("Failed to write task's data");
+        t
+    };
     debug_excep(task, st);
 
     (stack_ptr, stack_base, stack_phys)

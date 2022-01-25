@@ -62,7 +62,7 @@ pub struct Kstack {
 unsafe impl Send for Kstack {}
 
 impl Kstack {
-    pub fn new(entry: Entry, ty: super::Type) -> Self {
+    pub fn new(entry: Option<Entry>, ty: super::Type) -> Self {
         let ptr = space::KRL
             .allocate(
                 Layout::new::<KstackData>(),
@@ -80,7 +80,10 @@ impl Kstack {
         let kframe_ptr = unsafe {
             let this = kstack.as_mut();
             let frame = this.task_frame_mut();
-            frame.set_entry(&entry, ty);
+            match entry {
+                Some(entry) => frame.init_entry(&entry, ty),
+                None => frame.init_zeroed(ty),
+            }
             let kframe = (frame as *mut arch::Frame).cast::<arch::Kframe>().sub(1);
             kframe.write(arch::Kframe::new(
                 (frame as *mut arch::Frame).cast(),

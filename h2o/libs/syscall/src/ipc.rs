@@ -116,7 +116,7 @@ pub fn test(stack: (*mut u8, *mut u8, Handle)) {
         }
 
         let other = {
-            let ci = crate::task::CreateInfo {
+            let ci = crate::task::ExecInfo {
                 name: ptr::null_mut(),
                 name_len: 0,
                 space: Handle::NULL,
@@ -126,8 +126,7 @@ pub fn test(stack: (*mut u8, *mut u8, Handle)) {
                 arg: 0,
             };
 
-            crate::call::task_new(&ci, crate::task::CreateFlags::empty(), ptr::null_mut())
-                .expect("Failed to create task other")
+            crate::call::task_exec(&ci).expect("Failed to create task other")
         };
 
         let mut buf = [1u8, 2, 3, 4, 5, 6, 7];

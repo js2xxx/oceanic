@@ -40,7 +40,7 @@ pub(super) static IDLE: CpuLocalLazy<Tid> = CpuLocalLazy::new(|| {
             archop::msr::read(archop::msr::FS_BASE)
         }],
     );
-    let kstack = ctx::Kstack::new(entry, Type::Kernel);
+    let kstack = ctx::Kstack::new(Some(entry), Type::Kernel);
 
     let tid = tid::allocate(ti).expect("Tid exhausted");
 
@@ -66,15 +66,13 @@ fn idle(cpu: usize, fs_base: u64) -> ! {
         .init_stack(DEFAULT_STACK_SIZE)
         .expect("Failed to initialize stack");
 
-    let (ctx_dropper, ..) = task::create(
-        Some(String::from("CTXD")),
-        space,
-        LAddr::new(ctx_dropper as *mut u8),
+    let starter = super::Starter {
+        entry: LAddr::new(ctx_dropper as *mut u8),
         stack,
-        ctx_chan,
-        unsafe { archop::msr::read(archop::msr::FS_BASE) },
-    )
-    .expect("Failed to create context dropper");
+        arg: unsafe { archop::msr::read(archop::msr::FS_BASE) },
+    };
+    let (ctx_dropper, ..) = task::exec(Some(String::from("CTXD")), space, ctx_chan, &starter)
+        .expect("Failed to create context dropper");
     SCHED.unblock(ctx_dropper);
 
     if cpu == 0 {

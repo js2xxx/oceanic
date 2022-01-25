@@ -27,7 +27,7 @@ pub const TASK_DBGADDR_FPU: usize = 0x2000;
 
 #[derive(Debug, Copy, Clone)]
 #[repr(C)]
-pub struct CreateInfo {
+pub struct ExecInfo {
     pub name: *mut u8,
     pub name_len: usize,
     pub space: Handle,
@@ -35,25 +35,6 @@ pub struct CreateInfo {
     pub stack: *mut u8,
     pub init_chan: Handle,
     pub arg: u64,
-}
-
-bitflags::bitflags! {
-    #[repr(C)]
-    pub struct CreateFlags: u32 {
-        const SUSPEND_ON_START = 0b0000_0001;
-    }
-}
-
-impl crate::SerdeReg for CreateFlags {
-    #[inline]
-    fn encode(self) -> usize {
-        self.bits.encode()
-    }
-
-    #[inline]
-    fn decode(val: usize) -> Self {
-        Self::from_bits_truncate(u32::decode(val))
-    }
 }
 
 #[cfg(feature = "call")]

@@ -81,17 +81,23 @@ pub struct Frame {
 }
 
 impl Frame {
-    pub fn set_entry(&mut self, entry: &Entry, ty: task::Type) {
+    #[inline]
+    pub fn init_zeroed(&mut self, ty: task::Type) {
         let (cs, ss) = match ty {
             task::Type::User => (USR_CODE_X64, USR_DATA_X64),
             task::Type::Kernel => (KRL_CODE_X64, KRL_DATA_X64),
         };
 
+        self.cs = SegSelector::into_val(cs) as u64;
+        self.ss = SegSelector::into_val(ss) as u64;
+    }
+
+    pub fn init_entry(&mut self, entry: &Entry, ty: task::Type) {
+        self.init_zeroed(ty);
+
         self.rip = entry.entry.val() as u64;
         self.rsp = (entry.stack.val() - size_of::<usize>()) as u64;
         self.rflags = archop::reg::rflags::IF;
-        self.cs = SegSelector::into_val(cs) as u64;
-        self.ss = SegSelector::into_val(ss) as u64;
 
         if matches!(ty, task::Type::Kernel) {
             // TODO: Check for permissions.

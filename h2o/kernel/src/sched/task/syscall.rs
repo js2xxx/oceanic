@@ -62,22 +62,19 @@ fn task_sleep(ms: u32) -> Result {
 }
 
 #[syscall]
-fn task_new(
-    ci: UserPtr<In, task::CreateInfo>,
-    cf: task::CreateFlags,
-    extra: UserPtr<Out, Handle>,
-) -> Result<Handle> {
+fn task_exec(ci: UserPtr<In, task::ExecInfo>) -> Result<Handle> {
     let ci = unsafe { ci.read()? };
-    if cf.contains(task::CreateFlags::SUSPEND_ON_START) {
-        extra.check()?;
-    }
     ci.init_chan.check_null()?;
 
     let name = {
         let ptr = UserPtr::<In, _>::new(ci.name);
         if !ptr.as_ptr().is_null() {
-            let mut buf = Vec::<u8>::with_capacity(ci.name_len);
-            unsafe { ptr.read_slice(buf.as_mut_ptr(), buf.len()) }?;
+            let name_len = ci.name_len;
+            let mut buf = Vec::<u8>::with_capacity(name_len);
+            unsafe {
+                ptr.read_slice(buf.as_mut_ptr(), name_len)?;
+                buf.set_len(name_len);
+            }
             Some(String::from_utf8(buf).map_err(|_| Error::EINVAL)?)
         } else {
             None
@@ -103,30 +100,66 @@ fn task_new(
     UserPtr::<In, _>::new(ci.entry).check()?;
     UserPtr::<In, _>::new(ci.stack).check()?;
 
-    let (task, hdl) = super::create(
-        name,
-        space,
-        LAddr::new(ci.entry),
-        LAddr::new(ci.stack),
-        init_chan,
-        ci.arg,
-    )?;
+    let starter = super::Starter {
+        entry: LAddr::new(ci.entry),
+        stack: LAddr::new(ci.stack),
+        arg: ci.arg,
+    };
+    let (task, hdl) = super::exec(name, space, init_chan, &starter)?;
 
-    if cf.contains(task::CreateFlags::SUSPEND_ON_START) {
-        let task = super::Ready::block(
-            super::IntoReady::into_ready(task, unsafe { crate::cpu::id() }, MIN_TIME_GRAN),
-            "task_ctl_suspend",
-        );
-        let tid = task.tid().clone();
-        let st = SuspendToken {
-            slot: Arc::new(Mutex::new(Some(task))),
-            tid,
-        };
-        let st = SCHED.with_current(|cur| cur.tid.handles().insert(st))?;
-        unsafe { extra.write(st) }?;
+    SCHED.unblock(task);
+
+    Ok(hdl)
+}
+
+#[syscall]
+fn task_new(
+    name: *mut u8,
+    name_len: usize,
+    space: Handle,
+    st: UserPtr<Out, Handle>,
+) -> Result<Handle> {
+    let name = {
+        let ptr = UserPtr::<In, _>::new(name);
+        if !ptr.as_ptr().is_null() {
+            let mut buf = Vec::<u8>::with_capacity(name_len);
+            unsafe {
+                ptr.read_slice(buf.as_mut_ptr(), name_len)?;
+                buf.set_len(name_len);
+            }
+            Some(String::from_utf8(buf).map_err(|_| Error::EINVAL)?)
+        } else {
+            None
+        }
+    };
+
+    let new_space = if space == Handle::NULL {
+        space::with_current(Arc::clone)
     } else {
-        SCHED.unblock(task);
-    }
+        SCHED.with_current(|cur| {
+            cur.tid()
+                .handles()
+                .remove::<Arc<space::Space>>(space)?
+                .downcast_ref::<Arc<space::Space>>()
+                .map(|space| Arc::clone(space))
+        })?
+    };
+
+    let (task, hdl) = super::create(name, Arc::clone(&new_space))?;
+
+    let task = super::Ready::block(
+        super::IntoReady::into_ready(task, unsafe { crate::cpu::id() }, MIN_TIME_GRAN),
+        "task_ctl_suspend",
+    );
+    let tid = task.tid().clone();
+    let st_data = SuspendToken {
+        slot: Arc::new(Mutex::new(Some(task))),
+        tid,
+    };
+    SCHED.with_current(|cur| {
+        let st_h = cur.tid().handles().insert(st_data)?;
+        unsafe { st.write(st_h) }
+    })?;
 
     Ok(hdl)
 }

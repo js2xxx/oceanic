@@ -1,7 +1,7 @@
 mod arena;
-mod syscall;
 pub mod heap;
 pub mod space;
+mod syscall;
 
 use alloc::alloc::Global;
 use core::{alloc::Allocator, ptr::NonNull};
