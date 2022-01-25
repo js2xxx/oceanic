@@ -132,7 +132,12 @@ fn task_fn(
 fn task_join(hdl: Handle) -> Result<usize> {
     hdl.check_null()?;
 
-    let child = SCHED.with_current(|cur| cur.tid.drop_child(hdl))?;
+    let child = SCHED.with_current(|cur| {
+        cur.tid
+            .handles()
+            .remove::<Tid>(hdl)
+            .and_then(|w| w.downcast_ref::<Tid>().map(|w| Tid::clone(w)))
+    })?;
     Ok(child.ret_cell().take(Duration::MAX, "task_join").unwrap())
 }
 
@@ -173,7 +178,6 @@ fn task_ctl(hdl: Handle, op: u32, data: UserPtr<InOut, Handle>) -> Result {
 
             Ok(())
         }
-        task::TASK_CTL_DETACH => cur_tid.drop_child(hdl).map(|_| ()),
         _ => Err(Error::EINVAL),
     }
 }

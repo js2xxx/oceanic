@@ -15,7 +15,6 @@ pub const TASK_CFLAGS_SUSPEND: u32 = 0b0000_0001;
 
 pub const TASK_CTL_KILL: u32 = 1;
 pub const TASK_CTL_SUSPEND: u32 = 2;
-pub const TASK_CTL_DETACH: u32 = 3;
 
 pub const TASK_DBG_READ_REG: u32 = 1;
 pub const TASK_DBG_WRITE_REG: u32 = 2;

@@ -129,8 +129,7 @@ pub fn test() {
             crate::call::task_fn(&ci, crate::task::CreateFlags::empty(), ptr::null_mut())
                 .expect("Failed to create task other")
         };
-        crate::call::task_ctl(other, crate::task::TASK_CTL_DETACH, ptr::null_mut())
-            .expect("Failed to detach the task");
+        crate::call::obj_drop(other).expect("Failed to detach the task");
 
         let mut buf = [1u8, 2, 3, 4, 5, 6, 7];
         let mut hdl = [wo];

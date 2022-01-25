@@ -23,6 +23,7 @@ impl Phys {
     ///
     /// Returns error if the heap memory is exhausted.
     pub fn allocate(layout: Layout, flags: Flags) -> solvent::Result<Arc<Phys>> {
+        let layout = layout.align_to(paging::PAGE_LAYOUT.align())?.pad_to_align();
         let mem = if flags.contains(Flags::ZEROED) {
             Global.allocate_zeroed(layout)
         } else {

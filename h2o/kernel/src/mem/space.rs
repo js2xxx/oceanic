@@ -109,7 +109,7 @@ impl Space {
         self.ty
     }
 
-    /// Allocate an address range in the space for mapping.
+    /// Shorthand for `Phys::allocate` + `Space::map`.
     pub fn allocate(&self, layout: Layout, flags: Flags) -> solvent::Result<NonNull<[u8]>> {
         self.canary.assert();
 
