@@ -36,7 +36,7 @@ pub fn dispatch_exception(frame: &mut Frame, vec: ExVec) -> bool {
         })
     };
 
-    let mut excep = Packet::new(hdl::List::default(), &data);
+    let mut excep = Packet::new(0, hdl::List::default(), &data);
     if excep_chan.send(&mut excep).is_err() {
         PREEMPT.scope(|| *slot.lock() = Some(excep_chan));
         return false;

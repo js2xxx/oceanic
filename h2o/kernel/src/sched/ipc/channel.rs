@@ -1,23 +1,35 @@
-use alloc::sync::{Arc, Weak};
+use alloc::{
+    collections::BTreeMap,
+    sync::{Arc, Weak},
+};
 use core::{mem, time::Duration};
 
 use bytes::Bytes;
 use spin::{Mutex, MutexGuard};
 
-use crate::sched::{task::hdl, wait::WaitQueue, SCHED};
+use crate::sched::{
+    task::hdl,
+    wait::{WaitCell, WaitQueue},
+    PREEMPT, SCHED,
+};
 
 const MAX_QUEUE_SIZE: usize = 2048;
 
 #[derive(Debug, Default)]
 pub struct Packet {
+    id: usize,
     objects: hdl::List,
     buffer: Bytes,
 }
 
 impl Packet {
-    pub fn new(objects: hdl::List, data: &[u8]) -> Self {
+    pub fn new(id: usize, objects: hdl::List, data: &[u8]) -> Self {
         let buffer = Bytes::copy_from_slice(data);
-        Packet { objects, buffer }
+        Packet {
+            id,
+            objects,
+            buffer,
+        }
     }
 
     #[inline]
@@ -37,10 +49,26 @@ impl Packet {
 }
 
 #[derive(Debug)]
+struct ChannelSide {
+    msgs: WaitQueue<Packet>,
+    callers: Mutex<BTreeMap<usize, Arc<WaitCell<Packet>>>>,
+}
+
+impl Default for ChannelSide {
+    #[inline]
+    fn default() -> Self {
+        ChannelSide {
+            msgs: WaitQueue::new(),
+            callers: Mutex::new(BTreeMap::new()),
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct Channel {
     peer_id: u64,
-    me: Arc<WaitQueue<Packet>>,
-    peer: Weak<WaitQueue<Packet>>,
+    me: Arc<ChannelSide>,
+    peer: Weak<ChannelSide>,
     head: Mutex<Option<Packet>>,
 }
 
@@ -48,8 +76,8 @@ impl Channel {
     pub fn new() -> (Self, Self) {
         // TODO: Find a better way to acquire an unique id.
         let peer_id = unsafe { archop::msr::rdtsc() };
-        let q1 = Arc::new(WaitQueue::new());
-        let q2 = Arc::new(WaitQueue::new());
+        let q1 = Arc::new(ChannelSide::default());
+        let q2 = Arc::new(ChannelSide::default());
         let c1 = Channel {
             peer_id,
             me: Arc::clone(&q1),
@@ -81,11 +109,23 @@ impl Channel {
         match self.peer.upgrade() {
             None => Err(solvent::Error::EPIPE),
             Some(peer) => {
-                if peer.len() >= MAX_QUEUE_SIZE {
-                    Err(solvent::Error::ENOSPC)
-                } else {
-                    peer.push(mem::take(msg));
-                    Ok(())
+                let called = PREEMPT.scope(|| {
+                    let mut callers = peer.callers.lock();
+                    callers.remove(&msg.id)
+                });
+                match called {
+                    Some(caller) => {
+                        caller.replace(mem::take(msg));
+                        Ok(())
+                    }
+                    None => {
+                        if peer.msgs.len() >= MAX_QUEUE_SIZE {
+                            Err(solvent::Error::ENOSPC)
+                        } else {
+                            peer.msgs.push(mem::take(msg));
+                            Ok(())
+                        }
+                    }
                 }
             }
         }
@@ -99,6 +139,7 @@ impl Channel {
         if head.is_none() {
             *head = Some(
                 self.me
+                    .msgs
                     .pop(timeout, "Channel::receive")
                     .ok_or(solvent::Error::EPIPE)?,
             );
@@ -112,7 +153,7 @@ impl Channel {
     pub fn try_receive(&self) -> solvent::Result<MutexGuard<Option<Packet>>> {
         let mut head = self.head.lock();
         if head.is_none() {
-            *head = Some(self.me.try_pop().ok_or(solvent::Error::ENOENT)?);
+            *head = Some(self.me.msgs.try_pop().ok_or(solvent::Error::ENOENT)?);
         }
         Ok(head)
     }
@@ -133,9 +174,9 @@ mod syscall {
         SCHED.with_current(|cur| {
             let (c1, c2) = Channel::new();
             let map = cur.tid().handles();
-            let h1 = map.insert(c1)?;
-            let h2 = map.insert(c2)?;
             unsafe {
+                let h1 = map.insert_unchecked(c1, true, false)?;
+                let h2 = map.insert_unchecked(c2, true, false)?;
                 p1.write(h1)?;
                 p2.write(h2)
             }
@@ -160,7 +201,7 @@ mod syscall {
             let map = cur.tid().handles();
             let channel = map.get::<Channel>(hdl)?;
             let objects = unsafe { map.send(handles, channel) }?;
-            let mut packet = Packet::new(objects, buffer);
+            let mut packet = Packet::new(packet.id, objects, buffer);
             channel.send(&mut packet).map_err(Into::into)
         })
     }
@@ -175,8 +216,8 @@ mod syscall {
         };
 
         let mut user_packet = unsafe { packet_ptr.r#in().read()? };
-        UserPtr::<In, Handle>::new(user_packet.handles).check_slice(user_packet.handle_cap)?;
-        UserPtr::<In, u8>::new(user_packet.buffer).check_slice(user_packet.buffer_cap)?;
+        UserPtr::<Out, Handle>::new(user_packet.handles).check_slice(user_packet.handle_cap)?;
+        UserPtr::<Out, u8>::new(user_packet.buffer).check_slice(user_packet.buffer_cap)?;
 
         let user_handles =
             unsafe { slice::from_raw_parts_mut(user_packet.handles, user_packet.handle_cap) };
@@ -214,6 +255,7 @@ mod syscall {
                     }
                 }
 
+                user_packet.id = packet.as_ref().unwrap().id;
                 user_buffer[..data.len()].copy_from_slice(data);
                 packet.take()
             };
