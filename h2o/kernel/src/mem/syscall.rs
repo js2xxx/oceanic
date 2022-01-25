@@ -34,6 +34,14 @@ fn phys_alloc(size: usize, align: usize, flags: u32) -> Result<Handle> {
 }
 
 #[syscall]
+fn mem_new() -> Result<Handle> {
+    SCHED.with_current(|cur| {
+        let space = space::Space::new(cur.tid().ty());
+        cur.tid().handles().insert(space)
+    })
+}
+
+#[syscall]
 fn mem_map(space: Handle, mi: UserPtr<In, MapInfo>) -> Result<*mut u8> {
     let mi = unsafe { mi.read() }?;
     let flags = check_flags(mi.flags.bits())?;

@@ -57,9 +57,9 @@ fn create_inner(
     affinity: Option<CpuMask>,
     space: Arc<Space>,
     entry: LAddr,
+    stack: LAddr,
     init_chan: hdl::Ref<dyn Any>,
     arg: u64,
-    stack_size: usize,
 ) -> solvent::Result<(Init, Handle)> {
     let ty = Type::pass(ty, cur.ty())?;
     let ti = TaskInfo::builder()
@@ -71,8 +71,6 @@ fn create_inner(
         .unwrap();
 
     let init_chan = unsafe { ti.handles().insert_ref(init_chan) }.unwrap();
-
-    let stack = space.init_stack(stack_size)?;
 
     let tid = tid::allocate(ti).map_err(|_| solvent::Error::EBUSY)?;
     let entry = create_entry(entry, stack, [init_chan.raw() as u64, arg]);
@@ -87,19 +85,15 @@ fn create_inner(
     Ok((init, handle))
 }
 
-pub fn create_fn(
+#[inline]
+pub fn create(
     name: Option<String>,
-    ty: Option<Type>,
-    affinity: Option<CpuMask>,
-    func: LAddr,
+    space: Arc<Space>,
+    entry: LAddr,
+    stack: LAddr,
     init_chan: hdl::Ref<dyn Any>,
     arg: u64,
-    stack_size: usize,
 ) -> solvent::Result<(Init, Handle)> {
-    let (cur, space) =
-        super::SCHED.with_current(|cur| Ok((cur.tid.clone(), Arc::clone(&cur.space))))?;
-
-    create_inner(
-        cur, name, ty, affinity, space, func, init_chan, arg, stack_size,
-    )
+    let cur = super::SCHED.with_current(|cur| Ok(cur.tid.clone()))?;
+    create_inner(cur, name, None, None, space, entry, stack, init_chan, arg)
 }

@@ -5,7 +5,7 @@ use paging::LAddr;
 use solvent::*;
 use spin::Mutex;
 
-use super::{Blocked, RunningState, Signal, Tid, DEFAULT_STACK_SIZE};
+use super::{Blocked, RunningState, Signal, Tid};
 use crate::{
     cpu::time::Instant,
     mem::space,
@@ -62,7 +62,7 @@ fn task_sleep(ms: u32) -> Result {
 }
 
 #[syscall]
-fn task_fn(
+fn task_new(
     ci: UserPtr<In, task::CreateInfo>,
     cf: task::CreateFlags,
     extra: UserPtr<Out, Handle>,
@@ -84,30 +84,33 @@ fn task_fn(
         }
     };
 
-    let stack_size = if ci.stack_size == 0 {
-        DEFAULT_STACK_SIZE
-    } else {
-        ci.stack_size
-    };
-
-    let init_chan = SCHED.with_current(|cur| {
-        cur.tid()
+    let (init_chan, space) = SCHED.with_current(|cur| {
+        let init_chan = cur
+            .tid()
             .handles()
-            .remove::<crate::sched::ipc::Channel>(ci.init_chan)
+            .remove::<crate::sched::ipc::Channel>(ci.init_chan)?;
+        if ci.space == Handle::NULL {
+            Ok((init_chan, Arc::clone(cur.space())))
+        } else {
+            cur.tid()
+                .handles()
+                .remove::<Arc<space::Space>>(ci.space)?
+                .downcast_ref::<Arc<space::Space>>()
+                .map(|space| (init_chan, Arc::clone(space)))
+        }
     })?;
 
-    UserPtr::<In, _>::new(ci.func).check()?;
+    UserPtr::<In, _>::new(ci.entry).check()?;
+    UserPtr::<In, _>::new(ci.stack).check()?;
 
-    let (task, hdl) = super::create_fn(
+    let (task, hdl) = super::create(
         name,
-        None,
-        None,
-        LAddr::new(ci.func),
+        space,
+        LAddr::new(ci.entry),
+        LAddr::new(ci.stack),
         init_chan,
-        ci.arg as u64,
-        stack_size,
-    )
-    .map_err(Error::from)?;
+        ci.arg,
+    )?;
 
     if cf.contains(task::CreateFlags::SUSPEND_ON_START) {
         let task = super::Ready::block(

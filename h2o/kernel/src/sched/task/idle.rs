@@ -59,14 +59,20 @@ fn idle(cpu: usize, fs_base: u64) -> ! {
     let (_, ctx_chan) = Channel::new();
     let ctx_chan = unsafe { Ref::new(ctx_chan).coerce_unchecked() };
 
-    let (ctx_dropper, ..) = task::create_fn(
+    let space = SCHED
+        .with_current(|cur| Ok(Arc::clone(cur.space())))
+        .expect("Failed to clone current space");
+    let stack = space
+        .init_stack(DEFAULT_STACK_SIZE)
+        .expect("Failed to initialize stack");
+
+    let (ctx_dropper, ..) = task::create(
         Some(String::from("CTXD")),
-        Some(Type::Kernel),
-        None,
+        space,
         LAddr::new(ctx_dropper as *mut u8),
+        stack,
         ctx_chan,
         unsafe { archop::msr::read(archop::msr::FS_BASE) },
-        DEFAULT_STACK_SIZE,
     )
     .expect("Failed to create context dropper");
     SCHED.unblock(ctx_dropper);

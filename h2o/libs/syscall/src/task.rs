@@ -30,10 +30,11 @@ pub const TASK_DBGADDR_FPU: usize = 0x2000;
 pub struct CreateInfo {
     pub name: *mut u8,
     pub name_len: usize,
-    pub stack_size: usize,
+    pub space: Handle,
+    pub entry: *mut u8,
+    pub stack: *mut u8,
     pub init_chan: Handle,
-    pub func: *mut u8,
-    pub arg: *mut u8,
+    pub arg: u64,
 }
 
 bitflags::bitflags! {

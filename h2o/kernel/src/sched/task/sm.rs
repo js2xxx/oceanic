@@ -113,6 +113,11 @@ impl Context {
     }
 
     #[inline]
+    pub fn space(&self) -> &Arc<Space> {
+        &self.space
+    }
+
+    #[inline]
     pub fn kstack_mut(&mut self) -> &mut ctx::Kstack {
         &mut self.kstack
     }

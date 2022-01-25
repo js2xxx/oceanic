@@ -37,8 +37,8 @@ pub type SyscallWrapper = unsafe extern "C" fn(usize, usize, usize, usize, usize
 pub fn test() {
     #[cfg(debug_assertions)]
     {
-        task::test::test();
-        ipc::test();
+        let stack = task::test::test();
+        ipc::test(stack);
         mem::test();
     }
 }

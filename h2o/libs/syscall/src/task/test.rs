@@ -9,7 +9,7 @@ use super::{
     excep::Exception,
     *,
 };
-use crate::{call::*, task::excep::ExceptionResult};
+use crate::{call::*, mem::Flags, task::excep::ExceptionResult};
 
 const PF_ADDR: usize = 0x1598_0000_0000;
 
@@ -181,14 +181,28 @@ fn ctl(task: Handle) {
     kill(task);
 }
 
-pub fn test() {
+pub fn test() -> (*mut u8, *mut u8, Handle) {
     // Test the defence of invalid user pointer access.
-    let ret = task_fn(
+    let ret = task_new(
         0x100000000 as *const CreateInfo,
         CreateFlags::empty(),
         null_mut(),
     );
     assert_eq!(ret, Err(crate::Error::EPERM));
+
+    let flags = Flags::READABLE | Flags::WRITABLE | Flags::USER_ACCESS;
+    let stack_phys =
+        phys_alloc(DEFAULT_STACK_SIZE, 4096, flags.bits()).expect("Failed to allocate memory");
+    let mi = crate::mem::MapInfo {
+        addr: 0,
+        map_addr: false,
+        phys: stack_phys,
+        phys_offset: 0,
+        len: DEFAULT_STACK_SIZE,
+        flags,
+    };
+    let stack_base = mem_map(Handle::NULL, &mi).expect("Failed to map memory");
+    let stack_ptr = unsafe { stack_base.add(DEFAULT_STACK_SIZE - 4096) };
 
     let creator = |arg: u32, cf: Option<CreateFlags>, extra: *mut crate::Handle| {
         let mut c1 = Handle::NULL;
@@ -198,12 +212,13 @@ pub fn test() {
         let ci = CreateInfo {
             name: null_mut(),
             name_len: 0,
-            stack_size: crate::task::DEFAULT_STACK_SIZE,
+            space: Handle::NULL,
+            entry: func as *mut u8,
+            stack: stack_ptr,
             init_chan: c2,
-            func: func as *mut u8,
-            arg: arg as *mut u8,
+            arg: arg.into(),
         };
-        task_fn(&ci, cf.unwrap_or(CreateFlags::empty()), extra)
+        task_new(&ci, cf.unwrap_or(CreateFlags::empty()), extra)
     };
 
     join(
@@ -217,4 +232,6 @@ pub fn test() {
     let task =
         creator(1, Some(CreateFlags::SUSPEND_ON_START), &mut st).expect("Failed to create task");
     debug_excep(task, st);
+
+    (stack_ptr, stack_base, stack_phys)
 }

@@ -118,6 +118,7 @@ pub fn from_elf(
     let tid = crate::sched::SCHED.with_current(|cur| Ok(cur.tid.clone()))?;
     let space = Space::new(Type::User);
     let (entry, stack_size) = load_elf(&space, &file, image)?;
+    let stack = space.init_stack(stack_size)?;
 
     super::create_inner(
         tid,
@@ -126,8 +127,8 @@ pub fn from_elf(
         Some(affinity),
         space,
         entry,
+        stack,
         init_chan,
         0,
-        stack_size,
     )
 }
