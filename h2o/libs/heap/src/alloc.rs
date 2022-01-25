@@ -97,9 +97,9 @@ unsafe impl GlobalAlloc for Allocator {
             let mut pool = self.pool.lock();
 
             // The first allocation (assuming something available)
-            match pool.allocate(layout).map(|x| *x) {
+            match pool.allocate(layout) {
                 // Whoosh! Returning
-                Ok(x) => x,
+                Ok(x) => *x,
 
                 Err(e) => match e {
                     // Oops! The pool is full

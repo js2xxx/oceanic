@@ -11,7 +11,7 @@ pub enum Signal {
 impl PartialEq for Signal {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            (Self::Suspend(a), Self::Suspend(b)) => Arc::ptr_eq(&a, &b),
+            (Self::Suspend(a), Self::Suspend(b)) => Arc::ptr_eq(a, b),
             _ => core::mem::discriminant(self) == core::mem::discriminant(other),
         }
     }

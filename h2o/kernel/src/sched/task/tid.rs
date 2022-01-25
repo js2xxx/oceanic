@@ -1,11 +1,11 @@
 use alloc::sync::Arc;
-use core::{hash::BuildHasherDefault, ops::Deref};
+use core::{hash::BuildHasherDefault, num::NonZeroU32, ops::Deref};
 
 use collection_ex::{CHashMap, FnvHasher, IdAllocator};
 use solvent::Handle;
 use spin::Lazy;
 
-use super::{Child, TaskInfo};
+use super::TaskInfo;
 use crate::sched::PREEMPT;
 
 pub const NR_TASKS: usize = 65536;
@@ -16,25 +16,10 @@ static TID_ALLOC: Lazy<spin::Mutex<IdAllocator>> =
     Lazy::new(|| spin::Mutex::new(IdAllocator::new(0..=(NR_TASKS as u64 - 1))));
 
 #[derive(Debug, Clone)]
-pub struct Tid(u32, Arc<TaskInfo>);
-
-impl Tid {
-    #[inline]
-    pub fn raw(&self) -> u32 {
-        self.0
-    }
-
-    pub fn child(&self, hdl: Handle) -> Option<Child> {
-        super::PREEMPT.scope(|| {
-            self.handles()
-                .get::<Child>(hdl)
-                .map(|w| Child::clone(&w))
-        })
-    }
-
-    pub fn drop_child(&self, hdl: Handle) -> bool {
-        super::PREEMPT.scope(|| self.handles().drop_shared::<Child>(hdl))
-    }
+#[repr(C)]
+pub struct Tid {
+    raw: NonZeroU32,
+    ti: Arc<TaskInfo>,
 }
 
 impl Deref for Tid {
@@ -42,25 +27,45 @@ impl Deref for Tid {
 
     #[inline]
     fn deref(&self) -> &Self::Target {
-        &self.1
+        &self.ti
+    }
+}
+
+impl Tid {
+    #[inline]
+    pub fn raw(&self) -> u32 {
+        self.raw.get()
+    }
+
+    pub fn child(&self, hdl: Handle) -> solvent::Result<Tid> {
+        super::PREEMPT.scope(|| self.handles().get::<Tid>(hdl).map(|w| Tid::clone(w)))
     }
 }
 
 impl PartialEq for Tid {
+    #[inline]
     fn eq(&self, other: &Self) -> bool {
-        self.0 == other.0 && Arc::ptr_eq(&self.1, &other.1)
+        self.raw == other.raw && Arc::ptr_eq(&self.ti, &other.ti)
     }
 }
 
-fn next() -> Option<u32> {
+fn next() -> Option<NonZeroU32> {
     let mut alloc = TID_ALLOC.lock();
-    alloc.allocate().map(|id| u32::try_from(id).unwrap())
+    alloc
+        .allocate()
+        .map(|id| NonZeroU32::new((id + 1) as u32).unwrap())
 }
 
+/// # Errors
+///
+/// Returns error if TID is exhausted.
 pub fn allocate(ti: TaskInfo) -> Result<Tid, TaskInfo> {
     allocate_or(ti, |ti| ti)
 }
 
+/// # Errors
+///
+/// Returns error if TID is exhausted.
 pub fn allocate_or<F, R>(ti: TaskInfo, or_else: F) -> Result<Tid, R>
 where
     F: FnOnce(TaskInfo) -> R,
@@ -69,9 +74,9 @@ where
     match next() {
         Some(raw) => {
             let ti = Arc::new(ti);
-            let old = TI_MAP.insert(raw, ti.clone());
+            let old = TI_MAP.insert(raw.get(), ti.clone());
             debug_assert!(old.is_none());
-            Ok(Tid(raw, ti))
+            Ok(Tid { raw, ti })
         }
         None => Err(or_else(ti)),
     }
@@ -79,13 +84,14 @@ where
 
 pub fn deallocate(tid: &Tid) -> bool {
     let _flags = PREEMPT.lock();
-    TI_MAP.remove(&tid.0).map_or(false, |_| {
-        TID_ALLOC.lock().deallocate(u64::from(tid.0));
+    TI_MAP.remove(&tid.raw.get()).map_or(false, |_| {
+        TID_ALLOC.lock().deallocate(u64::from(tid.raw.get()));
         true
     })
 }
 
-pub fn has_ti(tid: &Tid) -> bool {
-    let _flags = PREEMPT.lock();
-    TI_MAP.contains_key(&tid.0)
+#[inline]
+pub fn init() {
+    Lazy::force(&TI_MAP);
+    Lazy::force(&TID_ALLOC);
 }

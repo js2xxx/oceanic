@@ -16,11 +16,12 @@ use crate::{
         },
         intr::{edge_handler, fasteoi_handler, Interrupt, IntrChip, TypeHandler},
     },
-    mem::space::{self, AllocType, Flags, KernelVirt, Phys},
+    mem::space::{self, Flags, Phys},
 };
 
 const LEGACY_IRQ: Range<u32> = 0..16;
 
+#[allow(clippy::type_complexity)]
 static IOAPIC_CHIP: Lazy<(Arc<Mutex<dyn IntrChip>>, Vec<IntrOvr>)> = Lazy::new(|| {
     let ioapic_data = match crate::dev::acpi::platform_info().interrupt_model {
         acpi::InterruptModel::Apic(ref apic) => apic,
@@ -50,6 +51,7 @@ pub fn gsi_from_isa(irq: crate::cpu::intr::IsaIrq) -> u32 {
     u32::from(raw)
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Copy, Clone)]
 enum IoapicReg {
     IoapicId,
@@ -73,19 +75,28 @@ impl From<IoapicReg> for u32 {
 #[bitfield]
 struct IoapicEntry {
     vec: u8,
+    #[skip(getters)]
     #[bits = 3]
     deliv_mode: DelivMode,
+    #[skip(getters)]
     dest_logical: bool,
+    #[skip(getters)]
     pending: bool,
+    #[skip(getters)]
     #[bits = 1]
     polarity: Polarity,
+    #[skip(getters)]
     remote_irr: bool,
+    #[skip(getters)]
     #[bits = 1]
     trigger_mode: TriggerMode,
+    #[skip(getters)]
     mask: bool,
     #[skip]
     __: B32,
+    #[skip(getters)]
     dest_hi: B7,
+    #[skip(getters)]
     dest: u8,
 }
 
@@ -119,7 +130,6 @@ unsafe fn write_eoi(base_ptr: *mut u32, val: u32) {
 
 pub struct Ioapic {
     base_ptr: *mut u32,
-    virt: KernelVirt,
 
     id: u8,
     version: u32,
@@ -168,17 +178,18 @@ impl Ioapic {
             PAGE_LAYOUT,
             Flags::READABLE | Flags::WRITABLE | Flags::UNCACHED,
         );
-        let virt = space::KRL
-            .allocate_kernel(
-                AllocType::Layout(phys.layout()),
-                Some(Arc::clone(&phys)),
+        let addr = space::KRL
+            .map(
+                None,
+                Arc::clone(&phys),
+                0,
+                phys.layout().size(),
                 phys.flags(),
             )
             .expect("Failed to allocate memory");
-        let base_ptr = virt.as_ptr().cast::<u32>().as_ptr();
+        let base_ptr = addr.cast::<u32>();
         let mut ioapic = Ioapic {
             base_ptr,
-            virt,
             id: *id,
             version: 0,
             gsi: 0..0,
@@ -199,10 +210,6 @@ impl Ioapic {
 
     pub fn size(&self) -> usize {
         self.gsi.len()
-    }
-
-    pub fn virt(&self) -> &KernelVirt {
-        &self.virt
     }
 }
 

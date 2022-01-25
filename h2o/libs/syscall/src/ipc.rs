@@ -12,8 +12,7 @@ pub struct RawPacket {
 }
 
 #[cfg(feature = "call")]
-#[cfg(debug_assertions)]
-pub fn test() {
+pub fn test(stack: (*mut u8, *mut u8, Handle)) {
     use core::ptr;
 
     use crate::*;
@@ -53,30 +52,30 @@ pub fn test() {
             hdl[0] = Handle::NULL;
             let mut sendee = rp(&mut hdl, &mut buf);
             let ret = crate::call::chan_send(c1, &sendee);
-            assert_eq!(ret, Err(Error(EINVAL)));
+            assert_eq!(ret, Err(Error::EINVAL));
 
             // The channel itself can't be sent.
             // To make connections to other tasks, use `init_chan`.
             hdl[0] = c1;
             sendee = rp(&mut hdl, &mut buf);
             let ret = crate::call::chan_send(c1, &sendee);
-            assert_eq!(ret, Err(Error(EPERM)));
+            assert_eq!(ret, Err(Error::EPERM));
 
             // Neither can its peer.
             hdl[0] = c2;
             sendee = rp(&mut hdl, &mut buf);
             let ret = crate::call::chan_send(c1, &sendee);
-            assert_eq!(ret, Err(Error(EPERM)));
+            assert_eq!(ret, Err(Error::EPERM));
         }
 
         {
             let mut receivee = rp(&mut [], &mut buf);
             let ret = crate::call::chan_recv(c2, &mut receivee, u64::MAX);
-            assert_eq!(ret, Err(Error(EBUFFER)));
+            assert_eq!(ret, Err(Error::EBUFFER));
 
             receivee = rp(&mut hdl, &mut []);
             let ret = crate::call::chan_recv(c2, &mut receivee, u64::MAX);
-            assert_eq!(ret, Err(Error(EBUFFER)));
+            assert_eq!(ret, Err(Error::EBUFFER));
         }
 
         buf.fill(0);
@@ -90,7 +89,7 @@ pub fn test() {
 
         receivee = rp(&mut hdl, &mut buf);
         let ret = crate::call::chan_recv(c2, &mut receivee, 0);
-        assert_eq!(ret, Err(Error(ENOENT)));
+        assert_eq!(ret, Err(Error::ENOENT));
 
         wo
     };
@@ -117,20 +116,18 @@ pub fn test() {
         }
 
         let other = {
-            let ci = crate::task::CreateInfo {
+            let ci = crate::task::ExecInfo {
                 name: ptr::null_mut(),
                 name_len: 0,
-                stack_size: crate::task::DEFAULT_STACK_SIZE,
+                space: Handle::NULL,
+                entry: func as *mut u8,
+                stack: stack.0,
                 init_chan: c2,
-                func: func as *mut u8,
-                arg: ptr::null_mut(),
+                arg: 0,
             };
 
-            crate::call::task_fn(&ci, crate::task::CreateFlags::empty(), ptr::null_mut())
-                .expect("Failed to create task other")
+            crate::call::task_exec(&ci).expect("Failed to create task other")
         };
-        crate::call::task_ctl(other, crate::task::TASK_CTL_DETACH, ptr::null_mut())
-            .expect("Failed to detach the task");
 
         let mut buf = [1u8, 2, 3, 4, 5, 6, 7];
         let mut hdl = [wo];
@@ -147,5 +144,10 @@ pub fn test() {
         let wo = hdl[0];
         crate::call::wo_notify(wo, 0).expect("Failed to notify the wo in master");
         crate::call::obj_drop(wo).expect("Failed to drop the wo in master");
+
+        crate::call::task_join(other).expect("Failed to join the task");
     }
+
+    crate::call::mem_unmap(Handle::NULL, stack.1).expect("Failed to unmap the memory");
+    crate::call::obj_drop(stack.2).expect("Failed to deallocate the stack memory");
 }

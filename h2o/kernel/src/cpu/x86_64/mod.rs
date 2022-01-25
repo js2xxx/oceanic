@@ -129,7 +129,7 @@ pub unsafe fn init() {
 
     seg::init();
 
-    // SAFE: During bootstrap initialization.
+    // SAFETY: During bootstrap initialization.
     unsafe { KERNEL_GS.load() };
 
     apic::init();
@@ -153,7 +153,7 @@ pub unsafe fn init() {
 pub unsafe fn init_ap() {
     seg::init_ap();
 
-    // SAFE: During bootstrap initialization.
+    // SAFETY: During bootstrap initialization.
     unsafe { KERNEL_GS.load() };
 
     apic::init();

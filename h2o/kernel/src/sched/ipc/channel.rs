@@ -1,26 +1,21 @@
-use alloc::{
-    sync::{Arc, Weak},
-    vec::Vec,
-};
-use core::time::Duration;
+use alloc::sync::{Arc, Weak};
+use core::{mem, time::Duration};
 
 use bytes::Bytes;
-use solvent::Handle;
 use spin::{Mutex, MutexGuard};
 
-use super::{IpcError, Object};
-use crate::sched::{task, wait::WaitQueue, SCHED};
+use crate::sched::{task::hdl, wait::WaitQueue, SCHED};
 
 const MAX_QUEUE_SIZE: usize = 2048;
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Packet {
-    objects: Vec<Object>,
+    objects: hdl::List,
     buffer: Bytes,
 }
 
 impl Packet {
-    pub fn new(objects: Vec<Object>, data: &[u8]) -> Self {
+    pub fn new(objects: hdl::List, data: &[u8]) -> Self {
         let buffer = Bytes::copy_from_slice(data);
         Packet { objects, buffer }
     }
@@ -71,42 +66,53 @@ impl Channel {
     }
 
     pub fn is_peer(&self, other: &Self) -> bool {
+        self.peer_eq(other)
+    }
+
+    #[inline]
+    pub fn peer_eq(&self, other: &Self) -> bool {
         self.peer_id == other.peer_id
     }
 
-    pub fn send(&self, msg: Packet) -> Result<(), IpcError> {
+    /// # Errors
+    ///
+    /// Returns error if the peer is closed or if the channel is full.
+    pub fn send(&self, msg: &mut Packet) -> solvent::Result {
         match self.peer.upgrade() {
-            None => Err(IpcError::ChannelClosed(msg)),
+            None => Err(solvent::Error::EPIPE),
             Some(peer) => {
                 if peer.len() >= MAX_QUEUE_SIZE {
-                    Err(IpcError::QueueFull(msg))
+                    Err(solvent::Error::ENOSPC)
                 } else {
-                    peer.push(msg);
+                    peer.push(mem::take(msg));
                     Ok(())
                 }
             }
         }
     }
 
-    pub fn receive<'a>(
-        &'a self,
-        timeout: Duration,
-    ) -> Result<MutexGuard<'a, Option<Packet>>, IpcError> {
+    /// # Errors
+    ///
+    /// Returns error if the peer is closed.
+    pub fn receive(&self, timeout: Duration) -> solvent::Result<MutexGuard<Option<Packet>>> {
         let mut head = self.head.lock();
         if head.is_none() {
             *head = Some(
                 self.me
                     .pop(timeout, "Channel::receive")
-                    .ok_or(IpcError::QueueEmpty)?,
+                    .ok_or(solvent::Error::EPIPE)?,
             );
         }
         Ok(head)
     }
 
-    pub fn try_receive<'a>(&'a self) -> Result<MutexGuard<'a, Option<Packet>>, IpcError> {
+    /// # Errors
+    ///
+    /// Returns error if the channel is empty.
+    pub fn try_receive(&self) -> solvent::Result<MutexGuard<Option<Packet>>> {
         let mut head = self.head.lock();
         if head.is_none() {
-            *head = Some(self.me.try_pop().ok_or(IpcError::QueueEmpty)?);
+            *head = Some(self.me.try_pop().ok_or(solvent::Error::ENOENT)?);
         }
         Ok(head)
     }
@@ -121,24 +127,23 @@ mod syscall {
     use crate::syscall::{In, InOut, Out, UserPtr};
 
     #[syscall]
-    fn chan_new(p1: UserPtr<Out, Handle>, p2: UserPtr<Out, Handle>) {
+    fn chan_new(p1: UserPtr<Out, Handle>, p2: UserPtr<Out, Handle>) -> Result {
         p1.check()?;
         p2.check()?;
-        let ret = SCHED.with_current(|cur| {
+        SCHED.with_current(|cur| {
             let (c1, c2) = Channel::new();
             let map = cur.tid().handles();
-            let h1 = map.insert(c1);
-            let h2 = map.insert(c2);
+            let h1 = map.insert(c1)?;
+            let h2 = map.insert(c2)?;
             unsafe {
-                p1.write(h1).unwrap();
-                p2.write(h2).unwrap();
+                p1.write(h1)?;
+                p2.write(h2)
             }
-        });
-        ret.ok_or(Error(ESRCH))
+        })
     }
 
     #[syscall]
-    fn chan_send(hdl: Handle, packet: UserPtr<In, RawPacket>) {
+    fn chan_send(hdl: Handle, packet: UserPtr<In, RawPacket>) -> Result {
         hdl.check_null()?;
 
         let packet = unsafe { packet.read()? };
@@ -147,21 +152,21 @@ mod syscall {
 
         let handles = unsafe { slice::from_raw_parts(packet.handles, packet.handle_count) };
         if handles.contains(&hdl) {
-            return Err(Error(EPERM));
+            return Err(Error::EPERM);
         }
         let buffer = unsafe { slice::from_raw_parts(packet.buffer, packet.buffer_size) };
 
-        let ret = SCHED.with_current(|cur| {
+        SCHED.with_current(|cur| {
             let map = cur.tid().handles();
-            let (objects, channel) = unsafe { map.send_for_channel(handles, hdl) }?;
-            let packet = Packet::new(objects, buffer);
-            channel.send(packet).map_err(Into::into)
-        });
-        ret.ok_or(Error(ESRCH)).flatten()
+            let channel = map.get::<Channel>(hdl)?;
+            let objects = unsafe { map.send(handles, channel) }?;
+            let mut packet = Packet::new(objects, buffer);
+            channel.send(&mut packet).map_err(Into::into)
+        })
     }
 
     #[syscall]
-    fn chan_recv(hdl: Handle, packet_ptr: UserPtr<InOut, RawPacket>, timeout_us: u64) {
+    fn chan_recv(hdl: Handle, packet_ptr: UserPtr<InOut, RawPacket>, timeout_us: u64) -> Result {
         hdl.check_null()?;
         let timeout = if timeout_us == u64::MAX {
             Duration::MAX
@@ -178,18 +183,18 @@ mod syscall {
         let user_buffer =
             unsafe { slice::from_raw_parts_mut(user_packet.buffer, user_packet.buffer_cap) };
 
-        let ret = SCHED.with_current(|cur| {
+        SCHED.with_current(|cur| {
             let map = cur.tid().handles();
 
             let packet = {
-                let channel = map.get::<Channel>(hdl).ok_or(Error(EINVAL))?;
+                let channel = map.get::<Channel>(hdl)?;
 
                 let mut packet = if !timeout.is_zero() {
                     channel.receive(timeout)
                 } else {
                     channel.try_receive()
                 }
-                .map_err(Into::into)?;
+                .map_err(Error::from)?;
 
                 let data = packet.as_ref().unwrap().buffer();
                 let object_count = packet.as_ref().unwrap().object_count();
@@ -205,7 +210,7 @@ mod syscall {
                         ebuf = true;
                     }
                     if ebuf {
-                        return Err(Error(EBUFFER));
+                        return Err(Error::EBUFFER);
                     }
                 }
 
@@ -213,18 +218,15 @@ mod syscall {
                 packet.take()
             };
 
-            let handles = packet.map(|p| map.receive(p.objects)).unwrap();
-            user_handles[..handles.len()].copy_from_slice(&handles);
+            packet
+                .map(|mut p| map.receive(&mut p.objects, user_handles))
+                .unwrap();
 
             unsafe {
-                drop(user_buffer);
-                drop(user_handles);
                 packet_ptr.out().write(user_packet).unwrap();
             }
 
             Ok(())
-        });
-        let u = ret.ok_or(Error(ESRCH));
-        u.flatten()
+        })
     }
 }

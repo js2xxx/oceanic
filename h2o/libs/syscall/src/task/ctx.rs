@@ -1,6 +1,6 @@
 use core::mem;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 #[repr(C)]
 pub struct Gpr {
     pub rax: u64,

@@ -152,7 +152,7 @@ impl Interrupt {
     }
 
     pub(super) unsafe fn handle(self: &Arc<Interrupt>) {
-        (self.type_handler)(Arc::clone(&self))
+        (self.type_handler)(Arc::clone(self))
     }
 
     pub fn affinity(&self) -> &super::CpuMask {

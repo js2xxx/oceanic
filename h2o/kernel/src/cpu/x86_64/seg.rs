@@ -68,10 +68,13 @@ pub struct FatPointer {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SegSelector {
     /// The Request Privilege Level.
+    #[allow(clippy::return_self_not_must_use)]
     pub rpl: B2,
     /// The Table Index - 0 for GDT and 1 for LDT.
+    #[allow(clippy::return_self_not_must_use)]
     pub ti: bool,
     /// The numeric index of the descriptor table.
+    #[allow(clippy::return_self_not_must_use)]
     pub index: B13,
 }
 const_assert_eq!(size_of::<SegSelector>(), size_of::<u16>());
@@ -123,10 +126,12 @@ pub unsafe fn reload_pls() {
 
         msr::write(msr::FS_BASE, ptr as u64);
     }
+
+    test_pls();
 }
 
 /// Allocate and initialize a new PLS for application CPU.
-pub fn alloc_pls() -> Option<NonNull<u8>> {
+pub fn alloc_pls() -> solvent::Result<NonNull<u8>> {
     extern "C" {
         static TDATA_START: u8;
         static TBSS_START: u8;
@@ -134,7 +139,7 @@ pub fn alloc_pls() -> Option<NonNull<u8>> {
 
     let pls_layout = match crate::kargs().pls_layout {
         Some(layout) => layout,
-        None => return None,
+        None => return Err(solvent::Error::ENOENT),
     };
 
     let base = Global
@@ -145,7 +150,7 @@ pub fn alloc_pls() -> Option<NonNull<u8>> {
                 .0,
         )
         .map(NonNull::as_non_null_ptr)
-        .ok()?;
+        .map_err(solvent::Error::from)?;
     unsafe {
         let size = (&TBSS_START as *const u8).offset_from(&TDATA_START) as usize;
         base.as_ptr().copy_from_nonoverlapping(&TDATA_START, size);
@@ -153,7 +158,26 @@ pub fn alloc_pls() -> Option<NonNull<u8>> {
         let self_ptr = base.as_ptr().add(pls_layout.size());
         self_ptr.cast::<*mut u8>().write(self_ptr);
 
-        NonNull::new(self_ptr)
+        Ok(NonNull::new_unchecked(self_ptr))
+    }
+}
+
+#[inline]
+pub fn test_pls() {
+    #[cfg(debug_assertions)]
+    {
+        #[thread_local]
+        static mut A: usize = 0;
+        #[thread_local]
+        static mut B: usize = 5;
+        unsafe {
+            debug_assert_eq!(A, 0);
+            A += 1;
+            debug_assert_eq!(A, 1);
+            debug_assert_eq!(B, 5);
+            B -= 1;
+            debug_assert_eq!(B, 4);
+        }
     }
 }
 

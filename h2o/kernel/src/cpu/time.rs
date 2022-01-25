@@ -21,11 +21,19 @@ impl Instant {
         Self::now() - *self
     }
 
-    pub unsafe fn raw(&self) -> u128 {
+    /// # Safety
+    ///
+    /// The underlying data can be inconsistent and should not be used with
+    /// measurements.
+    pub const unsafe fn raw(&self) -> u128 {
         self.0.raw()
     }
 
-    pub unsafe fn from_raw(data: u128) -> Self {
+    /// # Safety
+    ///
+    /// The underlying data can be inconsistent and should not be used with
+    /// measurements.
+    pub const unsafe fn from_raw(data: u128) -> Self {
         Instant(solvent::time::Instant::from_raw(data))
     }
 }
@@ -75,7 +83,7 @@ impl core::fmt::Display for Instant {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         let ns = unsafe { self.raw() };
         let s = ns as f64 / 1_000_000_000.0;
-        write!(f, "{:.4} s", s)
+        write!(f, "{:.6}", s)
     }
 }
 
@@ -85,7 +93,7 @@ mod syscall {
     use crate::syscall::{Out, UserPtr};
 
     #[syscall]
-    pub(super) fn get_time(ptr: UserPtr<Out, u128>) {
+    pub(super) fn get_time(ptr: UserPtr<Out, u128>) -> Result {
         #[cfg(target_arch = "x86_64")]
         unsafe {
             let raw = super::Instant::now().raw();

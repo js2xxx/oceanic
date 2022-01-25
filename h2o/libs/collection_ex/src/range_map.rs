@@ -1,123 +1,213 @@
-use alloc::collections::{btree_map, BTreeMap};
-use core::ops::{Bound, Range, RangeBounds};
+use alloc::collections::{
+    btree_map::{Entry, IntoIter, Iter, IterMut},
+    BTreeMap,
+};
+use core::{
+    borrow::Borrow,
+    ops::{Add, Bound, Range, RangeBounds, Sub},
+};
 
-use iter_ex::CombineIter;
-
-pub struct RangeIter<'a, K, V> {
-    inner: btree_map::Range<'a, K, (Range<K>, V)>,
-    range_end: Bound<K>,
-}
-
-impl<'a, K: Ord + Copy, V> Iterator for RangeIter<'a, K, V> {
-    type Item = (Range<K>, &'a V);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.inner
-            .next()
-            .map(|(&_, (range, v))| (range.clone(), v))
-            .filter(|(r, _v)| match (self.range_end, r.end_bound().cloned()) {
-                (Bound::Unbounded, _) => true,
-                (_, Bound::Unbounded) => false,
-                (Bound::Included(inc), Bound::Included(r_inc)) => r_inc <= inc,
-                (Bound::Included(inc), Bound::Excluded(r_exc)) => r_exc <= inc,
-                (Bound::Excluded(exc), Bound::Included(r_inc)) => r_inc < exc,
-                (Bound::Excluded(exc), Bound::Excluded(r_exc)) => r_exc <= exc,
-            })
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        self.inner.size_hint()
-    }
-}
-
-pub struct GapIter<'a, K, V> {
-    last_end: Option<K>,
-    inner: btree_map::Iter<'a, K, (Range<K>, V)>,
-}
-
-impl<'a, K: Ord + Copy, V> Iterator for GapIter<'a, K, V> {
-    type Item = (Range<K>, &'a V);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let last_end = self.last_end.get_or_insert(self.inner.next()?.1 .0.end);
-        let (_, (range, v)) = self.inner.next()?;
-
-        let ret = *last_end..range.start;
-        self.last_end = Some(range.start);
-
-        Some((ret, v))
-    }
-}
-
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct RangeMap<K, V> {
     inner: BTreeMap<K, (Range<K>, V)>,
+    range: Range<K>,
 }
 
-impl<K: Ord + Copy, V> RangeMap<K, V> {
-    pub const fn new() -> Self {
+impl<K, V> RangeMap<K, V> {
+    pub fn new(range: Range<K>) -> Self
+    where
+        K: Ord + Clone,
+    {
         RangeMap {
             inner: BTreeMap::new(),
+            range,
         }
     }
 
-    pub fn insert(&mut self, range: Range<K>, value: V) -> Result<(), &'static str> {
-        if self.range(range.clone()).next().is_some() {
-            Err("There are existent item(s) in this range")
+    pub fn allocate_with<F, E, R>(
+        &mut self,
+        size: K,
+        value: F,
+        no_fit: impl Into<E>,
+    ) -> Result<(K, R), E>
+    where
+        K: Ord + Sub<Output = K> + Add<Output = K> + Copy,
+        F: FnOnce(Range<K>) -> Result<(V, R), E>,
+    {
+        let mut range = None;
+
+        let mut start = self.range.start;
+
+        for (_, (r, _)) in self.inner.iter() {
+            if r.start - start >= size {
+                range = Some(start..(start + size));
+                break;
+            }
+            start = r.end;
+        }
+        if range.is_none() && self.range.end - start >= size {
+            range = Some(start..(start + size));
+        }
+
+        if let Some(range) = range {
+            let start = range.start;
+            let (value, ret) = value(range.clone())?;
+            self.inner.entry(start).or_insert((range, value));
+            Ok((start, ret))
         } else {
-            self.inner.insert(range.start, (range, value));
-            Ok(())
+            Err(no_fit.into())
         }
     }
 
-    pub fn remove(&mut self, start: K) -> Option<(Range<K>, V)> {
-        self.inner.remove(&start)
-    }
-
-    pub fn range_iter(&self) -> RangeIter<'_, K, V> {
-        RangeIter {
-            inner: self.inner.range(..),
-            range_end: Bound::Unbounded,
+    pub fn try_insert_with<F, E, R>(
+        &mut self,
+        range: Range<K>,
+        value: F,
+        exist: impl Into<E>,
+    ) -> Result<R, E>
+    where
+        K: Ord + Copy,
+        F: FnOnce() -> Result<(V, R), E>,
+    {
+        if range.start < range.end
+            && self.range.contains(&range.start)
+            && self.range.contains(&range.end)
+        {
+            let start = range.start;
+            match self.inner.entry(start) {
+                Entry::Vacant(ent) => {
+                    let (value, ret) = value()?;
+                    ent.insert((range, value));
+                    Ok(ret)
+                }
+                Entry::Occupied(_) => Err(exist.into()),
+            }
+        } else {
+            Err(exist.into())
         }
     }
 
-    pub fn gap_iter(&self) -> GapIter<'_, K, V> {
-        GapIter {
-            last_end: None,
-            inner: self.inner.iter(),
+    pub fn get<Q>(&self, start: &Q) -> Option<&V>
+    where
+        Q: ?Sized + Ord,
+        K: Borrow<Q> + Ord,
+    {
+        self.inner.get(start).map(|(_, value)| value)
+    }
+
+    pub fn get_mut<Q>(&mut self, start: &Q) -> Option<&mut V>
+    where
+        Q: ?Sized + Ord,
+        K: Borrow<Q> + Ord,
+    {
+        self.inner.get_mut(start).map(|(_, value)| value)
+    }
+
+    pub fn remove_if<F>(&mut self, start: K, predicate: F) -> Option<(Range<K>, V)>
+    where
+        K: Ord,
+        F: Fn(&V) -> bool,
+    {
+        match self.inner.entry(start) {
+            Entry::Occupied(ent) if predicate(&ent.get().1) => Some(ent.remove()),
+            _ => None,
         }
     }
 
-    pub fn range_and_gap_iter(&self) -> iter_ex::Combine<RangeIter<'_, K, V>, GapIter<'_, K, V>> {
-        self.range_iter().combine(self.gap_iter())
+    #[inline]
+    pub fn remove(&mut self, start: K) -> Option<(Range<K>, V)>
+    where
+        K: Ord,
+    {
+        self.remove_if(start, |_| true)
     }
 
-    pub fn range(&self, range: Range<K>) -> RangeIter<'_, K, V> {
-        RangeIter {
-            inner: self.inner.range(range.clone()),
-            range_end: range.end_bound().cloned(),
+    #[inline]
+    pub fn iter(&self) -> Iter<K, (Range<K>, V)> {
+        self.inner.iter()
+    }
+
+    #[inline]
+    pub fn iter_mut(&mut self) -> IterMut<K, (Range<K>, V)> {
+        self.inner.iter_mut()
+    }
+
+    #[inline]
+    pub fn get_contained(&self, key: &K) -> Option<&(Range<K>, V)>
+    where
+        K: Ord,
+    {
+        self.inner
+            .range(..=key)
+            .next_back()
+            .map(|(_, value)| value)
+            .filter(|(range, _)| key < &range.end)
+    }
+
+    #[inline]
+    pub fn get_contained_mut(&mut self, key: &K) -> Option<&mut (Range<K>, V)>
+    where
+        K: Ord,
+    {
+        self.inner
+            .range_mut(..=key)
+            .next_back()
+            .map(|(_, value)| value)
+            .filter(|(range, _)| key < &range.end)
+    }
+
+    pub fn get_contained_range<R>(&self, range: R) -> Option<&(Range<K>, V)>
+    where
+        K: Ord,
+        R: RangeBounds<K>,
+    {
+        let start = match range.start_bound() {
+            Bound::Included(start) | Bound::Excluded(start) => start,
+            Bound::Unbounded => return None,
+        };
+        match range.end_bound() {
+            Bound::Included(end) => self
+                .inner
+                .range(..=end)
+                .next_back()
+                .map(|(_, value)| value)
+                .filter(|(range, _)| end < &range.end && range.contains(start)),
+            Bound::Excluded(end) => self
+                .inner
+                .range(..end)
+                .next_back()
+                .map(|(_, value)| value)
+                .filter(|(range, _)| end <= &range.end && range.contains(start)),
+            Bound::Unbounded => None,
         }
     }
 
-    pub fn neighbors(&self, range: Range<K>) -> (Option<Range<K>>, Option<Range<K>>) {
-        (
-            self.inner
-                .range(..=range.start)
-                .rev()
-                .next()
-                .map(|r| r.1 .0.clone())
-                .filter(|r| r.end == range.start),
-            self.inner
-                .range(range.end..)
-                .next()
-                .map(|r| r.1 .0.clone())
-                .filter(|r| r.start == range.end),
-        )
+    #[inline]
+    pub fn pop(&mut self) -> Option<(Range<K>, V)>
+    where
+        K: Ord,
+    {
+        self.inner.pop_first().map(|(_, value)| value)
     }
 }
 
-impl<K: Ord + Copy, V> Default for RangeMap<K, V> {
+impl<K, V> IntoIterator for RangeMap<K, V> {
+    type Item = (K, (Range<K>, V));
+
+    type IntoIter = IntoIter<K, (Range<K>, V)>;
+
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter {
+        self.inner.into_iter()
+    }
+}
+
+impl<K: Default, V> Default for RangeMap<K, V> {
+    #[inline]
     fn default() -> Self {
-        Self::new()
+        Self {
+            inner: Default::default(),
+            range: Default::default(),
+        }
     }
 }

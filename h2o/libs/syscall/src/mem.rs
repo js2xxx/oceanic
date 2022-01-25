@@ -10,37 +10,32 @@ bitflags::bitflags! {
     }
 }
 
+pub struct MapInfo {
+    pub addr: usize,
+    pub map_addr: bool,
+    pub phys: crate::Handle,
+    pub phys_offset: usize,
+    pub len: usize,
+    pub flags: Flags,
+}
+
 cfg_if::cfg_if! { if #[cfg(feature = "call")] {
 
 use core::{alloc::Layout, ptr::NonNull};
 
-pub fn virt_alloc(
-    virt: &mut *mut u8,
-    phys: usize,
-    layout: Layout,
-    flags: Flags,
-) -> crate::Result<crate::Handle> {
-    let (size, align) = (layout.size(), layout.align());
-    let flags = flags.bits;
-    crate::call::virt_alloc(virt, phys, size, align, flags)
-}
-
-/// # Safety
-///
-/// The caller must ensure that `ptr` is only in the possession of current
-/// context.
-pub unsafe fn virt_protect(
-    hdl: crate::Handle,
-    ptr: NonNull<[u8]>,
-    flags: Flags,
-) -> crate::Result<()> {
-    let size = ptr.len();
-    crate::call::virt_prot(hdl, ptr.as_mut_ptr(), size, flags.bits)
-}
-
 pub fn mem_alloc(layout: Layout, flags: Flags) -> crate::Result<NonNull<[u8]>> {
     let (size, align) = (layout.size(), layout.align());
-    let ptr = crate::call::mem_alloc(size, align, flags.bits)?;
+    let phys = crate::call::phys_alloc(size, align, flags.bits)?;
+    let mi = MapInfo {
+        addr: 0,
+        map_addr: false,
+        phys,
+        phys_offset: 0,
+        len: size,
+        flags,
+    };
+    let ptr = crate::call::mem_map(crate::Handle::NULL, &mi)?;
+    let _ = crate::call::obj_drop(phys);
     unsafe {
         Ok(NonNull::slice_from_raw_parts(
             NonNull::new_unchecked(ptr),
@@ -49,8 +44,31 @@ pub fn mem_alloc(layout: Layout, flags: Flags) -> crate::Result<NonNull<[u8]>> {
     }
 }
 
+/// # Safety
+///
+/// The caller must ensure that `ptr` is previously allocated by [`mem_alloc`].
 pub unsafe fn mem_dealloc(ptr: NonNull<u8>) -> crate::Result<()> {
-    crate::call::mem_dealloc(ptr.as_ptr())
+    crate::call::mem_unmap(crate::Handle::NULL, ptr.as_ptr())
 }
 
 }}
+
+#[cfg(feature = "call")]
+pub fn test() {
+    let flags = Flags::READABLE | Flags::WRITABLE | Flags::USER_ACCESS;
+    let phys = crate::call::phys_alloc(4096, 4096, flags.bits)
+        .expect("Failed to allocate physical object");
+    let mi = MapInfo {
+        addr: 0,
+        map_addr: false,
+        phys,
+        phys_offset: 0,
+        len: 4096,
+        flags,
+    };
+    let ptr =
+        crate::call::mem_map(crate::Handle::NULL, &mi).expect("Failed to map the physical memory");
+    unsafe { ptr.cast::<u32>().write(12345) };
+    crate::call::mem_unmap(crate::Handle::NULL, ptr).expect("Failed to unmap the memory");
+    crate::call::obj_drop(phys).expect("Failed to deallocate the physical object");
+}

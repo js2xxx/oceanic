@@ -2,18 +2,18 @@ mod cell;
 mod futex;
 mod queue;
 
-use alloc::{boxed::Box, sync::Arc};
+use alloc::boxed::Box;
 use core::time::Duration;
 
 pub use cell::WaitCell;
 pub use queue::WaitQueue;
 
-use super::*;
+use super::{ipc::Arsc, *};
 use crate::cpu::time::Timer;
 
 #[derive(Debug)]
 pub struct WaitObject {
-    pub(super) wait_queue: deque::Injector<Arc<Timer>>,
+    pub(super) wait_queue: deque::Injector<Arsc<Timer>>,
 }
 
 unsafe impl Send for WaitObject {}
@@ -54,6 +54,13 @@ impl WaitObject {
     }
 }
 
+impl Default for WaitObject {
+    #[inline]
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 mod syscall {
     use alloc::sync::Arc;
 
@@ -62,25 +69,20 @@ mod syscall {
     use super::*;
 
     #[syscall]
-    fn wo_new() -> u32 {
+    fn wo_new() -> Result<u32> {
         let wo = Arc::new(WaitObject::new());
-        SCHED
-            .with_current(|cur| cur.tid().handles().insert(wo).raw())
-            .map_or(Err(Error(ESRCH)), Ok)
+        SCHED.with_current(|cur| cur.tid().handles().insert(wo).map(|h| h.raw()))
     }
 
     #[syscall]
-    fn wo_notify(hdl: Handle, n: usize) -> usize {
+    fn wo_notify(hdl: Handle, n: usize) -> Result<usize> {
         hdl.check_null()?;
-        let wo = SCHED
-            .with_current(|cur| {
-                cur.tid()
-                    .handles()
-                    .get::<Arc<WaitObject>>(hdl)
-                    .map(|w| Arc::clone(&w))
-            })
-            .flatten()
-            .ok_or(Error(EINVAL))?;
+        let wo = SCHED.with_current(|cur| {
+            cur.tid()
+                .handles()
+                .get::<Arc<WaitObject>>(hdl)
+                .map(|w| Arc::clone(w))
+        })?;
         Ok(wo.notify(n))
     }
 }

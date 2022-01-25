@@ -53,7 +53,7 @@ pub static GDT: CpuLocalLazy<DescTable<10>> = CpuLocalLazy::new(|| {
 
 #[thread_local]
 pub(in crate::cpu::arch) static TSS: CpuLocalLazy<TssStruct> = CpuLocalLazy::new(|| {
-    // SAFE: No physical address specified.
+    // SAFETY: No physical address specified.
     let alloc_stack = || {
         crate::mem::alloc_system_stack()
             .expect("System memory allocation failed")
@@ -116,7 +116,7 @@ impl TssStruct {
     pub unsafe fn set_rsp0(&self, rsp0: u64) -> u64 {
         let ret = self.rsp0();
         let addr = addr_of!(self.rsp0);
-        (addr as *mut u64).write_unaligned(rsp0.into());
+        (addr as *mut u64).write_unaligned(rsp0);
         ret
     }
 
@@ -187,12 +187,17 @@ impl Segment {
 
     /// Create the higher half of a segment descriptor.
     ///
+    /// # Safety
+    ///
     /// The caller must ensure that the entry before it is a valid system
     /// segment descriptor.
     pub const unsafe fn new_high(base_high: u32) -> Self {
         core::mem::transmute(base_high as u64)
     }
 
+    /// # Safety
+    ///
+    /// See [`new_high`] for more details.
     pub unsafe fn new_fp_high(fp: FatPointer) -> Self {
         Self::new_high((fp.base.val() >> 32) as u32)
     }

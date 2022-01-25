@@ -50,7 +50,7 @@ impl ToTokens for SyscallFn {
         };
 
         let orig: ItemFn = parse_quote! {
-              #vis #unsafety fn #ident (#args) -> solvent::Result<#ty> #body
+              #vis #unsafety fn #ident (#args) -> #ty #body
         };
         orig.to_tokens(tokens);
 
@@ -93,7 +93,7 @@ impl ToTokens for SyscallFn {
               #[no_mangle]
               extern "C" fn #wrapper_ident (#wrapper_args) -> usize {
                     let ret = #ident (#wrapper_args_into);
-                    solvent::Error::encode(ret.map(|r| r.encode()))
+                    solvent::SerdeReg::encode(ret)
               }
         };
         wrapper.to_tokens(tokens);

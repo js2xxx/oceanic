@@ -1,5 +1,4 @@
 use alloc::string::String;
-use core::mem;
 
 use bitop_ex::BitOpEx;
 use goblin::elf::*;
@@ -8,7 +7,7 @@ use paging::{LAddr, PAddr};
 use super::*;
 use crate::{
     cpu::CpuMask,
-    mem::space::{AllocType, Flags, Phys, Space, SpaceError},
+    mem::space::{Flags, Phys, Space},
 };
 
 fn load_prog(
@@ -18,7 +17,7 @@ fn load_prog(
     phys: PAddr,
     fsize: usize,
     msize: usize,
-) -> Result<()> {
+) -> solvent::Result {
     fn flags_to_pg_attr(flags: u32) -> Flags {
         let mut ret = Flags::USER_ACCESS;
         if (flags & program_header::PF_R) != 0 {
@@ -47,11 +46,10 @@ fn load_prog(
     if fsize > 0 {
         let virt = LAddr::from(vstart)..LAddr::from(vend);
         log::trace!("Mapping {:?}", virt);
-        let phys = Phys::new(phys, paging::PAGE_LAYOUT, flags);
-        let virt = unsafe { space.allocate(AllocType::Virt(virt), Some(phys), flags) }
-            .map_err(TaskError::Memory)?;
-        // TODO: add `virt` to `image` field of `TaskInfo` in the future.
-        mem::forget(virt);
+        let cnt = fsize.div_ceil_bit(paging::PAGE_SHIFT);
+        let (layout, _) = paging::PAGE_LAYOUT.repeat(cnt)?;
+        let phys = Phys::new(phys, layout, flags);
+        unsafe { space.map_addr(virt, Some(phys), flags) }?;
     }
 
     if msize > fsize {
@@ -59,46 +57,13 @@ fn load_prog(
 
         let virt = LAddr::from(vend)..LAddr::from(vend + extra);
         log::trace!("Allocating {:?}", virt);
-        let virt = unsafe { space.allocate(AllocType::Virt(virt), None, flags | Flags::ZEROED) }
-            .map_err(TaskError::Memory)?;
-        // TODO: add `virt` to `image` field of `TaskInfo` in the future.
-        mem::forget(virt);
+        unsafe { space.map_addr(virt, None, flags | Flags::ZEROED) }?;
     }
 
     Ok(())
 }
 
-fn load_tls(space: &Arc<Space>, size: usize, align: usize, file_base: LAddr) -> Result<LAddr> {
-    log::trace!("Loading TLS phdr (size = {:?}, align = {:?})", size, align);
-    let layout =
-        core::alloc::Layout::from_size_align(size, align).map_err(|_| TaskError::InvalidFormat)?;
-
-    let (alloc_layout, off) = layout
-        .extend(core::alloc::Layout::new::<*mut u8>())
-        .map_err(|_| TaskError::Memory(SpaceError::InvalidFormat))?;
-    assert_eq!(off, layout.size());
-
-    log::trace!("Allocating TLS {:?}", alloc_layout);
-    space
-        .alloc_tls(
-            alloc_layout,
-            |tls| unsafe {
-                tls.copy_from(*file_base, size);
-                tls.add(size).write_bytes(0, layout.size() - size);
-
-                let self_ptr = tls.add(layout.size()).cast::<usize>();
-                // TLS's self-pointer is written its address there.
-                self_ptr.write(self_ptr as usize);
-
-                Ok(LAddr::new(self_ptr.cast()))
-            },
-            false,
-        )
-        .map_err(TaskError::Memory)?
-        .unwrap()
-}
-
-fn load_elf(space: &Arc<Space>, file: &Elf, image: &[u8]) -> Result<(LAddr, Option<LAddr>, usize)> {
+fn load_elf(space: &Arc<Space>, file: &Elf, image: &[u8]) -> solvent::Result<(LAddr, usize)> {
     log::trace!(
         "Loading ELF file from image {:?}, space = {:?}",
         image.as_ptr(),
@@ -106,7 +71,6 @@ fn load_elf(space: &Arc<Space>, file: &Elf, image: &[u8]) -> Result<(LAddr, Opti
     );
     let entry = LAddr::new(file.entry as *mut u8);
     let mut stack_size = DEFAULT_STACK_SIZE;
-    let mut tls = None;
 
     for phdr in file.program_headers.iter() {
         match phdr.p_type {
@@ -129,45 +93,45 @@ fn load_elf(space: &Arc<Space>, file: &Elf, image: &[u8]) -> Result<(LAddr, Opti
                 (phdr.p_memsz as usize).round_up_bit(paging::PAGE_SHIFT),
             )?,
 
-            program_header::PT_TLS => {
-                tls = Some(load_tls(
-                    space,
-                    phdr.p_memsz as usize,
-                    phdr.p_align as usize,
-                    LAddr::new(unsafe { image.as_ptr().add(phdr.p_offset as usize) } as *mut u8),
-                )?)
-            }
-
-            x => return Err(TaskError::NotSupported(x)),
+            _ => return Err(solvent::Error::ESPRT),
         }
     }
-    Ok((entry, tls, stack_size))
+    Ok((entry, stack_size))
 }
 
-pub fn from_elf<'a, 'b>(
-    image: &'b [u8],
+pub fn from_elf(
+    image: &[u8],
     name: String,
     affinity: CpuMask,
-    init_chan: Option<Channel>,
-) -> Result<(Init, Handle)> {
+    init_chan: hdl::Ref<dyn Any>,
+) -> solvent::Result<(Init, Handle)> {
     let file = Elf::parse(image)
-        .map_err(|_| TaskError::InvalidFormat)
+        .map_err(|_| solvent::Error::EINVAL)
         .and_then(|file| {
             if file.is_64 {
                 Ok(file)
             } else {
-                Err(TaskError::InvalidFormat)
+                Err(solvent::Error::EPERM)
             }
         })?;
 
-    super::create_common(
-        name,
-        Type::User,
-        affinity,
-        prio::DEFAULT,
-        false,
-        |space| load_elf(space, &file, image),
+    let tid = crate::sched::SCHED.with_current(|cur| Ok(cur.tid.clone()))?;
+    let space = Space::new(Type::User);
+    let (entry, stack_size) = load_elf(&space, &file, image)?;
+    let stack = space.init_stack(stack_size)?;
+
+    let starter = super::Starter {
+        entry,
+        stack,
+        arg: 0,
+    };
+    super::exec_inner(
+        tid,
+        Some(name),
+        Some(Type::User),
+        Some(affinity),
+        space,
         init_chan,
-        0,
+        &starter,
     )
 }

@@ -42,7 +42,7 @@ impl Kframe {
     pub fn new(ptr: *const u8, cs: u64) -> Self {
         Kframe {
             cs,
-            ret_addr: task_fresh as u64,
+            ret_addr: task_fresh as usize as u64,
             rbp: ptr as u64 + 1,
             ..Default::default()
         }
@@ -81,21 +81,24 @@ pub struct Frame {
 }
 
 impl Frame {
-    pub fn set_entry(&mut self, entry: Entry, ty: task::Type) {
+    #[inline]
+    pub fn init_zeroed(&mut self, ty: task::Type) {
         let (cs, ss) = match ty {
             task::Type::User => (USR_CODE_X64, USR_DATA_X64),
             task::Type::Kernel => (KRL_CODE_X64, KRL_DATA_X64),
         };
 
+        self.cs = SegSelector::into_val(cs) as u64;
+        self.ss = SegSelector::into_val(ss) as u64;
+    }
+
+    pub fn init_entry(&mut self, entry: &Entry, ty: task::Type) {
+        self.init_zeroed(ty);
+
         self.rip = entry.entry.val() as u64;
         self.rsp = (entry.stack.val() - size_of::<usize>()) as u64;
         self.rflags = archop::reg::rflags::IF;
-        self.cs = SegSelector::into_val(cs) as u64;
-        self.ss = SegSelector::into_val(ss) as u64;
 
-        if let Some(tls) = entry.tls {
-            self.fs_base = tls.val() as u64;
-        }
         if matches!(ty, task::Type::Kernel) {
             // TODO: Check for permissions.
             self.gs_base = unsafe { crate::cpu::arch::KERNEL_GS.as_ptr() } as u64;
@@ -131,11 +134,8 @@ impl Frame {
     }
 
     #[inline]
-    pub unsafe fn debug_get(
-        &self,
-        out: crate::syscall::UserPtr<crate::syscall::Out, solvent::task::ctx::Gpr>,
-    ) -> solvent::Result<()> {
-        out.write(solvent::task::ctx::Gpr {
+    pub fn debug_get(&self) -> solvent::task::ctx::Gpr {
+        solvent::task::ctx::Gpr {
             rax: self.rax,
             rcx: self.rcx,
             rdx: self.rdx,
@@ -156,15 +156,18 @@ impl Frame {
             rflags: self.rflags,
             fs_base: self.fs_base,
             gs_base: self.gs_base,
-        })
+        }
     }
 
+    /// # Errors
+    ///
+    /// Returns error if `fs_base` or `gs_base` is invalid.
     #[inline]
     pub fn debug_set(&mut self, gpr: &solvent::task::ctx::Gpr) -> solvent::Result<()> {
         if !archop::canonical(LAddr::from(gpr.fs_base))
             || !archop::canonical(LAddr::from(gpr.gs_base))
         {
-            return Err(solvent::Error(solvent::EINVAL));
+            return Err(solvent::Error::EINVAL);
         }
         self.gs_base = gpr.gs_base;
         self.fs_base = gpr.fs_base;
@@ -206,7 +209,7 @@ impl Frame {
 
         info!("Frame dump on CPU #{}", unsafe { crate::cpu::id() });
 
-        if self.errc_vec != 0u64.wrapping_sub(1) && errc_format != "" {
+        if self.errc_vec != 0u64.wrapping_sub(1) && !errc_format.is_empty() {
             info!("> Error Code = {}", Flags::new(self.errc_vec, errc_format));
             if errc_format == Self::ERRC_PF {
                 info!("> cr2 (PF addr) = {:#018x}", unsafe {
@@ -240,22 +243,22 @@ impl Frame {
 #[no_mangle]
 unsafe extern "C" fn save_regs() {
     if let Some(ref mut cur) = &mut *crate::sched::SCHED.current() {
-        debug_assert!(!matches!(cur.running_state, task::RunningState::NotRunning));
+        debug_assert!(!cur.running_state.not_running());
         cur.ext_frame.save();
     }
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn switch_finishing() {
+pub(super) unsafe extern "C" fn switch_finishing() {
     if let Some(ref cur) = *crate::sched::SCHED.current() {
         log::trace!("Switched to task {:?}, P{}", cur.tid().raw(), PREEMPT.raw());
-        debug_assert!(!matches!(cur.running_state, task::RunningState::NotRunning));
+        debug_assert!(!cur.running_state.not_running());
 
         let tss_rsp0 = cur.kstack.top().val() as u64;
         KERNEL_GS.update_tss_rsp0(tss_rsp0);
         crate::mem::space::set_current(Arc::clone(&cur.space));
         cur.ext_frame.load();
-        if !cpu::arch::in_intr() && cur.tid.ty == task::Type::Kernel {
+        if !cpu::arch::in_intr() && cur.tid.ty() == task::Type::Kernel {
             KERNEL_GS.load();
         }
     }

@@ -76,33 +76,6 @@ impl Space {
         space
     }
 
-    pub fn clone(this: &Self) -> Self {
-        this.canary.assert();
-
-        let rt = box Table::zeroed();
-        let cr3 = Box::into_raw(rt);
-        let mut rt = unsafe { Box::from_raw(cr3) };
-
-        {
-            let self_rt = this.root_table.lock();
-            rt.copy_from_slice(&self_rt[..]);
-
-            let idx_tls = paging::Level::P4.addr_idx(LAddr::from(minfo::USER_TLS_BASE), false);
-            let idx_stack = paging::Level::P4.addr_idx(LAddr::from(minfo::USER_STACK_BASE), false);
-            debug_assert!(idx_tls == paging::NR_ENTRIES / 2 - 2);
-            debug_assert!(idx_stack == paging::NR_ENTRIES / 2 - 1);
-
-            rt[idx_tls].reset();
-            rt[idx_stack].reset();
-        }
-
-        Space {
-            canary: Canary::new(),
-            root_table: Mutex::new(rt),
-            cr3: LAddr::new(cr3.cast()).to_paddr(minfo::ID_OFFSET),
-        }
-    }
-
     pub(in crate::mem) fn maps(
         &self,
         virt: Range<LAddr>,
@@ -145,7 +118,7 @@ impl Space {
     pub(in crate::mem) fn query(&self, virt: LAddr) -> Result<PAddr, paging::Error> {
         self.canary.assert();
 
-        paging::query(&mut *self.root_table.lock(), virt, minfo::ID_OFFSET)
+        paging::query(&*self.root_table.lock(), virt, minfo::ID_OFFSET)
     }
 
     pub(in crate::mem) fn unmaps(
@@ -155,7 +128,7 @@ impl Space {
         self.canary.assert();
 
         let mut lck = self.root_table.lock();
-        let phys = paging::query(&mut lck, virt.start, minfo::ID_OFFSET).ok();
+        let phys = paging::query(&lck, virt.start, minfo::ID_OFFSET).ok();
         paging::unmaps(&mut lck, virt, minfo::ID_OFFSET, &mut PageAlloc).map(|_| phys)
     }
 
@@ -212,26 +185,19 @@ impl ErrCode {
 pub unsafe fn page_fault(frame: &mut Frame, errc: u64) -> bool {
     let addr = archop::reg::cr2::read();
 
-    loop {
-        let code = match ErrCode::from_bits(errc) {
-            Some(code) => code,
-            None => break,
-        };
-
+    match ErrCode::from_bits(errc) {
         // So far neither has been supported.
-        if code.contains(ErrCode::PROT_KEY | ErrCode::SHADOW_STACK) {
-            break;
-        }
+        Some(code) if !code.contains(ErrCode::PROT_KEY | ErrCode::SHADOW_STACK) => {
+            if SCHED
+                .with_current(|cur| cur.kstack_mut().pf_resume(frame, errc, addr))
+                .is_ok()
+            {
+                return true;
+            }
 
-        if matches!(
-            SCHED.with_current(|cur| cur.kstack_mut().pf_resume(frame, errc, addr)),
-            Some(true)
-        ) {
-            return true;
+            // TODO: Add some handling code.
         }
-
-        // TODO: Add some handling code.
-        break;
+        _ => {}
     }
 
     // No more available remedies.

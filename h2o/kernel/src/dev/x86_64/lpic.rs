@@ -47,7 +47,7 @@ struct LegacyPic {
 impl LegacyPic {
     pub fn new() -> Self {
         LegacyPic {
-            // SAFE: These ports are valid and present.
+            // SAFETY: These ports are valid and present.
             master: unsafe { Port::new(MASTER_PORT) },
             slave: unsafe { Port::new(SLAVE_PORT) },
             masked_irq: 0,

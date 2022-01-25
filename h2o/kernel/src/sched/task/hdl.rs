@@ -1,167 +1,187 @@
-use alloc::vec::Vec;
+mod node;
+
 use core::{
-    hash::BuildHasherDefault,
-    ops::Deref,
-    sync::atomic::{AtomicU32, Ordering::SeqCst},
+    any::Any,
+    marker::{PhantomData, Unsize},
+    ops::CoerceUnsized,
+    ptr::NonNull,
 };
 
-use collection_ex::{CHashMap, CHashMapReadGuard, FnvHasher};
-use solvent::Handle;
+use modular_bitfield::prelude::*;
+use solvent::Result;
+use spin::{Lazy, Mutex};
 
-use crate::sched::ipc::{Channel, Object};
+pub use self::node::{List, Ptr, Ref, MAX_HANDLE_COUNT};
+use crate::sched::{ipc::Channel, PREEMPT};
 
-type BH = BuildHasherDefault<FnvHasher>;
-
-pub struct HandleGuard<'a, T> {
-    _inner: CHashMapReadGuard<'a, Handle, Object, BH>,
-    value: &'a T,
-}
-
-impl<'a, T> Deref for HandleGuard<'a, T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        unsafe { self.value }
-    }
+#[bitfield]
+struct Value {
+    gen: B14,
+    index: B18,
 }
 
 #[derive(Debug)]
-pub struct HandleMap {
-    next_id: AtomicU32,
-    map: CHashMap<Handle, Object, BH>,
+pub struct Object<T: ?Sized> {
+    send: bool,
+    sync: bool,
+    data: T,
 }
 
-unsafe impl Send for HandleMap {}
-unsafe impl Sync for HandleMap {}
+impl<U: ?Sized, T: ?Sized + CoerceUnsized<U> + Unsize<U>> CoerceUnsized<Object<U>> for Object<T> {}
+
+#[derive(Debug)]
+pub struct HandleMap {
+    list: Mutex<node::List>,
+    mix: u32,
+}
 
 impl HandleMap {
     #[inline]
     pub fn new() -> Self {
         HandleMap {
-            next_id: AtomicU32::new(1),
-            map: CHashMap::new(BH::default()),
+            list: Mutex::new(List::new()),
+            mix: archop::rand::get() as u32,
         }
     }
 
-    #[inline]
-    pub fn insert<T: Send + 'static>(&self, obj: T) -> Handle {
-        unsafe { self.insert_unchecked(obj, true, false) }
+    pub fn decode(&self, handle: solvent::Handle) -> Result<Ptr> {
+        let value = handle.raw() ^ self.mix;
+        let value = Value::from_bytes(value.to_ne_bytes());
+        let _ = value.gen();
+        usize::try_from(value.index())
+            .map_err(Into::into)
+            .and_then(node::decode)
     }
 
     #[inline]
-    pub fn insert_shared<T: Send + Sync + 'static>(&self, obj: T) -> Handle {
-        unsafe { self.insert_unchecked(obj, true, true) }
+    pub fn get<T: Send + 'static>(&self, handle: solvent::Handle) -> Result<&Ref<T>> {
+        // SAFETY: The type is `Send`.
+        unsafe { self.get_unchecked(handle) }
     }
 
     /// # Safety
     ///
-    /// The caller is responsible for the usage of the inserted object if its
-    /// `!Send`.
+    /// The caller must ensure that the list belongs to the current task if the
+    /// expected type is not [`Send`].
     #[inline]
-    pub unsafe fn insert_unchecked<T: 'static>(&self, obj: T, send: bool, shared: bool) -> Handle {
-        self.insert_impl(Object::new_unchecked(obj, send, shared))
-    }
-
-    unsafe fn insert_impl(&self, obj: Object) -> Handle {
-        let id = Handle::new(self.next_id.fetch_add(1, SeqCst));
-        let _ret = self.map.insert(id, obj);
-        debug_assert!(_ret.is_none());
-        id
+    pub unsafe fn get_unchecked<T: 'static>(&self, handle: solvent::Handle) -> Result<&Ref<T>> {
+        self.decode(handle)
+            .and_then(|ptr| unsafe { ptr.as_ref().downcast_ref::<T>() })
     }
 
     #[inline]
-    pub fn get<T: Send + 'static>(&self, hdl: Handle) -> Option<HandleGuard<'_, T>> {
-        unsafe { self.get_unchecked(hdl) }
+    pub fn clone_ref(&self, handle: solvent::Handle) -> Result<solvent::Handle> {
+        let old_ptr = self.decode(handle)?;
+        let new = unsafe { old_ptr.as_ref() }.try_clone()?;
+        unsafe { self.insert_ref(new) }
+    }
+
+    pub fn encode(&self, value: Ptr) -> Result<solvent::Handle> {
+        let index =
+            node::encode(value).and_then(|index| u32::try_from(index).map_err(Into::into))?;
+        let value = Value::new()
+            .with_gen(0)
+            .with_index_checked(index)
+            .map_err(|_| solvent::Error::ERANGE)?;
+        Ok(solvent::Handle::new(
+            u32::from_ne_bytes(value.into_bytes()) ^ self.mix,
+        ))
     }
 
     /// # Safety
     ///
-    /// The caller must ensure the current task is the owner of the
-    /// [`HandleMap`] if the returned object is `!Send`.
-    pub unsafe fn get_unchecked<T: 'static>(&self, hdl: Handle) -> Option<HandleGuard<'_, T>> {
-        self.map.get(&hdl).and_then(|inner| {
-            match inner.deref_unchecked().map(|value| value as *const _) {
-                Some(value) => Some(HandleGuard {
-                    _inner: inner,
-                    value: unsafe { &*value },
-                }),
-                None => None,
-            }
+    /// The caller must ensure that `value` comes from the current task if its
+    /// not [`Send`].
+    #[inline]
+    pub unsafe fn insert_ref(&self, value: Ref<dyn Any>) -> Result<solvent::Handle> {
+        // SAFETY: The safety condition is guaranteed by the caller.
+        let link = PREEMPT.scope(|| unsafe { self.list.lock().insert_impl(value) })?;
+        self.encode(link)
+    }
+
+    /// # Safety
+    ///
+    /// The caller must ensure that `T` is [`Send`] if `send` and [`Sync`] if
+    /// `sync`.
+    pub unsafe fn insert_unchecked<T: 'static>(
+        &self,
+        data: T,
+        send: bool,
+        sync: bool,
+    ) -> Result<solvent::Handle> {
+        // SAFETY: The safety condition is guaranteed by the caller.
+        let value = unsafe { Ref::new_unchecked(data, send, sync) };
+        // SAFETY: The safety condition is guaranteed by the caller.
+        unsafe { self.insert_ref(value.coerce_unchecked()) }
+    }
+
+    #[inline]
+    pub fn insert<T: Send + 'static>(&self, data: T) -> Result<solvent::Handle> {
+        let value = Ref::new(data);
+        // SAFETY: data is `Send`.
+        unsafe { self.insert_ref(value.coerce_unchecked()) }
+    }
+
+    /// # Safety
+    ///
+    /// The caller must ensure that the list belongs to the current task if
+    /// `link` is not [`Send`].
+    #[inline]
+    pub unsafe fn remove_ref(&self, handle: solvent::Handle) -> Result<Ref<dyn Any>> {
+        let link = self.decode(handle)?;
+        // SAFETY: The safety condition is guaranteed by the caller.
+        PREEMPT.scope(|| unsafe { self.list.lock().remove_impl(link) })
+    }
+
+    #[inline]
+    pub fn remove<T: Send + 'static>(&self, handle: solvent::Handle) -> Result<Ref<dyn Any>> {
+        let _ = PhantomData::<T>;
+        self.decode(handle)
+            // SAFETY: Dereference within the available range.
+            .and_then(|value| unsafe { value.as_ref().downcast_ref::<T>() })
+            // SAFETY: The type is `Send`.
+            .and_then(|_| unsafe { self.remove_ref(handle) })
+    }
+
+    pub fn send(&self, handles: &[solvent::Handle], src: &Channel) -> Result<List> {
+        if handles.is_empty() {
+            return Ok(List::new());
+        }
+        PREEMPT.scope(|| {
+            self.list
+                .lock()
+                .split(
+                    handles.iter().map(|&handle| self.decode(handle)),
+                    |value| match value.downcast_ref::<Channel>() {
+                        Ok(chan) if chan.peer_eq(src) => Err(solvent::Error::EPERM),
+                        Err(_) if !value.is_send() => Err(solvent::Error::EPERM),
+                        _ => Ok(()),
+                    },
+                )
         })
     }
 
-    pub fn clone_handle(&self, hdl: Handle) -> Option<Handle> {
-        match self.map.get(&hdl).and_then(|k| Object::clone(&*k)) {
-            Some(o) => Some(unsafe { self.insert_impl(o) }),
-            None => None,
-        }
-    }
-
-    pub fn remove<T: Send + 'static>(&self, hdl: Handle) -> Option<T> {
-        self.map
-            .remove_if(&hdl, |obj| obj.deref::<T>().is_some())
-            .map(|obj| Object::into_inner(obj).unwrap())
-    }
-
-    pub fn drop_shared<T: Send + Sync + 'static>(&self, hdl: Handle) -> bool {
-        self.map
-            .remove_if(&hdl, |obj| obj.deref::<T>().is_some())
-            .is_some()
-    }
-
-    /// # Safety
-    ///
-    /// The caller must ensure the current task is the owner of the
-    /// [`HandleMap`] if the dropped object is `!Send`.
-    pub unsafe fn drop_unchecked(&self, hdl: Handle) -> bool {
-        self.map.remove(&hdl).is_some()
-    }
-
-    /// # Safety
-    ///
-    /// The caller must ensure every object indexed by `handles` in the map is
-    /// `Send`, excluding:
-    /// * [`crate::mem::space::Virt`].
-    pub unsafe fn send_for_channel<'a, 'b>(
-        &'a self,
-        handles: &'b [Handle],
-        chan: Handle,
-    ) -> Result<(Vec<Object>, HandleGuard<'a, Channel>), solvent::Error> {
-        debug_assert!(!handles.contains(&chan));
-
-        let get_chan = || {
-            self.get::<Channel>(chan)
-                .ok_or(solvent::Error(solvent::EINVAL))
-        };
-
-        {
-            let chan = get_chan()?;
-            for hdl in handles {
-                match self.map.get(&hdl) {
-                    None => return Err(solvent::Error(solvent::EINVAL)),
-                    Some(obj) if !obj.is_send() => return Err(solvent::Error(solvent::EPERM)),
-                    Some(obj) => match (*obj).deref::<Channel>() {
-                        Some(other) if unsafe { &*chan }.is_peer(other) => {
-                            return Err(solvent::Error(solvent::EPERM))
-                        }
-                        _ => (),
-                    },
-                }
+    #[inline]
+    pub fn receive(&self, other: &mut List, handles: &mut [solvent::Handle]) {
+        PREEMPT.scope(|| {
+            let mut list = self.list.lock();
+            for (hdl, obj) in handles.iter_mut().zip(list.merge(other)) {
+                *hdl = self.encode(NonNull::from(obj)).unwrap();
             }
-        }
-        let obj = handles
-            .into_iter()
-            .map(|hdl| self.map.remove(&hdl).unwrap())
-            .collect();
-        Ok((obj, get_chan().unwrap()))
+        })
     }
+}
 
-    pub fn receive(&self, objects: Vec<Object>) -> Vec<Handle> {
-        objects
-            .into_iter()
-            .map(|obj| unsafe { self.insert_impl(obj) })
-            .collect()
+impl Default for HandleMap {
+    #[inline]
+    fn default() -> Self {
+        Self::new()
     }
+}
+
+#[inline]
+pub(super) fn init() {
+    Lazy::force(&node::HR_ARENA);
 }
 
 mod syscall {
@@ -170,20 +190,16 @@ mod syscall {
     use crate::sched::SCHED;
 
     #[syscall]
-    fn obj_clone(hdl: Handle) -> Handle {
+    fn obj_clone(hdl: Handle) -> Result<Handle> {
         hdl.check_null()?;
-        SCHED
-            .with_current(|cur| cur.tid().handles().clone_handle(hdl))
-            .ok_or(Error(ESRCH))
-            .transpose()
-            .ok_or(Error(EINVAL))
-            .flatten()
+        SCHED.with_current(|cur| cur.tid().handles().clone_ref(hdl))
     }
 
     #[syscall]
-    fn obj_drop(hdl: Handle) {
+    fn obj_drop(hdl: Handle) -> Result {
         hdl.check_null()?;
-        SCHED.with_current(|cur| unsafe { cur.tid().handles().drop_unchecked(hdl) });
-        Ok(())
+        SCHED
+            .with_current(|cur| unsafe { cur.tid().handles().remove_ref(hdl) })
+            .map(|_| {})
     }
 }

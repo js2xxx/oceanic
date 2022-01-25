@@ -18,6 +18,7 @@ use crate::{
     },
 };
 
+#[allow(clippy::declare_interior_mutable_const)]
 const VEC_INTR_INIT: Mutex<Option<Weak<Interrupt>>> = Mutex::new(None);
 #[thread_local]
 static VEC_INTR: [Mutex<Option<Weak<Interrupt>>>; NR_VECTORS] = [VEC_INTR_INIT; NR_VECTORS];
@@ -85,17 +86,22 @@ pub unsafe fn try_unregister(intr: &Arc<Interrupt>) -> Result<(), RegisterError>
 unsafe fn exception(frame_ptr: *mut Frame, vec: def::ExVec) {
     use def::ExVec::*;
 
-    let frame = &*frame_ptr;
+    let frame = &mut *frame_ptr;
     match vec {
         PageFault if crate::mem::space::page_fault(&mut *frame_ptr, frame.errc_vec) => return,
         _ => {}
     }
 
-    match SCHED.with_current(|cur| cur.tid().ty()) {
-        Some(task::Type::User) if frame.cs == USR_CODE_X64.into_val().into() => {
-            if !task::dispatch_exception(frame_ptr, vec) {
+    match SCHED.with_current(|cur| Ok(cur.tid().ty())) {
+        Ok(task::Type::User) if frame.cs == USR_CODE_X64.into_val().into() => {
+            if !task::dispatch_exception(frame, vec) {
+                // #[cfg(debug_assertions)]
+                // let _ = SCHED.with_current(|cur| {
+                //     log::warn!("Unhandled exception from task {}.", cur.tid().raw());
+                //     Ok(())
+                // });
                 // Kill the fucking task.
-                SCHED.exit_current((-solvent::EFAULT) as usize)
+                SCHED.exit_current(solvent::Error::EFAULT.into_retval())
             }
             // unreachable!()
         }

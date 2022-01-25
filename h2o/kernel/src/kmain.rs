@@ -1,27 +1,34 @@
 #![no_std]
 #![no_main]
 #![allow(unused_unsafe)]
-#![warn(clippy::missing_errors_doc)]
-#![warn(clippy::missing_panics_doc)]
+// #![warn(clippy::missing_errors_doc)]
+// #![warn(clippy::missing_panics_doc)]
+#![allow(clippy::missing_safety_doc)]
 #![feature(alloc_layout_extra)]
 #![feature(alloc_error_handler)]
 #![feature(allocator_api)]
+#![feature(assert_matches)]
 #![feature(bool_to_option)]
 #![feature(box_into_inner)]
 #![feature(box_syntax)]
+#![feature(coerce_unsized)]
 #![feature(const_btree_new)]
 #![feature(const_fn_fn_ptr_basics)]
 #![feature(core_intrinsics)]
 #![feature(downcast_unchecked)]
+#![feature(layout_for_ptr)]
 #![feature(map_first_last)]
 #![feature(new_uninit)]
 #![feature(nonnull_slice_from_raw_parts)]
 #![feature(once_cell)]
-#![feature(result_flattening)]
+#![feature(receiver_trait)]
+#![feature(result_into_ok_or_err)]
+#![feature(result_option_inspect)]
 #![feature(slice_ptr_get)]
 #![feature(slice_ptr_len)]
 #![feature(thread_local)]
 #![feature(trace_macros)]
+#![feature(unsize)]
 #![feature(unzip_option)]
 #![feature(vec_into_raw_parts)]
 
@@ -55,11 +62,12 @@ pub extern "C" fn kmain() {
         cpu::arch::reload_pls();
     }
 
-    // SAFE: Everything is uninitialized.
+    // SAFETY: Everything is uninitialized.
     unsafe { self::log::init(l::Level::Debug) };
     l::info!("Starting the kernel");
 
     mem::init();
+    sched::task::init_early();
 
     unsafe { cpu::arch::init() };
 
@@ -68,18 +76,19 @@ pub extern "C" fn kmain() {
     sched::init();
 
     // Test end
-    l::debug!("Reaching end of kernel");
+    l::trace!("Reaching end of kernel");
 }
 
 pub fn kmain_ap() {
     unsafe { cpu::set_id(false) };
-    l::debug!("Starting the kernel");
+    cpu::arch::seg::test_pls();
+    l::trace!("Starting the kernel");
 
     unsafe { mem::space::init() };
     unsafe { cpu::arch::init_ap() };
 
     sched::init();
 
-    l::debug!("Finished");
+    l::trace!("Finished");
     unsafe { archop::halt_loop(Some(true)) };
 }

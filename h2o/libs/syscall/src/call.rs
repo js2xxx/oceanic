@@ -13,11 +13,13 @@ syscall_stub!(0 => pub(crate) fn get_time(ptr: *mut u128));
 syscall_stub!(1 => pub(crate) fn log(args: *const ::log::Record));
 
 syscall_stub!(2 => pub(crate) fn task_exit(retval: usize));
-syscall_stub!(3 => 
-    pub(crate) fn task_fn(
-        ci: *const crate::task::CreateInfo,
-        cf: crate::task::CreateFlags,
-        extra: *mut Handle
+syscall_stub!(3 => pub(crate) fn task_exec(ci: *const crate::task::ExecInfo) -> Handle);
+syscall_stub!(4 =>
+    pub(crate) fn task_new(
+        name: *const u8,
+        name_len: usize,
+        space: Handle,
+        init: *mut Handle
     ) -> Handle
 );
 syscall_stub!(5 => pub(crate) fn task_join(hdl: Handle) -> usize);
@@ -33,28 +35,14 @@ syscall_stub!(7 =>
 );
 syscall_stub!(8 => pub(crate) fn task_sleep(ms: u32));
 
-syscall_stub!(9 =>
-    pub(crate) fn virt_alloc(
-        virt: *mut *mut u8,
-        phys: usize,
-        size: usize,
-        align: usize,
-        flags: u32
-    ) -> Handle
-);
-syscall_stub!(10 =>
-    pub(crate) unsafe fn virt_prot(
-        hdl: Handle,
-        ptr: *mut u8,
-        size: usize,
-        flags: u32
-    )
-);
-syscall_stub!(11 => pub(crate) fn mem_alloc(size: usize, align: usize, flags: u32) -> *mut u8);
-syscall_stub!(12 => pub(crate) fn mem_dealloc(ptr: *mut u8));
+syscall_stub!(9 => pub(crate) fn phys_alloc(size: usize, align: usize, flags: u32) -> Handle);
+syscall_stub!(10 => pub(crate) fn mem_new() -> Handle);
+syscall_stub!(11 => pub(crate) fn mem_map(space: Handle, mi: *const crate::mem::MapInfo) -> *mut u8);
+syscall_stub!(12 => pub(crate) fn mem_reprot(space: Handle, ptr: *mut u8, len: usize, flags: u32));
+syscall_stub!(13 => pub(crate) fn mem_unmap(space: Handle, ptr: *mut u8));
 
 // #[cfg(debug_assertions)]
-syscall_stub!(13 => pub(crate) fn wo_new() -> Handle);
+syscall_stub!(14 => pub(crate) fn wo_new() -> Handle);
 // #[cfg(debug_assertions)]
 syscall_stub!(15 => pub(crate) fn wo_notify(hdl: Handle, n: usize) -> usize);
 

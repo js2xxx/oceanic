@@ -1,3 +1,5 @@
+use crate::call::reg::SerdeReg;
+
 /// # Safety
 ///
 /// The caller is responsible for the arguments and the results of the syscall.
@@ -18,5 +20,5 @@ pub unsafe fn syscall(arg: &crate::Arguments) -> crate::Result<usize> {
           out("r11") _,
           options(nostack)
     );
-    crate::Error::decode(rax)
+    crate::Result::decode(rax)
 }

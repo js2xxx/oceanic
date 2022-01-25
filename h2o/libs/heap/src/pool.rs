@@ -57,10 +57,9 @@ impl Pool {
     /// 2. There's no free slab page.
     pub fn allocate(&mut self, layout: Layout) -> Result<LAddr, Error> {
         let idx = unwrap_layout(layout)?;
-        self.slabs[idx].pop().map(|ret| {
-            self.stat.allocate(layout.pad_to_align().size());
-            ret
-        })
+        self.slabs[idx]
+            .pop()
+            .inspect(|_| self.stat.allocate(layout.pad_to_align().size()))
     }
 
     /// Deallocate an object to the slab lists
@@ -78,10 +77,9 @@ impl Pool {
         layout: Layout,
     ) -> Result<Option<NonNull<Page>>, Error> {
         let idx = unwrap_layout(layout)?;
-        self.slabs[idx].push(addr).map(|ret| {
-            self.stat.deallocate(layout.pad_to_align().size());
-            ret
-        })
+        self.slabs[idx]
+            .push(addr)
+            .inspect(|_| self.stat.deallocate(layout.pad_to_align().size()))
     }
 
     pub fn stat(&self) -> Stat {

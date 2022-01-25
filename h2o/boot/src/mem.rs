@@ -115,7 +115,7 @@ pub fn init(syst: &SystemTable<Boot>) {
 pub fn alloc(syst: &SystemTable<Boot>) -> BootAlloc {
     log::trace!("mem::alloc: syst = {:?}", syst as *const _);
     BootAlloc {
-        bs: &syst.boot_services(),
+        bs: syst.boot_services(),
     }
 }
 
@@ -144,7 +144,7 @@ pub fn maps(
         unsafe { ROOT_TABLE.assume_init().as_mut() },
         &map_info,
         &mut BootAlloc {
-            bs: &syst.boot_services(),
+            bs: syst.boot_services(),
         },
     )
 }
@@ -162,7 +162,7 @@ pub fn unmaps(syst: &SystemTable<Boot>, virt: Range<paging::LAddr>) -> Result<()
         virt,
         EFI_ID_OFFSET,
         &mut BootAlloc {
-            bs: &syst.boot_services(),
+            bs: syst.boot_services(),
         },
     )
 }
@@ -184,7 +184,8 @@ pub fn init_pf(syst: &SystemTable<Boot>) -> (usize, usize) {
             addr_max = addr_max.max(block.phys_start + (block.page_count << paging::PAGE_SHIFT));
 
             let cur = block as *const boot::MemoryDescriptor as *const u8;
-            size = size.or(last.map(|last| unsafe { last.cast::<u8>().offset_from(cur).abs() }));
+            size = size
+                .or_else(|| last.map(|last| unsafe { last.cast::<u8>().offset_from(cur).abs() }));
             last.get_or_insert(cur);
         }
         debug_assert!(addr_max > 0);

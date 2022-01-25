@@ -11,22 +11,25 @@ use raw_cpuid::CpuId;
 use spin::{Lazy, RwLock};
 
 use super::intr::def::ApicVec;
-use crate::mem::space::{self, AllocType, Flags, KernelVirt, Phys};
+use crate::mem::space::{self, Flags, Phys};
 
 pub static LAPIC_ID: RwLock<BTreeMap<usize, u32>> = RwLock::new(BTreeMap::new());
-static LAPIC_BASE: Lazy<KernelVirt> = Lazy::new(|| {
+static LAPIC_BASE: Lazy<usize> = Lazy::new(|| {
     let phys = Phys::new(
         PAddr::new(0xFEE00000),
         PAGE_LAYOUT,
         Flags::READABLE | Flags::WRITABLE | Flags::UNCACHED,
     );
     space::KRL
-        .allocate_kernel(
-            AllocType::Layout(phys.layout()),
-            Some(Arc::clone(&phys)),
+        .map(
+            None,
+            Arc::clone(&phys),
+            0,
+            phys.layout().size(),
             phys.flags(),
         )
         .expect("Failed to allocate memory")
+        .val()
 });
 #[thread_local]
 static mut LAPIC: Option<Lapic> = None;
@@ -73,19 +76,27 @@ pub enum TriggerMode {
 
 #[derive(Clone, Copy)]
 #[bitfield]
-pub struct LocalEntry {
+struct LocalEntry {
+    #[skip(getters)]
     vec: u8,
     #[bits = 3]
+    #[skip(getters)]
     deliv_mode: DelivMode,
     #[skip]
     __: B1,
+    #[skip(getters)]
     pending: bool,
+    #[skip(getters)]
     #[bits = 1]
     polarity: Polarity,
+    #[skip(getters)]
     remote_irr: bool,
+    #[skip(getters)]
     #[bits = 1]
     trigger_mode: TriggerMode,
+    #[skip(getters)]
     mask: bool,
+    #[skip(getters)]
     timer_mode: timer::TimerMode,
     #[skip]
     __: B13,
@@ -183,18 +194,20 @@ impl Lapic {
     }
 
     pub fn new() -> Self {
-        let mut ty = if {
-            let cpuid = CpuId::new();
-            cpuid.get_feature_info().unwrap().has_x2apic()
-        } {
-            // SAFE: Enabling Local X2 APIC if possible.
-            unsafe {
-                let val = msr::read(msr::APIC_BASE);
-                msr::write(msr::APIC_BASE, val | (1 << 10));
+        let mut ty = {
+            let has_x2apic = CpuId::new()
+                .get_feature_info()
+                .map_or(false, |f| f.has_x2apic());
+            if has_x2apic {
+                // SAFETY: Enabling Local X2 APIC if possible.
+                unsafe {
+                    let val = msr::read(msr::APIC_BASE);
+                    msr::write(msr::APIC_BASE, val | (1 << 10));
+                }
+                LapicType::X2
+            } else {
+                LapicType::X1(LAddr::from(*LAPIC_BASE))
             }
-            LapicType::X2
-        } else {
-            LapicType::X1(LAPIC_BASE.base())
         };
 
         // Get the LAPIC ID.
@@ -341,7 +354,7 @@ pub unsafe fn spurious_handler() {
 /// The caller must ensure that this function is only called by the error
 /// handler.
 pub unsafe fn error_handler() {
-    // SAFE: Inside the interrupt error handler.
+    // SAFETY: Inside the interrupt error handler.
     lapic(|lapic| lapic.handle_error());
 }
 

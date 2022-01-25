@@ -159,7 +159,7 @@ impl<K, V, S: BuildHasher> Buckets<K, V, S> {
                 Entry::Removed => free = free.or(Some(entry)),
             }
         }
-        None
+        free
     }
 
     pub fn move_from(&mut self, other: Self)

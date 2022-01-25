@@ -1,4 +1,3 @@
-use alloc::vec;
 use core::{
     mem::{self, MaybeUninit},
     slice,
@@ -9,20 +8,15 @@ use archop::reg::cr2;
 use bytes::Buf;
 use solvent::task::excep::{Exception, ExceptionResult, EXRES_CODE_OK};
 
-use super::ctx::x86_64::Frame;
+use super::{ctx::x86_64::Frame, hdl};
 use crate::{
     cpu::intr::arch::ExVec,
     sched::{ipc::Packet, PREEMPT, SCHED},
 };
 
-pub fn dispatch_exception(frame: *mut Frame, vec: ExVec) -> bool {
-    let slot = match SCHED.with_current(|cur| {
-        unsafe { &*cur.tid.from.get() }
-            .as_ref()
-            .and_then(|from| from.1.as_ref())
-            .map(|child| child.excep_chan())
-    }) {
-        Some(Some(slot)) => slot,
+pub fn dispatch_exception(frame: &mut Frame, vec: ExVec) -> bool {
+    let slot = match SCHED.with_current(|cur| Ok(cur.tid.excep_chan())) {
+        Ok(slot) => slot,
         _ => return false,
     };
 
@@ -34,7 +28,7 @@ pub fn dispatch_exception(frame: *mut Frame, vec: ExVec) -> bool {
     let data: [u8; mem::size_of::<Exception>()] = unsafe {
         mem::transmute(Exception {
             vec: vec as u8,
-            errc: (*frame).errc_vec,
+            errc: unsafe { frame.errc_vec },
             cr2: match vec {
                 ExVec::PageFault => cr2::read(),
                 _ => 0,
@@ -42,8 +36,8 @@ pub fn dispatch_exception(frame: *mut Frame, vec: ExVec) -> bool {
         })
     };
 
-    let excep = Packet::new(vec![], &data);
-    if let Err(_) = excep_chan.send(excep) {
+    let mut excep = Packet::new(hdl::List::default(), &data);
+    if excep_chan.send(&mut excep).is_err() {
         PREEMPT.scope(|| *slot.lock() = Some(excep_chan));
         return false;
     }
@@ -63,7 +57,7 @@ pub fn dispatch_exception(frame: *mut Frame, vec: ExVec) -> bool {
             Some(res.code == EXRES_CODE_OK)
         }
         Err(err) => match err {
-            crate::sched::ipc::IpcError::ChannelClosed(_) => None,
+            solvent::Error::EPIPE => None,
             _ => Some(false),
         },
     };
