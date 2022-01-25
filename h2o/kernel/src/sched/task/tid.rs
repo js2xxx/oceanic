@@ -89,8 +89,3 @@ pub fn deallocate(tid: &Tid) -> bool {
         true
     })
 }
-
-pub fn has_ti(tid: &Tid) -> bool {
-    let _flags = PREEMPT.lock();
-    TI_MAP.contains_key(&tid.raw.get())
-}

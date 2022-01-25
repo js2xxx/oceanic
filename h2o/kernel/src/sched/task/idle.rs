@@ -1,7 +1,11 @@
 use core::hint;
 
 use super::*;
-use crate::{cpu::CpuLocalLazy, mem::space, sched::deque};
+use crate::{
+    cpu::CpuLocalLazy,
+    mem::space,
+    sched::{deque, task, SCHED},
+};
 
 /// Context dropper - used for dropping kernel stacks of threads.
 ///
@@ -53,57 +57,11 @@ pub(super) static IDLE: CpuLocalLazy<Tid> = CpuLocalLazy::new(|| {
 fn idle(cpu: usize, fs_base: u64) -> ! {
     unsafe { archop::msr::write(archop::msr::FS_BASE, fs_base) };
 
-    use crate::sched::{task, SCHED};
     log::debug!("IDLE #{}", cpu);
 
-    let (_, ctx_chan) = Channel::new();
-    let ctx_chan = unsafe { Ref::new(ctx_chan).coerce_unchecked() };
-
-    let space = SCHED
-        .with_current(|cur| Ok(Arc::clone(cur.space())))
-        .expect("Failed to clone current space");
-    let stack = space
-        .init_stack(DEFAULT_STACK_SIZE)
-        .expect("Failed to initialize stack");
-
-    let starter = super::Starter {
-        entry: LAddr::new(ctx_dropper as *mut u8),
-        stack,
-        arg: unsafe { archop::msr::read(archop::msr::FS_BASE) },
-    };
-    let (ctx_dropper, ..) = task::exec(Some(String::from("CTXD")), space, ctx_chan, &starter)
-        .expect("Failed to create context dropper");
-    SCHED.unblock(ctx_dropper);
-
     if cpu == 0 {
-        let (me, chan) = Channel::new();
-        let chan = unsafe { Ref::new(chan).coerce_unchecked() };
-
-        me.send(&mut crate::sched::ipc::Packet::new(
-            hdl::List::default(),
-            &[],
-        ))
-        .expect("Failed to send message");
-
-        let image = unsafe {
-            core::slice::from_raw_parts(
-                *crate::kargs().tinit_phys.to_laddr(minfo::ID_OFFSET),
-                crate::kargs().tinit_len,
-            )
-        };
-
-        let (tinit, ..) =
-            task::from_elf(image, String::from("TINIT"), crate::cpu::all_mask(), chan)
-                .expect("Failed to initialize TINIT");
-        SCHED.unblock(tinit);
+        spawn_tinit();
     }
-
-    unsafe { archop::halt_loop(Some(true)) };
-}
-
-fn ctx_dropper(_: u64, fs_base: u64) -> ! {
-    unsafe { archop::msr::write(archop::msr::FS_BASE, fs_base) };
-    log::debug!("Context dropper for cpu #{}", unsafe { crate::cpu::id() });
 
     let worker = deque::Worker::new_fifo();
     loop {
@@ -121,4 +79,23 @@ fn ctx_dropper(_: u64, fs_base: u64) -> ! {
         });
         unsafe { archop::resume_intr(None) };
     }
+}
+
+fn spawn_tinit() {
+    let (me, chan) = Channel::new();
+    let chan = unsafe { hdl::Ref::new(chan).coerce_unchecked() };
+    me.send(&mut crate::sched::ipc::Packet::new(
+        hdl::List::default(),
+        &[],
+    ))
+    .expect("Failed to send message");
+    let image = unsafe {
+        core::slice::from_raw_parts(
+            *crate::kargs().tinit_phys.to_laddr(minfo::ID_OFFSET),
+            crate::kargs().tinit_len,
+        )
+    };
+    let (tinit, ..) = task::from_elf(image, String::from("TINIT"), crate::cpu::all_mask(), chan)
+        .expect("Failed to initialize TINIT");
+    SCHED.unblock(tinit);
 }

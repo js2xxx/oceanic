@@ -28,7 +28,7 @@ pub const TASK_DBGADDR_FPU: usize = 0x2000;
 #[derive(Debug, Copy, Clone)]
 #[repr(C)]
 pub struct ExecInfo {
-    pub name: *mut u8,
+    pub name: *const u8,
     pub name_len: usize,
     pub space: Handle,
     pub entry: *mut u8,

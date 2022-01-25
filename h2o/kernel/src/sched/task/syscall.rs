@@ -67,7 +67,7 @@ fn task_exec(ci: UserPtr<In, task::ExecInfo>) -> Result<Handle> {
     ci.init_chan.check_null()?;
 
     let name = {
-        let ptr = UserPtr::<In, _>::new(ci.name);
+        let ptr = UserPtr::<In, _>::new(ci.name as *mut u8);
         if !ptr.as_ptr().is_null() {
             let name_len = ci.name_len;
             let mut buf = Vec::<u8>::with_capacity(name_len);
@@ -114,17 +114,16 @@ fn task_exec(ci: UserPtr<In, task::ExecInfo>) -> Result<Handle> {
 
 #[syscall]
 fn task_new(
-    name: *mut u8,
+    name: UserPtr<In, u8>,
     name_len: usize,
     space: Handle,
     st: UserPtr<Out, Handle>,
 ) -> Result<Handle> {
     let name = {
-        let ptr = UserPtr::<In, _>::new(name);
-        if !ptr.as_ptr().is_null() {
+        if !name.as_ptr().is_null() {
             let mut buf = Vec::<u8>::with_capacity(name_len);
             unsafe {
-                ptr.read_slice(buf.as_mut_ptr(), name_len)?;
+                name.read_slice(buf.as_mut_ptr(), name_len)?;
                 buf.set_len(name_len);
             }
             Some(String::from_utf8(buf).map_err(|_| Error::EINVAL)?)

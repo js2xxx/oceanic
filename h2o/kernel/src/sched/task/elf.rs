@@ -103,7 +103,7 @@ pub fn from_elf(
     image: &[u8],
     name: String,
     affinity: CpuMask,
-    init_chan: Ref<dyn Any>,
+    init_chan: hdl::Ref<dyn Any>,
 ) -> solvent::Result<(Init, Handle)> {
     let file = Elf::parse(image)
         .map_err(|_| solvent::Error::EINVAL)

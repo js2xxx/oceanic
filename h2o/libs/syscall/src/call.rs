@@ -16,7 +16,7 @@ syscall_stub!(2 => pub(crate) fn task_exit(retval: usize));
 syscall_stub!(3 => pub(crate) fn task_exec(ci: *const crate::task::ExecInfo) -> Handle);
 syscall_stub!(4 =>
     pub(crate) fn task_new(
-        name: *mut u8,
+        name: *const u8,
         name_len: usize,
         space: Handle,
         init: *mut Handle

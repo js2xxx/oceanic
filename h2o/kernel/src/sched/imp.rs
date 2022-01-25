@@ -169,8 +169,9 @@ impl Scheduler {
 
         if unsafe { self.update(cur_time) } {
             let ret = self.schedule(cur_time, pree);
-            if let Err(err) = ret {
-                log::warn!("Scheduling failed: {:?}", err);
+            match ret {
+                Ok(()) | Err(solvent::Error::ENOENT) => {}
+                Err(err) => log::warn!("Scheduling failed: {:?}", err),
             }
         }
     }
@@ -193,7 +194,7 @@ impl Scheduler {
         }
 
         match ti.with_signal(|sig| sig.take()) {
-            Some(task::sig::Signal::Kill) => {
+            Some(task::Signal::Kill) => {
                 log::trace!("Killing task {:?}, P{}", cur.tid.raw(), PREEMPT.raw());
                 let _ = self.schedule_impl(cur_time, pree, None, |task| {
                     task::Ready::exit(task, solvent::Error::EKILLED.into_retval());
@@ -201,7 +202,7 @@ impl Scheduler {
                 });
                 unreachable!("Dead task");
             }
-            Some(task::sig::Signal::Suspend(slot)) => {
+            Some(task::Signal::Suspend(slot)) => {
                 log::trace!("Suspending task {:?}, P{}", cur.tid.raw(), PREEMPT.raw());
                 let ret = self.schedule_impl(cur_time, pree, None, |task| {
                     *slot.lock() = Some(task::Ready::block(task, "task_ctl_suspend"));

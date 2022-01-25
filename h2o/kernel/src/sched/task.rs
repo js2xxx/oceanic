@@ -2,11 +2,11 @@ pub mod ctx;
 mod elf;
 mod excep;
 pub mod hdl;
-pub mod idle;
-pub mod sig;
+mod idle;
+mod sig;
 mod sm;
 mod syscall;
-pub mod tid;
+mod tid;
 
 use alloc::{format, string::String, sync::Arc};
 use core::any::Any;
@@ -16,8 +16,8 @@ use solvent::Handle;
 
 #[cfg(target_arch = "x86_64")]
 pub use self::ctx::arch::{DEFAULT_STACK_LAYOUT, DEFAULT_STACK_SIZE};
-pub use self::{elf::from_elf, excep::dispatch_exception, sm::*, tid::Tid};
-use self::{hdl::Ref, sig::Signal};
+use self::elf::from_elf;
+pub use self::{excep::dispatch_exception, sig::Signal, sm::*, tid::Tid};
 use super::{ipc::Channel, PREEMPT};
 use crate::{
     cpu::{CpuLocalLazy, CpuMask},
@@ -63,7 +63,7 @@ fn exec_inner(
     ty: Option<Type>,
     affinity: Option<CpuMask>,
     space: Arc<Space>,
-    init_chan: Ref<dyn Any>,
+    init_chan: hdl::Ref<dyn Any>,
     s: &Starter,
 ) -> solvent::Result<(Init, Handle)> {
     let ty = Type::pass(ty, cur.ty())?;
