@@ -42,9 +42,8 @@ pub fn dispatch_exception(frame: &mut Frame, vec: ExVec) -> bool {
         return false;
     }
 
-    let ret = match excep_chan.receive(Duration::MAX) {
+    let ret = match excep_chan.receive(Duration::MAX, usize::MAX, usize::MAX) {
         Ok(mut res) => {
-            let mut res = res.take().unwrap();
             let mut data = MaybeUninit::<ExceptionResult>::uninit();
             res.buffer_mut().copy_to_slice(unsafe {
                 slice::from_raw_parts_mut(

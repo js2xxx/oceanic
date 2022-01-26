@@ -5,7 +5,7 @@ use alloc::{
 use core::{mem, time::Duration};
 
 use bytes::Bytes;
-use spin::{Mutex, MutexGuard};
+use spin::Mutex;
 
 use crate::sched::{
     task::hdl,
@@ -134,28 +134,30 @@ impl Channel {
     /// # Errors
     ///
     /// Returns error if the peer is closed.
-    pub fn receive(&self, timeout: Duration) -> solvent::Result<MutexGuard<Option<Packet>>> {
+    pub fn receive(
+        &self,
+        timeout: Duration,
+        buffer_cap: usize,
+        handle_cap: usize,
+    ) -> solvent::Result<Packet> {
+        let _pree = PREEMPT.lock();
         let mut head = self.head.lock();
         if head.is_none() {
-            *head = Some(
+            *head = Some(if timeout.is_zero() {
+                self.me.msgs.try_pop().ok_or(solvent::Error::ENOENT)?
+            } else {
                 self.me
                     .msgs
                     .pop(timeout, "Channel::receive")
-                    .ok_or(solvent::Error::EPIPE)?,
-            );
+                    .ok_or(solvent::Error::EPIPE)?
+            });
         }
-        Ok(head)
-    }
-
-    /// # Errors
-    ///
-    /// Returns error if the channel is empty.
-    pub fn try_receive(&self) -> solvent::Result<MutexGuard<Option<Packet>>> {
-        let mut head = self.head.lock();
-        if head.is_none() {
-            *head = Some(self.me.msgs.try_pop().ok_or(solvent::Error::ENOENT)?);
+        let packet = unsafe { head.as_mut().unwrap_unchecked() };
+        if packet.buffer().len() > buffer_cap || packet.object_count() > handle_cap {
+            Err(solvent::Error::EBUFFER)
+        } else {
+            Ok(unsafe { head.take().unwrap_unchecked() })
         }
-        Ok(head)
     }
 }
 
@@ -224,51 +226,26 @@ mod syscall {
         let user_buffer =
             unsafe { slice::from_raw_parts_mut(user_packet.buffer, user_packet.buffer_cap) };
 
-        SCHED.with_current(|cur| {
+        let packet = SCHED.with_current(|cur| {
             let map = cur.tid().handles();
 
-            let packet = {
-                let channel = map.get::<Channel>(hdl)?;
+            let channel = map.get::<Channel>(hdl)?;
+            channel
+                .receive(timeout, user_buffer.len(), user_handles.len())
+                .map(|mut packet| {
+                    map.receive(&mut packet.objects, user_handles);
+                    packet
+                })
+        })?;
 
-                let mut packet = if !timeout.is_zero() {
-                    channel.receive(timeout)
-                } else {
-                    channel.try_receive()
-                }
-                .map_err(Error::from)?;
+        user_packet.id = packet.id;
+        let data = packet.buffer();
+        user_buffer[..data.len()].copy_from_slice(data);
 
-                let data = packet.as_ref().unwrap().buffer();
-                let object_count = packet.as_ref().unwrap().object_count();
+        unsafe {
+            packet_ptr.out().write(user_packet).unwrap();
+        }
 
-                {
-                    let mut ebuf = false;
-                    if data.len() > user_buffer.len() {
-                        user_packet.buffer_size = data.len();
-                        ebuf = true;
-                    }
-                    if object_count > user_handles.len() {
-                        user_packet.handle_count = object_count;
-                        ebuf = true;
-                    }
-                    if ebuf {
-                        return Err(Error::EBUFFER);
-                    }
-                }
-
-                user_packet.id = packet.as_ref().unwrap().id;
-                user_buffer[..data.len()].copy_from_slice(data);
-                packet.take()
-            };
-
-            packet
-                .map(|mut p| map.receive(&mut p.objects, user_handles))
-                .unwrap();
-
-            unsafe {
-                packet_ptr.out().write(user_packet).unwrap();
-            }
-
-            Ok(())
-        })
+        Ok(())
     }
 }
