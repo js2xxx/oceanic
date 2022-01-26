@@ -166,10 +166,12 @@ impl<T> Arena<T> {
         }
     }
 
+    #[inline]
     pub fn max_count(&self) -> usize {
         self.max_count
     }
 
+    #[inline]
     pub fn count(&self) -> usize {
         self.count.load(SeqCst)
     }

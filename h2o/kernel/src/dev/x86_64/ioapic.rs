@@ -289,6 +289,12 @@ impl Ioapics {
 }
 
 impl Ioapics {
+    pub fn gsi_range(&self) -> Option<Range<u32>> {
+        let (first, _) = self.ioapic_data.first()?;
+        let (last, _) = self.ioapic_data.last()?;
+        Some(first.start..last.end)
+    }
+
     /// After the call, the entry is masked and must be manually unmasked if
     /// necessary.
     ///
