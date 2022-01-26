@@ -51,8 +51,8 @@ static SYSCALL_TABLE: &[Option<SyscallWrapper>] = &[
     Some(syscall_wrapper!(mem_map)),
     Some(syscall_wrapper!(mem_reprot)),
     Some(syscall_wrapper!(mem_unmap)),
-    Some(syscall_wrapper!(wo_new)),
-    Some(syscall_wrapper!(wo_notify)),
+    None,
+    None,
     Some(syscall_wrapper!(futex_wait)),
     Some(syscall_wrapper!(futex_wake)),
     Some(syscall_wrapper!(futex_reque)),
@@ -65,6 +65,11 @@ static SYSCALL_TABLE: &[Option<SyscallWrapper>] = &[
     Some(syscall_wrapper!(chan_recv)),
     Some(syscall_wrapper!(chan_csend)),
     Some(syscall_wrapper!(chan_crecv)),
+    None,
+    Some(syscall_wrapper!(event_new)),
+    Some(syscall_wrapper!(event_wait)),
+    Some(syscall_wrapper!(event_notify)),
+    Some(syscall_wrapper!(event_endn)),
 ];
 
 pub fn handler(arg: &Arguments) -> usize {

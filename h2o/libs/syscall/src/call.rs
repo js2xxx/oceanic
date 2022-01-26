@@ -41,11 +41,6 @@ syscall_stub!(11 => pub(crate) fn mem_map(space: Handle, mi: *const crate::mem::
 syscall_stub!(12 => pub(crate) fn mem_reprot(space: Handle, ptr: *mut u8, len: usize, flags: u32));
 syscall_stub!(13 => pub(crate) fn mem_unmap(space: Handle, ptr: *mut u8));
 
-// #[cfg(debug_assertions)]
-syscall_stub!(14 => pub(crate) fn wo_new() -> Handle);
-// #[cfg(debug_assertions)]
-syscall_stub!(15 => pub(crate) fn wo_notify(hdl: Handle, n: usize) -> usize);
-
 syscall_stub!(16 =>
     pub(crate) fn futex_wait(
         ptr: *mut u64,
@@ -78,3 +73,8 @@ syscall_stub!(27 =>
         timeout_us: u64
     )
 );
+
+syscall_stub!(29 => pub(crate) fn event_new(wake_all: bool) -> Handle);
+syscall_stub!(30 => pub(crate) fn event_wait(hdl: Handle, signal: u8, timeout_us: u64));
+syscall_stub!(31 => pub(crate) fn event_notify(hdl: Handle, active: u8) -> usize);
+syscall_stub!(32 => pub(crate) fn event_endn(hdl: Handle, masked: u8));

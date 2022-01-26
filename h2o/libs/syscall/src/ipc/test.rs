@@ -23,14 +23,14 @@ pub fn test(stack: (*mut u8, *mut u8, Handle)) {
     let (c1, c2) = (c1, c2);
 
     // Test in 1 task (transfering to myself).
-    let wo = {
-        let wo = wo_new().expect("Failed to create a wait object");
-        wo_notify(wo, 0).expect("Failed to notify the wait object");
+    let e = {
+        let e = event_new(false).expect("Failed to create a event");
+        event_notify(e, u8::MAX).expect("Failed to notify the event");
 
         // Sending
 
         let mut buf = [1u8, 2, 3, 4, 5, 6, 7];
-        let mut hdl = [wo];
+        let mut hdl = [e];
 
         let sendee = rp(100, &mut hdl, &mut buf);
         chan_send(c1, &sendee).expect("Failed to send a packet into the channel");
@@ -73,14 +73,14 @@ pub fn test(stack: (*mut u8, *mut u8, Handle)) {
         assert_eq!(buf, [1u8, 2, 3, 4, 5, 6, 7]);
         assert_eq!(receivee.id, 100);
 
-        let wo = hdl[0];
-        wo_notify(wo, 0).expect("Failed to notify the wait object");
+        let e = hdl[0];
+        event_notify(e, u8::MAX).expect("Failed to notify the event");
 
         receivee = rp(0, &mut hdl, &mut buf);
         let ret = chan_recv(c2, &mut receivee, 0);
         assert_eq!(ret, Err(Error::ENOENT));
 
-        wo
+        e
     };
 
     // Multiple tasks.
@@ -96,7 +96,7 @@ pub fn test(stack: (*mut u8, *mut u8, Handle)) {
             for b in buf.iter_mut() {
                 *b += 5;
             }
-            wo_notify(hdl[0], 0).expect("Failed to notify the wo in func");
+            event_notify(hdl[0], u8::MAX).expect("Failed to notify the e in func");
             ::log::trace!("Responding");
             p.id = 200;
             chan_send(init_chan, &p).expect("Failed to send the response");
@@ -120,7 +120,7 @@ pub fn test(stack: (*mut u8, *mut u8, Handle)) {
         };
 
         let mut buf = [1u8, 2, 3, 4, 5, 6, 7];
-        let mut hdl = [wo];
+        let mut hdl = [e];
 
         ::log::trace!("Sending the initial packet");
         let mut p = rp(200, &mut hdl, &mut buf);
@@ -134,9 +134,9 @@ pub fn test(stack: (*mut u8, *mut u8, Handle)) {
         assert_eq!(buf, [6, 7, 8, 9, 10, 11, 12]);
 
         ::log::trace!("Finished");
-        let wo = hdl[0];
-        wo_notify(wo, 0).expect("Failed to notify the wo in master");
-        obj_drop(wo).expect("Failed to drop the wo in master");
+        let e = hdl[0];
+        event_notify(e, u8::MAX).expect("Failed to notify the event in master");
+        obj_drop(e).expect("Failed to drop the event in master");
 
         task_join(other).expect("Failed to join the task");
     }
