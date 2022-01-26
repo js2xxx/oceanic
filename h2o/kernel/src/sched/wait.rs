@@ -20,6 +20,7 @@ unsafe impl Send for WaitObject {}
 unsafe impl Sync for WaitObject {}
 
 impl WaitObject {
+    #[inline]
     pub fn new() -> Self {
         WaitObject {
             wait_queue: deque::Injector::new(),

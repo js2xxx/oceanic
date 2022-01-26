@@ -35,11 +35,11 @@
 
 pub mod cpu;
 pub mod dev;
-pub mod log;
+mod log;
 pub mod mem;
-pub mod rxx;
+mod rxx;
 pub mod sched;
-pub mod syscall;
+mod syscall;
 
 use core::mem::MaybeUninit;
 

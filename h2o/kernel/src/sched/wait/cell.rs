@@ -4,7 +4,7 @@ use spin::Mutex;
 
 use super::WaitObject;
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct WaitCell<T> {
     data: Mutex<Option<T>>,
     wo: WaitObject,
@@ -41,5 +41,12 @@ impl<T> WaitCell<T> {
         let old = self.data.lock().replace(obj);
         self.wo.notify(1);
         old
+    }
+}
+
+impl<T> Default for WaitCell<T> {
+    #[inline]
+    fn default() -> Self {
+        Self::new()
     }
 }
