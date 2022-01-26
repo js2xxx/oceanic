@@ -60,14 +60,14 @@ pub enum DelivMode {
     ExtInt = 0b111,
 }
 
-#[derive(Debug, Clone, Copy, BitfieldSpecifier)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, BitfieldSpecifier)]
 #[repr(u64)]
 pub enum Polarity {
     High = 0,
     Low = 1,
 }
 
-#[derive(Debug, Clone, Copy, BitfieldSpecifier)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, BitfieldSpecifier)]
 #[repr(u64)]
 pub enum TriggerMode {
     Edge = 0,

@@ -1,26 +1,11 @@
 #![allow(dead_code)]
 
-use alloc::sync::Arc;
+use core::mem;
 
 use archop::io::{Io, Port};
-use spin::Mutex;
-
-use crate::cpu::{
-    arch::intr::ArchReg,
-    intr::{Interrupt, IntrChip, TypeHandler},
-};
 
 const MASTER_PORT: u16 = 0x20;
 const SLAVE_PORT: u16 = 0xA0;
-
-static mut LPIC_CHIP: Option<Arc<Mutex<dyn IntrChip>>> = None;
-
-/// # Safety
-///
-/// This function must be called only after legacy PIC is initialized.
-pub unsafe fn chip() -> Arc<Mutex<dyn IntrChip>> {
-    LPIC_CHIP.clone().expect("Legacy PIC uninitialized")
-}
 
 unsafe fn read_cmd(chip: &Port<u8>) -> u8 {
     chip.read()
@@ -75,47 +60,6 @@ impl LegacyPic {
     }
 }
 
-impl IntrChip for LegacyPic {
-    unsafe fn mask(&mut self, intr: Arc<Interrupt>) {
-        let irq = intr.hw_irq();
-        self.masked_irq |= 1 << irq;
-        if irq >= 8 {
-            write_data(&mut self.slave, (self.masked_irq >> 8) as u8);
-        } else {
-            write_data(&mut self.master, (self.masked_irq & 0xFF) as u8);
-        }
-    }
-
-    unsafe fn unmask(&mut self, intr: Arc<Interrupt>) {
-        let irq = intr.hw_irq();
-        self.masked_irq &= !(1 << irq);
-        if irq >= 8 {
-            write_data(&mut self.slave, (self.masked_irq >> 8) as u8);
-        } else {
-            write_data(&mut self.master, (self.masked_irq & 0xFF) as u8);
-        }
-    }
-
-    unsafe fn ack(&mut self, _intr: Arc<Interrupt>) {}
-
-    unsafe fn eoi(&mut self, intr: Arc<Interrupt>) {
-        let irq = intr.hw_irq();
-        if irq >= 8 {
-            write_cmd(&mut self.slave, 0x20);
-        } else {
-            write_cmd(&mut self.master, 0x20);
-        }
-    }
-
-    unsafe fn setup(&mut self, _arch_reg: ArchReg, _gsi: u32) -> Result<TypeHandler, &'static str> {
-        todo!()
-    }
-
-    unsafe fn remove(&mut self, _intr: Arc<Interrupt>) -> Result<(), &'static str> {
-        todo!()
-    }
-}
-
 /// Initialize Legacy PIC (8259A).
 ///
 /// # Safety
@@ -128,5 +72,5 @@ pub unsafe fn init(masked: bool) {
     } else {
         lpic.init();
     }
-    LPIC_CHIP = Some(Arc::new(Mutex::new(lpic)));
+    mem::forget(lpic);
 }
