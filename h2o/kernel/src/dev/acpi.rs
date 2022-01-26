@@ -10,11 +10,12 @@ impl acpi::AcpiHandler for Handler {
         phys: usize,
         size: usize,
     ) -> acpi::PhysicalMapping<Self, T> {
-        let virt = PAddr::new(phys)
-            .to_laddr(minfo::ID_OFFSET)
-            .as_non_null()
-            .unwrap()
-            .cast::<T>();
+        let virt = unsafe {
+            PAddr::new(phys)
+                .to_laddr(minfo::ID_OFFSET)
+                .as_non_null_unchecked()
+        }
+        .cast::<T>();
         acpi::PhysicalMapping::new(phys, virt, size, size, Self)
     }
 

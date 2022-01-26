@@ -120,19 +120,26 @@ pub struct Lapic {
 }
 
 impl Lapic {
+    #[inline]
     fn reg_32_to_1_off(reg: msr::Msr) -> usize {
         (reg as u32 as usize - 0x800) << 4
     }
 
-    fn reg_64_to_1_off(reg: msr::Msr) -> [usize; 2] {
+    #[inline]
+    fn reg_64_to_1_off(reg: msr::Msr) -> (usize, usize) {
         let r0 = Self::reg_32_to_1_off(reg);
-        [r0, r0 + 0x10]
+        (r0, r0 + 0x10)
+    }
+
+    #[inline]
+    unsafe fn base_to_ptr(base: LAddr, offset: usize) -> *mut u32 {
+        base.add(offset).cast::<u32>()
     }
 
     unsafe fn read_reg_32(ty: &mut LapicType, reg: msr::Msr) -> u32 {
         match ty {
             LapicType::X1(base) => {
-                let ptr = base.add(Self::reg_32_to_1_off(reg)).cast::<u32>();
+                let ptr = Self::base_to_ptr(*base, Self::reg_32_to_1_off(reg));
                 ptr.read_volatile()
             }
             LapicType::X2 => msr::read(reg) as u32,
@@ -142,7 +149,7 @@ impl Lapic {
     unsafe fn write_reg_32(ty: &mut LapicType, reg: msr::Msr, val: u32) {
         match ty {
             LapicType::X1(base) => {
-                let ptr = base.add(Self::reg_32_to_1_off(reg)).cast::<u32>();
+                let ptr = Self::base_to_ptr(*base, Self::reg_32_to_1_off(reg));
                 ptr.write_volatile(val)
             }
             LapicType::X2 => msr::write(reg, val as u64),
@@ -153,10 +160,9 @@ impl Lapic {
     unsafe fn read_reg_64(ty: &mut LapicType, reg: msr::Msr) -> u64 {
         match ty {
             LapicType::X1(base) => {
-                let ptr_array = Self::reg_64_to_1_off(reg);
-                let mut ptr_iter = ptr_array.iter().map(|&off| base.add(off).cast::<u32>());
-                let low = ptr_iter.next().unwrap().read_volatile() as u64;
-                let high = ptr_iter.next().unwrap().read_volatile() as u64;
+                let (lp, hp) = Self::reg_64_to_1_off(reg);
+                let low = Self::base_to_ptr(*base, lp).read_volatile() as u64;
+                let high = Self::base_to_ptr(*base, hp).read_volatile() as u64;
                 low | (high << 32)
             }
             LapicType::X2 => msr::read(reg),
@@ -167,14 +173,10 @@ impl Lapic {
         match ty {
             LapicType::X1(base) => {
                 let (low, high) = ((val & 0xFFFFFFFF) as u32, ((val >> 32) as u32));
-
-                let ptr_array = Self::reg_64_to_1_off(reg);
-                let mut ptr_iter = ptr_array
-                    .iter()
-                    .map(|&off| base.add(off).cast::<u32>())
-                    .rev(); // !!: The order of writing must be from high to low.
-                ptr_iter.next().unwrap().write_volatile(high);
-                ptr_iter.next().unwrap().write_volatile(low);
+                let (lp, hp) = Self::reg_64_to_1_off(reg);
+                // !!: The order of writing must be from high to low.
+                Self::base_to_ptr(*base, hp).write_volatile(high);
+                Self::base_to_ptr(*base, lp).write_volatile(low);
             }
             LapicType::X2 => msr::write(reg, val),
         }

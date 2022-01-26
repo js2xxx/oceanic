@@ -352,7 +352,7 @@ pub unsafe fn set_current(space: Arc<Space>) -> Arc<Space> {
     PREEMPT.scope(|| {
         if !Arc::ptr_eq(current(), &space) {
             space.load();
-            CURRENT.replace(space).unwrap()
+            CURRENT.replace(space).expect("No current space available")
         } else {
             space
         }

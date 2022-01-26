@@ -3,7 +3,7 @@ pub(crate) mod test;
 
 use crate::Handle;
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 #[repr(C)]
 pub struct RawPacket {
     pub id: usize,

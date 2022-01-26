@@ -12,15 +12,14 @@ pub struct IdAllocator {
     next: u64,
 }
 
+#[inline]
 fn into_idx(sec_bits: u64, val: u64) -> (u64, usize) {
-    (
-        val >> sec_bits,
-        usize::try_from(val & ((1 << sec_bits) - 1)).unwrap(),
-    )
+    (val >> sec_bits, (val & ((1 << sec_bits) - 1)) as usize)
 }
 
+#[inline]
 fn from_idx(sec_bits: u64, prim: u64, sec: usize) -> u64 {
-    (prim << sec_bits) | (u64::try_from(sec).unwrap() & ((1 << sec_bits) - 1))
+    (prim << sec_bits) | (sec as u64 & ((1 << sec_bits) - 1))
 }
 
 impl IdAllocator {

@@ -140,8 +140,8 @@ mod syscall {
         drop(pree);
 
         unsafe {
-            wake_num.out().write(wake).unwrap();
-            requeue_num.out().write(requeue).unwrap();
+            wake_num.out().write(wake)?;
+            requeue_num.out().write(requeue)?;
         }
 
         Ok(())

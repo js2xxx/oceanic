@@ -85,7 +85,7 @@ impl Phys {
 impl Drop for Phys {
     fn drop(&mut self) {
         if self.from_allocator {
-            let ptr = self.base.to_laddr(minfo::ID_OFFSET).as_non_null().unwrap();
+            let ptr = unsafe { self.base.to_laddr(minfo::ID_OFFSET).as_non_null_unchecked() };
             unsafe { Global.deallocate(ptr, self.layout) };
         }
     }

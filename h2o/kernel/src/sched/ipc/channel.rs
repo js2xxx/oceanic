@@ -316,9 +316,7 @@ mod syscall {
         let data = packet.buffer();
         user_buffer[..data.len()].copy_from_slice(data);
 
-        unsafe {
-            packet_ptr.out().write(user_packet).unwrap();
-        }
+        unsafe { packet_ptr.out().write(user_packet)? };
 
         Ok(())
     }
