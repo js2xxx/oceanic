@@ -85,6 +85,7 @@ fn spawn_tinit() {
     let (me, chan) = Channel::new();
     let chan = unsafe { hdl::Ref::new(chan).coerce_unchecked() };
     me.send(&mut crate::sched::ipc::Packet::new(
+        0,
         hdl::List::default(),
         &[],
     ))

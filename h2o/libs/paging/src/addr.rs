@@ -71,6 +71,14 @@ impl LAddr {
         NonNull::new(self.0)
     }
 
+    /// # Safety
+    ///
+    /// `self` must be non-null.
+    #[inline]
+    pub unsafe fn as_non_null_unchecked(self) -> NonNull<u8> {
+        NonNull::new_unchecked(self.0)
+    }
+
     #[inline]
     pub fn to_paddr(self, id_off: usize) -> PAddr {
         PAddr(self.val() - id_off)

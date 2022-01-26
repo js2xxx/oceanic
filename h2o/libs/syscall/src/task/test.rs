@@ -129,6 +129,7 @@ fn debug_excep(task: Handle, st: Handle) {
     let mut hdl_buf = [Handle::NULL; 0];
     let mut excep = MaybeUninit::<Exception>::uninit();
     let mut packet = crate::ipc::RawPacket {
+        id: 0,
         handles: hdl_buf.as_mut_ptr(),
         handle_count: 0,
         handle_cap: hdl_buf.len(),

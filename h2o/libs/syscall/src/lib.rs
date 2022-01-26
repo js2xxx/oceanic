@@ -38,7 +38,7 @@ pub fn test() {
     #[cfg(debug_assertions)]
     {
         let stack = task::test::test();
-        ipc::test(stack);
+        ipc::test::test(stack);
         mem::test();
     }
 }

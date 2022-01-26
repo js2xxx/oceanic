@@ -173,7 +173,10 @@ fn task_join(hdl: Handle) -> Result<usize> {
             .remove::<Tid>(hdl)
             .and_then(|w| w.downcast_ref::<Tid>().map(|w| Tid::clone(w)))
     })?;
-    Ok(child.ret_cell().take(Duration::MAX, "task_join").unwrap())
+    child
+        .ret_cell()
+        .take(Duration::MAX, "task_join")
+        .ok_or(Error::ETIME)
 }
 
 #[syscall]
@@ -209,7 +212,7 @@ fn task_ctl(hdl: Handle, op: u32, data: UserPtr<InOut, Handle>) -> Result {
             })?;
 
             let out = super::PREEMPT.scope(|| cur_tid.handles().insert(st))?;
-            unsafe { data.out().write(out) }.unwrap();
+            unsafe { data.out().write(out)? };
 
             Ok(())
         }

@@ -53,7 +53,7 @@ fn next() -> Option<NonZeroU32> {
     let mut alloc = TID_ALLOC.lock();
     alloc
         .allocate()
-        .map(|id| NonZeroU32::new((id + 1) as u32).unwrap())
+        .and_then(|id| NonZeroU32::new((id + 1) as u32))
 }
 
 /// # Errors

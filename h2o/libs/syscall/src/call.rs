@@ -69,3 +69,12 @@ syscall_stub!(20 => pub(crate) fn obj_drop(hdl: Handle));
 syscall_stub!(23 => pub(crate) fn chan_new(p1: *mut Handle, p2: *mut Handle));
 syscall_stub!(24 => pub(crate) fn chan_send(hdl: Handle, packet: *const RawPacket));
 syscall_stub!(25 => pub fn chan_recv(hdl: Handle, packet: *mut RawPacket, timeout_us: u64));
+syscall_stub!(26 => pub(crate) fn chan_csend(hdl: Handle, packet: *const RawPacket) -> usize);
+syscall_stub!(27 =>
+    pub fn chan_crecv(
+        hdl: Handle,
+        id: usize,
+        packet: *mut RawPacket,
+        timeout_us: u64
+    )
+);
