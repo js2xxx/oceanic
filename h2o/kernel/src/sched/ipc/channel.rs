@@ -22,6 +22,9 @@ pub struct Packet {
     buffer: Bytes,
 }
 
+unsafe impl Send for Packet {}
+unsafe impl Sync for Packet {}
+
 impl Packet {
     pub fn new(id: usize, objects: hdl::List, data: &[u8]) -> Self {
         let buffer = Bytes::copy_from_slice(data);
@@ -48,10 +51,16 @@ impl Packet {
     }
 }
 
+#[derive(Debug, Default)]
+struct Caller {
+    cell: WaitCell<Packet>,
+    head: Option<Packet>,
+}
+
 #[derive(Debug)]
 struct ChannelSide {
     msgs: WaitQueue<Packet>,
-    callers: Mutex<BTreeMap<usize, Arc<WaitCell<Packet>>>>,
+    callers: Mutex<BTreeMap<usize, Caller>>,
 }
 
 impl Default for ChannelSide {
@@ -110,24 +119,38 @@ impl Channel {
             None => Err(solvent::Error::EPIPE),
             Some(peer) => {
                 let called = PREEMPT.scope(|| {
-                    let mut callers = peer.callers.lock();
-                    callers.remove(&msg.id)
+                    let callers = peer.callers.lock();
+                    let called = callers.get(&msg.id);
+                    if let Some(caller) = called {
+                        let _old = caller.cell.replace(mem::take(msg));
+                        debug_assert!(_old.is_none());
+                        true
+                    } else {
+                        false
+                    }
                 });
-                match called {
-                    Some(caller) => {
-                        caller.replace(mem::take(msg));
-                        Ok(())
-                    }
-                    None => {
-                        if peer.msgs.len() >= MAX_QUEUE_SIZE {
-                            Err(solvent::Error::ENOSPC)
-                        } else {
-                            peer.msgs.push(mem::take(msg));
-                            Ok(())
-                        }
-                    }
+                if called {
+                    Ok(())
+                } else if peer.msgs.len() >= MAX_QUEUE_SIZE {
+                    Err(solvent::Error::ENOSPC)
+                } else {
+                    peer.msgs.push(mem::take(msg));
+                    Ok(())
                 }
             }
+        }
+    }
+
+    fn get_packet(
+        head: &mut Option<Packet>,
+        buffer_cap: usize,
+        handle_cap: usize,
+    ) -> solvent::Result<Packet> {
+        let packet = unsafe { head.as_mut().unwrap_unchecked() };
+        if packet.buffer().len() > buffer_cap || packet.object_count() > handle_cap {
+            Err(solvent::Error::EBUFFER)
+        } else {
+            Ok(unsafe { head.take().unwrap_unchecked() })
         }
     }
 
@@ -152,12 +175,56 @@ impl Channel {
                     .ok_or(solvent::Error::EPIPE)?
             });
         }
-        let packet = unsafe { head.as_mut().unwrap_unchecked() };
-        if packet.buffer().len() > buffer_cap || packet.object_count() > handle_cap {
-            Err(solvent::Error::EBUFFER)
-        } else {
-            Ok(unsafe { head.take().unwrap_unchecked() })
+        Self::get_packet(&mut head, buffer_cap, handle_cap)
+    }
+
+    pub fn call_send(&self, msg: &mut Packet) -> solvent::Result<usize> {
+        match self.peer.upgrade() {
+            None => Err(solvent::Error::EPIPE),
+            Some(peer) => {
+                if peer.msgs.len() >= MAX_QUEUE_SIZE {
+                    Err(solvent::Error::ENOSPC)
+                } else {
+                    let id = msg.id;
+                    self.me
+                        .callers
+                        .lock()
+                        .try_insert(id, Caller::default())
+                        .map_err(|_| solvent::Error::EEXIST)?;
+                    peer.msgs.push(mem::take(msg));
+                    Ok(id)
+                }
+            }
         }
+    }
+
+    pub fn call_receive(
+        &self,
+        id: usize,
+        timeout: Duration,
+        buffer_cap: usize,
+        handle_cap: usize,
+    ) -> solvent::Result<Packet> {
+        let _pree = PREEMPT.lock();
+        let mut callers = self.me.callers.lock();
+        let mut caller = match callers.entry(id) {
+            alloc::collections::btree_map::Entry::Vacant(_) => return Err(solvent::Error::ENOENT),
+            alloc::collections::btree_map::Entry::Occupied(caller) => caller,
+        };
+        if caller.get().head.is_none() {
+            let packet = if timeout.is_zero() {
+                caller.get().cell.try_take().ok_or(solvent::Error::ENOENT)?
+            } else {
+                caller
+                    .get()
+                    .cell
+                    .take(timeout, "Channel::call_receive")
+                    .ok_or(solvent::Error::EPIPE)?
+            };
+            caller.get_mut().head = Some(packet);
+        }
+        Self::get_packet(&mut caller.get_mut().head, buffer_cap, handle_cap)
+            .inspect(|_| drop(caller.remove()))
     }
 }
 
@@ -185,8 +252,10 @@ mod syscall {
         })
     }
 
-    #[syscall]
-    fn chan_send(hdl: Handle, packet: UserPtr<In, RawPacket>) -> Result {
+    fn chan_send_impl<F, R>(hdl: Handle, packet: UserPtr<In, RawPacket>, send: F) -> Result<R>
+    where
+        F: FnOnce(&Channel, &mut Packet) -> Result<R>,
+    {
         hdl.check_null()?;
 
         let packet = unsafe { packet.read()? };
@@ -204,12 +273,19 @@ mod syscall {
             let channel = map.get::<Channel>(hdl)?;
             let objects = unsafe { map.send(handles, channel) }?;
             let mut packet = Packet::new(packet.id, objects, buffer);
-            channel.send(&mut packet).map_err(Into::into)
+            send(channel, &mut packet)
         })
     }
 
-    #[syscall]
-    fn chan_recv(hdl: Handle, packet_ptr: UserPtr<InOut, RawPacket>, timeout_us: u64) -> Result {
+    fn chan_recv_impl<F>(
+        hdl: Handle,
+        packet_ptr: UserPtr<InOut, RawPacket>,
+        timeout_us: u64,
+        recv: F,
+    ) -> Result
+    where
+        F: FnOnce(&Channel, Duration, usize, usize) -> Result<Packet>,
+    {
         hdl.check_null()?;
         let timeout = if timeout_us == u64::MAX {
             Duration::MAX
@@ -230,12 +306,10 @@ mod syscall {
             let map = cur.tid().handles();
 
             let channel = map.get::<Channel>(hdl)?;
-            channel
-                .receive(timeout, user_buffer.len(), user_handles.len())
-                .map(|mut packet| {
-                    map.receive(&mut packet.objects, user_handles);
-                    packet
-                })
+            recv(channel, timeout, user_buffer.len(), user_handles.len()).map(|mut packet| {
+                map.receive(&mut packet.objects, user_handles);
+                packet
+            })
         })?;
 
         user_packet.id = packet.id;
@@ -247,5 +321,44 @@ mod syscall {
         }
 
         Ok(())
+    }
+
+    #[syscall]
+    fn chan_send(hdl: Handle, packet: UserPtr<In, RawPacket>) -> Result {
+        chan_send_impl(hdl, packet, |channel, packet| channel.send(packet))
+    }
+
+    #[syscall]
+    fn chan_recv(hdl: Handle, packet_ptr: UserPtr<InOut, RawPacket>, timeout_us: u64) -> Result {
+        chan_recv_impl(
+            hdl,
+            packet_ptr,
+            timeout_us,
+            |channel, timeout, buffer_cap, handle_cap| {
+                channel.receive(timeout, buffer_cap, handle_cap)
+            },
+        )
+    }
+
+    #[syscall]
+    fn chan_csend(hdl: Handle, packet: UserPtr<In, RawPacket>) -> Result<usize> {
+        chan_send_impl(hdl, packet, |channel, packet| channel.call_send(packet))
+    }
+
+    #[syscall]
+    fn chan_crecv(
+        hdl: Handle,
+        id: usize,
+        packet_ptr: UserPtr<InOut, RawPacket>,
+        timeout_us: u64,
+    ) -> Result {
+        chan_recv_impl(
+            hdl,
+            packet_ptr,
+            timeout_us,
+            |channel, timeout, buffer_cap, handle_cap| {
+                channel.call_receive(id, timeout, buffer_cap, handle_cap)
+            },
+        )
     }
 }

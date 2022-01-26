@@ -46,7 +46,7 @@ pub fn test(stack: (*mut u8, *mut u8, Handle)) {
         let mut buf = [1u8, 2, 3, 4, 5, 6, 7];
         let mut hdl = [wo];
 
-        let sendee = rp(0, &mut hdl, &mut buf);
+        let sendee = rp(100, &mut hdl, &mut buf);
         crate::call::chan_send(c1, &sendee).expect("Failed to send a packet into the channel");
 
         {
@@ -85,6 +85,7 @@ pub fn test(stack: (*mut u8, *mut u8, Handle)) {
         crate::call::chan_recv(c2, &mut receivee, u64::MAX)
             .expect("Failed to receive a packet from the channel");
         assert_eq!(buf, [1u8, 2, 3, 4, 5, 6, 7]);
+        assert_eq!(receivee.id, 100);
 
         let wo = hdl[0];
         crate::call::wo_notify(wo, 0).expect("Failed to notify the wait object");
@@ -106,7 +107,7 @@ pub fn test(stack: (*mut u8, *mut u8, Handle)) {
 
             crate::call::chan_recv(init_chan, &mut p, u64::MAX)
                 .expect("Failed to receive the init packet");
-            assert_eq!(p.id, 100);
+            assert_eq!(p.id, 200);
             for b in buf.iter_mut() {
                 *b += 5;
             }
@@ -137,11 +138,13 @@ pub fn test(stack: (*mut u8, *mut u8, Handle)) {
         let mut hdl = [wo];
 
         ::log::trace!("Sending the initial packet");
-        let mut p = rp(100, &mut hdl, &mut buf);
-        crate::call::chan_send(c1, &p).expect("Failed to send init packet");
+        let mut p = rp(200, &mut hdl, &mut buf);
+        let id = crate::call::chan_csend(c1, &p).expect("Failed to send init packet");
+        assert_eq!(id, 200);
 
+        p.id = 0;
         ::log::trace!("Receiving the response");
-        crate::call::chan_recv(c1, &mut p, u64::MAX).expect("Failed to receive the response");
+        crate::call::chan_crecv(c1, id, &mut p, u64::MAX).expect("Failed to receive the response");
         assert_eq!(p.id, 200);
         assert_eq!(buf, [6, 7, 8, 9, 10, 11, 12]);
 

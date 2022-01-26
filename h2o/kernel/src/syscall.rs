@@ -63,6 +63,8 @@ static SYSCALL_TABLE: &[Option<SyscallWrapper>] = &[
     Some(syscall_wrapper!(chan_new)),
     Some(syscall_wrapper!(chan_send)),
     Some(syscall_wrapper!(chan_recv)),
+    Some(syscall_wrapper!(chan_csend)),
+    Some(syscall_wrapper!(chan_crecv)),
 ];
 
 pub fn handler(arg: &Arguments) -> usize {
