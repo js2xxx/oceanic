@@ -55,7 +55,7 @@ static SYSCALL_TABLE: &[Option<SyscallWrapper>] = &[
     Some(syscall_wrapper!(wo_notify)),
     Some(syscall_wrapper!(futex_wait)),
     Some(syscall_wrapper!(futex_wake)),
-    Some(syscall_wrapper!(futex_requeue)),
+    Some(syscall_wrapper!(futex_reque)),
     Some(syscall_wrapper!(obj_clone)),
     Some(syscall_wrapper!(obj_drop)),
     None,

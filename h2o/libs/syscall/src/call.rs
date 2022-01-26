@@ -55,7 +55,7 @@ syscall_stub!(16 =>
 );
 syscall_stub!(17 => pub(crate) fn futex_wake(ptr: *mut u64, num: usize) -> usize);
 syscall_stub!(18 =>
-    pub(crate) fn futex_requeue(
+    pub(crate) fn futex_reque(
         ptr: *mut u64,
         wake_num: *mut usize,
         other: *mut u64,

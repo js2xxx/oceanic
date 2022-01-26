@@ -106,7 +106,7 @@ mod syscall {
     }
 
     #[syscall]
-    fn futex_requeue(
+    fn futex_reque(
         ptr: UserPtr<In, u64>,
         wake_num: UserPtr<InOut, usize>,
         other: UserPtr<In, u64>,
