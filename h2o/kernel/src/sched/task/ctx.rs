@@ -21,7 +21,7 @@ use crate::{
     mem::space::{self, Flags},
 };
 
-pub const KSTACK_SIZE: usize = paging::PAGE_SIZE * 13;
+pub const KSTACK_SIZE: usize = paging::PAGE_SIZE * 14;
 
 #[derive(Debug)]
 pub struct Entry {

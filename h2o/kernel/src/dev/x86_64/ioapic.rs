@@ -11,7 +11,7 @@ use paging::{PAddr, PAGE_LAYOUT};
 use spin::{Lazy, Mutex};
 
 use crate::{
-    cpu::arch::apic::{lapic, DelivMode, Polarity, TriggerMode, LAPIC_ID},
+    cpu::arch::apic::{lapic, DelivMode, Polarity, TriggerMode},
     mem::space::{self, Flags, Phys},
 };
 
@@ -29,8 +29,8 @@ static IOAPIC_CHIP: Lazy<(Arc<Mutex<Ioapics>>, Vec<IntrOvr>)> = Lazy::new(|| {
 });
 
 #[inline]
-pub fn chip() -> Arc<Mutex<Ioapics>> {
-    Arc::clone(&IOAPIC_CHIP.0)
+pub fn chip() -> &'static Arc<Mutex<Ioapics>> {
+    &IOAPIC_CHIP.0
 }
 
 #[inline]
@@ -70,8 +70,9 @@ impl From<IoapicReg> for u32 {
 
 #[derive(Clone, Copy)]
 #[bitfield]
-struct IoapicEntry {
-    vec: u8,
+#[must_use]
+pub struct IoapicEntry {
+    pub vec: u8,
     #[skip(getters)]
     #[bits = 3]
     deliv_mode: DelivMode,
@@ -79,21 +80,16 @@ struct IoapicEntry {
     dest_logical: bool,
     #[skip(getters)]
     pending: bool,
-    #[skip(getters)]
     #[bits = 1]
-    polarity: Polarity,
+    pub polarity: Polarity,
     #[skip(getters)]
     remote_irr: bool,
-    #[skip(getters)]
     #[bits = 1]
-    trigger_mode: TriggerMode,
-    #[skip(getters)]
-    mask: bool,
+    pub trigger_mode: TriggerMode,
+    pub mask: bool,
     #[skip]
     __: B32,
-    #[skip(getters)]
     dest_hi: B7,
-    #[skip(getters)]
     dest: u8,
 }
 
@@ -106,6 +102,13 @@ impl From<u64> for IoapicEntry {
 impl From<IoapicEntry> for u64 {
     fn from(x: IoapicEntry) -> Self {
         Self::from_ne_bytes(x.into_bytes())
+    }
+}
+
+impl IoapicEntry {
+    #[inline]
+    pub fn dest_id(&self) -> u32 {
+        (self.dest() as u32) | ((self.dest_hi() as u32) << 8)
     }
 }
 
@@ -302,8 +305,7 @@ impl Ioapics {
     ///
     /// The caller must ensure that the entry corresponding to `gsi` is not used
     /// by others.
-    pub unsafe fn config_dest(&mut self, gsi: u32, vec: u8, cpu: usize) -> solvent::Result {
-        let apic_id = *LAPIC_ID.read().get(&cpu).ok_or(solvent::Error::EINVAL)?;
+    pub unsafe fn config_dest(&mut self, gsi: u32, vec: u8, apic_id: u32) -> solvent::Result {
         let (chip, pin) = self.chip_mut_pin(gsi).ok_or(solvent::Error::EINVAL)?;
 
         let mut entry = IoapicEntry::from(chip.read_ioredtbl(pin));
@@ -351,6 +353,11 @@ impl Ioapics {
         Ok(())
     }
 
+    pub fn get_entry(&mut self, gsi: u32) -> solvent::Result<IoapicEntry> {
+        let (chip, pin) = self.chip_mut_pin(gsi).ok_or(solvent::Error::EINVAL)?;
+        Ok(IoapicEntry::from(unsafe { chip.read_ioredtbl(pin) }))
+    }
+
     /// # Safety
     ///
     /// The caller must ensure that the entry corresponding to `gsi` is not used
@@ -368,25 +375,11 @@ impl Ioapics {
     ///
     /// The caller must ensure that the entry corresponding to `gsi` is not used
     /// by others.
-    pub unsafe fn mask(&mut self, gsi: u32) -> solvent::Result {
+    pub unsafe fn mask(&mut self, gsi: u32, masked: bool) -> solvent::Result {
         let (chip, pin) = self.chip_mut_pin(gsi).ok_or(solvent::Error::EINVAL)?;
 
         let mut entry = IoapicEntry::from(chip.read_ioredtbl(pin));
-        entry.set_mask(true);
-        chip.write_ioredtbl(pin, entry.into());
-
-        Ok(())
-    }
-
-    /// # Safety
-    ///
-    /// The caller must ensure that the entry corresponding to `gsi` is not used
-    /// by others.
-    pub unsafe fn unmask(&mut self, gsi: u32) -> solvent::Result {
-        let (chip, pin) = self.chip_mut_pin(gsi).ok_or(solvent::Error::EINVAL)?;
-
-        let mut entry = IoapicEntry::from(chip.read_ioredtbl(pin));
-        entry.set_mask(false);
+        entry.set_mask(masked);
         chip.write_ioredtbl(pin, entry.into());
 
         Ok(())

@@ -142,6 +142,7 @@ pub unsafe fn init() {
         apic::ipi::start_cpus(&lapic_data.application_processors)
     };
     CPU_COUNT.store(cnt + 1, Ordering::SeqCst);
+    intr::init();
 }
 
 /// Initialize x86_64 architecture.
@@ -157,4 +158,5 @@ pub unsafe fn init_ap() {
     unsafe { KERNEL_GS.load() };
 
     apic::init();
+    intr::init();
 }

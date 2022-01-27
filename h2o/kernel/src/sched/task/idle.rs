@@ -82,14 +82,17 @@ fn idle(cpu: usize, fs_base: u64) -> ! {
 }
 
 fn spawn_tinit() {
+    let mut objects = hdl::List::new();
+    {
+        let gsi_res = Arc::clone(crate::cpu::intr::gsi_resource());
+        let res = unsafe { objects.insert_impl(hdl::Ref::new(gsi_res).coerce_unchecked()) };
+        res.expect("Failed to insert GSI resource");
+    }
+
     let (me, chan) = Channel::new();
     let chan = unsafe { hdl::Ref::new(chan).coerce_unchecked() };
-    me.send(&mut crate::sched::ipc::Packet::new(
-        0,
-        hdl::List::default(),
-        &[],
-    ))
-    .expect("Failed to send message");
+    me.send(&mut crate::sched::ipc::Packet::new(0, objects, &[]))
+        .expect("Failed to send message");
     let image = unsafe {
         core::slice::from_raw_parts(
             *crate::kargs().tinit_phys.to_laddr(minfo::ID_OFFSET),

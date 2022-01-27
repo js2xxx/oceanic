@@ -1,7 +1,10 @@
+mod imp;
+
 use alloc::sync::{Arc, Weak};
 
 use spin::Lazy;
 
+pub use self::imp::Interrupt;
 pub use super::arch::intr as arch;
 use crate::{
     dev::{ioapic, Resource},
@@ -22,6 +25,8 @@ pub enum IsaIrq {
     Ide0 = 14,
     Ide1 = 15,
 }
+
+pub type IntrHandler = fn(*mut u8);
 
 static GSI_RES: Lazy<Arc<Resource<u32>>> = Lazy::new(|| {
     PREEMPT.scope(|| {

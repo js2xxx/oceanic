@@ -78,3 +78,7 @@ syscall_stub!(29 => pub(crate) fn event_new(wake_all: bool) -> Handle);
 syscall_stub!(30 => pub(crate) fn event_wait(hdl: Handle, signal: u8, timeout_us: u64));
 syscall_stub!(31 => pub(crate) fn event_notify(hdl: Handle, active: u8) -> usize);
 syscall_stub!(32 => pub(crate) fn event_endn(hdl: Handle, masked: u8));
+
+syscall_stub!(34 => pub fn intr_new(res: Handle, gsi: u32, config: u32) -> Handle);
+syscall_stub!(35 => pub fn intr_wait(hdl: Handle, timeout_us: u64, last_time: *mut u128));
+syscall_stub!(36 => pub fn intr_drop(hdl: Handle));

@@ -250,7 +250,7 @@ impl List {
     ///
     /// The caller must ensure that `value` comes from the current task if its
     /// not [`Send`].
-    pub(super) unsafe fn insert_impl(&mut self, value: Ref<dyn Any>) -> Result<Ptr> {
+    pub unsafe fn insert_impl(&mut self, value: Ref<dyn Any>) -> Result<Ptr> {
         let link = HR_ARENA.allocate()?;
         // SAFETY: The pointer is allocated from the arena.
         unsafe { link.as_ptr().write(value) };
