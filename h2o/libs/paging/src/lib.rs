@@ -9,13 +9,15 @@ mod entry;
 mod inner;
 mod level;
 
-pub use alloc::PageAlloc;
 use core::{ops::Range, ptr::NonNull};
 
-pub use addr::{LAddr, PAddr};
-pub use consts::*;
-pub use entry::{Attr, Entry, Table};
-pub use level::Level;
+pub use self::{
+    addr::{LAddr, PAddr},
+    alloc::PageAlloc,
+    consts::*,
+    entry::{Attr, Entry, Table},
+    level::Level,
+};
 
 pub const PAGE_LAYOUT: core::alloc::Layout = core::alloc::Layout::new::<Table>();
 

@@ -1,8 +1,8 @@
 use core::{fmt, marker::PhantomData, mem, mem::MaybeUninit, num::NonZeroU64};
 
 use solvent::{Result, SerdeReg};
-pub use types::*;
 
+pub use self::types::*;
 use crate::{mem::space::PageFaultErrCode, sched::SCHED};
 
 #[derive(Copy, Clone)]

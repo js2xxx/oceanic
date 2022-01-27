@@ -11,8 +11,8 @@ use core::{
 };
 
 use paging::LAddr;
-pub use seg::reload_pls;
 
+pub use self::seg::reload_pls;
 use crate::cpu::CpuLocalLazy;
 
 pub const MAX_CPU: usize = 256;

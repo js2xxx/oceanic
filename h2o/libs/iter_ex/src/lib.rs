@@ -3,5 +3,7 @@
 mod comb;
 mod ptr_iter;
 
-pub use comb::{Combine, CombineIter};
-pub use ptr_iter::PointerIterator;
+pub use self::{
+    comb::{Combine, CombineIter},
+    ptr_iter::PointerIterator,
+};

@@ -21,9 +21,12 @@ cfg_if::cfg_if! {
     }
 }
 
-pub use call::{hdl::Handle, reg::*};
-pub use error::*;
 pub use solvent_gen::*;
+
+pub use self::{
+    call::{hdl::Handle, reg::*},
+    error::*,
+};
 
 #[derive(Debug, Copy, Clone)]
 pub struct Arguments {

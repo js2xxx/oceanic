@@ -3,7 +3,7 @@ use core::{fmt, hint};
 use archop::io::{Io, Port};
 
 /// The COM port for logging.
-pub(super) const COM_LOG: u16 = 0x3f8;
+pub const COM_LOG: u16 = 0x3f8;
 
 /// The output struct interface.
 pub struct Output(Port<u8>);

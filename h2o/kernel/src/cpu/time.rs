@@ -6,7 +6,7 @@ use core::{
     time::Duration,
 };
 
-pub use timer::{tick as timer_tick, Callback as TimerCallback, Timer, Type as TimerType};
+pub use self::timer::{tick as timer_tick, Callback as TimerCallback, Timer, Type as TimerType};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(transparent)]

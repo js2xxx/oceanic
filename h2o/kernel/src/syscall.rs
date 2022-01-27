@@ -34,7 +34,8 @@
 mod user_ptr;
 
 use solvent::*;
-pub use user_ptr::*;
+
+pub use self::user_ptr::*;
 
 static SYSCALL_TABLE: &[Option<SyscallWrapper>] = &[
     Some(syscall_wrapper!(get_time)),

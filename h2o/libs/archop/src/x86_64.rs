@@ -8,8 +8,9 @@ pub mod reg;
 use core::{arch::asm, ops::Range};
 
 use bitop_ex::BitOpEx;
-pub use lock::{mutex::*, rwlock::*, IntrState, PreemptState, PreemptStateGuard};
 use paging::LAddr;
+
+pub use self::lock::{mutex::*, rwlock::*, IntrState, PreemptState, PreemptStateGuard};
 
 /// The address space that should never be valid due to hardware constraints.
 pub const INCANONICAL: Range<LAddr> =
