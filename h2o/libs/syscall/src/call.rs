@@ -35,11 +35,11 @@ syscall_stub!(7 =>
 );
 syscall_stub!(8 => pub(crate) fn task_sleep(ms: u32));
 
-syscall_stub!(9 => pub(crate) fn phys_alloc(size: usize, align: usize, flags: u32) -> Handle);
-syscall_stub!(10 => pub(crate) fn mem_new() -> Handle);
-syscall_stub!(11 => pub(crate) fn mem_map(space: Handle, mi: *const crate::mem::MapInfo) -> *mut u8);
-syscall_stub!(12 => pub(crate) fn mem_reprot(space: Handle, ptr: *mut u8, len: usize, flags: u32));
-syscall_stub!(13 => pub(crate) fn mem_unmap(space: Handle, ptr: *mut u8));
+syscall_stub!(10 => pub(crate) fn phys_alloc(size: usize, align: usize, flags: u32) -> Handle);
+syscall_stub!(11 => pub(crate) fn mem_new() -> Handle);
+syscall_stub!(12 => pub(crate) fn mem_map(space: Handle, mi: *const crate::mem::MapInfo) -> *mut u8);
+syscall_stub!(13 => pub(crate) fn mem_reprot(space: Handle, ptr: *mut u8, len: usize, flags: u32));
+syscall_stub!(14 => pub(crate) fn mem_unmap(space: Handle, ptr: *mut u8));
 
 syscall_stub!(16 =>
     pub(crate) fn futex_wait(
@@ -58,8 +58,8 @@ syscall_stub!(18 =>
     )
 );
 
-syscall_stub!(19 => pub(crate) fn obj_clone(hdl: Handle) -> Handle);
-syscall_stub!(20 => pub(crate) fn obj_drop(hdl: Handle));
+syscall_stub!(20 => pub(crate) fn obj_clone(hdl: Handle) -> Handle);
+syscall_stub!(21 => pub(crate) fn obj_drop(hdl: Handle));
 
 syscall_stub!(23 => pub(crate) fn chan_new(p1: *mut Handle, p2: *mut Handle));
 syscall_stub!(24 => pub(crate) fn chan_send(hdl: Handle, packet: *const RawPacket));
