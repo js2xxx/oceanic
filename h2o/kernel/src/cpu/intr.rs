@@ -1,6 +1,6 @@
 mod imp;
 
-use alloc::sync::{Arc, Weak};
+use alloc::sync::Arc;
 
 use spin::Lazy;
 
@@ -30,14 +30,11 @@ pub type IntrHandler = fn(*mut u8);
 
 static GSI_RES: Lazy<Arc<Resource<u32>>> = Lazy::new(|| {
     PREEMPT.scope(|| {
-        Resource::new(
-            archop::rand::get(),
-            ioapic::chip()
-                .lock()
-                .gsi_range()
-                .expect("Failed to get GSI range"),
-            Weak::new(),
-        )
+        let range = ioapic::chip()
+            .lock()
+            .gsi_range()
+            .expect("Failed to get GSI range");
+        Resource::new(archop::rand::get(), range, None)
     })
 });
 

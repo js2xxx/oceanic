@@ -19,12 +19,12 @@ pub struct Resource<T: Ord + Copy> {
     magic: u64,
     range: Range<T>,
     map: Mutex<RangeMap<T, ()>>,
-    parent: Weak<Resource<T>>,
+    parent: Option<Weak<Resource<T>>>,
 }
 
 impl<T: Ord + Copy> Resource<T> {
     #[inline]
-    pub fn new(magic: u64, range: Range<T>, parent: Weak<Resource<T>>) -> Arc<Self> {
+    pub fn new(magic: u64, range: Range<T>, parent: Option<Weak<Resource<T>>>) -> Arc<Self> {
         Arc::new(Resource {
             magic,
             range: range.clone(),
@@ -40,13 +40,18 @@ impl<T: Ord + Copy> Resource<T> {
 
     #[must_use]
     pub fn allocate(self: &Arc<Self>, range: Range<T>) -> Option<Arc<Self>> {
-        if self.parent.strong_count() >= 1 {
+        if self.parent.as_ref().map_or(true, |p| p.strong_count() >= 1) {
             PREEMPT.scope(|| {
                 self.map
                     .lock()
                     .try_insert_with(
                         range.clone(),
-                        || Ok::<_, ()>(((), Self::new(self.magic, range, Arc::downgrade(self)))),
+                        || {
+                            Ok::<_, ()>((
+                                (),
+                                Self::new(self.magic, range, Some(Arc::downgrade(self))),
+                            ))
+                        },
                         (),
                     )
                     .ok()
@@ -65,7 +70,7 @@ impl<T: Ord + Copy> Resource<T> {
 
 impl<T: Ord + Copy> Drop for Resource<T> {
     fn drop(&mut self) {
-        if let Some(parent) = self.parent.upgrade() {
+        if let Some(parent) = self.parent.as_ref().and_then(Weak::upgrade) {
             let _ = PREEMPT.scope(|| parent.map.lock().remove(self.range.start));
         }
     }

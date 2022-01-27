@@ -74,9 +74,7 @@ impl<K, V> RangeMap<K, V> {
         K: Ord + Copy,
         F: FnOnce() -> Result<(V, R), E>,
     {
-        if range.start < range.end
-            && self.range.contains(&range.start)
-            && self.range.contains(&range.end)
+        if self.range.start <= range.start && range.start < range.end && range.end <= self.range.end
         {
             let start = range.start;
             match self.inner.entry(start) {

@@ -14,10 +14,13 @@ pub use paging::{LAddr, PAddr, PAGE_SHIFT, PAGE_SIZE};
 
 pub const KMEM_PHYS_BASE: usize = 0xFFFF_9000_0000_0000;
 
+/// # Returns
+///
+/// `(usize, usize) => (sum, max)`.
 #[inline]
 pub fn init(
     mmap: &iter_ex::PointerIterator<boot::MemRange>,
     reserved_range: core::ops::Range<usize>,
-) -> usize {
+) -> (usize, usize) {
     buddy::init(mmap, reserved_range)
 }

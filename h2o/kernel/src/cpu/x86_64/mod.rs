@@ -30,6 +30,9 @@ pub unsafe fn set_id(bsp: bool) -> usize {
     while !bsp && CPU_COUNT.load(Ordering::SeqCst) == 0 {
         core::hint::spin_loop();
     }
+    if !bsp {
+        crate::cpu::time::delay(core::time::Duration::from_micros(archop::rand::get() % 100));
+    }
     id
 }
 
