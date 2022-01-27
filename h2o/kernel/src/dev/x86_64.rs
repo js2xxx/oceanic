@@ -11,7 +11,7 @@ pub mod lpic;
 /// # Safety
 ///
 /// This function must be called only once from the bootstrap CPU.
-pub unsafe fn init_intr_chip() {
+pub(super) unsafe fn init_intr_chip() {
     let ioapic_data = match crate::dev::acpi::platform_info().interrupt_model {
         acpi::InterruptModel::Apic(ref apic) => apic,
         _ => panic!("Failed to get IOAPIC data"),

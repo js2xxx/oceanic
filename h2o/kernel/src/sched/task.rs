@@ -45,7 +45,7 @@ impl Type {
     }
 }
 
-#[inline]
+#[inline(never)]
 pub(super) fn init() {
     CpuLocalLazy::force(&idle::CTX_DROPPER);
     CpuLocalLazy::force(&idle::IDLE);

@@ -72,7 +72,7 @@ pub extern "C" fn kmain() {
 
     unsafe { cpu::arch::init() };
 
-    unsafe { dev::init_intr_chip() };
+    unsafe { dev::init() };
 
     sched::init();
 

@@ -141,7 +141,7 @@ pub struct HpetClock {
 impl ClockChip for HpetClock {
     fn get(&self) -> Instant {
         self.canary.assert();
-        let val = self.hpet.read().counter();
+        let val = unsafe { (*self.hpet.as_mut_ptr()).counter() };
         unsafe { Instant::from_raw((val as u128 * self.mul) >> self.sft) }
     }
 }

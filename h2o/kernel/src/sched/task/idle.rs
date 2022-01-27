@@ -84,12 +84,17 @@ fn idle(cpu: usize, fs_base: u64) -> ! {
 fn spawn_tinit() {
     let mut objects = hdl::List::new();
     {
-        let mem_res = Arc::clone(crate::mem::mem_resource());
+        let mem_res = Arc::clone(crate::dev::mem_resource());
         let res = unsafe { objects.insert_impl(hdl::Ref::new(mem_res).coerce_unchecked()) };
         res.expect("Failed to insert memory resource");
     }
     {
-        let gsi_res = Arc::clone(crate::cpu::intr::gsi_resource());
+        let pio_res = Arc::clone(crate::dev::pio_resource());
+        let res = unsafe { objects.insert_impl(hdl::Ref::new(pio_res).coerce_unchecked()) };
+        res.expect("Failed to insert port I/O resource");
+    }
+    {
+        let gsi_res = Arc::clone(crate::dev::gsi_resource());
         let res = unsafe { objects.insert_impl(hdl::Ref::new(gsi_res).coerce_unchecked()) };
         res.expect("Failed to insert GSI resource");
     }
