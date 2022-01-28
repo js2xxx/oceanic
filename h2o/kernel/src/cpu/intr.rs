@@ -2,7 +2,7 @@ mod imp;
 
 use alloc::sync::Arc;
 
-use spin::Lazy;
+use archop::Azy;
 
 pub use self::imp::Interrupt;
 pub use super::arch::intr as arch;
@@ -28,7 +28,7 @@ pub enum IsaIrq {
 
 pub type IntrHandler = fn(*mut u8);
 
-static GSI_RES: Lazy<Arc<Resource<u32>>> = Lazy::new(|| {
+static GSI_RES: Azy<Arc<Resource<u32>>> = Azy::new(|| {
     PREEMPT.scope(|| {
         let range = ioapic::chip()
             .lock()

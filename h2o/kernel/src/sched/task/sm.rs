@@ -7,7 +7,6 @@ use core::{
 
 use bitvec::prelude::BitVec;
 use derive_builder::Builder;
-use paging::LAddr;
 use spin::Mutex;
 
 use super::{ctx, hdl::HandleMap, idle, sig::Signal, tid, Tid, Type};
@@ -350,9 +349,4 @@ impl Blocked {
     pub fn ext_frame_mut(&mut self) -> &mut ctx::ExtFrame {
         &mut self.ctx.ext_frame
     }
-}
-
-#[inline]
-pub fn create_entry(entry: LAddr, stack: LAddr, args: [u64; 2]) -> ctx::Entry {
-    ctx::Entry { entry, stack, args }
 }

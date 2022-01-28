@@ -9,15 +9,15 @@ use core::{
     ptr::NonNull,
 };
 
+use archop::Azy;
 use solvent::Result;
-use spin::Lazy;
 
 use super::Object;
 use crate::{mem::Arena, sched::PREEMPT};
 
 pub const MAX_HANDLE_COUNT: usize = 1 << 18;
 
-pub(super) static HR_ARENA: Lazy<Arena<Ref<dyn Any>>> = Lazy::new(|| Arena::new(MAX_HANDLE_COUNT));
+pub(super) static HR_ARENA: Azy<Arena<Ref<dyn Any>>> = Azy::new(|| Arena::new(MAX_HANDLE_COUNT));
 
 #[derive(Debug)]
 pub struct Ref<T: ?Sized> {

@@ -21,19 +21,20 @@ use core::{
 };
 
 use ::alloc::sync::Arc;
+use archop::Azy;
 use bitop_ex::BitOpEx;
 use canary::Canary;
 use collection_ex::RangeMap;
 use paging::{LAddr, PAddr, PAGE_LAYOUT};
 pub use solvent::mem::Flags;
-use spin::{Lazy, Mutex};
+use spin::Mutex;
 
 pub use self::{arch::init_pgc, obj::*};
 use crate::sched::{task, PREEMPT};
 
 type ArchSpace = arch::Space;
 
-pub static KRL: Lazy<Arc<Space>> = Lazy::new(|| Space::new(task::Type::Kernel));
+pub static KRL: Azy<Arc<Space>> = Azy::new(|| Space::new(task::Type::Kernel));
 
 #[thread_local]
 static mut CURRENT: Option<Arc<Space>> = None;

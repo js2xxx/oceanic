@@ -1,15 +1,15 @@
 use core::{hash::BuildHasherDefault, intrinsics, time::Duration};
 
+use archop::Azy;
 use collection_ex::{CHashMap, FnvHasher};
 use paging::PAddr;
 use solvent::*;
-use spin::Lazy;
 
 use super::WaitObject;
 
 type BH = BuildHasherDefault<FnvHasher>;
 type FutexRef<'a> = collection_ex::CHashMapReadGuard<'a, PAddr, Futex, BH>;
-static FUTEX: Lazy<CHashMap<PAddr, Futex, BH>> = Lazy::new(|| CHashMap::new(BH::default()));
+static FUTEX: Azy<CHashMap<PAddr, Futex, BH>> = Azy::new(|| CHashMap::new(BH::default()));
 
 struct Futex {
     addr: PAddr,

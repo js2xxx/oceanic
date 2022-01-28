@@ -143,10 +143,7 @@ pub fn reprotect(
 }
 
 pub fn query(root_table: &Table, virt: LAddr, id_off: usize) -> Result<PAddr, Error> {
-    let offset = virt.val() & PAGE_MASK;
-    let virt = LAddr::from(virt.val() & !PAGE_MASK);
-
-    inner::get_page(root_table, virt, id_off).map(|phys| PAddr::new(*phys + offset))
+    inner::get_page(root_table, virt, id_off)
 }
 
 pub fn unmaps(

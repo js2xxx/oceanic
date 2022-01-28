@@ -4,17 +4,17 @@ pub mod timer;
 use alloc::{collections::BTreeMap, sync::Arc};
 use core::arch::asm;
 
-use archop::msr;
+use archop::{msr, Azy};
 use modular_bitfield::prelude::*;
 use paging::{LAddr, PAddr, PAGE_LAYOUT};
 use raw_cpuid::CpuId;
-use spin::{Lazy, RwLock};
+use spin::RwLock;
 
 use super::intr::def::ApicVec;
 use crate::mem::space::{self, Flags, Phys};
 
 pub static LAPIC_ID: RwLock<BTreeMap<usize, u32>> = RwLock::new(BTreeMap::new());
-static LAPIC_BASE: Lazy<usize> = Lazy::new(|| {
+static LAPIC_BASE: Azy<usize> = Azy::new(|| {
     let phys = Phys::new(
         PAddr::new(0xFEE00000),
         PAGE_LAYOUT,

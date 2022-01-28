@@ -100,7 +100,6 @@ impl Frame {
         self.rflags = archop::reg::rflags::IF;
 
         if matches!(ty, task::Type::Kernel) {
-            // TODO: Check for permissions.
             self.gs_base = unsafe { crate::cpu::arch::KERNEL_GS.as_ptr() } as u64;
         }
 

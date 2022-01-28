@@ -6,13 +6,13 @@ mod syscall;
 use alloc::{alloc::Global, sync::Arc};
 use core::{alloc::Allocator, ptr::NonNull};
 
+use archop::Azy;
 use iter_ex::PointerIterator;
-use spin::Lazy;
 
 pub use self::arena::Arena;
 use crate::{dev::Resource, kargs};
 
-pub static MMAP: Lazy<PointerIterator<pmm::boot::MemRange>> = Lazy::new(|| {
+pub static MMAP: Azy<PointerIterator<pmm::boot::MemRange>> = Azy::new(|| {
     PointerIterator::new(
         kargs().efi_mmap_paddr.to_laddr(minfo::ID_OFFSET).cast(),
         kargs().efi_mmap_len,
@@ -28,7 +28,7 @@ pub fn alloc_system_stack() -> solvent::Result<NonNull<u8>> {
         .map_err(Into::into)
 }
 
-static MEM_RESOURCE: Lazy<Arc<Resource<usize>>> = Lazy::new(|| {
+static MEM_RESOURCE: Azy<Arc<Resource<usize>>> = Azy::new(|| {
     let (all_available, addr_max) = pmm::init(&*MMAP, minfo::TRAMPOLINE_RANGE);
     log::info!(
         "Memory size: {:.3} GB ({:#x} Bytes)",
@@ -65,5 +65,5 @@ pub fn mem_resource() -> &'static Arc<Resource<usize>> {
 /// Initialize the PMM and the kernel heap (Rust global allocator).
 #[inline]
 pub fn init() {
-    Lazy::force(&MEM_RESOURCE);
+    Azy::force(&MEM_RESOURCE);
 }

@@ -1,9 +1,10 @@
 use core::arch::asm;
 
 use bitop_ex::BitOpEx;
-use spin::Lazy;
 
-static RAND_AVAILABLE: Lazy<bool> = Lazy::new(|| {
+use crate::Azy;
+
+static RAND_AVAILABLE: Azy<bool> = Azy::new(|| {
     let cpuid = raw_cpuid::CpuId::new();
     let fi = cpuid.get_feature_info();
     fi.map_or(false, |fi| fi.has_rdrand())

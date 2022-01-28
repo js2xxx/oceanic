@@ -10,12 +10,12 @@ cfg_if::cfg_if! {
 
 use alloc::sync::Arc;
 
-use spin::Lazy;
+use archop::Azy;
 
 pub use self::res::Resource;
 pub use crate::{cpu::intr::gsi_resource, mem::mem_resource};
 
-static PIO_RESOURCE: Lazy<Arc<Resource<u16>>> = Lazy::new(|| {
+static PIO_RESOURCE: Azy<Arc<Resource<u16>>> = Azy::new(|| {
     let ret = Resource::new(archop::rand::get(), 0..u16::MAX, None);
     core::mem::forget(
         ret.allocate(crate::log::COM_LOG..(crate::log::COM_LOG + 1))
@@ -34,7 +34,7 @@ pub fn pio_resource() -> &'static Arc<Resource<u16>> {
 /// This function must be called only once from the bootstrap CPU.
 #[inline]
 pub unsafe fn init() {
-    Lazy::force(&PIO_RESOURCE);
+    Azy::force(&PIO_RESOURCE);
     unsafe { x86_64::init_intr_chip() };
 }
 

@@ -4,10 +4,9 @@ pub mod epoch;
 use alloc::{boxed::Box, vec::Vec};
 use core::{assert_matches::assert_matches, cell::UnsafeCell, mem, ptr::NonNull, time::Duration};
 
-use archop::{PreemptState, PreemptStateGuard};
+use archop::{Azy, PreemptState, PreemptStateGuard};
 use canary::Canary;
 use deque::{Injector, Steal, Worker};
-use spin::Lazy;
 
 use super::{ipc::Arsc, task, wait::WaitObject};
 use crate::cpu::{
@@ -18,7 +17,7 @@ use crate::cpu::{
 pub(super) const MIN_TIME_GRAN: Duration = Duration::from_millis(30);
 const WAKE_TIME_GRAN: Duration = Duration::from_millis(1);
 
-static MIGRATION_QUEUE: Lazy<Vec<Injector<task::Ready>>> = Lazy::new(|| {
+static MIGRATION_QUEUE: Azy<Vec<Injector<task::Ready>>> = Azy::new(|| {
     let count = crate::cpu::count();
     core::iter::repeat_with(Injector::new).take(count).collect()
 });

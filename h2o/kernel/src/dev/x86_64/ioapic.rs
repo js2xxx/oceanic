@@ -5,10 +5,11 @@ use acpi::platform::interrupt::{
     Apic, InterruptSourceOverride as AcpiIntrOvr, IoApic as AcpiIoapic, Polarity as AcpiPolarity,
     TriggerMode as AcpiTriggerMode,
 };
+use archop::Azy;
 use collection_ex::RangeMap;
 use modular_bitfield::prelude::*;
 use paging::{PAddr, PAGE_LAYOUT};
-use spin::{Lazy, Mutex};
+use spin::Mutex;
 
 use crate::{
     cpu::arch::apic::{lapic, DelivMode, Polarity, TriggerMode},
@@ -18,7 +19,7 @@ use crate::{
 const LEGACY_IRQ: Range<u32> = 0..16;
 
 #[allow(clippy::type_complexity)]
-static IOAPIC_CHIP: Lazy<(Arc<Mutex<Ioapics>>, Vec<IntrOvr>)> = Lazy::new(|| {
+static IOAPIC_CHIP: Azy<(Arc<Mutex<Ioapics>>, Vec<IntrOvr>)> = Azy::new(|| {
     let ioapic_data = match crate::dev::acpi::platform_info().interrupt_model {
         acpi::InterruptModel::Apic(ref apic) => apic,
         _ => panic!("Failed to get IOAPIC data"),

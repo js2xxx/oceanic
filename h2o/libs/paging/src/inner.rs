@@ -190,7 +190,8 @@ pub(crate) fn get_page(root_table: &Table, virt: LAddr, id_off: usize) -> Result
         let item = unsafe { &table.as_ref()[lvl.addr_idx(virt, false)] };
 
         if item.is_leaf(lvl) {
-            break Ok(item.get(lvl).0);
+            let offset = virt.val() & !lvl.addr_mask() as usize;
+            break Ok(PAddr::new(*item.get(lvl).0 | offset));
         }
 
         table = item

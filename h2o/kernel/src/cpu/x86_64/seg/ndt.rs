@@ -1,8 +1,8 @@
 use core::{arch::asm, cell::UnsafeCell, mem::size_of, ops::Deref, ptr::addr_of};
 
+use archop::Azy;
 use bitvec::BitArr;
 use paging::LAddr;
-use spin::Lazy;
 use static_assertions::*;
 
 use super::*;
@@ -24,11 +24,11 @@ pub const INTR_DATA: SegSelector = SegSelector::from_const(0x10 + 4); // SegSele
 const INIT_LIM: u32 = 0xFFFFF;
 const INIT_ATTR: u16 = attrs::PRESENT | attrs::G4K;
 
-// NOTE: The segment tables must be initialized in `Lazy` or mutable statics.
+// NOTE: The segment tables must be initialized in `Azy` or mutable statics.
 // Otherwise the compiler or the linker will place it into the constant section
 // of the executable file and cause load errors.
 
-static LDT: Lazy<DescTable<3>> = Lazy::new(|| {
+static LDT: Azy<DescTable<3>> = Azy::new(|| {
     DescTable::new([
         Segment::new(0, 0, 0, 0),
         Segment::new(0, INIT_LIM, attrs::SEG_CODE | attrs::X64 | INIT_ATTR, 0),
@@ -278,7 +278,7 @@ unsafe fn load_tss(tr: SegSelector) {
     let io_base = u16::try_from(map_addr.offset_from(tss_addr)).expect("Failed to get io_base");
     TSS.set_io_base(io_base);
 
-    let last_byte = map_addr.add(65536 / size_of::<u8>());
+    let last_byte = map_addr.add(65536 / 8);
     (last_byte as *mut u8).write(u8::MAX);
 
     unsafe { asm!("ltr [{}]", in(reg) &tr) };

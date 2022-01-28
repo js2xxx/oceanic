@@ -1,9 +1,9 @@
-use spin::Lazy;
+use archop::Azy;
 
 use super::Instant;
 use crate::{cpu::arch::tsc::TSC_CLOCK, dev::hpet::HPET_CLOCK};
 
-pub static CLOCK: Lazy<&'static dyn ClockChip> = Lazy::new(|| {
+pub static CLOCK: Azy<&'static dyn ClockChip> = Azy::new(|| {
     let ret: &'static dyn ClockChip = match *TSC_CLOCK {
         Some(ref tsc) => tsc,
         None => HPET_CLOCK.as_ref().expect("No available clock"),
@@ -12,8 +12,8 @@ pub static CLOCK: Lazy<&'static dyn ClockChip> = Lazy::new(|| {
     ret
 });
 
-static CALIB_CLOCK: Lazy<&'static dyn CalibrationClock> =
-    Lazy::new(|| HPET_CLOCK.as_ref().expect("No available clock"));
+static CALIB_CLOCK: Azy<&'static dyn CalibrationClock> =
+    Azy::new(|| HPET_CLOCK.as_ref().expect("No available clock"));
 
 pub trait ClockChip: Send + Sync {
     fn get(&self) -> Instant;

@@ -1,12 +1,12 @@
 //! This module started its life as crossbeam-epoch.
 
+use archop::Azy;
 pub use crossbeam_epoch::*;
-use spin::Lazy;
 
 use crate::cpu::CpuLocalLazy;
 
 /// The global data for the default garbage collector.
-static COLLECTOR: Lazy<Collector> = Lazy::new(Collector::new);
+static COLLECTOR: Azy<Collector> = Azy::new(Collector::new);
 
 /// The per-thread participant for the default garbage collector.
 #[thread_local]

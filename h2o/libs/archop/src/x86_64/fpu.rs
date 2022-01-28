@@ -1,8 +1,6 @@
 use core::arch::asm;
 
-use spin::Lazy;
-
-use crate::reg::cr4;
+use crate::{reg::cr4, Azy};
 
 #[derive(Debug, Clone, Copy)]
 enum FpuType {
@@ -11,7 +9,7 @@ enum FpuType {
     X(u32, u32),
 }
 
-static FPU_TYPE: Lazy<FpuType> = Lazy::new(|| {
+static FPU_TYPE: Azy<FpuType> = Azy::new(|| {
     let cpuid = raw_cpuid::CpuId::new();
     match cpuid.get_feature_info() {
         Some(e) if e.has_xsave() => {
@@ -38,7 +36,7 @@ static FPU_TYPE: Lazy<FpuType> = Lazy::new(|| {
 ///
 /// This function must be called only once from the bootstrap CPU.
 pub unsafe fn init() {
-    Lazy::force(&FPU_TYPE);
+    Azy::force(&FPU_TYPE);
 }
 
 pub fn frame_size() -> usize {

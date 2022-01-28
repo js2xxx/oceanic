@@ -39,13 +39,13 @@ pub(super) static IDLE: CpuLocalLazy<Tid> = CpuLocalLazy::new(|| {
         .init_stack(DEFAULT_STACK_SIZE)
         .expect("Failed to initialize stack for IDLE");
 
-    let entry = create_entry(
-        LAddr::new(idle as *mut u8),
+    let entry = ctx::Entry {
+        entry: LAddr::new(idle as *mut u8),
         stack,
-        [cpu as u64, unsafe {
+        args: [cpu as u64, unsafe {
             archop::msr::read(archop::msr::FS_BASE)
         }],
-    );
+    };
     let kstack = ctx::Kstack::new(Some(entry), Type::Kernel);
 
     let tid = tid::allocate(ti).expect("Tid exhausted");
