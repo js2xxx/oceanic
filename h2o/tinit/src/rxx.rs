@@ -20,7 +20,7 @@ pub extern "C" fn _Unwind_Resume() -> ! {
 }
 
 /// The function indicating memory runs out.
-#[lang = "oom"]
+#[alloc_error_handler]
 pub fn out_of_memory(_layout: core::alloc::Layout) -> ! {
     panic!()
 }

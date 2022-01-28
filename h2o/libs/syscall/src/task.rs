@@ -36,14 +36,3 @@ pub struct ExecInfo {
     pub init_chan: Handle,
     pub arg: u64,
 }
-
-#[cfg(feature = "call")]
-pub fn exit<T>(res: crate::Result<T>) -> !
-where
-    T: crate::SerdeReg,
-{
-    use crate::SerdeReg;
-
-    let _ = crate::call::task_exit(res.encode());
-    unreachable!();
-}

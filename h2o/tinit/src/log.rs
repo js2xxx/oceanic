@@ -10,7 +10,7 @@ impl log::Log for Logger {
     }
 
     fn log(&self, record: &log::Record) {
-        let _ = crate::call::log(record);
+        let _ = solvent::call::log(record);
     }
 
     fn flush(&self) {}

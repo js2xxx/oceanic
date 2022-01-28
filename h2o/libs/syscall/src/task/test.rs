@@ -32,7 +32,7 @@ extern "C" fn func(_: crate::Handle, arg: u32) {
         },
         _ => {}
     }
-    exit(Ok(12345i32));
+    task_exit(12345).expect("Failed to exit task");
 }
 
 fn join(normal: Handle, fault: Handle) {

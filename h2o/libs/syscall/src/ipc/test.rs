@@ -102,7 +102,7 @@ pub fn test(stack: (*mut u8, *mut u8, Handle)) {
             chan_send(init_chan, &p).expect("Failed to send the response");
 
             ::log::trace!("Finished");
-            crate::task::exit(Ok(()));
+            task_exit(0).expect("Failed to exit the task");
         }
 
         let other = {

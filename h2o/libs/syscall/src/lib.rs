@@ -1,26 +1,18 @@
 #![no_std]
 #![feature(allocator_api)]
 #![feature(bool_to_option)]
-#![feature(lang_items)]
 #![feature(negative_impls)]
 #![feature(nonnull_slice_from_raw_parts)]
 #![feature(result_into_ok_or_err)]
 #![feature(slice_ptr_get)]
 #![feature(slice_ptr_len)]
 
-mod call;
+pub mod call;
 mod error;
 pub mod ipc;
 pub mod mem;
 pub mod res;
 pub mod task;
-pub mod time;
-cfg_if::cfg_if! {
-    if #[cfg(feature = "call")] {
-        pub mod rxx;
-        pub mod log;
-    }
-}
 
 pub use solvent_gen::*;
 

@@ -19,40 +19,6 @@ pub struct MapInfo {
     pub flags: u32,
 }
 
-cfg_if::cfg_if! { if #[cfg(feature = "call")] {
-
-use core::{alloc::Layout, ptr::NonNull};
-
-pub fn mem_alloc(layout: Layout, flags: Flags) -> crate::Result<NonNull<[u8]>> {
-    let (size, align) = (layout.size(), layout.align());
-    let phys = crate::call::phys_alloc(size, align, flags.bits)?;
-    let mi = MapInfo {
-        addr: 0,
-        map_addr: false,
-        phys,
-        phys_offset: 0,
-        len: size,
-        flags: flags.bits,
-    };
-    let ptr = crate::call::mem_map(crate::Handle::NULL, &mi)?;
-    let _ = crate::call::obj_drop(phys);
-    unsafe {
-        Ok(NonNull::slice_from_raw_parts(
-            NonNull::new_unchecked(ptr),
-            size,
-        ))
-    }
-}
-
-/// # Safety
-///
-/// The caller must ensure that `ptr` is previously allocated by [`mem_alloc`].
-pub unsafe fn mem_dealloc(ptr: NonNull<u8>) -> crate::Result<()> {
-    crate::call::mem_unmap(crate::Handle::NULL, ptr.as_ptr())
-}
-
-}}
-
 #[cfg(feature = "call")]
 pub fn test() {
     let flags = Flags::READABLE | Flags::WRITABLE | Flags::USER_ACCESS;
