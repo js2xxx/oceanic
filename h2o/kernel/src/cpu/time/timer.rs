@@ -9,12 +9,12 @@ use canary::Canary;
 
 use super::Instant;
 use crate::{
-    cpu::CpuLocalLazy,
+    cpu::Lazy,
     sched::{deque::Worker, ipc::Arsc, task},
 };
 
 #[thread_local]
-static TIMER_QUEUE: CpuLocalLazy<Worker<Arsc<Timer>>> = CpuLocalLazy::new(Worker::new_fifo);
+static TIMER_QUEUE: Lazy<Worker<Arsc<Timer>>> = Lazy::new(Worker::new_fifo);
 
 type CallbackFn = fn(Arsc<Timer>, Instant, NonNull<task::Blocked>);
 

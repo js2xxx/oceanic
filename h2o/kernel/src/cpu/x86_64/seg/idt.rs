@@ -11,7 +11,7 @@ use static_assertions::*;
 use super::{ndt::INTR_CODE, *};
 use crate::cpu::{
     arch::intr::def::{IdtEntry, IdtInit, IDT_INIT},
-    CpuLocalLazy,
+    Lazy,
 };
 
 /// The count of all the interrupts in one CPU.
@@ -20,7 +20,7 @@ use crate::cpu::{
 pub const NR_VECTORS: usize = 256;
 
 #[thread_local]
-static IDT: CpuLocalLazy<IntDescTable> = CpuLocalLazy::new(|| {
+static IDT: Lazy<IntDescTable> = Lazy::new(|| {
     let mut array = [Gate::zeroed(); NR_VECTORS];
 
     let mut set_ent = |entry: &IdtEntry| {

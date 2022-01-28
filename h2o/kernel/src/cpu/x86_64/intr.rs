@@ -7,7 +7,7 @@ use spin::Mutex;
 pub use self::def::{ExVec, ALLOC_VEC};
 use super::apic::{Polarity, TriggerMode, LAPIC_ID};
 use crate::{
-    cpu::{arch::seg::ndt::USR_CODE_X64, intr::IntrHandler, time::Instant, CpuLocalLazy},
+    cpu::{arch::seg::ndt::USR_CODE_X64, intr::IntrHandler, time::Instant, Lazy},
     dev::ioapic,
     sched::{
         task::{self, ctx::arch::Frame},
@@ -16,8 +16,7 @@ use crate::{
 };
 
 #[thread_local]
-pub static MANAGER: CpuLocalLazy<Manager> =
-    CpuLocalLazy::new(|| Manager::new(unsafe { crate::cpu::id() }));
+pub static MANAGER: Lazy<Manager> = Lazy::new(|| Manager::new(unsafe { crate::cpu::id() }));
 
 pub struct Manager {
     cpu: usize,
@@ -151,5 +150,5 @@ unsafe fn exception(frame_ptr: *mut Frame, vec: def::ExVec) {
 
 #[inline]
 pub(super) fn init() {
-    CpuLocalLazy::force(&MANAGER);
+    Lazy::force(&MANAGER);
 }

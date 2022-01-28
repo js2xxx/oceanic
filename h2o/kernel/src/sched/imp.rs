@@ -11,7 +11,7 @@ use deque::{Injector, Steal, Worker};
 use super::{ipc::Arsc, task, wait::WaitObject};
 use crate::cpu::{
     time::{Instant, Timer, TimerCallback, TimerType},
-    CpuLocalLazy,
+    Lazy,
 };
 
 pub(super) const MIN_TIME_GRAN: Duration = Duration::from_millis(30);
@@ -23,7 +23,7 @@ static MIGRATION_QUEUE: Azy<Vec<Injector<task::Ready>>> = Azy::new(|| {
 });
 
 #[thread_local]
-pub static SCHED: CpuLocalLazy<Scheduler> = CpuLocalLazy::new(|| Scheduler {
+pub static SCHED: Lazy<Scheduler> = Lazy::new(|| Scheduler {
     canary: Canary::new(),
     cpu: unsafe { crate::cpu::id() },
     current: UnsafeCell::new(None),

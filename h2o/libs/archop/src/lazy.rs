@@ -12,6 +12,8 @@ const PROGRESS: usize = 1;
 const INIT: usize = 2;
 const PANICKED: usize = 3;
 
+/// `Lazy` stands for Local (non-atomic) AZY, while `Azy` stands for Atomic
+/// laZY.
 pub struct Azy<T, F = fn() -> T> {
     data: UnsafeCell<MaybeUninit<T>>,
     state: AtomicUsize,

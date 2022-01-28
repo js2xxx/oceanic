@@ -20,7 +20,7 @@ use self::elf::from_elf;
 pub use self::{excep::dispatch_exception, sig::Signal, sm::*, tid::Tid};
 use super::{ipc::Channel, PREEMPT};
 use crate::{
-    cpu::{CpuLocalLazy, CpuMask},
+    cpu::{CpuMask, Lazy},
     mem::space::Space,
 };
 
@@ -47,8 +47,8 @@ impl Type {
 
 #[inline(never)]
 pub(super) fn init() {
-    CpuLocalLazy::force(&idle::CTX_DROPPER);
-    CpuLocalLazy::force(&idle::IDLE);
+    Lazy::force(&idle::CTX_DROPPER);
+    Lazy::force(&idle::IDLE);
 }
 
 #[inline]

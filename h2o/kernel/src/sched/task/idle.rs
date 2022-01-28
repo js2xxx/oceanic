@@ -4,7 +4,7 @@ use bytes::{BufMut, BytesMut};
 
 use super::*;
 use crate::{
-    cpu::CpuLocalLazy,
+    cpu::Lazy,
     mem::space,
     sched::{deque, task, SCHED},
 };
@@ -18,11 +18,11 @@ use crate::{
 ///
 /// [`task_exit`]: crate::sched::task::syscall::task_exit
 #[thread_local]
-pub(super) static CTX_DROPPER: CpuLocalLazy<deque::Injector<alloc::boxed::Box<Context>>> =
-    CpuLocalLazy::new(deque::Injector::new);
+pub(super) static CTX_DROPPER: Lazy<deque::Injector<alloc::boxed::Box<Context>>> =
+    Lazy::new(deque::Injector::new);
 
 #[thread_local]
-pub(super) static IDLE: CpuLocalLazy<Tid> = CpuLocalLazy::new(|| {
+pub(super) static IDLE: Lazy<Tid> = Lazy::new(|| {
     let cpu = unsafe { crate::cpu::id() };
 
     let ti = TaskInfo::builder()

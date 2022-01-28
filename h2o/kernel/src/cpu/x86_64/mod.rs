@@ -14,7 +14,7 @@ use bitvec::slice::BitSlice;
 use paging::LAddr;
 
 pub use self::seg::reload_pls;
-use crate::cpu::CpuLocalLazy;
+use crate::cpu::Lazy;
 
 pub const MAX_CPU: usize = 256;
 static CPU_INDEX: AtomicUsize = AtomicUsize::new(0);
@@ -76,7 +76,7 @@ pub struct KernelGs {
 }
 
 #[thread_local]
-pub static KERNEL_GS: CpuLocalLazy<KernelGs> = CpuLocalLazy::new(|| KernelGs {
+pub static KERNEL_GS: Lazy<KernelGs> = Lazy::new(|| KernelGs {
     tss_rsp0: UnsafeCell::new(unsafe { seg::ndt::TSS.rsp0() }),
     syscall_user_stack: null_mut(),
     syscall_stack: unsafe { syscall::init() }.expect("Memory allocation failed"),
