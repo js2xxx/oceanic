@@ -16,7 +16,7 @@ pub struct MapInfo {
     pub phys: crate::Handle,
     pub phys_offset: usize,
     pub len: usize,
-    pub flags: Flags,
+    pub flags: u32,
 }
 
 cfg_if::cfg_if! { if #[cfg(feature = "call")] {
@@ -32,7 +32,7 @@ pub fn mem_alloc(layout: Layout, flags: Flags) -> crate::Result<NonNull<[u8]>> {
         phys,
         phys_offset: 0,
         len: size,
-        flags,
+        flags: flags.bits,
     };
     let ptr = crate::call::mem_map(crate::Handle::NULL, &mi)?;
     let _ = crate::call::obj_drop(phys);
@@ -64,7 +64,7 @@ pub fn test() {
         phys,
         phys_offset: 0,
         len: 4096,
-        flags,
+        flags: flags.bits,
     };
     let ptr =
         crate::call::mem_map(crate::Handle::NULL, &mi).expect("Failed to map the physical memory");

@@ -66,3 +66,34 @@ impl<T: Ord + Copy> Drop for Resource<T> {
         }
     }
 }
+
+mod syscall {
+    use alloc::sync::Arc;
+    use core::{any::Any, ops::Add};
+
+    use solvent::*;
+
+    use crate::{dev::Resource, sched::SCHED};
+
+    fn res_alloc_typed<T: Ord + Copy + Send + Sync + Any + Add<Output = T>>(
+        hdl: Handle,
+        base: T,
+        size: T,
+    ) -> Result<Handle> {
+        SCHED.with_current(|cur| {
+            let res = cur.tid().handles().get::<Arc<Resource<T>>>(hdl)?;
+            let sub = res.allocate(base..(base + size)).ok_or(Error::ENOMEM)?;
+            cur.tid().handles().insert(sub)
+        })
+    }
+
+    #[syscall]
+    fn res_alloc(hdl: Handle, ty: u32, base: usize, size: usize) -> Result<Handle> {
+        match ty {
+            res::RES_MEM => res_alloc_typed(hdl, base, size),
+            res::RES_PIO => res_alloc_typed(hdl, u16::try_from(base)?, u16::try_from(size)?),
+            res::RES_GSI => res_alloc_typed(hdl, u32::try_from(base)?, u32::try_from(size)?),
+            _ => Err(Error::ETYPE),
+        }
+    }
+}
