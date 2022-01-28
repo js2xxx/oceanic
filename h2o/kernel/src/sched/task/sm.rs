@@ -1,4 +1,5 @@
 use alloc::{boxed::Box, string::String, sync::Arc};
+use bitvec::prelude::BitVec;
 use core::{
     fmt,
     ops::{Deref, DerefMut},
@@ -101,6 +102,7 @@ pub struct Context {
     pub(in crate::sched) space: Arc<Space>,
     pub(in crate::sched) kstack: ctx::Kstack,
     pub(in crate::sched) ext_frame: ctx::ExtFrame,
+    pub(in crate::sched) io_bitmap: Option<BitVec>,
 
     pub(in crate::sched) cpu: usize,
     pub(in crate::sched) runtime: Duration,
@@ -120,6 +122,11 @@ impl Context {
     #[inline]
     pub fn kstack_mut(&mut self) -> &mut ctx::Kstack {
         &mut self.kstack
+    }
+
+    #[inline]
+    pub fn io_bitmap_mut(&mut self) -> &mut Option<BitVec> {
+        &mut self.io_bitmap
     }
 }
 
@@ -218,6 +225,7 @@ impl Init {
                 space,
                 kstack,
                 ext_frame,
+                io_bitmap: None,
                 cpu: 0,
                 runtime: Duration::new(0, 0),
             }),

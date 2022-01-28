@@ -122,16 +122,9 @@ impl TssStruct {
         ret
     }
 
-    pub unsafe fn set_io_base(&self, offset: u16) {
+    unsafe fn set_io_base(&self, offset: u16) {
         let addr = addr_of!(self.io_base);
         (addr as *mut u16).write_unaligned(offset);
-    }
-
-    pub fn export_fp(&self) -> FatPointer {
-        FatPointer {
-            base: LAddr::new(self as *const _ as *mut _),
-            limit: size_of::<Self>() as u16 - 1,
-        }
     }
 }
 
@@ -139,13 +132,20 @@ impl TssStruct {
 #[repr(C)]
 pub struct Tss {
     data: TssStruct,
-    bitmap: UnsafeCell<BitArr!(for 65536)>,
+    bitmap: UnsafeCell<BitArr!(for 65536 + 8)>,
 }
 
 impl Tss {
     #[inline]
     pub fn bitmap(&self) -> *mut BitArr!(for 65536) {
-        self.bitmap.get()
+        self.bitmap.get() as *mut BitArr!(for 65536)
+    }
+
+    pub fn export_fp(&self) -> FatPointer {
+        FatPointer {
+            base: LAddr::new(self as *const _ as *mut _),
+            limit: size_of::<Self>() as u16 - 1,
+        }
     }
 }
 
@@ -273,6 +273,14 @@ unsafe fn load_ldt(ldtr: SegSelector) {
 /// The caller must ensure that `tr` points to a valid TSS and its GDT is
 /// loaded.
 unsafe fn load_tss(tr: SegSelector) {
+    let tss_addr = &TSS.data as *const TssStruct as *const u8;
+    let map_addr = &TSS.bitmap as *const UnsafeCell<_> as *const u8;
+    let io_base = u16::try_from(map_addr.offset_from(tss_addr)).expect("Failed to get io_base");
+    TSS.set_io_base(io_base);
+
+    let last_byte = map_addr.add(65536 / size_of::<u8>());
+    (last_byte as *mut u8).write(u8::MAX);
+
     unsafe { asm!("ltr [{}]", in(reg) &tr) };
 }
 

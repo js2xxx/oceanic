@@ -79,3 +79,5 @@ ss!(39 =>
         flags: u32
     ) -> Handle
 );
+ss!(40 => pub fn pio_acq(res: Handle, base: u16, size: u16));
+ss!(41 => pub fn pio_rel(res: Handle, base: u16, size: u16));

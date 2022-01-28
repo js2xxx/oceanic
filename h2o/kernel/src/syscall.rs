@@ -78,6 +78,8 @@ static SYSCALL_TABLE: &[Option<SyscallWrapper>] = &[
     None,
     Some(syscall_wrapper!(res_alloc)),
     Some(syscall_wrapper!(phys_acq)),
+    Some(syscall_wrapper!(pio_acq)),
+    Some(syscall_wrapper!(pio_rel)),
 ];
 
 pub fn handler(arg: &Arguments) -> usize {

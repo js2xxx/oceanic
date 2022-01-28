@@ -37,3 +37,52 @@ pub unsafe fn init() {
     Lazy::force(&PIO_RESOURCE);
     unsafe { x86_64::init_intr_chip() };
 }
+
+mod syscall {
+    use bitvec::bitvec;
+    use solvent::*;
+
+    use super::*;
+    use crate::{cpu::arch::KERNEL_GS, sched::SCHED};
+
+    #[syscall]
+    fn pio_acq(res: Handle, base: u16, size: u16) -> Result {
+        SCHED.with_current(|cur| {
+            let res = cur.tid().handles().get::<Arc<Resource<u16>>>(res)?;
+            if res.magic_eq(pio_resource())
+                && res.range().start <= base
+                && base + size <= res.range().end
+            {
+                let io_bitmap = cur.io_bitmap_mut().get_or_insert_with(|| bitvec![1; 65536]);
+                for item in io_bitmap.iter_mut().skip(base as usize).take(size as usize) {
+                    item.set(false);
+                }
+                unsafe { KERNEL_GS.update_tss_io_bitmap(cur.io_bitmap_mut().as_deref()) };
+                Ok(())
+            } else {
+                Err(Error::EPERM)
+            }
+        })
+    }
+
+    #[syscall]
+    fn pio_rel(res: Handle, base: u16, size: u16) -> Result {
+        SCHED.with_current(|cur| {
+            let res = cur.tid().handles().get::<Arc<Resource<u16>>>(res)?;
+            if res.magic_eq(pio_resource())
+                && res.range().start <= base
+                && base + size <= res.range().end
+            {
+                if let Some(io_bitmap) = cur.io_bitmap_mut() {
+                    for item in io_bitmap.iter_mut().skip(base as usize).take(size as usize) {
+                        item.set(true);
+                    }
+                };
+                unsafe { KERNEL_GS.update_tss_io_bitmap(cur.io_bitmap_mut().as_deref()) };
+                Ok(())
+            } else {
+                Err(Error::EPERM)
+            }
+        })
+    }
+}

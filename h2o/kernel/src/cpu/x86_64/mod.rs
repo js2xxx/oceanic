@@ -10,6 +10,7 @@ use core::{
     sync::atomic::{AtomicUsize, Ordering},
 };
 
+use bitvec::slice::BitSlice;
 use paging::LAddr;
 
 pub use self::seg::reload_pls;
@@ -111,6 +112,21 @@ impl KernelGs {
     pub unsafe fn update_tss_rsp0(&self, rsp0: u64) {
         seg::ndt::TSS.set_rsp0(rsp0);
         *self.tss_rsp0.get() = rsp0;
+    }
+
+    /// Update TSS's I/O bitmap.
+    ///
+    /// # Safety
+    ///
+    /// `bitmap`'s length must equal to 65536.
+    pub unsafe fn update_tss_io_bitmap(&self, bitmap: Option<&BitSlice>) {
+        let ptr = seg::ndt::TSS.bitmap();
+        if let Some(bitmap) = bitmap {
+            (*ptr).copy_from_bitslice(bitmap);
+        } else {
+            let ptr = (*ptr).as_mut_raw_slice();
+            ptr.fill(usize::MAX);
+        }
     }
 
     #[inline]
