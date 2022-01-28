@@ -1,5 +1,5 @@
+use archop::Azy;
 use paging::PAddr;
-use spin::Lazy;
 
 #[derive(Debug, Clone)]
 pub struct Handler;
@@ -22,11 +22,11 @@ impl acpi::AcpiHandler for Handler {
     fn unmap_physical_region<T>(_: &acpi::PhysicalMapping<Self, T>) {}
 }
 
-static TABLES: Lazy<acpi::AcpiTables<Handler>> = Lazy::new(|| unsafe {
+static TABLES: Azy<acpi::AcpiTables<Handler>> = Azy::new(|| unsafe {
     acpi::AcpiTables::from_rsdp(Handler, *crate::kargs().rsdp).expect("Failed to get ACPI tables")
 });
-static PLATFORM_INFO: Lazy<acpi::PlatformInfo> =
-    Lazy::new(|| TABLES.platform_info().expect("Failed to get platform info"));
+static PLATFORM_INFO: Azy<acpi::PlatformInfo> =
+    Azy::new(|| TABLES.platform_info().expect("Failed to get platform info"));
 
 #[inline]
 pub fn tables() -> &'static acpi::AcpiTables<Handler> {

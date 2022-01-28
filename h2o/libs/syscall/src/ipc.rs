@@ -14,4 +14,3 @@ pub struct RawPacket {
     pub buffer_size: usize,
     pub buffer_cap: usize,
 }
-

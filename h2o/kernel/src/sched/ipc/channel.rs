@@ -102,10 +102,6 @@ impl Channel {
         (c1, c2)
     }
 
-    pub fn is_peer(&self, other: &Self) -> bool {
-        self.peer_eq(other)
-    }
-
     #[inline]
     pub fn peer_eq(&self, other: &Self) -> bool {
         self.peer_id == other.peer_id

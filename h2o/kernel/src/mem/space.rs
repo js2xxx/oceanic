@@ -9,7 +9,7 @@ cfg_if::cfg_if! {
     if #[cfg(target_arch = "x86_64")] {
         #[path = "space/x86_64/mod.rs"]
         mod arch;
-        pub use arch::{page_fault, ErrCode as PageFaultErrCode};
+        pub use self::arch::{page_fault, ErrCode as PageFaultErrCode};
     }
 }
 
@@ -21,20 +21,20 @@ use core::{
 };
 
 use ::alloc::sync::Arc;
-pub use arch::init_pgc;
+use archop::Azy;
 use bitop_ex::BitOpEx;
 use canary::Canary;
 use collection_ex::RangeMap;
-pub use obj::*;
 use paging::{LAddr, PAddr, PAGE_LAYOUT};
 pub use solvent::mem::Flags;
-use spin::{Lazy, Mutex};
+use spin::Mutex;
 
+pub use self::{arch::init_pgc, obj::*};
 use crate::sched::{task, PREEMPT};
 
 type ArchSpace = arch::Space;
 
-pub static KRL: Lazy<Arc<Space>> = Lazy::new(|| Space::new(task::Type::Kernel));
+pub static KRL: Azy<Arc<Space>> = Azy::new(|| Space::new(task::Type::Kernel));
 
 #[thread_local]
 static mut CURRENT: Option<Arc<Space>> = None;

@@ -5,9 +5,7 @@ mod queue;
 use alloc::boxed::Box;
 use core::time::Duration;
 
-pub use cell::WaitCell;
-pub use queue::WaitQueue;
-
+pub use self::{cell::WaitCell, queue::WaitQueue};
 use super::{ipc::Arsc, *};
 use crate::cpu::time::Timer;
 
@@ -20,6 +18,7 @@ unsafe impl Send for WaitObject {}
 unsafe impl Sync for WaitObject {}
 
 impl WaitObject {
+    #[inline]
     pub fn new() -> Self {
         WaitObject {
             wait_queue: deque::Injector::new(),
@@ -40,8 +39,7 @@ impl WaitObject {
             match self.wait_queue.steal() {
                 deque::Steal::Success(timer) => {
                     if !timer.cancel() {
-                        let blocked =
-                            unsafe { Box::from_raw(timer.callback_arg().cast::<task::Blocked>()) };
+                        let blocked = unsafe { Box::from_raw(timer.callback_arg().as_ptr()) };
                         SCHED.unblock(Box::into_inner(blocked));
                         cnt += 1;
                     }

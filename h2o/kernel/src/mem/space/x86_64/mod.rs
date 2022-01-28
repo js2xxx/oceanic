@@ -6,15 +6,16 @@
 use alloc::{alloc::Global, boxed::Box};
 use core::{alloc::Allocator, ops::Range};
 
+use archop::Azy;
 use canary::Canary;
 use paging::{LAddr, PAddr, Table};
-use spin::{Lazy, Mutex};
+use spin::Mutex;
 
 use super::Flags;
 use crate::sched::{task::ctx::x86_64::Frame, SCHED};
 
 /// The root page table at initialization time.
-static KERNEL_ROOT: Lazy<(Box<Table>, u64)> = Lazy::new(|| {
+static KERNEL_ROOT: Azy<(Box<Table>, u64)> = Azy::new(|| {
     let mut table = box Table::zeroed();
 
     let cr3 = unsafe { archop::reg::cr3::read() };

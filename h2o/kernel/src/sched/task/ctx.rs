@@ -1,7 +1,7 @@
 cfg_if::cfg_if! {
     if #[cfg(target_arch = "x86_64")] {
         pub mod x86_64;
-        pub use x86_64 as arch;
+        pub use self::x86_64 as arch;
     }
 }
 
@@ -21,7 +21,7 @@ use crate::{
     mem::space::{self, Flags},
 };
 
-pub const KSTACK_SIZE: usize = paging::PAGE_SIZE * 13;
+pub const KSTACK_SIZE: usize = paging::PAGE_SIZE * 16;
 
 #[derive(Debug)]
 pub struct Entry {

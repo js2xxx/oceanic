@@ -10,10 +10,11 @@ use core::{
     sync::atomic::{AtomicUsize, Ordering},
 };
 
+use bitvec::slice::BitSlice;
 use paging::LAddr;
-pub use seg::reload_pls;
 
-use crate::cpu::CpuLocalLazy;
+pub use self::seg::reload_pls;
+use crate::cpu::Lazy;
 
 pub const MAX_CPU: usize = 256;
 static CPU_INDEX: AtomicUsize = AtomicUsize::new(0);
@@ -29,6 +30,9 @@ pub unsafe fn set_id(bsp: bool) -> usize {
 
     while !bsp && CPU_COUNT.load(Ordering::SeqCst) == 0 {
         core::hint::spin_loop();
+    }
+    if !bsp {
+        crate::cpu::time::delay(core::time::Duration::from_micros(archop::rand::get() % 100));
     }
     id
 }
@@ -72,7 +76,7 @@ pub struct KernelGs {
 }
 
 #[thread_local]
-pub static KERNEL_GS: CpuLocalLazy<KernelGs> = CpuLocalLazy::new(|| KernelGs {
+pub static KERNEL_GS: Lazy<KernelGs> = Lazy::new(|| KernelGs {
     tss_rsp0: UnsafeCell::new(unsafe { seg::ndt::TSS.rsp0() }),
     syscall_user_stack: null_mut(),
     syscall_stack: unsafe { syscall::init() }.expect("Memory allocation failed"),
@@ -110,6 +114,21 @@ impl KernelGs {
         *self.tss_rsp0.get() = rsp0;
     }
 
+    /// Update TSS's I/O bitmap.
+    ///
+    /// # Safety
+    ///
+    /// `bitmap`'s length must equal to 65536.
+    pub unsafe fn update_tss_io_bitmap(&self, bitmap: Option<&BitSlice>) {
+        let ptr = seg::ndt::TSS.bitmap();
+        if let Some(bitmap) = bitmap {
+            (*ptr).copy_from_bitslice(bitmap);
+        } else {
+            let ptr = (*ptr).as_mut_raw_slice();
+            ptr.fill(usize::MAX);
+        }
+    }
+
     #[inline]
     pub unsafe fn as_ptr(&self) -> *const u8 {
         (self as *const KernelGs).cast()
@@ -142,6 +161,7 @@ pub unsafe fn init() {
         apic::ipi::start_cpus(&lapic_data.application_processors)
     };
     CPU_COUNT.store(cnt + 1, Ordering::SeqCst);
+    intr::init();
 }
 
 /// Initialize x86_64 architecture.
@@ -157,4 +177,5 @@ pub unsafe fn init_ap() {
     unsafe { KERNEL_GS.load() };
 
     apic::init();
+    intr::init();
 }

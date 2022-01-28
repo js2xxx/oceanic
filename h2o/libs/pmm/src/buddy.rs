@@ -690,7 +690,7 @@ pub unsafe fn dealloc_pages_exact(n: usize, addr: PAddr) {
 unsafe fn parse_mmap(
     mmap_iter: &PointerIterator<crate::boot::MemRange>,
     reserved_range: Range<usize>,
-) -> usize {
+) -> (usize, usize) {
     use crate::boot::MemType;
 
     let available = |ty| matches!(ty, MemType::Conventional | MemType::PersistentMemory);
@@ -698,19 +698,21 @@ unsafe fn parse_mmap(
         |start, len| !reserved_range.contains(&start) && !reserved_range.contains(&(start + len));
 
     let mut sum = 0;
+    let mut max = 0;
     for mdsc_ptr in mmap_iter {
         let mdsc = &*mdsc_ptr;
         log::trace!("Block at {:?}: {:?}", mdsc_ptr, *mdsc);
-        if available(mdsc.ty)
-            && not_reserved(mdsc.phys as usize, mdsc.page_count as usize * PAGE_SIZE)
-        {
-            let n = mdsc.page_count as usize;
-            dealloc_pages_exact(n, PAddr::new(mdsc.phys as usize));
+
+        let base = mdsc.phys as usize;
+        let n = mdsc.page_count as usize;
+        if available(mdsc.ty) && not_reserved(base, n * PAGE_SIZE) {
+            dealloc_pages_exact(n, PAddr::new(base));
             sum += n << PAGE_SHIFT;
         }
+        max = max.max(base + n * PAGE_SIZE);
     }
 
-    sum
+    (sum, max)
 }
 
 /// Dump PMM data with specific [`PfType`].
@@ -738,7 +740,10 @@ pub fn dump_data(pftype: PfType) {
 ///
 /// Unfortunately, we must initialize every free list manually, and it takes a
 /// long time.
-pub fn init(mmap: &PointerIterator<crate::boot::MemRange>, reserved_range: Range<usize>) -> usize {
+pub fn init(
+    mmap: &PointerIterator<crate::boot::MemRange>,
+    reserved_range: Range<usize>,
+) -> (usize, usize) {
     for i in ORDERS {
         *(pf_list_mut(PfType::Low, i).unwrap()) = PfList::new(PFAdapter::new());
         *(pf_list_mut(PfType::High, i).unwrap()) = PfList::new(PFAdapter::new());

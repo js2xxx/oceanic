@@ -34,7 +34,8 @@
 mod user_ptr;
 
 use solvent::*;
-pub use user_ptr::*;
+
+pub use self::user_ptr::*;
 
 static SYSCALL_TABLE: &[Option<SyscallWrapper>] = &[
     Some(syscall_wrapper!(get_time)),
@@ -46,25 +47,39 @@ static SYSCALL_TABLE: &[Option<SyscallWrapper>] = &[
     Some(syscall_wrapper!(task_ctl)),
     Some(syscall_wrapper!(task_debug)),
     Some(syscall_wrapper!(task_sleep)),
+    None,
     Some(syscall_wrapper!(phys_alloc)),
     Some(syscall_wrapper!(mem_new)),
     Some(syscall_wrapper!(mem_map)),
     Some(syscall_wrapper!(mem_reprot)),
     Some(syscall_wrapper!(mem_unmap)),
-    Some(syscall_wrapper!(wo_new)),
-    Some(syscall_wrapper!(wo_notify)),
+    None,
     Some(syscall_wrapper!(futex_wait)),
     Some(syscall_wrapper!(futex_wake)),
-    Some(syscall_wrapper!(futex_requeue)),
+    Some(syscall_wrapper!(futex_reque)),
+    None,
     Some(syscall_wrapper!(obj_clone)),
     Some(syscall_wrapper!(obj_drop)),
-    None,
     None,
     Some(syscall_wrapper!(chan_new)),
     Some(syscall_wrapper!(chan_send)),
     Some(syscall_wrapper!(chan_recv)),
     Some(syscall_wrapper!(chan_csend)),
     Some(syscall_wrapper!(chan_crecv)),
+    None,
+    Some(syscall_wrapper!(event_new)),
+    Some(syscall_wrapper!(event_wait)),
+    Some(syscall_wrapper!(event_notify)),
+    Some(syscall_wrapper!(event_endn)),
+    None,
+    Some(syscall_wrapper!(intr_new)),
+    Some(syscall_wrapper!(intr_wait)),
+    Some(syscall_wrapper!(intr_drop)),
+    None,
+    Some(syscall_wrapper!(res_alloc)),
+    Some(syscall_wrapper!(phys_acq)),
+    Some(syscall_wrapper!(pio_acq)),
+    Some(syscall_wrapper!(pio_rel)),
 ];
 
 pub fn handler(arg: &Arguments) -> usize {

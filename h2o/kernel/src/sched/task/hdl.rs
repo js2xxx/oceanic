@@ -7,9 +7,10 @@ use core::{
     ptr::NonNull,
 };
 
+use archop::Azy;
 use modular_bitfield::prelude::*;
 use solvent::Result;
-use spin::{Lazy, Mutex};
+use spin::Mutex;
 
 pub use self::node::{List, Ptr, Ref, MAX_HANDLE_COUNT};
 use crate::sched::{ipc::Channel, PREEMPT};
@@ -181,7 +182,7 @@ impl Default for HandleMap {
 
 #[inline]
 pub(super) fn init() {
-    Lazy::force(&node::HR_ARENA);
+    Azy::force(&node::HR_ARENA);
 }
 
 mod syscall {

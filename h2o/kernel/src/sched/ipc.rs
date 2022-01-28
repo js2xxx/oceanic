@@ -1,5 +1,9 @@
 mod arsc;
 mod channel;
+mod event;
 
-pub use arsc::Arsc;
-pub use channel::{Channel, Packet};
+pub use self::{
+    arsc::Arsc,
+    channel::{Channel, Packet},
+    event::Event,
+};

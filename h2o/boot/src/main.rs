@@ -122,7 +122,7 @@ fn efi_main(img: Handle, syst: SystemTable<Boot>) -> Status {
 
     // Prepare the data needed for H2O.
     let (efi_mmap_unit, mmap_size_approx) = mem::init_pf(&syst);
-    let rsdp = mem::get_acpi_rsdp(&syst);
+    let (rsdp, smbios) = mem::get_rsdp_smbios(&syst);
 
     // Get the EFI memory map to be parsed in the kernel. So far we cannot parse it
     // in the loader because if we make dynamic space after get the map, the map
@@ -141,6 +141,7 @@ fn efi_main(img: Handle, syst: SystemTable<Boot>) -> Status {
     unsafe {
         kargs_set(KernelArgs {
             rsdp: PAddr::new(rsdp as _),
+            smbios: PAddr::new(smbios as _),
             efi_mmap_paddr,
             efi_mmap_len,
             efi_mmap_unit,

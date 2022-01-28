@@ -1,10 +1,11 @@
 use alloc::sync::Arc;
 use core::{mem, ptr::addr_of};
 
+use archop::Azy;
 // use core::ptr::addr_of_mut;
 use canary::Canary;
 use paging::{PAddr, PAGE_LAYOUT};
-use spin::{Lazy, RwLock};
+use spin::RwLock;
 
 use crate::{
     cpu::time::{
@@ -36,14 +37,14 @@ struct HpetReg {
 }
 const HPET_REG_CFG_ENABLE: u64 = 1;
 
-static HPET: Lazy<Option<Arc<RwLock<Hpet>>>> = Lazy::new(|| {
+static HPET: Azy<Option<Arc<RwLock<Hpet>>>> = Azy::new(|| {
     acpi::HpetInfo::new(crate::dev::acpi::tables())
         .ok()
         .and_then(|info| unsafe { Hpet::new(info) }.ok())
         .map(|hpet| Arc::new(RwLock::new(hpet)))
 });
 
-pub static HPET_CLOCK: Lazy<Option<HpetClock>> = Lazy::new(HpetClock::new);
+pub static HPET_CLOCK: Azy<Option<HpetClock>> = Azy::new(HpetClock::new);
 
 pub struct Hpet {
     base_ptr: *mut HpetReg,
@@ -141,7 +142,7 @@ pub struct HpetClock {
 impl ClockChip for HpetClock {
     fn get(&self) -> Instant {
         self.canary.assert();
-        let val = self.hpet.read().counter();
+        let val = unsafe { (*self.hpet.as_mut_ptr()).counter() };
         unsafe { Instant::from_raw((val as u128 * self.mul) >> self.sft) }
     }
 }

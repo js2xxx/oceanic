@@ -1,13 +1,12 @@
-use archop::msr::rdtsc;
+use archop::{msr::rdtsc, Azy};
 use raw_cpuid::CpuId;
-use spin::Lazy;
 
 use crate::cpu::time::{
     chip::{factor_from_freq, ClockChip},
     Instant,
 };
 
-pub static TSC_CLOCK: Lazy<Option<TscClock>> = Lazy::new(TscClock::new);
+pub static TSC_CLOCK: Azy<Option<TscClock>> = Azy::new(TscClock::new);
 
 pub struct TscClock {
     initial: u64,

@@ -1,11 +1,12 @@
-use core::{arch::asm, cell::UnsafeCell, mem::size_of, ptr::addr_of};
+use core::{arch::asm, cell::UnsafeCell, mem::size_of, ops::Deref, ptr::addr_of};
 
+use archop::Azy;
+use bitvec::BitArr;
 use paging::LAddr;
-use spin::Lazy;
 use static_assertions::*;
 
 use super::*;
-use crate::cpu::CpuLocalLazy;
+use crate::cpu::Lazy;
 
 pub const KRL_CODE_X64: SegSelector = SegSelector::from_const(0x08); // SegSelector::new().with_index(1)
 pub const KRL_DATA_X64: SegSelector = SegSelector::from_const(0x10); // SegSelector::new().with_index(2)
@@ -23,11 +24,11 @@ pub const INTR_DATA: SegSelector = SegSelector::from_const(0x10 + 4); // SegSele
 const INIT_LIM: u32 = 0xFFFFF;
 const INIT_ATTR: u16 = attrs::PRESENT | attrs::G4K;
 
-// NOTE: The segment tables must be initialized in `Lazy` or mutable statics.
+// NOTE: The segment tables must be initialized in `Azy` or mutable statics.
 // Otherwise the compiler or the linker will place it into the constant section
 // of the executable file and cause load errors.
 
-static LDT: Lazy<DescTable<3>> = Lazy::new(|| {
+static LDT: Azy<DescTable<3>> = Azy::new(|| {
     DescTable::new([
         Segment::new(0, 0, 0, 0),
         Segment::new(0, INIT_LIM, attrs::SEG_CODE | attrs::X64 | INIT_ATTR, 0),
@@ -36,7 +37,7 @@ static LDT: Lazy<DescTable<3>> = Lazy::new(|| {
 });
 
 #[thread_local]
-pub static GDT: CpuLocalLazy<DescTable<10>> = CpuLocalLazy::new(|| {
+pub static GDT: Lazy<DescTable<10>> = Lazy::new(|| {
     DescTable::new([
         Segment::new(0, 0, 0, 0),
         Segment::new(0, INIT_LIM, attrs::SEG_CODE | attrs::X64 | INIT_ATTR, 0),
@@ -52,7 +53,7 @@ pub static GDT: CpuLocalLazy<DescTable<10>> = CpuLocalLazy::new(|| {
 });
 
 #[thread_local]
-pub(in crate::cpu::arch) static TSS: CpuLocalLazy<TssStruct> = CpuLocalLazy::new(|| {
+pub(in crate::cpu::arch) static TSS: Lazy<Tss> = Lazy::new(|| {
     // SAFETY: No physical address specified.
     let alloc_stack = || {
         crate::mem::alloc_system_stack()
@@ -63,13 +64,14 @@ pub(in crate::cpu::arch) static TSS: CpuLocalLazy<TssStruct> = CpuLocalLazy::new
     let rsp0 = alloc_stack();
     let ist1 = alloc_stack();
 
-    TssStruct {
-        // The legacy RSPs of different privilege levels.
-        rsp0: UnsafeCell::new(rsp0 as u64),
-        // The Interrupt Stack Tables.
-        ist: [ist1 as u64, 0, 0, 0, 0, 0, 0],
-        // The IO base mappings.
-        io_base: 0,
+    Tss {
+        data: TssStruct {
+            // The legacy RSPs of different privilege levels.
+            rsp0: UnsafeCell::new(rsp0 as u64),
+            // The Interrupt Stack Tables.
+            ist: [ist1 as u64, 0, 0, 0, 0, 0, 0],
+            ..Default::default()
+        },
         ..Default::default()
     }
 });
@@ -104,7 +106,7 @@ pub struct TssStruct {
     _rsvd3: u64,
     _rsvd4: u16,
     /// The IO base mappings.
-    io_base: u16,
+    io_base: UnsafeCell<u16>,
 }
 
 impl TssStruct {
@@ -120,8 +122,23 @@ impl TssStruct {
         ret
     }
 
-    pub fn io_base(&self) -> u16 {
-        self.io_base
+    unsafe fn set_io_base(&self, offset: u16) {
+        let addr = addr_of!(self.io_base);
+        (addr as *mut u16).write_unaligned(offset);
+    }
+}
+
+#[derive(Default)]
+#[repr(C)]
+pub struct Tss {
+    data: TssStruct,
+    bitmap: UnsafeCell<BitArr!(for 65536 + 8)>,
+}
+
+impl Tss {
+    #[inline]
+    pub fn bitmap(&self) -> *mut BitArr!(for 65536) {
+        self.bitmap.get() as *mut BitArr!(for 65536)
     }
 
     pub fn export_fp(&self) -> FatPointer {
@@ -129,6 +146,15 @@ impl TssStruct {
             base: LAddr::new(self as *const _ as *mut _),
             limit: size_of::<Self>() as u16 - 1,
         }
+    }
+}
+
+impl Deref for Tss {
+    type Target = TssStruct;
+
+    #[inline]
+    fn deref(&self) -> &Self::Target {
+        &self.data
     }
 }
 
@@ -247,6 +273,14 @@ unsafe fn load_ldt(ldtr: SegSelector) {
 /// The caller must ensure that `tr` points to a valid TSS and its GDT is
 /// loaded.
 unsafe fn load_tss(tr: SegSelector) {
+    let tss_addr = &TSS.data as *const TssStruct as *const u8;
+    let map_addr = &TSS.bitmap as *const UnsafeCell<_> as *const u8;
+    let io_base = u16::try_from(map_addr.offset_from(tss_addr)).expect("Failed to get io_base");
+    TSS.set_io_base(io_base);
+
+    let last_byte = map_addr.add(65536 / 8);
+    (last_byte as *mut u8).write(u8::MAX);
+
     unsafe { asm!("ltr [{}]", in(reg) &tr) };
 }
 

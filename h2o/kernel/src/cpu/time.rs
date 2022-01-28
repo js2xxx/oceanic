@@ -6,17 +6,19 @@ use core::{
     time::Duration,
 };
 
-pub use timer::{tick as timer_tick, Callback as TimerCallback, Timer, Type as TimerType};
+pub use self::timer::{tick as timer_tick, Callback as TimerCallback, Timer, Type as TimerType};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(transparent)]
 pub struct Instant(solvent::time::Instant);
 
 impl Instant {
+    #[inline]
     pub fn now() -> Self {
-        crate::sched::PREEMPT.scope(|| chip::CLOCK.get())
+        chip::CLOCK.get()
     }
 
+    #[inline]
     pub fn elapsed(&self) -> Duration {
         Self::now() - *self
     }
@@ -25,6 +27,7 @@ impl Instant {
     ///
     /// The underlying data can be inconsistent and should not be used with
     /// measurements.
+    #[inline]
     pub const unsafe fn raw(&self) -> u128 {
         self.0.raw()
     }
@@ -33,6 +36,7 @@ impl Instant {
     ///
     /// The underlying data can be inconsistent and should not be used with
     /// measurements.
+    #[inline]
     pub const unsafe fn from_raw(data: u128) -> Self {
         Instant(solvent::time::Instant::from_raw(data))
     }

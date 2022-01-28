@@ -1,8 +1,10 @@
 use core::hint;
 
+use bytes::{BufMut, BytesMut};
+
 use super::*;
 use crate::{
-    cpu::CpuLocalLazy,
+    cpu::Lazy,
     mem::space,
     sched::{deque, task, SCHED},
 };
@@ -16,11 +18,11 @@ use crate::{
 ///
 /// [`task_exit`]: crate::sched::task::syscall::task_exit
 #[thread_local]
-pub(super) static CTX_DROPPER: CpuLocalLazy<deque::Injector<alloc::boxed::Box<Context>>> =
-    CpuLocalLazy::new(deque::Injector::new);
+pub(super) static CTX_DROPPER: Lazy<deque::Injector<alloc::boxed::Box<Context>>> =
+    Lazy::new(deque::Injector::new);
 
 #[thread_local]
-pub(super) static IDLE: CpuLocalLazy<Tid> = CpuLocalLazy::new(|| {
+pub(super) static IDLE: Lazy<Tid> = Lazy::new(|| {
     let cpu = unsafe { crate::cpu::id() };
 
     let ti = TaskInfo::builder()
@@ -37,13 +39,13 @@ pub(super) static IDLE: CpuLocalLazy<Tid> = CpuLocalLazy::new(|| {
         .init_stack(DEFAULT_STACK_SIZE)
         .expect("Failed to initialize stack for IDLE");
 
-    let entry = create_entry(
-        LAddr::new(idle as *mut u8),
+    let entry = ctx::Entry {
+        entry: LAddr::new(idle as *mut u8),
         stack,
-        [cpu as u64, unsafe {
+        args: [cpu as u64, unsafe {
             archop::msr::read(archop::msr::FS_BASE)
         }],
-    );
+    };
     let kstack = ctx::Kstack::new(Some(entry), Type::Kernel);
 
     let tid = tid::allocate(ti).expect("Tid exhausted");
@@ -82,14 +84,33 @@ fn idle(cpu: usize, fs_base: u64) -> ! {
 }
 
 fn spawn_tinit() {
+    let mut objects = hdl::List::new();
+    {
+        let mem_res = Arc::clone(crate::dev::mem_resource());
+        let res = unsafe { objects.insert_impl(hdl::Ref::new(mem_res).coerce_unchecked()) };
+        res.expect("Failed to insert memory resource");
+    }
+    {
+        let pio_res = Arc::clone(crate::dev::pio_resource());
+        let res = unsafe { objects.insert_impl(hdl::Ref::new(pio_res).coerce_unchecked()) };
+        res.expect("Failed to insert port I/O resource");
+    }
+    {
+        let gsi_res = Arc::clone(crate::dev::gsi_resource());
+        let res = unsafe { objects.insert_impl(hdl::Ref::new(gsi_res).coerce_unchecked()) };
+        res.expect("Failed to insert GSI resource");
+    }
+    let buf = {
+        let mut buf = BytesMut::new();
+        buf.put_u64(*crate::kargs().rsdp as u64);
+        buf.put_u64(*crate::kargs().smbios as u64);
+        buf
+    };
+
     let (me, chan) = Channel::new();
     let chan = unsafe { hdl::Ref::new(chan).coerce_unchecked() };
-    me.send(&mut crate::sched::ipc::Packet::new(
-        0,
-        hdl::List::default(),
-        &[],
-    ))
-    .expect("Failed to send message");
+    me.send(&mut crate::sched::ipc::Packet::new(0, objects, &buf))
+        .expect("Failed to send message");
     let image = unsafe {
         core::slice::from_raw_parts(
             *crate::kargs().tinit_phys.to_laddr(minfo::ID_OFFSET),

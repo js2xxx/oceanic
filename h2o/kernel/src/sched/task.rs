@@ -20,7 +20,7 @@ use self::elf::from_elf;
 pub use self::{excep::dispatch_exception, sig::Signal, sm::*, tid::Tid};
 use super::{ipc::Channel, PREEMPT};
 use crate::{
-    cpu::{CpuLocalLazy, CpuMask},
+    cpu::{CpuMask, Lazy},
     mem::space::Space,
 };
 
@@ -45,10 +45,10 @@ impl Type {
     }
 }
 
-#[inline]
+#[inline(never)]
 pub(super) fn init() {
-    CpuLocalLazy::force(&idle::CTX_DROPPER);
-    CpuLocalLazy::force(&idle::IDLE);
+    Lazy::force(&idle::CTX_DROPPER);
+    Lazy::force(&idle::IDLE);
 }
 
 #[inline]
@@ -86,7 +86,11 @@ fn exec_inner(
 
     let tid = tid::allocate(ti).map_err(|_| solvent::Error::EBUSY)?;
 
-    let entry = create_entry(s.entry, s.stack, [init_chan.raw() as u64, s.arg]);
+    let entry = ctx::Entry {
+        entry: s.entry,
+        stack: s.stack,
+        args: [init_chan.raw() as u64, s.arg],
+    };
     let kstack = ctx::Kstack::new(Some(entry), ty);
     let ext_frame = ctx::ExtFrame::zeroed();
 

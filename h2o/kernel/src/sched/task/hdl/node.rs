@@ -9,15 +9,15 @@ use core::{
     ptr::NonNull,
 };
 
+use archop::Azy;
 use solvent::Result;
-use spin::Lazy;
 
 use super::Object;
 use crate::{mem::Arena, sched::PREEMPT};
 
 pub const MAX_HANDLE_COUNT: usize = 1 << 18;
 
-pub(super) static HR_ARENA: Lazy<Arena<Ref<dyn Any>>> = Lazy::new(|| Arena::new(MAX_HANDLE_COUNT));
+pub(super) static HR_ARENA: Azy<Arena<Ref<dyn Any>>> = Azy::new(|| Arena::new(MAX_HANDLE_COUNT));
 
 #[derive(Debug)]
 pub struct Ref<T: ?Sized> {
@@ -250,7 +250,7 @@ impl List {
     ///
     /// The caller must ensure that `value` comes from the current task if its
     /// not [`Send`].
-    pub(super) unsafe fn insert_impl(&mut self, value: Ref<dyn Any>) -> Result<Ptr> {
+    pub unsafe fn insert_impl(&mut self, value: Ref<dyn Any>) -> Result<Ptr> {
         let link = HR_ARENA.allocate()?;
         // SAFETY: The pointer is allocated from the arena.
         unsafe { link.as_ptr().write(value) };

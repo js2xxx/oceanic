@@ -19,6 +19,7 @@ use crate::{
         time::{delay, Instant},
     },
     mem::space::init_pgc,
+    sched::PREEMPT,
 };
 
 // pub fn ipi_handler() {}
@@ -206,8 +207,8 @@ pub unsafe fn start_cpus(aps: &[acpi::platform::Processor]) -> usize {
 /// the caller must ensure that `cpu` is valid.
 pub unsafe fn task_migrate(cpu: usize) {
     lapic(|lapic| {
-        match super::LAPIC_ID.read().get(&cpu) {
-            Some(&id) => lapic.send_ipi(
+        match PREEMPT.scope(|| super::LAPIC_ID.read().get(&cpu).copied()) {
+            Some(id) => lapic.send_ipi(
                 intr::def::ApicVec::IpiTaskMigrate as u8,
                 DelivMode::Fixed,
                 Shorthand::None,

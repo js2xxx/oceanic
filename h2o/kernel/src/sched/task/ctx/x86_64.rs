@@ -100,7 +100,6 @@ impl Frame {
         self.rflags = archop::reg::rflags::IF;
 
         if matches!(ty, task::Type::Kernel) {
-            // TODO: Check for permissions.
             self.gs_base = unsafe { crate::cpu::arch::KERNEL_GS.as_ptr() } as u64;
         }
 
@@ -256,6 +255,7 @@ pub(super) unsafe extern "C" fn switch_finishing() {
 
         let tss_rsp0 = cur.kstack.top().val() as u64;
         KERNEL_GS.update_tss_rsp0(tss_rsp0);
+        KERNEL_GS.update_tss_io_bitmap(cur.io_bitmap.as_deref());
         crate::mem::space::set_current(Arc::clone(&cur.space));
         cur.ext_frame.load();
         if !cpu::arch::in_intr() && cur.tid.ty() == task::Type::Kernel {

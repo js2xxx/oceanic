@@ -58,11 +58,12 @@ mod stat;
 mod pool;
 mod slab;
 
-pub use alloc::Allocator;
-
-pub use page::{AllocPages, DeallocPages, Page, MAX_OBJ_SIZE, OBJ_SIZES};
-pub use pool::unwrap_layout;
-pub use stat::Stat;
+pub use self::{
+    alloc::Allocator,
+    page::{AllocPages, DeallocPages, Page, MAX_OBJ_SIZE, OBJ_SIZES},
+    pool::unwrap_layout,
+    stat::Stat,
+};
 
 cfg_if::cfg_if! { if #[cfg(feature = "global")] {
 

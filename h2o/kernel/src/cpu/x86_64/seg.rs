@@ -36,6 +36,7 @@ pub mod attrs {
     pub const SYS_TSS: u16 = 0x09;
     pub const SYS_LDT: u16 = 0x02;
     pub const INT_GATE: u16 = 0x0E;
+    #[allow(dead_code)]
     pub const TRAP_GATE: u16 = 0x0F;
     pub const PRESENT: u16 = 0x80;
     pub const X86: u16 = 0x4000;

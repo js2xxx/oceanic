@@ -1,7 +1,8 @@
 pub mod intr;
 pub mod time;
 
-pub use core::lazy::Lazy as CpuLocalLazy;
+// `Lazy` stands for Local (non-atomic) AZY, while `Azy` stands for Atomic laZY.
+pub use core::lazy::Lazy;
 
 use bitvec::prelude::*;
 
@@ -9,7 +10,7 @@ cfg_if::cfg_if! {
     if #[cfg(target_arch = "x86_64")] {
         #[path = "cpu/x86_64/mod.rs"]
         pub mod arch;
-        pub use arch::{id, set_id, count, is_bsp, MAX_CPU};
+        pub use self::arch::{id, set_id, count, is_bsp, MAX_CPU};
     }
 }
 

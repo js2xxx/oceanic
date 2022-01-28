@@ -4,9 +4,9 @@ mod serial;
 use core::{fmt::*, mem::MaybeUninit};
 
 use archop::IntrMutex;
-use serial::COM_LOG;
 use spin::RwLock;
 
+pub use self::serial::COM_LOG;
 use crate::{cpu::time::Instant, sched::PREEMPT};
 
 struct OptionU32Display(Option<u32>);

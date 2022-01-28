@@ -1,6 +1,6 @@
 use core::arch::asm;
 
-pub use Msr::*;
+pub use self::Msr::*;
 
 #[repr(u32)]
 #[allow(non_camel_case_types)]

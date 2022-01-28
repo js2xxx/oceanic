@@ -24,6 +24,11 @@ impl<K, V> RangeMap<K, V> {
         }
     }
 
+    #[inline]
+    pub fn range(&self) -> &Range<K> {
+        &self.range
+    }
+
     pub fn allocate_with<F, E, R>(
         &mut self,
         size: K,
@@ -69,9 +74,7 @@ impl<K, V> RangeMap<K, V> {
         K: Ord + Copy,
         F: FnOnce() -> Result<(V, R), E>,
     {
-        if range.start < range.end
-            && self.range.contains(&range.start)
-            && self.range.contains(&range.end)
+        if self.range.start <= range.start && range.start < range.end && range.end <= self.range.end
         {
             let start = range.start;
             match self.inner.entry(start) {
@@ -188,6 +191,22 @@ impl<K, V> RangeMap<K, V> {
         K: Ord,
     {
         self.inner.pop_first().map(|(_, value)| value)
+    }
+
+    #[inline]
+    pub fn first(&self) -> Option<&(Range<K>, V)>
+    where
+        K: Ord,
+    {
+        self.inner.first_key_value().map(|(_, value)| value)
+    }
+
+    #[inline]
+    pub fn last(&self) -> Option<&(Range<K>, V)>
+    where
+        K: Ord,
+    {
+        self.inner.last_key_value().map(|(_, value)| value)
     }
 }
 

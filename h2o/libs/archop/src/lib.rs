@@ -8,3 +8,6 @@ cfg_if::cfg_if! {
 }
 
 pub mod io;
+mod lazy;
+
+pub use self::lazy::Azy;

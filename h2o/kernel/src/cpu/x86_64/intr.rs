@@ -1,85 +1,113 @@
-pub mod alloc;
 pub(super) mod def;
 
-use ::alloc::sync::{Arc, Weak};
+use array_macro::array;
+use collection_ex::RangeMap;
 use spin::Mutex;
 
-pub use self::def::ExVec;
-use self::def::NR_VECTORS;
+pub use self::def::{ExVec, ALLOC_VEC};
+use super::apic::{Polarity, TriggerMode, LAPIC_ID};
 use crate::{
-    cpu::{
-        arch::{apic::lapic, seg::ndt::USR_CODE_X64},
-        intr::Interrupt,
-        time::Instant,
-    },
+    cpu::{arch::seg::ndt::USR_CODE_X64, intr::IntrHandler, time::Instant, Lazy},
+    dev::ioapic,
     sched::{
         task::{self, ctx::arch::Frame},
-        SCHED,
+        PREEMPT, SCHED,
     },
 };
 
-#[allow(clippy::declare_interior_mutable_const)]
-const VEC_INTR_INIT: Mutex<Option<Weak<Interrupt>>> = Mutex::new(None);
 #[thread_local]
-static VEC_INTR: [Mutex<Option<Weak<Interrupt>>>; NR_VECTORS] = [VEC_INTR_INIT; NR_VECTORS];
+pub static MANAGER: Lazy<Manager> = Lazy::new(|| Manager::new(unsafe { crate::cpu::id() }));
 
-#[derive(Debug, Clone)]
-pub struct ArchReg {
-    vec: u8,
+pub struct Manager {
     cpu: usize,
+    map: Mutex<RangeMap<u8, ()>>,
+    slots: [Mutex<Option<(IntrHandler, *mut u8)>>; u8::MAX as usize + 1],
 }
 
-impl ArchReg {
-    pub fn vector(&self) -> u8 {
-        self.vec
+impl Manager {
+    pub fn new(cpu: usize) -> Self {
+        Manager {
+            cpu,
+            map: Mutex::new(RangeMap::new(ALLOC_VEC)),
+            slots: array![_ => Mutex::new(None); 256],
+        }
     }
 
-    pub fn cpu(&self) -> usize {
-        self.cpu
-    }
-}
-
-#[derive(Debug)]
-pub enum RegisterError {
-    NotCurCpu,
-    Pending,
-}
-
-/// # Safety
-///
-/// WARNING: This function modifies the architecture's basic registers. Be sure
-/// to make preparations.
-pub unsafe fn try_register(
-    intr: &Arc<Interrupt>,
-) -> Result<Option<Weak<Interrupt>>, RegisterError> {
-    let ArchReg { ref vec, ref cpu } = &*intr.arch_reg().lock();
-    if *cpu != crate::cpu::id() {
-        return Err(RegisterError::NotCurCpu);
+    pub fn invoke(&self, vec: u8) {
+        PREEMPT.scope(|| {
+            if let Some((handler, arg)) = *self.slots[vec as usize].lock() {
+                handler(arg);
+            } else {
+                log::trace!("Unhandled interrupt #{:?}", vec);
+            }
+        })
     }
 
-    if let Some(mut intr_slot) = VEC_INTR[*vec as usize].try_lock() {
-        Ok(intr_slot.replace(Arc::downgrade(intr)))
-    } else {
-        Err(RegisterError::Pending)
-    }
-}
+    pub fn register(&self, gsi: u32, handler: Option<(IntrHandler, *mut u8)>) -> solvent::Result {
+        let _pree = PREEMPT.lock();
+        let mut ioapic = ioapic::chip().lock();
+        let entry = ioapic.get_entry(gsi)?;
 
-/// # Safety
-///
-/// WARNING: This function modifies the architecture's basic registers. Be sure
-/// to make preparations.
-pub unsafe fn try_unregister(intr: &Arc<Interrupt>) -> Result<(), RegisterError> {
-    let ArchReg { ref vec, ref cpu } = &*intr.arch_reg().lock();
-    if *cpu != crate::cpu::id() {
-        return Err(RegisterError::NotCurCpu);
-    }
+        let in_use = ALLOC_VEC.contains(&entry.vec());
 
-    if let Some(mut intr_slot) = VEC_INTR[*vec as usize].try_lock() {
-        intr_slot.replace(Weak::new());
+        let self_apic_id = *LAPIC_ID
+            .read()
+            .get(&self.cpu)
+            .ok_or(solvent::Error::EINVAL)?;
+        let apic_id = entry.dest_id();
+        if in_use && self_apic_id != apic_id {
+            return Err(solvent::Error::EEXIST);
+        }
+
+        let vec = in_use.then_some(entry.vec());
+
+        if let Some(handler) = handler {
+            let mut map = self.map.lock();
+            let vec = if let Some(vec) = vec {
+                map.try_insert_with(
+                    vec..(vec + 1),
+                    || Ok::<_, solvent::Error>(((), ())),
+                    solvent::Error::EEXIST,
+                )?;
+                vec
+            } else {
+                map.allocate_with(
+                    1,
+                    |_| Ok::<_, solvent::Error>(((), ())),
+                    solvent::Error::ENOMEM,
+                )?
+                .0
+            };
+
+            *self.slots[vec as usize].lock() = Some(handler);
+            unsafe { ioapic.config_dest(gsi, vec, self_apic_id) }?;
+        } else if let Some(vec) = vec {
+            *self.slots[vec as usize].lock() = None;
+            unsafe { ioapic.deconfig(gsi) }?;
+        }
         Ok(())
-    } else {
-        Err(RegisterError::Pending)
     }
+
+    #[inline]
+    pub fn config(&self, gsi: u32, trig_mode: TriggerMode, polarity: Polarity) -> solvent::Result {
+        PREEMPT.scope(|| unsafe { ioapic::chip().lock().config(gsi, trig_mode, polarity) })
+    }
+
+    #[inline]
+    pub fn mask(&self, gsi: u32, masked: bool) -> solvent::Result {
+        PREEMPT.scope(|| unsafe { ioapic::chip().lock().mask(gsi, masked) })
+    }
+}
+
+/// # Safety
+///
+/// This function must only be called from its assembly routine `rout_XX`.
+#[no_mangle]
+unsafe extern "C" fn common_interrupt(frame: *mut Frame) {
+    let vec = unsafe { &*frame }.errc_vec as u8;
+    MANAGER.invoke(vec);
+    super::apic::lapic(|lapic| lapic.eoi());
+    crate::sched::SCHED.tick(Instant::now());
 }
 
 /// Generic exception handler.
@@ -120,31 +148,7 @@ unsafe fn exception(frame_ptr: *mut Frame, vec: def::ExVec) {
     archop::halt_loop(Some(false));
 }
 
-/// # Safety
-///
-/// This function must only be called from its assembly routine `rout_XX`.
-#[no_mangle]
-unsafe extern "C" fn common_interrupt(frame: *mut Frame) {
-    let vec = unsafe { &*frame }.errc_vec as u16;
-    if let Some(mut intr_slot) = VEC_INTR[vec as usize].try_lock() {
-        if let Some(intr) = intr_slot.clone().and_then(|intr_weak| {
-            intr_weak.upgrade().or_else(|| {
-                // Automatically unregister the interrupt weak link.
-                let _ = intr_slot.take();
-                None
-            })
-        }) {
-            intr.handle();
-        } else {
-            lapic(|lapic| lapic.eoi());
-
-            log::warn!("No interrupt for vector {:#x}", vec);
-        }
-    } else {
-        log::warn!(
-            "The interrupt for vector {:#x} is already firing without blocking next ones",
-            vec
-        );
-    }
-    crate::sched::SCHED.tick(Instant::now());
+#[inline]
+pub(super) fn init() {
+    Lazy::force(&MANAGER);
 }

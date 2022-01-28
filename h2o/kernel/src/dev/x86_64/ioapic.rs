@@ -2,38 +2,36 @@ use alloc::{sync::Arc, vec::Vec};
 use core::ops::Range;
 
 use acpi::platform::interrupt::{
-    Apic, IoApic as AcpiIoapic, Polarity as AcpiPolarity, TriggerMode as AcpiTriggerMode,
+    Apic, InterruptSourceOverride as AcpiIntrOvr, IoApic as AcpiIoapic, Polarity as AcpiPolarity,
+    TriggerMode as AcpiTriggerMode,
 };
+use archop::Azy;
+use collection_ex::RangeMap;
 use modular_bitfield::prelude::*;
 use paging::{PAddr, PAGE_LAYOUT};
-use spin::{Lazy, Mutex};
+use spin::Mutex;
 
 use crate::{
-    cpu::{
-        arch::{
-            apic::{lapic, DelivMode, Polarity, TriggerMode, LAPIC_ID},
-            intr::ArchReg,
-        },
-        intr::{edge_handler, fasteoi_handler, Interrupt, IntrChip, TypeHandler},
-    },
+    cpu::arch::apic::{lapic, DelivMode, Polarity, TriggerMode},
     mem::space::{self, Flags, Phys},
 };
 
 const LEGACY_IRQ: Range<u32> = 0..16;
 
 #[allow(clippy::type_complexity)]
-static IOAPIC_CHIP: Lazy<(Arc<Mutex<dyn IntrChip>>, Vec<IntrOvr>)> = Lazy::new(|| {
+static IOAPIC_CHIP: Azy<(Arc<Mutex<Ioapics>>, Vec<IntrOvr>)> = Azy::new(|| {
     let ioapic_data = match crate::dev::acpi::platform_info().interrupt_model {
         acpi::InterruptModel::Apic(ref apic) => apic,
         _ => panic!("Failed to get IOAPIC data"),
     };
-    let (ioapics, intr_ovr) = unsafe { Ioapics::new(ioapic_data) };
+    let (ioapics, intr_ovr) =
+        unsafe { Ioapics::new(ioapic_data) }.expect("Failed to create IOAPIC");
     (Arc::new(Mutex::new(ioapics)), intr_ovr)
 });
 
 #[inline]
-pub fn chip() -> Arc<Mutex<dyn IntrChip>> {
-    Arc::clone(&IOAPIC_CHIP.0)
+pub fn chip() -> &'static Arc<Mutex<Ioapics>> {
+    &IOAPIC_CHIP.0
 }
 
 #[inline]
@@ -73,8 +71,9 @@ impl From<IoapicReg> for u32 {
 
 #[derive(Clone, Copy)]
 #[bitfield]
-struct IoapicEntry {
-    vec: u8,
+#[must_use]
+pub struct IoapicEntry {
+    pub vec: u8,
     #[skip(getters)]
     #[bits = 3]
     deliv_mode: DelivMode,
@@ -82,21 +81,16 @@ struct IoapicEntry {
     dest_logical: bool,
     #[skip(getters)]
     pending: bool,
-    #[skip(getters)]
     #[bits = 1]
-    polarity: Polarity,
+    pub polarity: Polarity,
     #[skip(getters)]
     remote_irr: bool,
-    #[skip(getters)]
     #[bits = 1]
-    trigger_mode: TriggerMode,
-    #[skip(getters)]
-    mask: bool,
+    pub trigger_mode: TriggerMode,
+    pub mask: bool,
     #[skip]
     __: B32,
-    #[skip(getters)]
     dest_hi: B7,
-    #[skip(getters)]
     dest: u8,
 }
 
@@ -109,6 +103,13 @@ impl From<u64> for IoapicEntry {
 impl From<IoapicEntry> for u64 {
     fn from(x: IoapicEntry) -> Self {
         Self::from_ne_bytes(x.into_bytes())
+    }
+}
+
+impl IoapicEntry {
+    #[inline]
+    pub fn dest_id(&self) -> u32 {
+        (self.dest() as u32) | ((self.dest_hi() as u32) << 8)
     }
 }
 
@@ -220,127 +221,150 @@ struct IntrOvr {
     trigger_mode: TriggerMode,
 }
 
+impl IntrOvr {
+    fn new(acpi_io: &AcpiIntrOvr) -> Self {
+        let gsi = acpi_io.global_system_interrupt;
+        let hw_irq = acpi_io.isa_source;
+        let isa = LEGACY_IRQ.contains(&gsi);
+        let polarity = match acpi_io.polarity {
+            AcpiPolarity::SameAsBus => {
+                if isa {
+                    Polarity::High
+                } else {
+                    Polarity::Low
+                }
+            }
+            AcpiPolarity::ActiveHigh => Polarity::High,
+            AcpiPolarity::ActiveLow => Polarity::Low,
+        };
+        let trigger_mode = match acpi_io.trigger_mode {
+            AcpiTriggerMode::SameAsBus => {
+                if isa {
+                    TriggerMode::Edge
+                } else {
+                    TriggerMode::Level
+                }
+            }
+            AcpiTriggerMode::Edge => TriggerMode::Edge,
+            AcpiTriggerMode::Level => TriggerMode::Level,
+        };
+        IntrOvr {
+            hw_irq,
+            gsi,
+            polarity,
+            trigger_mode,
+        }
+    }
+}
+
 pub struct Ioapics {
-    ioapic_data: Vec<Ioapic>,
+    ioapic_data: RangeMap<u32, Ioapic>,
 }
 
 impl Ioapics {
-    unsafe fn new(ioapic_data: &Apic) -> (Self, Vec<IntrOvr>) {
+    unsafe fn new(ioapic_data: &Apic) -> solvent::Result<(Self, Vec<IntrOvr>)> {
         let Apic {
             io_apics: acpi_ioapics,
             interrupt_source_overrides: acpi_intr_ovr,
             ..
         } = ioapic_data;
 
-        let ioapic_data = acpi_ioapics
-            .iter()
-            .map(|data| Ioapic::new(data))
-            .collect::<Vec<_>>();
+        let mut ioapic_data = RangeMap::new(0..u32::MAX);
+        for acpi_ioapic in acpi_ioapics {
+            let ioapic = Ioapic::new(acpi_ioapic);
+            ioapic_data.try_insert_with(
+                ioapic.gsi.clone(),
+                || Ok::<_, solvent::Error>((ioapic, ())),
+                solvent::Error::EEXIST,
+            )?;
+        }
 
-        let intr_ovr = acpi_intr_ovr
-            .iter()
-            .map(|acpi_io| {
-                let gsi = acpi_io.global_system_interrupt;
-                let hw_irq = acpi_io.isa_source;
-                let isa = LEGACY_IRQ.contains(&gsi);
-                IntrOvr {
-                    hw_irq,
-                    gsi,
-                    polarity: match acpi_io.polarity {
-                        AcpiPolarity::SameAsBus => {
-                            if isa {
-                                Polarity::High
-                            } else {
-                                Polarity::Low
-                            }
-                        }
-                        AcpiPolarity::ActiveHigh => Polarity::High,
-                        AcpiPolarity::ActiveLow => Polarity::Low,
-                    },
-                    trigger_mode: match acpi_io.trigger_mode {
-                        AcpiTriggerMode::SameAsBus => {
-                            if isa {
-                                TriggerMode::Edge
-                            } else {
-                                TriggerMode::Level
-                            }
-                        }
-                        AcpiTriggerMode::Edge => TriggerMode::Edge,
-                        AcpiTriggerMode::Level => TriggerMode::Level,
-                    },
-                }
-            })
-            .collect::<Vec<_>>();
+        let intr_ovr = acpi_intr_ovr.iter().map(IntrOvr::new).collect::<Vec<_>>();
 
-        (Ioapics { ioapic_data }, intr_ovr)
+        Ok((Ioapics { ioapic_data }, intr_ovr))
     }
 
-    pub fn chip_pin(&self, gsi: u32) -> Option<(&Ioapic, u8)> {
-        for chip in self.ioapic_data.iter() {
-            if chip.gsi.contains(&gsi) {
-                return Some((chip, (gsi - chip.gsi.start) as u8));
-            }
-        }
-        None
-    }
-
-    pub fn chip_mut_pin(&mut self, gsi: u32) -> Option<(&mut Ioapic, u8)> {
-        for chip in self.ioapic_data.iter_mut() {
-            if chip.gsi.contains(&gsi) {
-                let start = chip.gsi.start;
-                return Some((chip, (gsi - start) as u8));
-            }
-        }
-        None
+    #[inline]
+    fn chip_mut_pin(&mut self, gsi: u32) -> Option<(&mut Ioapic, u8)> {
+        self.ioapic_data
+            .get_contained_mut(&gsi)
+            .map(|(range, chip)| (chip, (gsi - range.start) as u8))
     }
 }
 
-impl IntrChip for Ioapics {
-    unsafe fn setup(&mut self, arch_reg: ArchReg, gsi: u32) -> Result<TypeHandler, &'static str> {
-        let (vec, apic_id) = {
-            (
-                arch_reg.vector(),
-                *LAPIC_ID
-                    .read()
-                    .get(&arch_reg.cpu())
-                    .ok_or("Failed to get LAPIC ID")?,
-            )
-        };
-        let (trigger_mode, polarity) =
-            if let Some(intr_ovr) = intr_ovr().iter().find(|i| i.gsi == gsi) {
-                (intr_ovr.trigger_mode, intr_ovr.polarity)
-            } else if LEGACY_IRQ.contains(&gsi) {
-                (TriggerMode::Edge, Polarity::High)
-            } else {
-                (TriggerMode::Level, Polarity::Low)
-            };
-
-        let (chip, pin) = self
-            .chip_mut_pin(gsi)
-            .ok_or("Failed to find a chip for the GSI")?;
-
-        let entry = IoapicEntry::new()
-            .with_vec(vec)
-            .with_deliv_mode(DelivMode::Fixed)
-            .with_trigger_mode(trigger_mode)
-            .with_polarity(polarity)
-            .with_mask(true)
-            .with_dest((apic_id & 0xFF) as u8)
-            .with_dest_hi(((apic_id >> 8) & 0xFF) as u8);
-
-        chip.write_ioredtbl(pin, entry.into());
-
-        Ok(match trigger_mode {
-            TriggerMode::Edge => edge_handler,
-            TriggerMode::Level => fasteoi_handler,
-        })
+impl Ioapics {
+    pub fn gsi_range(&self) -> Option<Range<u32>> {
+        let (first, _) = self.ioapic_data.first()?;
+        let (last, _) = self.ioapic_data.last()?;
+        Some(first.start..last.end)
     }
 
-    unsafe fn remove(&mut self, intr: Arc<Interrupt>) -> Result<(), &'static str> {
-        let gsi = intr.gsi();
-        let (chip, pin) = self
-            .chip_mut_pin(gsi)
-            .ok_or("Failed to find a chip for the GSI")?;
+    /// After the call, the entry is masked and must be manually unmasked if
+    /// necessary.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the entry corresponding to `gsi` is not used
+    /// by others.
+    pub unsafe fn config_dest(&mut self, gsi: u32, vec: u8, apic_id: u32) -> solvent::Result {
+        let (chip, pin) = self.chip_mut_pin(gsi).ok_or(solvent::Error::EINVAL)?;
+
+        let mut entry = IoapicEntry::from(chip.read_ioredtbl(pin));
+        entry.set_vec(vec);
+        entry.set_deliv_mode(DelivMode::Fixed);
+        entry.set_mask(true);
+        entry.set_dest((apic_id & 0xFF) as u8);
+        entry.set_dest_hi(((apic_id >> 8) & 0xFF) as u8);
+        chip.write_ioredtbl(pin, entry.into());
+        Ok(())
+    }
+
+    /// After the call, the entry is masked and must be manually unmasked if
+    /// necessary.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the entry corresponding to `gsi` is not used
+    /// by others.
+    pub unsafe fn config(
+        &mut self,
+        gsi: u32,
+        trig_mode: TriggerMode,
+        polarity: Polarity,
+    ) -> solvent::Result {
+        let (chip, pin) = self.chip_mut_pin(gsi).ok_or(solvent::Error::EINVAL)?;
+
+        let (t, p) = if let Some(intr_ovr) = intr_ovr().iter().find(|i| i.gsi == gsi) {
+            (intr_ovr.trigger_mode, intr_ovr.polarity)
+        } else if LEGACY_IRQ.contains(&gsi) {
+            (TriggerMode::Edge, Polarity::High)
+        } else {
+            (trig_mode, polarity)
+        };
+        if t != trig_mode || p != polarity {
+            return Err(solvent::Error::EPERM);
+        }
+
+        let mut entry = IoapicEntry::from(chip.read_ioredtbl(pin));
+        entry.set_trigger_mode(t);
+        entry.set_polarity(p);
+        entry.set_mask(true);
+        chip.write_ioredtbl(pin, entry.into());
+
+        Ok(())
+    }
+
+    pub fn get_entry(&mut self, gsi: u32) -> solvent::Result<IoapicEntry> {
+        let (chip, pin) = self.chip_mut_pin(gsi).ok_or(solvent::Error::EINVAL)?;
+        Ok(IoapicEntry::from(unsafe { chip.read_ioredtbl(pin) }))
+    }
+
+    /// # Safety
+    ///
+    /// The caller must ensure that the entry corresponding to `gsi` is not used
+    /// anymore.
+    pub unsafe fn deconfig(&mut self, gsi: u32) -> solvent::Result {
+        let (chip, pin) = self.chip_mut_pin(gsi).ok_or(solvent::Error::EINVAL)?;
 
         let entry = IoapicEntry::new().with_mask(true);
         chip.write_ioredtbl(pin, entry.into());
@@ -348,42 +372,36 @@ impl IntrChip for Ioapics {
         Ok(())
     }
 
-    unsafe fn mask(&mut self, intr: Arc<Interrupt>) {
-        let gsi = intr.gsi();
-        let (chip, pin) = match self.chip_mut_pin(gsi) {
-            Some(res) => res,
-            None => return,
-        };
+    /// # Safety
+    ///
+    /// The caller must ensure that the entry corresponding to `gsi` is not used
+    /// by others.
+    pub unsafe fn mask(&mut self, gsi: u32, masked: bool) -> solvent::Result {
+        let (chip, pin) = self.chip_mut_pin(gsi).ok_or(solvent::Error::EINVAL)?;
 
         let mut entry = IoapicEntry::from(chip.read_ioredtbl(pin));
-        entry.set_mask(true);
+        entry.set_mask(masked);
         chip.write_ioredtbl(pin, entry.into());
+
+        Ok(())
     }
 
-    unsafe fn unmask(&mut self, intr: Arc<Interrupt>) {
-        let gsi = intr.gsi();
-        let (chip, pin) = match self.chip_mut_pin(gsi) {
-            Some(res) => res,
-            None => return,
-        };
-
-        let mut entry = IoapicEntry::from(chip.read_ioredtbl(pin));
-        entry.set_mask(false);
-        chip.write_ioredtbl(pin, entry.into());
-    }
-
-    unsafe fn ack(&mut self, _intr: Arc<Interrupt>) {
+    /// # Safety
+    ///
+    /// The caller must ensure that the entry corresponding to `gsi` is not used
+    /// by others.
+    pub unsafe fn ack(&mut self) {
         lapic(|lapic| lapic.eoi());
     }
 
-    unsafe fn eoi(&mut self, intr: Arc<Interrupt>) {
+    /// # Safety
+    ///
+    /// The caller must ensure that the entry corresponding to `gsi` is not used
+    /// by others.
+    pub unsafe fn eoi(&mut self, gsi: u32) -> solvent::Result {
         lapic(|lapic| lapic.eoi());
 
-        let gsi = intr.gsi();
-        let (chip, pin) = match self.chip_mut_pin(gsi) {
-            Some(res) => res,
-            None => return,
-        };
+        let (chip, pin) = self.chip_mut_pin(gsi).ok_or(solvent::Error::EINVAL)?;
 
         let entry = IoapicEntry::from(chip.read_ioredtbl(pin));
         if chip.version >= 0x20 {
@@ -395,5 +413,6 @@ impl IntrChip for Ioapics {
             chip.write_ioredtbl(pin, cloned.into());
             chip.write_ioredtbl(pin, entry.into());
         }
+        Ok(())
     }
 }

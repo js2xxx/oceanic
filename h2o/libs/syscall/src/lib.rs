@@ -12,6 +12,7 @@ mod call;
 mod error;
 pub mod ipc;
 pub mod mem;
+pub mod res;
 pub mod task;
 pub mod time;
 cfg_if::cfg_if! {
@@ -21,9 +22,12 @@ cfg_if::cfg_if! {
     }
 }
 
-pub use call::{hdl::Handle, reg::*};
-pub use error::*;
 pub use solvent_gen::*;
+
+pub use self::{
+    call::{hdl::Handle, reg::*},
+    error::*,
+};
 
 #[derive(Debug, Copy, Clone)]
 pub struct Arguments {

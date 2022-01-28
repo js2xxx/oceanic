@@ -1,5 +1,6 @@
 use core::{
     cell::UnsafeCell,
+    ptr::NonNull,
     sync::atomic::{AtomicBool, Ordering::*},
     time::Duration,
 };
@@ -8,22 +9,24 @@ use canary::Canary;
 
 use super::Instant;
 use crate::{
-    cpu::CpuLocalLazy,
-    sched::{deque::Worker, ipc::Arsc},
+    cpu::Lazy,
+    sched::{deque::Worker, ipc::Arsc, task},
 };
 
 #[thread_local]
-static TIMER_QUEUE: CpuLocalLazy<Worker<Arsc<Timer>>> = CpuLocalLazy::new(Worker::new_fifo);
+static TIMER_QUEUE: Lazy<Worker<Arsc<Timer>>> = Lazy::new(Worker::new_fifo);
+
+type CallbackFn = fn(Arsc<Timer>, Instant, NonNull<task::Blocked>);
 
 #[derive(Debug)]
 pub struct Callback {
-    func: fn(Arsc<Timer>, Instant, *mut u8),
-    arg: *mut u8,
+    func: CallbackFn,
+    arg: NonNull<task::Blocked>,
     fired: AtomicBool,
 }
 
 impl Callback {
-    pub fn new(func: fn(Arsc<Timer>, Instant, *mut u8), arg: *mut u8) -> Self {
+    pub fn new(func: CallbackFn, arg: NonNull<task::Blocked>) -> Self {
         Callback {
             fired: AtomicBool::new(false),
             func,
@@ -89,7 +92,7 @@ impl Timer {
         self.callback.fired.load(Acquire)
     }
 
-    pub fn callback_arg(&self) -> *mut u8 {
+    pub fn callback_arg(&self) -> NonNull<task::Blocked> {
         self.callback.arg
     }
 

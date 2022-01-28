@@ -1,9 +1,9 @@
 use alloc::sync::Arc;
 use core::{hash::BuildHasherDefault, num::NonZeroU32, ops::Deref};
 
+use archop::Azy;
 use collection_ex::{CHashMap, FnvHasher, IdAllocator};
 use solvent::Handle;
-use spin::Lazy;
 
 use super::TaskInfo;
 use crate::sched::PREEMPT;
@@ -11,9 +11,9 @@ use crate::sched::PREEMPT;
 pub const NR_TASKS: usize = 65536;
 
 type BH = BuildHasherDefault<FnvHasher>;
-static TI_MAP: Lazy<CHashMap<u32, Arc<TaskInfo>, BH>> = Lazy::new(|| CHashMap::new(BH::default()));
-static TID_ALLOC: Lazy<spin::Mutex<IdAllocator>> =
-    Lazy::new(|| spin::Mutex::new(IdAllocator::new(0..=(NR_TASKS as u64 - 1))));
+static TI_MAP: Azy<CHashMap<u32, Arc<TaskInfo>, BH>> = Azy::new(|| CHashMap::new(BH::default()));
+static TID_ALLOC: Azy<spin::Mutex<IdAllocator>> =
+    Azy::new(|| spin::Mutex::new(IdAllocator::new(0..=(NR_TASKS as u64 - 1))));
 
 #[derive(Debug, Clone)]
 #[repr(C)]
@@ -92,6 +92,6 @@ pub fn deallocate(tid: &Tid) -> bool {
 
 #[inline]
 pub fn init() {
-    Lazy::force(&TI_MAP);
-    Lazy::force(&TID_ALLOC);
+    Azy::force(&TI_MAP);
+    Azy::force(&TID_ALLOC);
 }

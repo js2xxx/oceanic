@@ -2,29 +2,28 @@ pub mod deque;
 pub mod epoch;
 
 use alloc::{boxed::Box, vec::Vec};
-use core::{assert_matches::assert_matches, cell::UnsafeCell, mem, time::Duration};
+use core::{assert_matches::assert_matches, cell::UnsafeCell, mem, ptr::NonNull, time::Duration};
 
-use archop::{PreemptState, PreemptStateGuard};
+use archop::{Azy, PreemptState, PreemptStateGuard};
 use canary::Canary;
 use deque::{Injector, Steal, Worker};
-use spin::Lazy;
 
 use super::{ipc::Arsc, task, wait::WaitObject};
 use crate::cpu::{
     time::{Instant, Timer, TimerCallback, TimerType},
-    CpuLocalLazy,
+    Lazy,
 };
 
 pub(super) const MIN_TIME_GRAN: Duration = Duration::from_millis(30);
 const WAKE_TIME_GRAN: Duration = Duration::from_millis(1);
 
-static MIGRATION_QUEUE: Lazy<Vec<Injector<task::Ready>>> = Lazy::new(|| {
+static MIGRATION_QUEUE: Azy<Vec<Injector<task::Ready>>> = Azy::new(|| {
     let count = crate::cpu::count();
     core::iter::repeat_with(Injector::new).take(count).collect()
 });
 
 #[thread_local]
-pub static SCHED: CpuLocalLazy<Scheduler> = CpuLocalLazy::new(|| Scheduler {
+pub static SCHED: Lazy<Scheduler> = Lazy::new(|| Scheduler {
     canary: Canary::new(),
     cpu: unsafe { crate::cpu::id() },
     current: UnsafeCell::new(None),
@@ -118,10 +117,11 @@ impl Scheduler {
         );
         self.schedule_impl(Instant::now(), pree, None, |task| {
             let blocked = task::Ready::block(task, block_desc);
+            let blocked = unsafe { NonNull::new_unchecked(Box::into_raw(box blocked)) };
             let timer = Timer::activate(
                 TimerType::Oneshot,
                 duration,
-                TimerCallback::new(block_callback, Box::into_raw(box blocked).cast()),
+                TimerCallback::new(block_callback, blocked),
             )?;
             if let Some(wo) = wo {
                 wo.wait_queue.push(Arsc::clone(&timer));
@@ -318,8 +318,8 @@ fn select_cpu(
     }
 }
 
-fn block_callback(_: Arsc<Timer>, _: Instant, arg: *mut u8) {
-    let blocked = unsafe { Box::from_raw(arg.cast::<task::Blocked>()) };
+fn block_callback(_: Arsc<Timer>, _: Instant, arg: NonNull<task::Blocked>) {
+    let blocked = unsafe { Box::from_raw(arg.as_ptr()) };
     SCHED.unblock(Box::into_inner(blocked));
 }
 

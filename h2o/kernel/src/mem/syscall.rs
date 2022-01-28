@@ -6,6 +6,7 @@ use solvent::{mem::MapInfo, *};
 
 use super::space;
 use crate::{
+    dev::Resource,
     sched::{PREEMPT, SCHED},
     syscall::{In, UserPtr},
 };
@@ -44,7 +45,7 @@ fn mem_new() -> Result<Handle> {
 #[syscall]
 fn mem_map(space: Handle, mi: UserPtr<In, MapInfo>) -> Result<*mut u8> {
     let mi = unsafe { mi.read() }?;
-    let flags = check_flags(mi.flags.bits())?;
+    let flags = check_flags(mi.flags)?;
     let phys = SCHED.with_current(|cur| {
         cur.tid()
             .handles()
@@ -106,4 +107,31 @@ fn mem_unmap(space: Handle, ptr: *mut u8) -> Result {
             })
         }
     }
+}
+
+#[syscall]
+fn phys_acq(res: Handle, addr: usize, size: usize, align: usize, flags: u32) -> Result<Handle> {
+    if addr.contains_bit(paging::PAGE_MASK)
+        || size.contains_bit(paging::PAGE_MASK)
+        || !align.is_power_of_two()
+        || align.contains_bit(paging::PAGE_MASK)
+    {
+        return Err(Error::EINVAL);
+    }
+    let flags = check_flags(flags)?;
+
+    SCHED.with_current(|cur| {
+        let res = cur.tid().handles().get::<Arc<Resource<usize>>>(res)?;
+        if res.magic_eq(super::mem_resource())
+            && res.range().start <= addr
+            && addr + size <= res.range().end
+        {
+            let align = paging::PAGE_LAYOUT.align();
+            let layout = unsafe { Layout::from_size_align(size, align) }?;
+            let phys = space::Phys::new(paging::PAddr::new(addr), layout, flags);
+            cur.tid().handles().insert(phys)
+        } else {
+            Err(Error::EPERM)
+        }
+    })
 }
