@@ -2,7 +2,7 @@ pub mod deque;
 pub mod epoch;
 
 use alloc::{boxed::Box, vec::Vec};
-use core::{assert_matches::assert_matches, cell::UnsafeCell, mem, time::Duration};
+use core::{assert_matches::assert_matches, cell::UnsafeCell, mem, ptr::NonNull, time::Duration};
 
 use archop::{PreemptState, PreemptStateGuard};
 use canary::Canary;
@@ -118,10 +118,11 @@ impl Scheduler {
         );
         self.schedule_impl(Instant::now(), pree, None, |task| {
             let blocked = task::Ready::block(task, block_desc);
+            let blocked = unsafe { NonNull::new_unchecked(Box::into_raw(box blocked)) };
             let timer = Timer::activate(
                 TimerType::Oneshot,
                 duration,
-                TimerCallback::new(block_callback, Box::into_raw(box blocked).cast()),
+                TimerCallback::new(block_callback, blocked),
             )?;
             if let Some(wo) = wo {
                 wo.wait_queue.push(Arsc::clone(&timer));
@@ -318,8 +319,8 @@ fn select_cpu(
     }
 }
 
-fn block_callback(_: Arsc<Timer>, _: Instant, arg: *mut u8) {
-    let blocked = unsafe { Box::from_raw(arg.cast::<task::Blocked>()) };
+fn block_callback(_: Arsc<Timer>, _: Instant, arg: NonNull<task::Blocked>) {
+    let blocked = unsafe { Box::from_raw(arg.as_ptr()) };
     SCHED.unblock(Box::into_inner(blocked));
 }
 

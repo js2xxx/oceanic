@@ -39,8 +39,7 @@ impl WaitObject {
             match self.wait_queue.steal() {
                 deque::Steal::Success(timer) => {
                     if !timer.cancel() {
-                        let blocked =
-                            unsafe { Box::from_raw(timer.callback_arg().cast::<task::Blocked>()) };
+                        let blocked = unsafe { Box::from_raw(timer.callback_arg().as_ptr()) };
                         SCHED.unblock(Box::into_inner(blocked));
                         cnt += 1;
                     }

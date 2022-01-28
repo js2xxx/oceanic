@@ -1,5 +1,7 @@
 use core::hint;
 
+use bytes::{BufMut, BytesMut};
+
 use super::*;
 use crate::{
     cpu::CpuLocalLazy,
@@ -98,10 +100,16 @@ fn spawn_tinit() {
         let res = unsafe { objects.insert_impl(hdl::Ref::new(gsi_res).coerce_unchecked()) };
         res.expect("Failed to insert GSI resource");
     }
+    let buf = {
+        let mut buf = BytesMut::new();
+        buf.put_u64(*crate::kargs().rsdp as u64);
+        buf.put_u64(*crate::kargs().smbios as u64);
+        buf
+    };
 
     let (me, chan) = Channel::new();
     let chan = unsafe { hdl::Ref::new(chan).coerce_unchecked() };
-    me.send(&mut crate::sched::ipc::Packet::new(0, objects, &[]))
+    me.send(&mut crate::sched::ipc::Packet::new(0, objects, &buf))
         .expect("Failed to send message");
     let image = unsafe {
         core::slice::from_raw_parts(
