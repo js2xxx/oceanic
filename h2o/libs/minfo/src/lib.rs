@@ -30,6 +30,7 @@ pub const ID_OFFSET: usize = KERNEL_SPACE_START;
 #[derive(Debug, Copy, Clone)]
 pub struct KernelArgs {
     pub rsdp: paging::PAddr,
+    pub smbios: paging::PAddr,
 
     pub efi_mmap_paddr: paging::PAddr,
     pub efi_mmap_len: usize,

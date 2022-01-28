@@ -1,11 +1,11 @@
 use alloc::{boxed::Box, string::String, sync::Arc};
-use bitvec::prelude::BitVec;
 use core::{
     fmt,
     ops::{Deref, DerefMut},
     time::Duration,
 };
 
+use bitvec::prelude::BitVec;
 use derive_builder::Builder;
 use paging::LAddr;
 use spin::Mutex;

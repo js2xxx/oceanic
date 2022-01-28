@@ -1,4 +1,4 @@
-use core::{arch::asm, mem::MaybeUninit, ops::Range, ptr::NonNull};
+use core::{arch::asm, ffi::c_void, mem::MaybeUninit, ops::Range, ptr::NonNull};
 
 use bitop_ex::BitOpEx;
 use minfo::{ID_OFFSET as KERNEL_ID_OFFSET, INITIAL_ID_SPACE, KMEM_PHYS_BASE, PF_SIZE};
@@ -7,17 +7,6 @@ use uefi::{prelude::*, table::boot};
 
 pub const EFI_ID_OFFSET: usize = 0;
 static mut ROOT_TABLE: MaybeUninit<NonNull<paging::Table>> = MaybeUninit::uninit();
-
-// pub enum MemoryType {
-//       Free,
-//       Acpi,
-//       Mmio,
-// }
-
-// pub struct MemoryBlock {
-//       ty: MemoryType,
-//       range: Range<paging::PAddr>,
-// }
 
 pub struct BootAlloc<'a> {
     bs: &'a BootServices,
@@ -235,15 +224,22 @@ pub fn commit_mapping() {
     }
 }
 
-pub fn get_acpi_rsdp(syst: &SystemTable<Boot>) -> *const core::ffi::c_void {
+pub fn get_rsdp_smbios(syst: &SystemTable<Boot>) -> (*const c_void, *const c_void) {
     use uefi::table::cfg::*;
     let cfgs = syst.config_table();
+    let mut rsdp = None;
+    let mut smbios = None;
     for cfg in cfgs {
-        if matches!(cfg.guid, ACPI2_GUID | ACPI_GUID) {
-            return cfg.address;
+        match cfg.guid {
+            ACPI_GUID | ACPI2_GUID => rsdp = rsdp.or(Some(cfg.address)),
+            SMBIOS_GUID | SMBIOS3_GUID => smbios = smbios.or(Some(cfg.address)),
+            _ => {}
         }
     }
-    panic!("Failed to get RSDP")
+    (
+        rsdp.expect("Failed to find ACPI RSDP"),
+        smbios.expect("Failed to find SMBIOS"),
+    )
 }
 
 // pub fn config_efi_runtime<'a>(
