@@ -20,7 +20,7 @@ pub static MMAP: Azy<PointerIterator<pmm::boot::MemRange>> = Azy::new(|| {
     )
 });
 
-pub fn alloc_system_stack() -> solvent::Result<NonNull<u8>> {
+pub fn alloc_system_stack() -> sv_call::Result<NonNull<u8>> {
     let layout = crate::sched::task::DEFAULT_STACK_LAYOUT;
     Global
         .allocate(layout)

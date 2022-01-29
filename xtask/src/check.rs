@@ -42,5 +42,11 @@ pub(crate) fn check() -> Result<(), Box<dyn Error>> {
             .exit_ok()?;
     }
 
+    Command::new(&cargo)
+        .current_dir(src_root.join("lib"))
+        .args(["clippy", "--message-format=json"])
+        .status()?
+        .exit_ok()?;
+
     Ok(())
 }

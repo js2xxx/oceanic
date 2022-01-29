@@ -27,6 +27,7 @@ pub fn gen_syscall(
 
     {
         println!("Writing to {:?}", wrapper_file.as_ref());
+        let _ = std::fs::remove_file(wrapper_file.as_ref());
         let mut wrapper_file = std::fs::File::options()
             .create(true)
             .write(true)
@@ -37,6 +38,7 @@ pub fn gen_syscall(
 
     {
         println!("Writing to {:?}", call_file.as_ref());
+        let _ = std::fs::remove_file(call_file.as_ref());
         let mut call_file = std::fs::File::options()
             .create(true)
             .write(true)

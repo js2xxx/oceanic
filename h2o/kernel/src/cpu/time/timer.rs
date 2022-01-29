@@ -61,7 +61,7 @@ impl Timer {
         ty: Type,
         duration: Duration,
         callback: Callback,
-    ) -> solvent::Result<Arsc<Self>> {
+    ) -> sv_call::Result<Arsc<Self>> {
         let ret = Arsc::try_new(Timer {
             canary: Canary::new(),
             ty,

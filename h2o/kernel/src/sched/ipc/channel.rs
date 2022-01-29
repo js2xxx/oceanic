@@ -110,9 +110,9 @@ impl Channel {
     /// # Errors
     ///
     /// Returns error if the peer is closed or if the channel is full.
-    pub fn send(&self, msg: &mut Packet) -> solvent::Result {
+    pub fn send(&self, msg: &mut Packet) -> sv_call::Result {
         match self.peer.upgrade() {
-            None => Err(solvent::Error::EPIPE),
+            None => Err(sv_call::Error::EPIPE),
             Some(peer) => {
                 let called = PREEMPT.scope(|| {
                     let callers = peer.callers.lock();
@@ -128,7 +128,7 @@ impl Channel {
                 if called {
                     Ok(())
                 } else if peer.msgs.len() >= MAX_QUEUE_SIZE {
-                    Err(solvent::Error::ENOSPC)
+                    Err(sv_call::Error::ENOSPC)
                 } else {
                     peer.msgs.push(mem::take(msg));
                     Ok(())
@@ -141,10 +141,10 @@ impl Channel {
         head: &mut Option<Packet>,
         buffer_cap: usize,
         handle_cap: usize,
-    ) -> solvent::Result<Packet> {
+    ) -> sv_call::Result<Packet> {
         let packet = unsafe { head.as_mut().unwrap_unchecked() };
         if packet.buffer().len() > buffer_cap || packet.object_count() > handle_cap {
-            Err(solvent::Error::EBUFFER)
+            Err(sv_call::Error::EBUFFER)
         } else {
             Ok(unsafe { head.take().unwrap_unchecked() })
         }
@@ -158,35 +158,35 @@ impl Channel {
         timeout: Duration,
         buffer_cap: usize,
         handle_cap: usize,
-    ) -> solvent::Result<Packet> {
+    ) -> sv_call::Result<Packet> {
         let _pree = PREEMPT.lock();
         let mut head = self.head.lock();
         if head.is_none() {
             *head = Some(if timeout.is_zero() {
-                self.me.msgs.try_pop().ok_or(solvent::Error::ENOENT)?
+                self.me.msgs.try_pop().ok_or(sv_call::Error::ENOENT)?
             } else {
                 self.me
                     .msgs
                     .pop(timeout, "Channel::receive")
-                    .ok_or(solvent::Error::EPIPE)?
+                    .ok_or(sv_call::Error::EPIPE)?
             });
         }
         Self::get_packet(&mut head, buffer_cap, handle_cap)
     }
 
-    pub fn call_send(&self, msg: &mut Packet) -> solvent::Result<usize> {
+    pub fn call_send(&self, msg: &mut Packet) -> sv_call::Result<usize> {
         match self.peer.upgrade() {
-            None => Err(solvent::Error::EPIPE),
+            None => Err(sv_call::Error::EPIPE),
             Some(peer) => {
                 if peer.msgs.len() >= MAX_QUEUE_SIZE {
-                    Err(solvent::Error::ENOSPC)
+                    Err(sv_call::Error::ENOSPC)
                 } else {
                     let id = msg.id;
                     self.me
                         .callers
                         .lock()
                         .try_insert(id, Caller::default())
-                        .map_err(|_| solvent::Error::EEXIST)?;
+                        .map_err(|_| sv_call::Error::EEXIST)?;
                     peer.msgs.push(mem::take(msg));
                     Ok(id)
                 }
@@ -200,22 +200,22 @@ impl Channel {
         timeout: Duration,
         buffer_cap: usize,
         handle_cap: usize,
-    ) -> solvent::Result<Packet> {
+    ) -> sv_call::Result<Packet> {
         let _pree = PREEMPT.lock();
         let mut callers = self.me.callers.lock();
         let mut caller = match callers.entry(id) {
-            alloc::collections::btree_map::Entry::Vacant(_) => return Err(solvent::Error::ENOENT),
+            alloc::collections::btree_map::Entry::Vacant(_) => return Err(sv_call::Error::ENOENT),
             alloc::collections::btree_map::Entry::Occupied(caller) => caller,
         };
         if caller.get().head.is_none() {
             let packet = if timeout.is_zero() {
-                caller.get().cell.try_take().ok_or(solvent::Error::ENOENT)?
+                caller.get().cell.try_take().ok_or(sv_call::Error::ENOENT)?
             } else {
                 caller
                     .get()
                     .cell
                     .take(timeout, "Channel::call_receive")
-                    .ok_or(solvent::Error::EPIPE)?
+                    .ok_or(sv_call::Error::EPIPE)?
             };
             caller.get_mut().head = Some(packet);
         }
@@ -227,7 +227,7 @@ impl Channel {
 mod syscall {
     use core::slice;
 
-    use solvent::{ipc::RawPacket, *};
+    use sv_call::{ipc::RawPacket, *};
 
     use super::*;
     use crate::syscall::{In, InOut, Out, UserPtr};

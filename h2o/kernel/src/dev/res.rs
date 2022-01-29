@@ -71,7 +71,7 @@ mod syscall {
     use alloc::sync::Arc;
     use core::{any::Any, ops::Add};
 
-    use solvent::*;
+    use sv_call::*;
 
     use crate::{dev::Resource, sched::SCHED};
 

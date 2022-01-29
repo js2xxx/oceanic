@@ -3,7 +3,7 @@ use core::{
     time::Duration,
 };
 
-use solvent::SerdeReg;
+use sv_call::SerdeReg;
 
 use crate::sched::wait::WaitObject;
 
@@ -23,7 +23,7 @@ impl Event {
         }
     }
 
-    pub fn wait(&self, signal: u8, timeout: Duration, block_desc: &'static str) -> solvent::Result {
+    pub fn wait(&self, signal: u8, timeout: Duration, block_desc: &'static str) -> sv_call::Result {
         let signal = signal as usize;
         loop {
             let ret = self.signal.load(SeqCst);
@@ -31,19 +31,19 @@ impl Event {
                 if !self.wake_all {
                     self.signal.store(ret & !signal, SeqCst);
                 }
-                break solvent::Result::decode(ret);
+                break sv_call::Result::decode(ret);
             }
             if !self.wo.wait((), timeout, block_desc) {
-                break Err(solvent::Error::EPIPE);
+                break Err(sv_call::Error::EPIPE);
             }
         }
     }
 
     #[inline]
-    pub fn notify(&self, active: u8) -> solvent::Result<usize> {
+    pub fn notify(&self, active: u8) -> sv_call::Result<usize> {
         let active = active as usize;
         if active == 0 {
-            Err(solvent::Error::EINVAL)
+            Err(sv_call::Error::EINVAL)
         } else {
             let _ = self
                 .signal
@@ -62,7 +62,7 @@ impl Event {
 }
 
 mod syscall {
-    use solvent::*;
+    use sv_call::*;
 
     use super::*;
     use crate::sched::SCHED;

@@ -18,7 +18,7 @@ pub struct Interrupt {
 
 impl Interrupt {
     #[inline]
-    pub fn new(res: &Resource<u32>, gsi: u32, level_triggered: bool) -> solvent::Result<Self> {
+    pub fn new(res: &Resource<u32>, gsi: u32, level_triggered: bool) -> sv_call::Result<Self> {
         if res.magic_eq(super::gsi_resource()) && res.range().contains(&gsi) {
             Ok(Interrupt {
                 gsi,
@@ -27,7 +27,7 @@ impl Interrupt {
                 level_triggered,
             })
         } else {
-            Err(solvent::Error::EPERM)
+            Err(sv_call::Error::EPERM)
         }
     }
 
@@ -49,7 +49,7 @@ impl Interrupt {
         }
     }
 
-    pub fn wait(&self, timeout: Duration, block_desc: &'static str) -> (Instant, solvent::Result) {
+    pub fn wait(&self, timeout: Duration, block_desc: &'static str) -> (Instant, sv_call::Result) {
         if self.level_triggered {
             MANAGER.mask(self.gsi, false).unwrap();
         }
@@ -68,7 +68,7 @@ mod syscall {
     use alloc::{boxed::Box, sync::Arc};
     use core::time::Duration;
 
-    use solvent::*;
+    use sv_call::*;
 
     use super::*;
     use crate::{

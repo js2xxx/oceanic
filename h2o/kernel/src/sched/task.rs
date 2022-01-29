@@ -12,7 +12,7 @@ use alloc::{format, string::String, sync::Arc};
 use core::any::Any;
 
 use paging::LAddr;
-use solvent::Handle;
+use sv_call::Handle;
 
 #[cfg(target_arch = "x86_64")]
 pub use self::ctx::arch::{DEFAULT_STACK_LAYOUT, DEFAULT_STACK_SIZE};
@@ -36,9 +36,9 @@ impl Type {
     /// Returns error if current task's type is less privileged than the
     /// expected type.
     #[inline]
-    pub fn pass(this: Option<Self>, cur_ty: Type) -> solvent::Result<Type> {
+    pub fn pass(this: Option<Self>, cur_ty: Type) -> sv_call::Result<Type> {
         match (this, cur_ty) {
-            (Some(Self::Kernel), Self::User) => Err(solvent::Error::EPERM),
+            (Some(Self::Kernel), Self::User) => Err(sv_call::Error::EPERM),
             (Some(ty), _) => Ok(ty),
             _ => Ok(cur_ty),
         }
@@ -72,7 +72,7 @@ fn exec_inner(
     space: Arc<Space>,
     init_chan: hdl::Ref<dyn Any>,
     s: &Starter,
-) -> solvent::Result<(Init, Handle)> {
+) -> sv_call::Result<(Init, Handle)> {
     let ty = Type::pass(ty, cur.ty())?;
     let ti = TaskInfo::builder()
         .from(Some(cur.clone()))
@@ -84,7 +84,7 @@ fn exec_inner(
 
     let init_chan = unsafe { ti.handles().insert_ref(init_chan) }?;
 
-    let tid = tid::allocate(ti).map_err(|_| solvent::Error::EBUSY)?;
+    let tid = tid::allocate(ti).map_err(|_| sv_call::Error::EBUSY)?;
 
     let entry = ctx::Entry {
         entry: s.entry,
@@ -107,13 +107,13 @@ fn exec(
     space: Arc<Space>,
     init_chan: hdl::Ref<dyn Any>,
     starter: &Starter,
-) -> solvent::Result<(Init, Handle)> {
+) -> sv_call::Result<(Init, Handle)> {
     let cur = super::SCHED.with_current(|cur| Ok(cur.tid.clone()))?;
     exec_inner(cur, name, None, None, space, init_chan, starter)
 }
 
 #[inline]
-fn create(name: Option<String>, space: Arc<Space>) -> solvent::Result<(Init, solvent::Handle)> {
+fn create(name: Option<String>, space: Arc<Space>) -> sv_call::Result<(Init, sv_call::Handle)> {
     let cur = super::SCHED.with_current(|cur| Ok(cur.tid.clone()))?;
 
     let ty = cur.ty();
@@ -125,7 +125,7 @@ fn create(name: Option<String>, space: Arc<Space>) -> solvent::Result<(Init, sol
         .build()
         .unwrap();
 
-    let tid = tid::allocate(ti).map_err(|_| solvent::Error::EBUSY)?;
+    let tid = tid::allocate(ti).map_err(|_| sv_call::Error::EBUSY)?;
 
     let kstack = ctx::Kstack::new(None, ty);
     let ext_frame = ctx::ExtFrame::zeroed();

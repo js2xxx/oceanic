@@ -262,7 +262,7 @@ pub struct Ioapics {
 }
 
 impl Ioapics {
-    unsafe fn new(ioapic_data: &Apic) -> solvent::Result<(Self, Vec<IntrOvr>)> {
+    unsafe fn new(ioapic_data: &Apic) -> sv_call::Result<(Self, Vec<IntrOvr>)> {
         let Apic {
             io_apics: acpi_ioapics,
             interrupt_source_overrides: acpi_intr_ovr,
@@ -274,8 +274,8 @@ impl Ioapics {
             let ioapic = Ioapic::new(acpi_ioapic);
             ioapic_data.try_insert_with(
                 ioapic.gsi.clone(),
-                || Ok::<_, solvent::Error>((ioapic, ())),
-                solvent::Error::EEXIST,
+                || Ok::<_, sv_call::Error>((ioapic, ())),
+                sv_call::Error::EEXIST,
             )?;
         }
 
@@ -306,8 +306,8 @@ impl Ioapics {
     ///
     /// The caller must ensure that the entry corresponding to `gsi` is not used
     /// by others.
-    pub unsafe fn config_dest(&mut self, gsi: u32, vec: u8, apic_id: u32) -> solvent::Result {
-        let (chip, pin) = self.chip_mut_pin(gsi).ok_or(solvent::Error::EINVAL)?;
+    pub unsafe fn config_dest(&mut self, gsi: u32, vec: u8, apic_id: u32) -> sv_call::Result {
+        let (chip, pin) = self.chip_mut_pin(gsi).ok_or(sv_call::Error::EINVAL)?;
 
         let mut entry = IoapicEntry::from(chip.read_ioredtbl(pin));
         entry.set_vec(vec);
@@ -331,8 +331,8 @@ impl Ioapics {
         gsi: u32,
         trig_mode: TriggerMode,
         polarity: Polarity,
-    ) -> solvent::Result {
-        let (chip, pin) = self.chip_mut_pin(gsi).ok_or(solvent::Error::EINVAL)?;
+    ) -> sv_call::Result {
+        let (chip, pin) = self.chip_mut_pin(gsi).ok_or(sv_call::Error::EINVAL)?;
 
         let (t, p) = if let Some(intr_ovr) = intr_ovr().iter().find(|i| i.gsi == gsi) {
             (intr_ovr.trigger_mode, intr_ovr.polarity)
@@ -342,7 +342,7 @@ impl Ioapics {
             (trig_mode, polarity)
         };
         if t != trig_mode || p != polarity {
-            return Err(solvent::Error::EPERM);
+            return Err(sv_call::Error::EPERM);
         }
 
         let mut entry = IoapicEntry::from(chip.read_ioredtbl(pin));
@@ -354,8 +354,8 @@ impl Ioapics {
         Ok(())
     }
 
-    pub fn get_entry(&mut self, gsi: u32) -> solvent::Result<IoapicEntry> {
-        let (chip, pin) = self.chip_mut_pin(gsi).ok_or(solvent::Error::EINVAL)?;
+    pub fn get_entry(&mut self, gsi: u32) -> sv_call::Result<IoapicEntry> {
+        let (chip, pin) = self.chip_mut_pin(gsi).ok_or(sv_call::Error::EINVAL)?;
         Ok(IoapicEntry::from(unsafe { chip.read_ioredtbl(pin) }))
     }
 
@@ -363,8 +363,8 @@ impl Ioapics {
     ///
     /// The caller must ensure that the entry corresponding to `gsi` is not used
     /// anymore.
-    pub unsafe fn deconfig(&mut self, gsi: u32) -> solvent::Result {
-        let (chip, pin) = self.chip_mut_pin(gsi).ok_or(solvent::Error::EINVAL)?;
+    pub unsafe fn deconfig(&mut self, gsi: u32) -> sv_call::Result {
+        let (chip, pin) = self.chip_mut_pin(gsi).ok_or(sv_call::Error::EINVAL)?;
 
         let entry = IoapicEntry::new().with_mask(true);
         chip.write_ioredtbl(pin, entry.into());
@@ -376,8 +376,8 @@ impl Ioapics {
     ///
     /// The caller must ensure that the entry corresponding to `gsi` is not used
     /// by others.
-    pub unsafe fn mask(&mut self, gsi: u32, masked: bool) -> solvent::Result {
-        let (chip, pin) = self.chip_mut_pin(gsi).ok_or(solvent::Error::EINVAL)?;
+    pub unsafe fn mask(&mut self, gsi: u32, masked: bool) -> sv_call::Result {
+        let (chip, pin) = self.chip_mut_pin(gsi).ok_or(sv_call::Error::EINVAL)?;
 
         let mut entry = IoapicEntry::from(chip.read_ioredtbl(pin));
         entry.set_mask(masked);
@@ -398,10 +398,10 @@ impl Ioapics {
     ///
     /// The caller must ensure that the entry corresponding to `gsi` is not used
     /// by others.
-    pub unsafe fn eoi(&mut self, gsi: u32) -> solvent::Result {
+    pub unsafe fn eoi(&mut self, gsi: u32) -> sv_call::Result {
         lapic(|lapic| lapic.eoi());
 
-        let (chip, pin) = self.chip_mut_pin(gsi).ok_or(solvent::Error::EINVAL)?;
+        let (chip, pin) = self.chip_mut_pin(gsi).ok_or(sv_call::Error::EINVAL)?;
 
         let entry = IoapicEntry::from(chip.read_ioredtbl(pin));
         if chip.version >= 0x20 {

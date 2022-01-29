@@ -40,7 +40,7 @@ pub unsafe fn init() {
 
 mod syscall {
     use bitvec::bitvec;
-    use solvent::*;
+    use sv_call::*;
 
     use super::*;
     use crate::{cpu::arch::KERNEL_GS, sched::SCHED};

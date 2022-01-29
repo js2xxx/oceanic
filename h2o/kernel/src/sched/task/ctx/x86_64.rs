@@ -134,8 +134,8 @@ impl Frame {
     }
 
     #[inline]
-    pub fn debug_get(&self) -> solvent::task::ctx::Gpr {
-        solvent::task::ctx::Gpr {
+    pub fn debug_get(&self) -> sv_call::task::ctx::Gpr {
+        sv_call::task::ctx::Gpr {
             rax: self.rax,
             rcx: self.rcx,
             rdx: self.rdx,
@@ -163,11 +163,11 @@ impl Frame {
     ///
     /// Returns error if `fs_base` or `gs_base` is invalid.
     #[inline]
-    pub fn debug_set(&mut self, gpr: &solvent::task::ctx::Gpr) -> solvent::Result<()> {
+    pub fn debug_set(&mut self, gpr: &sv_call::task::ctx::Gpr) -> sv_call::Result<()> {
         if !archop::canonical(LAddr::from(gpr.fs_base))
             || !archop::canonical(LAddr::from(gpr.gs_base))
         {
-            return Err(solvent::Error::EINVAL);
+            return Err(sv_call::Error::EINVAL);
         }
         self.gs_base = gpr.gs_base;
         self.fs_base = gpr.fs_base;

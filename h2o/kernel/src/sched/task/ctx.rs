@@ -121,9 +121,9 @@ impl Kstack {
         cur_frame: &mut arch::Frame,
         errc: u64,
         addr: u64,
-    ) -> solvent::Result {
+    ) -> sv_call::Result {
         match self.pf_resume.take() {
-            None => Err(solvent::Error::ENOENT),
+            None => Err(sv_call::Error::ENOENT),
             Some(ret) => {
                 cur_frame.set_pf_resume(ret.into(), errc, addr);
                 Ok(())

@@ -3,7 +3,7 @@ use core::{hash::BuildHasherDefault, intrinsics, time::Duration};
 use archop::Azy;
 use collection_ex::{CHashMap, FnvHasher};
 use paging::PAddr;
-use solvent::*;
+use sv_call::*;
 
 use super::WaitObject;
 
@@ -63,7 +63,7 @@ impl Futex {
 mod syscall {
     use core::ptr::NonNull;
 
-    use solvent::*;
+    use sv_call::*;
 
     use super::*;
     use crate::{

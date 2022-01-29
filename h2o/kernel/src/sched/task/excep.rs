@@ -6,7 +6,7 @@ use core::{
 
 use archop::reg::cr2;
 use bytes::Buf;
-use solvent::task::excep::{Exception, ExceptionResult, EXRES_CODE_OK};
+use sv_call::task::excep::{Exception, ExceptionResult, EXRES_CODE_OK};
 
 use super::{ctx::x86_64::Frame, hdl};
 use crate::{
@@ -56,7 +56,7 @@ pub fn dispatch_exception(frame: &mut Frame, vec: ExVec) -> bool {
             Some(res.code == EXRES_CODE_OK)
         }
         Err(err) => match err {
-            solvent::Error::EPIPE => None,
+            sv_call::Error::EPIPE => None,
             _ => Some(false),
         },
     };

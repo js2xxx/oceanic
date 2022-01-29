@@ -10,7 +10,7 @@ use core::{
 };
 
 use archop::Azy;
-use solvent::Result;
+use sv_call::Result;
 
 use super::Object;
 use crate::{mem::Arena, sched::PREEMPT};
@@ -128,7 +128,7 @@ impl Ref<dyn Any> {
         if self.obj.data.is::<T>() {
             Ok(unsafe { &*(self as *const Ref<dyn Any> as *const Ref<T>) })
         } else {
-            Err(solvent::Error::ETYPE)
+            Err(sv_call::Error::ETYPE)
         }
     }
 
@@ -152,7 +152,7 @@ impl Ref<dyn Any> {
             // SAFETY: The underlying object is `send` and `sync`.
             Ok(unsafe { self.clone_unchecked() })
         } else {
-            Err(solvent::Error::EPERM)
+            Err(sv_call::Error::EPERM)
         }
     }
 
@@ -284,7 +284,7 @@ impl List {
                 }
                 // SAFETY: The pointer is allocated from the arena.
                 Some(cur) => unsafe { cur.as_ref().next },
-                None => break Err(solvent::Error::ERANGE),
+                None => break Err(sv_call::Error::ERANGE),
             }
         }
     }

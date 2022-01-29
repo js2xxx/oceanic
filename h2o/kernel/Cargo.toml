@@ -21,7 +21,7 @@ minfo = {path = "../libs/minfo"}
 paging = {path = "../libs/paging"}
 pmm = {path = "../libs/pmm"}
 repeat = {path = "../libs/repeat"}
-solvent = {path = "../libs/syscall", default-features = false}
+sv-call = {path = "../libs/syscall", default-features = false}
 # External crates
 acpi = "4.1"
 array-macro = "2.1"

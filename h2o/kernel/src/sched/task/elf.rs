@@ -17,7 +17,7 @@ fn load_prog(
     phys: PAddr,
     fsize: usize,
     msize: usize,
-) -> solvent::Result {
+) -> sv_call::Result {
     fn flags_to_pg_attr(flags: u32) -> Flags {
         let mut ret = Flags::USER_ACCESS;
         if (flags & program_header::PF_R) != 0 {
@@ -63,7 +63,7 @@ fn load_prog(
     Ok(())
 }
 
-fn load_elf(space: &Arc<Space>, file: &Elf, image: &[u8]) -> solvent::Result<(LAddr, usize)> {
+fn load_elf(space: &Arc<Space>, file: &Elf, image: &[u8]) -> sv_call::Result<(LAddr, usize)> {
     log::trace!(
         "Loading ELF file from image {:?}, space = {:?}",
         image.as_ptr(),
@@ -93,7 +93,7 @@ fn load_elf(space: &Arc<Space>, file: &Elf, image: &[u8]) -> solvent::Result<(LA
                 (phdr.p_memsz as usize).round_up_bit(paging::PAGE_SHIFT),
             )?,
 
-            _ => return Err(solvent::Error::ESPRT),
+            _ => return Err(sv_call::Error::ESPRT),
         }
     }
     Ok((entry, stack_size))
@@ -104,14 +104,14 @@ pub fn from_elf(
     name: String,
     affinity: CpuMask,
     init_chan: hdl::Ref<dyn Any>,
-) -> solvent::Result<(Init, Handle)> {
+) -> sv_call::Result<(Init, Handle)> {
     let file = Elf::parse(image)
-        .map_err(|_| solvent::Error::EINVAL)
+        .map_err(|_| sv_call::Error::EINVAL)
         .and_then(|file| {
             if file.is_64 {
                 Ok(file)
             } else {
-                Err(solvent::Error::EPERM)
+                Err(sv_call::Error::EPERM)
             }
         })?;
 

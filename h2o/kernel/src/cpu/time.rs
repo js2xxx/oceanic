@@ -94,7 +94,7 @@ impl core::fmt::Display for Instant {
 }
 
 mod syscall {
-    use solvent::*;
+    use sv_call::*;
 
     use crate::syscall::{Out, UserPtr};
 

@@ -7,7 +7,7 @@
 //!
 //! ```rust,no_run
 //! mod syscall {
-//!       use solvent::*;
+//!       use sv_call::*;
 //!       #[syscall]
 //!       fn cast_init(k: *mut K) -> *const L {
 //!             init(k);
@@ -20,7 +20,7 @@
 
 mod user_ptr;
 
-use solvent::*;
+use sv_call::*;
 
 pub use self::user_ptr::*;
 

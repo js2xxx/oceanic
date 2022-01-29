@@ -17,12 +17,12 @@ mod rxx;
 extern crate alloc;
 
 #[no_mangle]
-extern "C" fn tmain(_: solvent::Handle) {
+extern "C" fn tmain(_: sv_call::Handle) {
     log::init(::log::Level::Debug);
     ::log::info!("Starting initialization");
     mem::init();
 
-    solvent::test();
+    sv_call::test();
 
     ::log::debug!("Reaching end of TINIT");
 }

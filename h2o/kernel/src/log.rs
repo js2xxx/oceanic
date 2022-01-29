@@ -97,7 +97,7 @@ pub unsafe fn init(max_level: log::Level) {
 }
 
 mod syscall {
-    use solvent::*;
+    use sv_call::*;
 
     use crate::syscall::{In, UserPtr};
 

@@ -1,6 +1,6 @@
 use core::{fmt, marker::PhantomData, mem, mem::MaybeUninit, num::NonZeroU64};
 
-use solvent::{Result, SerdeReg};
+use sv_call::{Result, SerdeReg};
 
 pub use self::types::*;
 use crate::{mem::space::PageFaultErrCode, sched::SCHED};
@@ -189,9 +189,9 @@ fn check_ptr(ptr: *mut u8, size: usize, align: usize) -> Result<()> {
         minfo::USER_BASE <= ptr as usize && (ptr as usize).saturating_add(size) <= minfo::USER_END;
     let is_aligned = (ptr as usize) & (align - 1) == 0;
     if !is_in_range {
-        Err(solvent::Error::ERANGE)
+        Err(sv_call::Error::ERANGE)
     } else if !is_aligned {
-        Err(solvent::Error::EALIGN)
+        Err(sv_call::Error::EALIGN)
     } else {
         Ok(())
     }
@@ -222,7 +222,7 @@ impl CheckedCopyRet {
                 self.addr_p1 - 1,
                 self.errc
             );
-            Err(solvent::Error::EPERM)
+            Err(sv_call::Error::EPERM)
         } else {
             Ok(())
         }

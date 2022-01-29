@@ -79,7 +79,7 @@ impl ToTokens for SyscallFn {
             |a| match a {
                 FnArg::Typed(PatType { pat, ty, .. }) => match *pat {
                     Pat::Ident(ident) => {
-                        let ret: Expr = parse_quote!(<#ty as solvent::SerdeReg>::decode(#ident));
+                        let ret: Expr = parse_quote!(<#ty as sv_call::SerdeReg>::decode(#ident));
                         ret
                     }
                     _ => panic!("Function only receive typed args"),
@@ -93,7 +93,7 @@ impl ToTokens for SyscallFn {
             #[no_mangle]
             extern "C" fn #wrapper_ident (#wrapper_args) -> usize {
                 let ret = #ident (#wrapper_args_into);
-                solvent::SerdeReg::encode(ret)
+                sv_call::SerdeReg::encode(ret)
             }
         };
         wrapper.to_tokens(tokens);

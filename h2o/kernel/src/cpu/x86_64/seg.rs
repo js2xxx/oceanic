@@ -132,7 +132,7 @@ pub unsafe fn reload_pls() {
 }
 
 /// Allocate and initialize a new PLS for application CPU.
-pub fn alloc_pls() -> solvent::Result<NonNull<u8>> {
+pub fn alloc_pls() -> sv_call::Result<NonNull<u8>> {
     extern "C" {
         static TDATA_START: u8;
         static TBSS_START: u8;
@@ -140,7 +140,7 @@ pub fn alloc_pls() -> solvent::Result<NonNull<u8>> {
 
     let pls_layout = match crate::kargs().pls_layout {
         Some(layout) => layout,
-        None => return Err(solvent::Error::ENOENT),
+        None => return Err(sv_call::Error::ENOENT),
     };
 
     let base = Global

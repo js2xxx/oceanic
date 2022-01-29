@@ -2,8 +2,8 @@ use alloc::{string::String, sync::Arc, vec::Vec};
 use core::{hint, slice, time::Duration};
 
 use paging::LAddr;
-use solvent::*;
 use spin::Mutex;
+use sv_call::*;
 
 use super::{Blocked, RunningState, Signal, Tid};
 use crate::{
@@ -244,7 +244,7 @@ fn read_regs(task: &Blocked, addr: usize, data: UserPtr<Out, u8>, len: usize) ->
 fn write_regs(task: &mut Blocked, addr: usize, data: UserPtr<In, u8>, len: usize) -> Result<()> {
     match addr {
         task::TASK_DBGADDR_GPR => {
-            if len < solvent::task::ctx::GPR_SIZE {
+            if len < sv_call::task::ctx::GPR_SIZE {
                 Err(Error::EBUFFER)
             } else {
                 let gpr = unsafe { data.cast().read()? };

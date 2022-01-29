@@ -26,8 +26,8 @@ use bitop_ex::BitOpEx;
 use canary::Canary;
 use collection_ex::RangeMap;
 use paging::{LAddr, PAddr, PAGE_LAYOUT};
-pub use solvent::mem::Flags;
 use spin::Mutex;
+pub use sv_call::mem::Flags;
 
 pub use self::{arch::init_pgc, obj::*};
 use crate::sched::{task, PREEMPT};
@@ -39,8 +39,8 @@ pub static KRL: Azy<Arc<Space>> = Azy::new(|| Space::new(task::Type::Kernel));
 #[thread_local]
 static mut CURRENT: Option<Arc<Space>> = None;
 
-fn paging_error(err: paging::Error) -> solvent::Error {
-    use solvent::Error;
+fn paging_error(err: paging::Error) -> sv_call::Error {
+    use sv_call::Error;
     match err {
         paging::Error::OutOfMemory => Error::ENOMEM,
         paging::Error::AddrMisaligned { .. } => Error::EALIGN,
@@ -110,7 +110,7 @@ impl Space {
     }
 
     /// Shorthand for `Phys::allocate` + `Space::map`.
-    pub fn allocate(&self, layout: Layout, flags: Flags) -> solvent::Result<NonNull<[u8]>> {
+    pub fn allocate(&self, layout: Layout, flags: Flags) -> sv_call::Result<NonNull<[u8]>> {
         self.canary.assert();
 
         let phys = Phys::allocate(layout, flags)?;
@@ -128,19 +128,19 @@ impl Space {
         virt: Range<LAddr>,
         phys: Option<Arc<Phys>>,
         flags: Flags,
-    ) -> solvent::Result {
+    ) -> sv_call::Result {
         self.canary.assert();
 
         let offset = virt
             .start
             .val()
             .checked_sub(self.range.start)
-            .ok_or(solvent::Error::ERANGE)?;
+            .ok_or(sv_call::Error::ERANGE)?;
         let len = virt
             .end
             .val()
             .checked_sub(virt.start.val())
-            .ok_or(solvent::Error::ERANGE)?;
+            .ok_or(sv_call::Error::ERANGE)?;
         let phys = match phys {
             Some(phys) => phys,
             None => Phys::allocate(Layout::from_size_align(len, PAGE_LAYOUT.align())?, flags)?,
@@ -157,16 +157,16 @@ impl Space {
         phys_offset: usize,
         len: usize,
         flags: Flags,
-    ) -> solvent::Result<LAddr> {
+    ) -> sv_call::Result<LAddr> {
         self.canary.assert();
 
         if flags & !phys.flags() != Flags::empty() || flags.contains(Flags::ZEROED) {
-            return Err(solvent::Error::EPERM);
+            return Err(sv_call::Error::EPERM);
         }
 
         let phys_offset_end = phys_offset.wrapping_add(len);
         if !(phys_offset < phys_offset_end && phys_offset_end <= phys.layout().size()) {
-            return Err(solvent::Error::ERANGE);
+            return Err(sv_call::Error::ERANGE);
         }
 
         let phys_start = PAddr::new(phys.base().add(phys_offset));
@@ -181,14 +181,14 @@ impl Space {
             let start = offset.wrapping_add(self.range.start);
             let end = start.wrapping_add(len);
             if !(self.range.start <= start && start < end && end <= self.range.end) {
-                return Err(solvent::Error::ERANGE);
+                return Err(sv_call::Error::ERANGE);
             }
 
             PREEMPT.scope(|| {
                 self.map.lock().try_insert_with(
                     start..end,
                     || arch_map(start..end).map(|_| (phys, LAddr::from(start))),
-                    solvent::Error::EBUSY,
+                    sv_call::Error::EBUSY,
                 )
             })
         } else {
@@ -198,7 +198,7 @@ impl Space {
                     .allocate_with(
                         len,
                         |range| arch_map(range).map(|_| (phys, ())),
-                        solvent::Error::ENOMEM,
+                        sv_call::Error::ENOMEM,
                     )
                     .map(|(start, _)| LAddr::from(start))
             })
@@ -206,7 +206,7 @@ impl Space {
     }
 
     /// Get the mapped physical address of the specified pointer.
-    pub fn get(&self, ptr: NonNull<u8>) -> solvent::Result<paging::PAddr> {
+    pub fn get(&self, ptr: NonNull<u8>) -> sv_call::Result<paging::PAddr> {
         self.arch.query(LAddr::from(ptr)).map_err(paging_error)
     }
 
@@ -216,7 +216,7 @@ impl Space {
     ///
     /// The caller must ensure that no pointers or references within the address
     /// range are present (or will be influenced by the modification).
-    pub unsafe fn reprotect(&self, mut ptr: NonNull<[u8]>, flags: Flags) -> solvent::Result {
+    pub unsafe fn reprotect(&self, mut ptr: NonNull<[u8]>, flags: Flags) -> sv_call::Result {
         self.canary.assert();
 
         let virt = {
@@ -228,7 +228,7 @@ impl Space {
             let map = self.map.lock();
             match map.get_contained_range(virt.start.val()..virt.end.val()) {
                 Some(_) => self.arch.reprotect(virt, flags).map_err(paging_error),
-                None => Err(solvent::Error::ENOENT),
+                None => Err(sv_call::Error::ENOENT),
             }
         })
     }
@@ -239,11 +239,11 @@ impl Space {
     ///
     /// The caller must ensure that no more references are pointing at the
     /// address range to be deallocated.
-    pub unsafe fn unmap(&self, ptr: NonNull<u8>) -> solvent::Result {
+    pub unsafe fn unmap(&self, ptr: NonNull<u8>) -> sv_call::Result {
         self.canary.assert();
 
         let ret = PREEMPT.scope(|| self.map.lock().remove(LAddr::from(ptr).val()));
-        ret.map_or(Err(solvent::Error::ENOENT), |(range, _phys)| {
+        ret.map_or(Err(sv_call::Error::ENOENT), |(range, _phys)| {
             let _ = PREEMPT.scope(|| {
                 self.arch
                     .unmaps(LAddr::from(range.start)..LAddr::from(range.end))
@@ -261,7 +261,7 @@ impl Space {
         self.arch.load()
     }
 
-    pub fn init_stack(self: &Arc<Self>, size: usize) -> solvent::Result<LAddr> {
+    pub fn init_stack(self: &Arc<Self>, size: usize) -> sv_call::Result<LAddr> {
         self.canary.assert();
 
         let cnt = size.div_ceil_bit(paging::PAGE_SHIFT);

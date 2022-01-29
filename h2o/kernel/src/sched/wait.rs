@@ -58,29 +58,3 @@ impl Default for WaitObject {
         Self::new()
     }
 }
-
-mod syscall {
-    use alloc::sync::Arc;
-
-    use solvent::*;
-
-    use super::*;
-
-    #[syscall]
-    fn wo_new() -> Result<u32> {
-        let wo = Arc::new(WaitObject::new());
-        SCHED.with_current(|cur| cur.tid().handles().insert(wo).map(|h| h.raw()))
-    }
-
-    #[syscall]
-    fn wo_notify(hdl: Handle, n: usize) -> Result<usize> {
-        hdl.check_null()?;
-        let wo = SCHED.with_current(|cur| {
-            cur.tid()
-                .handles()
-                .get::<Arc<WaitObject>>(hdl)
-                .map(|w| Arc::clone(w))
-        })?;
-        Ok(wo.notify(n))
-    }
-}

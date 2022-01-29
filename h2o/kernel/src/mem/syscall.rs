@@ -2,7 +2,7 @@ use alloc::sync::Arc;
 use core::{alloc::Layout, ptr::NonNull};
 
 use bitop_ex::BitOpEx;
-use solvent::{mem::MapInfo, *};
+use sv_call::{mem::MapInfo, *};
 
 use super::space;
 use crate::{

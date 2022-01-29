@@ -102,9 +102,9 @@ impl<T> Arena<T> {
     /// # Safety
     ///
     /// The caller must ensure that `ptr` is previously allocated by this arena.
-    pub unsafe fn deallocate(&self, ptr: NonNull<T>) -> solvent::Result {
+    pub unsafe fn deallocate(&self, ptr: NonNull<T>) -> sv_call::Result {
         if !self.check_ptr(ptr) {
-            return Err(solvent::Error::EINVAL);
+            return Err(sv_call::Error::EINVAL);
         }
 
         let mut next = self.head.load_acquire();
@@ -141,28 +141,28 @@ impl<T> Arena<T> {
         index < self.max_count
     }
 
-    pub fn to_index(&self, ptr: NonNull<T>) -> solvent::Result<usize> {
+    pub fn to_index(&self, ptr: NonNull<T>) -> sv_call::Result<usize> {
         if self.check_ptr(ptr) {
             let base = self.base.as_ptr() as usize;
             let addr = ptr.as_ptr() as usize;
             let index = addr.wrapping_sub(base).wrapping_div(self.off);
             Some(index)
                 .filter(|&index| self.check_index(index))
-                .ok_or(solvent::Error::EINVAL)
+                .ok_or(sv_call::Error::EINVAL)
         } else {
-            Err(solvent::Error::EINVAL)
+            Err(sv_call::Error::EINVAL)
         }
     }
 
-    pub fn from_index(&self, index: usize) -> solvent::Result<NonNull<T>> {
+    pub fn from_index(&self, index: usize) -> sv_call::Result<NonNull<T>> {
         if self.check_index(index) {
             let base = self.base.as_ptr() as usize;
             let addr = index.wrapping_mul(self.off).wrapping_add(base);
             NonNull::new(addr as *mut T)
                 .filter(|&ptr| self.check_ptr(ptr))
-                .ok_or(solvent::Error::EINVAL)
+                .ok_or(sv_call::Error::EINVAL)
         } else {
-            Err(solvent::Error::EINVAL)
+            Err(sv_call::Error::EINVAL)
         }
     }
 

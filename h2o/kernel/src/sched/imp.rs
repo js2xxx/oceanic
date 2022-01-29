@@ -78,9 +78,9 @@ impl Scheduler {
     }
 
     #[inline]
-    pub fn with_current<F, R>(&self, func: F) -> solvent::Result<R>
+    pub fn with_current<F, R>(&self, func: F) -> sv_call::Result<R>
     where
-        F: FnOnce(&mut task::Ready) -> solvent::Result<R>,
+        F: FnOnce(&mut task::Ready) -> sv_call::Result<R>,
     {
         self.canary.assert();
 
@@ -88,7 +88,7 @@ impl Scheduler {
         PREEMPT.scope(|| unsafe {
             (*self.current.get())
                 .as_mut()
-                .ok_or(solvent::Error::ESRCH)
+                .ok_or(sv_call::Error::ESRCH)
                 .and_then(func)
         })
     }
@@ -104,7 +104,7 @@ impl Scheduler {
         wo: Option<&WaitObject>,
         duration: Duration,
         block_desc: &'static str,
-    ) -> solvent::Result<Arsc<Timer>> {
+    ) -> sv_call::Result<Arsc<Timer>> {
         self.canary.assert();
 
         let pree = PREEMPT.lock();
@@ -170,7 +170,7 @@ impl Scheduler {
         if unsafe { self.update(cur_time) } {
             let ret = self.schedule(cur_time, pree);
             match ret {
-                Ok(()) | Err(solvent::Error::ENOENT) => {}
+                Ok(()) | Err(sv_call::Error::ENOENT) => {}
                 Err(err) => log::warn!("Scheduling failed: {:?}", err),
             }
         }
@@ -197,7 +197,7 @@ impl Scheduler {
             Some(task::Signal::Kill) => {
                 log::trace!("Killing task {:?}, P{}", cur.tid.raw(), PREEMPT.raw());
                 let _ = self.schedule_impl(cur_time, pree, None, |task| {
-                    task::Ready::exit(task, solvent::Error::EKILLED.into_retval());
+                    task::Ready::exit(task, sv_call::Error::EKILLED.into_retval());
                     Ok(())
                 });
                 unreachable!("Dead task");
@@ -208,7 +208,7 @@ impl Scheduler {
                     *slot.lock() = Some(task::Ready::block(task, "task_ctl_suspend"));
                     Ok(())
                 });
-                assert_matches!(ret, Ok(()) | Err(solvent::Error::ENOENT));
+                assert_matches!(ret, Ok(()) | Err(sv_call::Error::ENOENT));
 
                 None
             }
@@ -245,7 +245,7 @@ impl Scheduler {
         }
     }
 
-    fn schedule(&self, cur_time: Instant, pree: PreemptStateGuard) -> solvent::Result {
+    fn schedule(&self, cur_time: Instant, pree: PreemptStateGuard) -> sv_call::Result {
         self.canary.assert();
         #[cfg(debug_assertions)]
         // SAFETY: We have `pree`, which means preemption is disabled.
@@ -267,9 +267,9 @@ impl Scheduler {
         pree: PreemptStateGuard,
         next: Option<task::Ready>,
         func: F,
-    ) -> solvent::Result<R>
+    ) -> sv_call::Result<R>
     where
-        F: FnOnce(task::Ready) -> solvent::Result<R>,
+        F: FnOnce(task::Ready) -> sv_call::Result<R>,
     {
         self.canary.assert();
 
@@ -277,7 +277,7 @@ impl Scheduler {
             Some(next) => next,
             None => match self.run_queue.pop() {
                 Some(task) => task,
-                None => return Err(solvent::Error::ENOENT),
+                None => return Err(sv_call::Error::ENOENT),
             },
         };
         log::trace!("Switching to {:?}, P{}", next.tid.raw(), PREEMPT.raw());
@@ -303,7 +303,7 @@ impl Scheduler {
         mem::forget(pree);
         unsafe { task::ctx::switch_ctx(old, new) };
         ret.transpose()
-            .and_then(|res| res.ok_or(solvent::Error::ESRCH))
+            .and_then(|res| res.ok_or(sv_call::Error::ESRCH))
     }
 }
 
