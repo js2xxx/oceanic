@@ -29,7 +29,7 @@ impl Dist {
 
         {
             // Build h2o_boot
-            log::info!("Building h2o_boot");
+            println!("Building h2o_boot");
 
             let mut cmd = Command::new(&cargo);
             let cmd = cmd.current_dir(src_root.join(H2O_BOOT)).arg("build");
@@ -39,18 +39,20 @@ impl Dist {
             cmd.status()?.exit_ok()?;
 
             // Copy the binary to target.
-            let src = if self.release {
+            let bin_dir = if self.release {
                 Path::new(&target_dir).join("x86_64-unknown-uefi/release")
             } else {
                 Path::new(&target_dir).join("x86_64-unknown-uefi/debug")
-            }
-            .join("h2o_boot.efi");
-            fs::copy(src, Path::new(&target_dir).join("BootX64.efi"))?;
+            };
+            fs::copy(
+                bin_dir.join("h2o_boot.efi"),
+                Path::new(&target_dir).join("BootX64.efi"),
+            )?;
         }
 
         // Build h2o_kernel
         {
-            log::info!("Building h2o_kernel");
+            println!("Building h2o_kernel");
 
             let mut cmd = Command::new(&cargo);
             let cmd = cmd.current_dir(src_root.join(H2O_KERNEL)).arg("build");
@@ -60,18 +62,17 @@ impl Dist {
             cmd.status()?.exit_ok()?;
 
             // Copy the binary to target.
-            let src = if self.release {
+            let bin_dir = if self.release {
                 Path::new(&target_dir).join("x86_64-h2o-kernel/release")
             } else {
                 Path::new(&target_dir).join("x86_64-h2o-kernel/debug")
-            }
-            .join("h2o");
-            fs::copy(src, Path::new(&target_dir).join("KERNEL"))?;
+            };
+            fs::copy(bin_dir.join("h2o"), Path::new(&target_dir).join("KERNEL"))?;
         }
 
         // Build h2o_tinit
         {
-            log::info!("Building h2o_tinit");
+            println!("Building h2o_tinit");
 
             let mut cmd = Command::new(&cargo);
             let cmd = cmd.current_dir(src_root.join(H2O_TINIT)).arg("build");
@@ -81,17 +82,16 @@ impl Dist {
             cmd.status()?.exit_ok()?;
 
             // Copy the binary to target.
-            let src = if self.release {
+            let bin_dir = if self.release {
                 Path::new(&target_dir).join("x86_64-unknown-h2o/release")
             } else {
                 Path::new(&target_dir).join("x86_64-unknown-h2o/debug")
-            }
-            .join("tinit");
-            fs::copy(src, Path::new(&target_dir).join("TINIT"))?;
+            };
+            fs::copy(bin_dir.join("tinit"), Path::new(&target_dir).join("TINIT"))?;
         }
 
         // Generate debug symbols
-        log::info!("Generating debug symbols");
+        println!("Generating debug symbols");
         Command::new("sh")
             .current_dir(src_root)
             .arg("scripts/gendbg.sh")
@@ -101,7 +101,7 @@ impl Dist {
         match &self.ty {
             Type::Iso => {
                 // Generate img
-                log::info!("Generating a hard disk image file");
+                println!("Generating a hard disk image file");
                 Command::new("sh")
                     .current_dir(src_root)
                     .arg("scripts/genimg.sh")

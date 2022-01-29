@@ -32,10 +32,10 @@ pub unsafe fn init() -> solvent::Result<LAddr> {
 
 #[no_mangle]
 unsafe extern "C" fn hdl_syscall(frame: *const Frame) {
-    let arg = (*frame).syscall_args();
+    let (num, args) = (*frame).syscall_args();
 
     archop::resume_intr(None);
-    let res = crate::syscall::handler(&arg);
+    let res = crate::syscall::handler(num, &args);
     archop::pause_intr();
 
     let _ = crate::sched::SCHED.with_current(|cur| {

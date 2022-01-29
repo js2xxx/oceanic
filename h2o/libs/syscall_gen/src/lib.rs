@@ -43,18 +43,18 @@ pub fn syscall_wrapper(input: TokenStream) -> TokenStream {
     let ident = parse_macro_input!(input as Ident);
     let wrapper_ident = format_ident!("wrapper_{}", ident);
     let token = quote! {
-          {
-                extern "C" {
-                      fn #wrapper_ident (
-                            a: usize,
-                            b: usize,
-                            c: usize,
-                            d: usize,
-                            e: usize,
-                      ) -> usize;
-                }
-                #wrapper_ident
-          }
+        {
+            extern "C" {
+                fn #wrapper_ident (
+                    a: usize,
+                    b: usize,
+                    c: usize,
+                    d: usize,
+                    e: usize,
+                ) -> usize;
+            }
+            #wrapper_ident
+        }
     };
     token.into()
 }

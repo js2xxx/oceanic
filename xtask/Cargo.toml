@@ -4,9 +4,16 @@ license = "MIT OR Apache-2.0"
 name = "xtask"
 version = "0.1.0"
 
+[[bin]]
+name = "xtask"
+path = "src/main.rs"
+
+[lib]
+name = "xtask"
+path = "src/lib.rs"
+
 [dependencies]
-bindgen = "0.59"
 cc = "1.0"
-env_logger = "0.9"
-log = "0.4"
+quote = "1.0"
 structopt = "0.3"
+syn = {version = "1.0", features = ["full"]}

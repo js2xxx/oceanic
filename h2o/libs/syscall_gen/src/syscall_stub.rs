@@ -70,21 +70,20 @@ impl ToTokens for SyscallStub {
         let const_ident = format_ident!("FN_{}", upper);
 
         let out_fn: ItemFn = parse_quote! {
-              #[cfg(feature = "call")]
-              #vis #unsafety fn #ident (#args) -> crate::Result<#ty> {
-                    let arg = crate::Arguments {
-                          fn_num: #num,
-                          args: [#args_into],
-                    };
-                    let ret = unsafe { crate::call::raw::syscall(&arg) };
-                    ret.map(|val| <#ty as crate::SerdeReg>::decode(val))
-              }
-
+            #[cfg(feature = "call")]
+            #vis #unsafety fn #ident (#args) -> crate::Result<#ty> {
+                let arg = crate::Arguments {
+                    fn_num: #num,
+                    args: [#args_into],
+                };
+                let ret = unsafe { crate::call::raw::syscall(&arg) };
+                ret.map(|val| <#ty as crate::SerdeReg>::decode(val))
+            }
         };
         out_fn.to_tokens(tokens);
 
         let out_const: ItemConst = parse_quote! {
-              pub const #const_ident: usize = #num;
+            pub const #const_ident: usize = #num;
         };
         out_const.to_tokens(tokens);
     }

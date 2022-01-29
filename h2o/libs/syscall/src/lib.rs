@@ -16,22 +16,17 @@ pub mod task;
 
 pub use solvent_gen::*;
 
+#[cfg(feature = "call")]
+pub use self::call::*;
 pub use self::{
     call::{hdl::Handle, reg::*},
     error::*,
 };
 
-#[derive(Debug, Copy, Clone)]
-pub struct Arguments {
-    pub fn_num: usize,
-    pub args: [usize; 5],
-}
-
-pub type SyscallWrapper = unsafe extern "C" fn(usize, usize, usize, usize, usize) -> usize;
 
 #[cfg(feature = "call")]
 pub fn test() {
-    #[cfg(debug_assertions)]
+    // #[cfg(debug_assertions)]
     {
         let stack = task::test::test();
         ipc::test::test(stack);

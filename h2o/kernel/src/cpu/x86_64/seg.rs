@@ -150,8 +150,7 @@ pub fn alloc_pls() -> solvent::Result<NonNull<u8>> {
                 .expect("Failed to get the allocation layout")
                 .0,
         )
-        .map(NonNull::as_non_null_ptr)
-        .map_err(solvent::Error::from)?;
+        .map(NonNull::as_non_null_ptr)?;
     unsafe {
         let size = (&TBSS_START as *const u8).offset_from(&TDATA_START) as usize;
         base.as_ptr().copy_from_nonoverlapping(&TDATA_START, size);

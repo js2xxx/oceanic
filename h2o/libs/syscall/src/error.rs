@@ -93,7 +93,7 @@ macro_rules! declare_error {
 }
 
 impl Error {
-    declare_error!(INVALID, 0, "(Invalid value)");
+    declare_error!(OK, 0, "Success");
     declare_error!(EPERM, 1, "Operation not permitted");
     declare_error!(ENOENT, 2, "No such file or directory");
     declare_error!(ESRCH, 3, "No such process");

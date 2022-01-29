@@ -2,7 +2,7 @@ pub mod ctx;
 pub mod excep;
 
 #[cfg(feature = "call")]
-#[cfg(debug_assertions)]
+// #[cfg(debug_assertions)]
 pub mod test;
 
 use crate::Handle;

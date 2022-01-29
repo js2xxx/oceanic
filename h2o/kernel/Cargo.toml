@@ -42,3 +42,7 @@ raw-cpuid = "10"
 scopeguard = {version = "1.1", default-features = false}
 spin = {version = "0.9", features = ["use_ticket_mutex"]}
 static_assertions = "1.1"
+
+[build-dependencies]
+# Local crates
+xtask = { path = "../../xtask" }

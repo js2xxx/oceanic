@@ -11,7 +11,7 @@ pub(crate) fn check() -> Result<(), Box<dyn Error>> {
 
     {
         // Check h2o_boot
-        log::info!("Checking h2o_boot");
+        println!("Checking h2o_boot");
 
         Command::new(&cargo)
             .current_dir(src_root.join(H2O_BOOT))
@@ -22,7 +22,7 @@ pub(crate) fn check() -> Result<(), Box<dyn Error>> {
 
     {
         // Check h2o_kernel
-        log::info!("Building h2o_kernel");
+        println!("Building h2o_kernel");
 
         Command::new(&cargo)
             .current_dir(src_root.join(H2O_KERNEL))
@@ -33,7 +33,7 @@ pub(crate) fn check() -> Result<(), Box<dyn Error>> {
 
     // Build h2o_tinit
     {
-        log::info!("Checking h2o_tinit");
+        println!("Checking h2o_tinit");
 
         Command::new(&cargo)
             .current_dir(src_root.join(H2O_TINIT))

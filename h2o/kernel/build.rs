@@ -1,6 +1,10 @@
 #![feature(exit_status_error)]
 
-use std::{env, error::Error, path::Path};
+use std::{
+    env,
+    error::Error,
+    path::{Path, PathBuf},
+};
 
 #[cfg(target_arch = "x86_64")]
 fn asm_build(input: &str, output: &str, flags: &[&str]) -> Result<(), Box<dyn Error>> {
@@ -13,6 +17,16 @@ fn asm_build(input: &str, output: &str, flags: &[&str]) -> Result<(), Box<dyn Er
         .status()?
         .exit_ok()?;
 
+    Ok(())
+}
+
+fn gen_syscall() -> Result<(), Box<dyn Error>> {
+    let src_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    xtask::gen::gen_syscall(
+        src_dir.join("src"),
+        src_dir.join("target/wrapper.rs"),
+        src_dir.join("../libs/syscall/target/call.rs"),
+    )?;
     Ok(())
 }
 
@@ -45,6 +59,8 @@ fn main() -> Result<(), Box<dyn Error>> {
             "cargo:rerun-if-changed={}/h2o.ld",
             env::var("CARGO_MANIFEST_DIR")?
         );
+
+        gen_syscall()?;
     }
 
     Ok(())

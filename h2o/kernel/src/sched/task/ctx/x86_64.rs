@@ -107,17 +107,18 @@ impl Frame {
         self.rsi = entry.args[1];
     }
 
-    pub fn syscall_args(&self) -> solvent::Arguments {
-        solvent::Arguments {
-            fn_num: self.rax as usize,
-            args: [
+    #[inline]
+    pub fn syscall_args(&self) -> (usize, [usize; 5]) {
+        (
+            self.rax as usize,
+            [
                 self.rdi as usize,
                 self.rsi as usize,
                 self.rdx as usize,
                 self.r8 as usize,
                 self.r9 as usize,
             ],
-        }
+        )
     }
 
     #[inline]

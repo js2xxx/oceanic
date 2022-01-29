@@ -1,2 +1,8 @@
 [workspace]
-members = ["h2o/boot", "h2o/kernel", "h2o/libs/*", "h2o/tinit", "xtask"]
+members = [
+  "h2o/boot",
+  "h2o/kernel",
+  "h2o/libs/*",
+  "h2o/tinit",
+  "xtask",
+]

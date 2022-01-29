@@ -137,7 +137,7 @@ mod syscall {
     }
 
     #[syscall]
-    fn intr_drop(hdl: Handle) -> solvent::Result {
+    fn intr_drop(hdl: Handle) -> Result {
         hdl.check_null()?;
         SCHED.with_current(|cur| {
             let intr = cur.tid().handles().remove::<Box<Interrupt>>(hdl)?;
