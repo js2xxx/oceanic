@@ -7,6 +7,7 @@ use sv_call::SerdeReg;
 
 use crate::sched::wait::WaitObject;
 
+#[derive(Debug)]
 pub struct Event {
     wo: WaitObject,
     wake_all: bool,

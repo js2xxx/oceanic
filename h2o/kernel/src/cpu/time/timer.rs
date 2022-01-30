@@ -10,23 +10,33 @@ use canary::Canary;
 use super::Instant;
 use crate::{
     cpu::Lazy,
-    sched::{deque::Worker, ipc::Arsc, task},
+    sched::{
+        deque::Worker,
+        ipc::{Arsc, Event},
+        task,
+    },
 };
 
 #[thread_local]
 static TIMER_QUEUE: Lazy<Worker<Arsc<Timer>>> = Lazy::new(Worker::new_fifo);
 
-type CallbackFn = fn(Arsc<Timer>, Instant, NonNull<task::Blocked>);
+#[derive(Debug, Copy, Clone)]
+pub enum CallbackArg {
+    Task(NonNull<task::Blocked>),
+    Event(NonNull<Event>),
+}
+
+type CallbackFn = fn(Arsc<Timer>, Instant, CallbackArg);
 
 #[derive(Debug)]
 pub struct Callback {
     func: CallbackFn,
-    arg: NonNull<task::Blocked>,
+    arg: CallbackArg,
     fired: AtomicBool,
 }
 
 impl Callback {
-    pub fn new(func: CallbackFn, arg: NonNull<task::Blocked>) -> Self {
+    pub fn new(func: CallbackFn, arg: CallbackArg) -> Self {
         Callback {
             fired: AtomicBool::new(false),
             func,
@@ -43,7 +53,7 @@ impl Callback {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Type {
     Oneshot,
-    Periodic,
+    // Periodic,
 }
 
 #[derive(Debug)]
@@ -76,8 +86,14 @@ impl Timer {
         Ok(ret)
     }
 
+    #[inline]
     pub fn ty(&self) -> Type {
         self.ty
+    }
+
+    #[inline]
+    pub fn duration(&self) -> Duration {
+        self.duration
     }
 
     pub fn cancel(&self) -> bool {
@@ -92,7 +108,7 @@ impl Timer {
         self.callback.fired.load(Acquire)
     }
 
-    pub fn callback_arg(&self) -> NonNull<task::Blocked> {
+    pub fn callback_arg(&self) -> CallbackArg {
         self.callback.arg
     }
 
@@ -106,11 +122,11 @@ impl Timer {
                             timer.callback.call(Arsc::clone(&timer), cur_time);
                         }
                     }
-                    Type::Periodic => {
-                        *timer.deadline.get() += timer.duration;
-                        timer.callback.call(Arsc::clone(&timer), cur_time);
-                        TIMER_QUEUE.push(timer);
-                    }
+                    // Type::Periodic => {
+                    //     *timer.deadline.get() += timer.duration;
+                    //     timer.callback.call(Arsc::clone(&timer), cur_time);
+                    //     TIMER_QUEUE.push(timer);
+                    // }
                 }
             } else {
                 TIMER_QUEUE.push(timer);

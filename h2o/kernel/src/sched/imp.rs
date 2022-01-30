@@ -10,7 +10,7 @@ use deque::{Injector, Steal, Worker};
 
 use super::{ipc::Arsc, task, wait::WaitObject};
 use crate::cpu::{
-    time::{Instant, Timer, TimerCallback, TimerType},
+    time::{CallbackArg, Instant, Timer, TimerCallback, TimerType},
     Lazy,
 };
 
@@ -121,7 +121,7 @@ impl Scheduler {
             let timer = Timer::activate(
                 TimerType::Oneshot,
                 duration,
-                TimerCallback::new(block_callback, blocked),
+                TimerCallback::new(block_callback, CallbackArg::Task(blocked)),
             )?;
             if let Some(wo) = wo {
                 wo.wait_queue.push(Arsc::clone(&timer));
@@ -318,9 +318,14 @@ fn select_cpu(
     }
 }
 
-fn block_callback(_: Arsc<Timer>, _: Instant, arg: NonNull<task::Blocked>) {
-    let blocked = unsafe { Box::from_raw(arg.as_ptr()) };
-    SCHED.unblock(Box::into_inner(blocked));
+fn block_callback(_: Arsc<Timer>, _: Instant, arg: CallbackArg) {
+    match arg {
+        CallbackArg::Task(arg) => {
+            let blocked = unsafe { Box::from_raw(arg.as_ptr()) };
+            SCHED.unblock(Box::into_inner(blocked));
+        }
+        CallbackArg::Event(_) => unreachable!("Non-task had been blocked"),
+    }
 }
 
 /// # Safety

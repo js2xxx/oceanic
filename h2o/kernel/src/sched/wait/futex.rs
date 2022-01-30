@@ -45,13 +45,12 @@ impl Futex {
     fn requeue(&self, other: &Self, num: usize) -> Result<usize> {
         let mut rem = num;
         while rem > 0 {
-            match self.wo.wait_queue.steal() {
-                crate::sched::deque::Steal::Empty => break,
-                crate::sched::deque::Steal::Success(task) => {
+            match self.wo.wait_queue.pop() {
+                None => break,
+                Some(task) => {
                     other.wo.wait_queue.push(task);
                     rem -= 1;
                 }
-                crate::sched::deque::Steal::Retry => {}
             }
         }
         Ok(num - rem)
