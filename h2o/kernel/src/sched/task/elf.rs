@@ -115,7 +115,6 @@ pub fn from_elf(
             }
         })?;
 
-
     let space = super::Space::new(Type::User);
     let init_chan = unsafe { space.handles().insert_ref(init_chan) }?;
 

@@ -1,39 +1,37 @@
 use core::{hash::BuildHasherDefault, intrinsics, time::Duration};
 
-use archop::Azy;
 use collection_ex::{CHashMap, FnvHasher};
-use paging::PAddr;
 use sv_call::*;
 
 use super::WaitObject;
 
 type BH = BuildHasherDefault<FnvHasher>;
-type FutexRef<'a> = collection_ex::CHashMapReadGuard<'a, PAddr, Futex, BH>;
-static FUTEX: Azy<CHashMap<PAddr, Futex, BH>> = Azy::new(|| CHashMap::new(BH::default()));
+pub type FutexKey = crate::syscall::UserPtr<crate::syscall::In, u64>;
+pub type FutexRef<'a> = collection_ex::CHashMapReadGuard<'a, FutexKey, Futex, BH>;
+pub type Futexes = CHashMap<FutexKey, Futex, BH>;
 
-struct Futex {
-    addr: PAddr,
+pub struct Futex {
+    key: FutexKey,
     wo: WaitObject,
 }
 
 impl Futex {
     #[inline]
-    fn get_or_insert<'a>(addr: PAddr) -> FutexRef<'a> {
-        FUTEX
-            .get_or_insert(
-                addr,
-                Futex {
-                    addr,
-                    wo: WaitObject::new(),
-                },
-            )
-            .downgrade()
+    pub fn new(key: FutexKey) -> Self {
+        Futex {
+            key,
+            wo: WaitObject::new(),
+        }
     }
 
-    fn wait(&self, val: u64, timeout: Duration) -> Result<bool> {
-        let ptr = self.addr.to_laddr(minfo::ID_OFFSET).cast::<u64>();
+    pub fn is_empty(&self) -> bool {
+        self.wo.wait_queue.is_empty()
+    }
+
+    fn wait<T>(&self, guard: T, val: u64, timeout: Duration) -> Result<bool> {
+        let ptr = self.key.as_ptr();
         if unsafe { intrinsics::atomic_load(ptr) } == val {
-            Ok(self.wo.wait((), timeout, "Futex::wait"))
+            Ok(self.wo.wait(guard, timeout, "Futex::wait"))
         } else {
             Err(Error::EINVAL)
         }
@@ -61,8 +59,6 @@ impl Futex {
 }
 
 mod syscall {
-    use core::ptr::NonNull;
-
     use sv_call::*;
 
     use super::*;
@@ -73,23 +69,23 @@ mod syscall {
 
     #[syscall]
     fn futex_wait(ptr: UserPtr<In, u64>, expected: u64, timeout_us: u64) -> Result<bool> {
-        ptr.check()?;
+        let _ = unsafe { ptr.read() }?;
         let timeout = if timeout_us == u64::MAX {
             Duration::MAX
         } else {
             Duration::from_micros(timeout_us)
         };
 
-        let ptr = unsafe { NonNull::new_unchecked(ptr.as_ptr()) };
-        let addr = SCHED.with_current(|cur| cur.space.mem().get(ptr.cast()).map_err(Into::into))?;
-
-        let _pree = PREEMPT.lock();
-        let futex = Futex::get_or_insert(addr);
-        let ret = futex.wait(expected, timeout);
+        let pree = PREEMPT.lock();
+        let futex = unsafe { (*SCHED.current()).as_ref().unwrap().space.futex(ptr) };
+        let ret = futex.wait(pree, expected, timeout);
 
         if futex.wo.wait_queue.is_empty() {
             drop(futex);
-            let _ = FUTEX.remove_if(&addr, |futex| futex.wo.wait_queue.is_empty());
+            SCHED.with_current(|cur| {
+                unsafe { cur.space.try_drop_futex(ptr) };
+                Ok(())
+            })?;
         }
 
         ret
@@ -97,12 +93,8 @@ mod syscall {
 
     #[syscall]
     fn futex_wake(ptr: UserPtr<In, u64>, num: usize) -> Result<usize> {
-        ptr.check()?;
-
-        let ptr = unsafe { NonNull::new_unchecked(ptr.as_ptr()) };
-        let addr = SCHED.with_current(|cur| cur.space.mem().get(ptr.cast()).map_err(Into::into))?;
-
-        PREEMPT.scope(|| Futex::get_or_insert(addr).wake(num))
+        let _ = unsafe { ptr.read() }?;
+        SCHED.with_current(|cur| unsafe { cur.space.futex(ptr) }.wake(num))
     }
 
     #[syscall]
@@ -112,28 +104,13 @@ mod syscall {
         other: UserPtr<In, u64>,
         requeue_num: UserPtr<InOut, usize>,
     ) -> Result {
-        ptr.check()?;
-        other.check()?;
-        let (wake, requeue, ptr, other) = unsafe {
-            (
-                wake_num.r#in().read()?,
-                requeue_num.r#in().read()?,
-                NonNull::new_unchecked(ptr.as_ptr()),
-                NonNull::new_unchecked(other.as_ptr()),
-            )
-        };
-
-        let (addr, other) = SCHED.with_current(|cur| {
-            let space = &cur.space.mem();
-            space
-                .get(ptr.cast())
-                .and_then(|addr| space.get(other.cast()).map(|other| (addr, other)))
-                .map_err(Into::into)
-        })?;
+        let _ = unsafe { ptr.read() }?;
+        let _ = unsafe { other.read() }?;
+        let (wake, requeue) = unsafe { (wake_num.r#in().read()?, requeue_num.r#in().read()?) };
 
         let pree = PREEMPT.lock();
-        let futex = Futex::get_or_insert(addr);
-        let other = Futex::get_or_insert(other);
+        let futex = unsafe { (*SCHED.current()).as_ref().unwrap().space.futex(ptr) };
+        let other = unsafe { (*SCHED.current()).as_ref().unwrap().space.futex(other) };
 
         let wake = futex.wake(wake)?;
         let requeue = futex.requeue(&other, requeue)?;

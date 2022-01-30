@@ -5,7 +5,7 @@ mod queue;
 use alloc::boxed::Box;
 use core::time::Duration;
 
-pub use self::{cell::WaitCell, queue::WaitQueue};
+pub use self::{cell::WaitCell, futex::*, queue::WaitQueue};
 use super::{ipc::Arsc, *};
 use crate::cpu::time::Timer;
 

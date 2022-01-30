@@ -1,4 +1,4 @@
-use core::{fmt, marker::PhantomData, mem, mem::MaybeUninit, num::NonZeroU64};
+use core::{fmt, hash::Hash, marker::PhantomData, mem, mem::MaybeUninit, num::NonZeroU64};
 
 use sv_call::{Result, SerdeReg};
 
@@ -9,6 +9,20 @@ use crate::{mem::space::PageFaultErrCode, sched::SCHED};
 pub struct UserPtr<T: Type, D> {
     data: *mut D,
     _marker: PhantomData<T>,
+}
+
+impl<T: Type, D> PartialEq for UserPtr<T, D> {
+    #[inline]
+    fn eq(&self, other: &Self) -> bool {
+        self.data == other.data
+    }
+}
+
+impl<T: Type, D> Hash for UserPtr<T, D> {
+    #[inline]
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
+        self.data.hash(state);
+    }
 }
 
 impl<T: Type, D> UserPtr<T, D> {
@@ -198,8 +212,11 @@ fn check_ptr(ptr: *mut u8, size: usize, align: usize) -> Result<()> {
 }
 
 mod types {
+    #[derive(Copy, Clone)]
     pub enum In {}
+    #[derive(Copy, Clone)]
     pub enum Out {}
+    #[derive(Copy, Clone)]
     pub enum InOut {}
 
     pub trait Type {}
