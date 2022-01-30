@@ -10,6 +10,13 @@ bitflags::bitflags! {
     }
 }
 
+cfg_if::cfg_if! { if #[cfg(target_arch = "x86_64")] {
+
+pub const PAGE_SHIFT: usize = 12;
+pub const PAGE_SIZE: usize = 4096;
+
+} }
+
 pub struct MapInfo {
     pub addr: usize,
     pub map_addr: bool,

@@ -92,13 +92,13 @@ pub fn test(stack: (*mut u8, *mut u8, Handle)) {
             let mut p = rp(0, &mut hdl, &mut buf);
 
             chan_recv(init_chan, &mut p, u64::MAX).expect("Failed to receive the init packet");
-            assert_eq!(p.id, 200);
+            assert_eq!(p.id, CUSTOM_MSG_ID_END);
             for b in buf.iter_mut() {
                 *b += 5;
             }
             event_notify(hdl[0], u8::MAX).expect("Failed to notify the e in func");
             ::log::trace!("Responding");
-            p.id = 200;
+            p.id = CUSTOM_MSG_ID_END;
             chan_send(init_chan, &p).expect("Failed to send the response");
 
             ::log::trace!("Finished");
@@ -123,14 +123,14 @@ pub fn test(stack: (*mut u8, *mut u8, Handle)) {
         let mut hdl = [e];
 
         ::log::trace!("Sending the initial packet");
-        let mut p = rp(200, &mut hdl, &mut buf);
+        let mut p = rp(0, &mut hdl, &mut buf);
         let id = chan_csend(c1, &p).expect("Failed to send init packet");
-        assert_eq!(id, 200);
+        assert_eq!(id, CUSTOM_MSG_ID_END);
 
         p.id = 0;
         ::log::trace!("Receiving the response");
-        chan_crecv(c1, id, &mut p, u64::MAX).expect("Failed to receive the response");
-        assert_eq!(p.id, 200);
+        chan_crecv(c1, CUSTOM_MSG_ID_END, &mut p, u64::MAX).expect("Failed to receive the response");
+        assert_eq!(p.id, CUSTOM_MSG_ID_END);
         assert_eq!(buf, [6, 7, 8, 9, 10, 11, 12]);
 
         ::log::trace!("Finished");

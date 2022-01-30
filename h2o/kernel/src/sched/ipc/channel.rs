@@ -2,7 +2,11 @@ use alloc::{
     collections::BTreeMap,
     sync::{Arc, Weak},
 };
-use core::{mem, time::Duration};
+use core::{
+    mem,
+    sync::atomic::{AtomicUsize, Ordering::SeqCst},
+    time::Duration,
+};
 
 use bytes::Bytes;
 use spin::Mutex;
@@ -59,6 +63,7 @@ struct Caller {
 
 #[derive(Debug)]
 struct ChannelSide {
+    msg_id: AtomicUsize,
     msgs: WaitQueue<Packet>,
     callers: Mutex<BTreeMap<usize, Caller>>,
 }
@@ -67,6 +72,7 @@ impl Default for ChannelSide {
     #[inline]
     fn default() -> Self {
         ChannelSide {
+            msg_id: AtomicUsize::new(sv_call::ipc::CUSTOM_MSG_ID_END),
             msgs: WaitQueue::new(),
             callers: Mutex::new(BTreeMap::new()),
         }
@@ -139,15 +145,20 @@ impl Channel {
 
     fn get_packet(
         head: &mut Option<Packet>,
-        buffer_cap: usize,
-        handle_cap: usize,
+        buffer_cap: &mut usize,
+        handle_cap: &mut usize,
     ) -> sv_call::Result<Packet> {
         let packet = unsafe { head.as_mut().unwrap_unchecked() };
-        if packet.buffer().len() > buffer_cap || packet.object_count() > handle_cap {
+        let buffer_size = packet.buffer().len();
+        let handle_count = packet.object_count();
+        let ret = if buffer_size > *buffer_cap || handle_count > *handle_cap {
             Err(sv_call::Error::EBUFFER)
         } else {
             Ok(unsafe { head.take().unwrap_unchecked() })
-        }
+        };
+        *buffer_cap = buffer_size;
+        *handle_cap = handle_count;
+        ret
     }
 
     /// # Errors
@@ -156,8 +167,8 @@ impl Channel {
     pub fn receive(
         &self,
         timeout: Duration,
-        buffer_cap: usize,
-        handle_cap: usize,
+        buffer_cap: &mut usize,
+        handle_cap: &mut usize,
     ) -> sv_call::Result<Packet> {
         let _pree = PREEMPT.lock();
         let mut head = self.head.lock();
@@ -181,7 +192,18 @@ impl Channel {
                 if peer.msgs.len() >= MAX_QUEUE_SIZE {
                     Err(sv_call::Error::ENOSPC)
                 } else {
-                    let id = msg.id;
+                    let id = self
+                        .me
+                        .msg_id
+                        .fetch_update(SeqCst, SeqCst, |id| {
+                            Some(if id == usize::MAX {
+                                sv_call::ipc::CUSTOM_MSG_ID_END
+                            } else {
+                                id + 1
+                            })
+                        })
+                        .unwrap();
+                    msg.id = id;
                     self.me
                         .callers
                         .lock()
@@ -198,8 +220,8 @@ impl Channel {
         &self,
         id: usize,
         timeout: Duration,
-        buffer_cap: usize,
-        handle_cap: usize,
+        buffer_cap: &mut usize,
+        handle_cap: &mut usize,
     ) -> sv_call::Result<Packet> {
         let _pree = PREEMPT.lock();
         let mut callers = self.me.callers.lock();
@@ -227,7 +249,10 @@ impl Channel {
 mod syscall {
     use core::slice;
 
-    use sv_call::{ipc::RawPacket, *};
+    use sv_call::{
+        ipc::{RawPacket, MAX_BUFFER_SIZE, MAX_HANDLE_COUNT},
+        *,
+    };
 
     use super::*;
     use crate::syscall::{In, InOut, Out, UserPtr};
@@ -255,6 +280,9 @@ mod syscall {
         hdl.check_null()?;
 
         let packet = unsafe { packet.read()? };
+        if packet.buffer_size > MAX_BUFFER_SIZE || packet.handle_count >= MAX_HANDLE_COUNT {
+            return Err(Error::ENOMEM);
+        }
         UserPtr::<In, Handle>::new(packet.handles).check_slice(packet.handle_count)?;
         UserPtr::<In, u8>::new(packet.buffer).check_slice(packet.buffer_size)?;
 
@@ -280,7 +308,7 @@ mod syscall {
         recv: F,
     ) -> Result
     where
-        F: FnOnce(&Channel, Duration, usize, usize) -> Result<Packet>,
+        F: FnOnce(&Channel, Duration, usize, usize) -> (Result<Packet>, usize, usize),
     {
         hdl.check_null()?;
         let timeout = if timeout_us == u64::MAX {
@@ -302,7 +330,11 @@ mod syscall {
             let map = cur.tid().handles();
 
             let channel = map.get::<Channel>(hdl)?;
-            recv(channel, timeout, user_buffer.len(), user_handles.len()).map(|mut packet| {
+            let (res, buffer_size, handle_count) =
+                recv(channel, timeout, user_buffer.len(), user_handles.len());
+            user_packet.buffer_size = buffer_size;
+            user_packet.handle_count = handle_count;
+            res.map(|mut packet| {
                 map.receive(&mut packet.objects, user_handles);
                 packet
             })
@@ -328,8 +360,9 @@ mod syscall {
             hdl,
             packet_ptr,
             timeout_us,
-            |channel, timeout, buffer_cap, handle_cap| {
-                channel.receive(timeout, buffer_cap, handle_cap)
+            |channel, timeout, mut buffer_cap, mut handle_cap| {
+                let ret = channel.receive(timeout, &mut buffer_cap, &mut handle_cap);
+                (ret, buffer_cap, handle_cap)
             },
         )
     }
@@ -350,8 +383,9 @@ mod syscall {
             hdl,
             packet_ptr,
             timeout_us,
-            |channel, timeout, buffer_cap, handle_cap| {
-                channel.call_receive(id, timeout, buffer_cap, handle_cap)
+            |channel, timeout, mut buffer_cap, mut handle_cap| {
+                let ret = channel.call_receive(id, timeout, &mut buffer_cap, &mut handle_cap);
+                (ret, buffer_cap, handle_cap)
             },
         )
     }
