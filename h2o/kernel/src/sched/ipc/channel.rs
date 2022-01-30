@@ -263,7 +263,7 @@ mod syscall {
         p2.check()?;
         SCHED.with_current(|cur| {
             let (c1, c2) = Channel::new();
-            let map = cur.tid().handles();
+            let map = cur.space().handles();
             unsafe {
                 let h1 = map.insert_unchecked(c1, true, false)?;
                 let h2 = map.insert_unchecked(c2, true, false)?;
@@ -293,7 +293,7 @@ mod syscall {
         let buffer = unsafe { slice::from_raw_parts(packet.buffer, packet.buffer_size) };
 
         SCHED.with_current(|cur| {
-            let map = cur.tid().handles();
+            let map = cur.space().handles();
             let channel = map.get::<Channel>(hdl)?;
             let objects = unsafe { map.send(handles, channel) }?;
             let mut packet = Packet::new(packet.id, objects, buffer);
@@ -327,7 +327,7 @@ mod syscall {
             unsafe { slice::from_raw_parts_mut(user_packet.buffer, user_packet.buffer_cap) };
 
         let packet = SCHED.with_current(|cur| {
-            let map = cur.tid().handles();
+            let map = cur.space().handles();
 
             let channel = map.get::<Channel>(hdl)?;
             let (res, buffer_size, handle_count) =

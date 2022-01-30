@@ -81,9 +81,9 @@ mod syscall {
         size: T,
     ) -> Result<Handle> {
         SCHED.with_current(|cur| {
-            let res = cur.tid().handles().get::<Arc<Resource<T>>>(hdl)?;
+            let res = cur.space().handles().get::<Arc<Resource<T>>>(hdl)?;
             let sub = res.allocate(base..(base + size)).ok_or(Error::ENOMEM)?;
-            cur.tid().handles().insert(sub)
+            cur.space().handles().insert(sub)
         })
     }
 

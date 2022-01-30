@@ -7,7 +7,7 @@ use sv_call::{mem::MapInfo, *};
 use super::space;
 use crate::{
     dev::Resource,
-    sched::{PREEMPT, SCHED},
+    sched::{task::Space as TaskSpace, PREEMPT, SCHED},
     syscall::{In, UserPtr},
 };
 
@@ -31,15 +31,7 @@ fn phys_alloc(size: usize, align: usize, flags: u32) -> Result<Handle> {
     let layout = check_layout(size, align)?;
     let flags = check_flags(flags)?;
     let phys = PREEMPT.scope(|| space::Phys::allocate(layout, flags))?;
-    SCHED.with_current(|cur| cur.tid().handles().insert(phys))
-}
-
-#[syscall]
-fn mem_new() -> Result<Handle> {
-    SCHED.with_current(|cur| {
-        let space = space::Space::new(cur.tid().ty());
-        cur.tid().handles().insert(space)
-    })
+    SCHED.with_current(|cur| cur.space().handles().insert(phys))
 }
 
 #[syscall]
@@ -47,7 +39,7 @@ fn mem_map(space: Handle, mi: UserPtr<In, MapInfo>) -> Result<*mut u8> {
     let mi = unsafe { mi.read() }?;
     let flags = check_flags(mi.flags)?;
     let phys = SCHED.with_current(|cur| {
-        cur.tid()
+        cur.space()
             .handles()
             .get::<Arc<space::Phys>>(mi.phys)
             .map(|obj| Arc::clone(obj))
@@ -69,7 +61,7 @@ fn mem_map(space: Handle, mi: UserPtr<In, MapInfo>) -> Result<*mut u8> {
     if space == Handle::NULL {
         space::with_current(op)
     } else {
-        SCHED.with_current(|cur| op(cur.tid().handles().get::<Arc<space::Space>>(space)?))
+        SCHED.with_current(|cur| op(cur.space().handles().get::<Arc<TaskSpace>>(space)?.mem()))
     }
 }
 
@@ -83,9 +75,10 @@ fn mem_reprot(space: Handle, ptr: *mut u8, len: usize, flags: u32) -> Result {
             space::with_current(|cur| cur.reprotect(ptr, flags))
         } else {
             SCHED.with_current(|cur| {
-                cur.tid()
+                cur.space()
                     .handles()
-                    .get::<Arc<space::Space>>(space)?
+                    .get::<Arc<TaskSpace>>(space)?
+                    .mem()
                     .reprotect(ptr, flags)
             })
         }
@@ -100,9 +93,10 @@ fn mem_unmap(space: Handle, ptr: *mut u8) -> Result {
             space::with_current(|cur| cur.unmap(ptr))
         } else {
             SCHED.with_current(|cur| {
-                cur.tid()
+                cur.space()
                     .handles()
-                    .get::<Arc<space::Space>>(space)?
+                    .get::<Arc<TaskSpace>>(space)?
+                    .mem()
                     .unmap(ptr)
             })
         }
@@ -121,7 +115,7 @@ fn phys_acq(res: Handle, addr: usize, size: usize, align: usize, flags: u32) -> 
     let flags = check_flags(flags)?;
 
     SCHED.with_current(|cur| {
-        let res = cur.tid().handles().get::<Arc<Resource<usize>>>(res)?;
+        let res = cur.space().handles().get::<Arc<Resource<usize>>>(res)?;
         if res.magic_eq(super::mem_resource())
             && res.range().start <= addr
             && addr + size <= res.range().end
@@ -129,7 +123,7 @@ fn phys_acq(res: Handle, addr: usize, size: usize, align: usize, flags: u32) -> 
             let align = paging::PAGE_LAYOUT.align();
             let layout = unsafe { Layout::from_size_align(size, align) }?;
             let phys = space::Phys::new(paging::PAddr::new(addr), layout, flags);
-            cur.tid().handles().insert(phys)
+            cur.space().handles().insert(phys)
         } else {
             Err(Error::EPERM)
         }

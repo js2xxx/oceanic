@@ -5,6 +5,7 @@ pub mod hdl;
 mod idle;
 mod sig;
 mod sm;
+mod space;
 mod syscall;
 mod tid;
 
@@ -12,17 +13,13 @@ use alloc::{format, string::String, sync::Arc};
 use core::any::Any;
 
 use paging::LAddr;
-use sv_call::Handle;
 
 #[cfg(target_arch = "x86_64")]
 pub use self::ctx::arch::{DEFAULT_STACK_LAYOUT, DEFAULT_STACK_SIZE};
 use self::elf::from_elf;
-pub use self::{excep::dispatch_exception, sig::Signal, sm::*, tid::Tid};
+pub use self::{excep::dispatch_exception, sig::Signal, sm::*, space::Space, tid::Tid};
 use super::{ipc::Channel, PREEMPT};
-use crate::{
-    cpu::{CpuMask, Lazy},
-    mem::space::Space,
-};
+use crate::cpu::{CpuMask, Lazy};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Type {
@@ -70,9 +67,9 @@ fn exec_inner(
     ty: Option<Type>,
     affinity: Option<CpuMask>,
     space: Arc<Space>,
-    init_chan: hdl::Ref<dyn Any>,
+    init_chan: sv_call::Handle,
     s: &Starter,
-) -> sv_call::Result<(Init, Handle)> {
+) -> sv_call::Result<Init> {
     let ty = Type::pass(ty, cur.ty())?;
     let ti = TaskInfo::builder()
         .from(Some(cur.clone()))
@@ -81,8 +78,6 @@ fn exec_inner(
         .affinity(affinity.unwrap_or_else(|| cur.affinity()))
         .build()
         .unwrap();
-
-    let init_chan = unsafe { ti.handles().insert_ref(init_chan) }?;
 
     let tid = tid::allocate(ti).map_err(|_| sv_call::Error::EBUSY)?;
 
@@ -94,22 +89,24 @@ fn exec_inner(
     let kstack = ctx::Kstack::new(Some(entry), ty);
     let ext_frame = ctx::ExtFrame::zeroed();
 
-    let handle = cur.handles().insert(tid.clone())?;
-
     let init = Init::new(tid, space, kstack, ext_frame);
 
-    Ok((init, handle))
+    Ok(init)
 }
 
 #[inline]
 fn exec(
     name: Option<String>,
     space: Arc<Space>,
-    init_chan: hdl::Ref<dyn Any>,
+    init_chan: sv_call::Handle,
     starter: &Starter,
-) -> sv_call::Result<(Init, Handle)> {
+) -> sv_call::Result<(Init, sv_call::Handle)> {
     let cur = super::SCHED.with_current(|cur| Ok(cur.tid.clone()))?;
-    exec_inner(cur, name, None, None, space, init_chan, starter)
+    let init = exec_inner(cur, name, None, None, space, init_chan, starter)?;
+    super::SCHED.with_current(|cur| {
+        let handle = cur.space().handles().insert(init.tid().clone())?;
+        Ok((init, handle))
+    })
 }
 
 #[inline]
@@ -130,9 +127,9 @@ fn create(name: Option<String>, space: Arc<Space>) -> sv_call::Result<(Init, sv_
     let kstack = ctx::Kstack::new(None, ty);
     let ext_frame = ctx::ExtFrame::zeroed();
 
-    let handle = cur.handles().insert(tid.clone())?;
-
     let init = Init::new(tid, space, kstack, ext_frame);
 
+    let handle =
+        super::SCHED.with_current(|cur| cur.space().handles().insert(init.tid().clone()))?;
     Ok((init, handle))
 }

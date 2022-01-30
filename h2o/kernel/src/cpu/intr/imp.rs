@@ -103,7 +103,7 @@ mod syscall {
         };
 
         let intr = SCHED.with_current(|cur| {
-            let handles = cur.tid().handles();
+            let handles = cur.space().handles();
             let res = handles.get::<Arc<Resource<u32>>>(res)?;
             let intr = Interrupt::new(res, gsi, level_triggered)?;
             Box::try_new(intr).map_err(Error::from)
@@ -116,7 +116,7 @@ mod syscall {
         )?;
         MANAGER.mask(gsi, false)?;
 
-        SCHED.with_current(|cur| cur.tid().handles().insert(intr))
+        SCHED.with_current(|cur| cur.space().handles().insert(intr))
     }
 
     #[syscall]
@@ -129,7 +129,7 @@ mod syscall {
             Duration::from_micros(timeout_us)
         };
         SCHED.with_current(|cur| {
-            let intr = cur.tid().handles().get::<Box<Interrupt>>(hdl)?;
+            let intr = cur.space().handles().get::<Box<Interrupt>>(hdl)?;
             let (t, ret) = intr.wait(timeout, "intr_wait");
             unsafe { last_time.write(t.raw()) }?;
             ret
@@ -140,7 +140,7 @@ mod syscall {
     fn intr_drop(hdl: Handle) -> Result {
         hdl.check_null()?;
         SCHED.with_current(|cur| {
-            let intr = cur.tid().handles().remove::<Box<Interrupt>>(hdl)?;
+            let intr = cur.space().handles().remove::<Box<Interrupt>>(hdl)?;
             let intr = intr.downcast_ref::<Box<Interrupt>>()?;
             MANAGER.register(intr.gsi, None)?;
             Ok(())

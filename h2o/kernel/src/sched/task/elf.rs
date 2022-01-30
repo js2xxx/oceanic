@@ -104,7 +104,7 @@ pub fn from_elf(
     name: String,
     affinity: CpuMask,
     init_chan: hdl::Ref<dyn Any>,
-) -> sv_call::Result<(Init, Handle)> {
+) -> sv_call::Result<Init> {
     let file = Elf::parse(image)
         .map_err(|_| sv_call::Error::EINVAL)
         .and_then(|file| {
@@ -115,17 +115,22 @@ pub fn from_elf(
             }
         })?;
 
-    let tid = crate::sched::SCHED.with_current(|cur| Ok(cur.tid.clone()))?;
-    let space = Space::new(Type::User);
-    let (entry, stack_size) = load_elf(&space, &file, image)?;
-    let stack = space.init_stack(stack_size)?;
+
+    let space = super::Space::new(Type::User);
+    let init_chan = unsafe { space.handles().insert_ref(init_chan) }?;
+
+    let (entry, stack_size) = load_elf(space.mem(), &file, image)?;
+    let stack = space.mem().init_stack(stack_size)?;
 
     let starter = super::Starter {
         entry,
         stack,
         arg: 0,
     };
-    super::exec_inner(
+
+    let tid = crate::sched::SCHED.with_current(|cur| Ok(cur.tid.clone()))?;
+
+    let ret = super::exec_inner(
         tid,
         Some(name),
         Some(Type::User),
@@ -133,5 +138,8 @@ pub fn from_elf(
         space,
         init_chan,
         &starter,
-    )
+    )?;
+
+    crate::sched::SCHED.with_current(|cur| cur.space().handles().insert(ret.tid().clone()))?;
+    Ok(ret)
 }

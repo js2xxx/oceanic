@@ -5,7 +5,6 @@ use bytes::{BufMut, BytesMut};
 use super::*;
 use crate::{
     cpu::Lazy,
-    mem::space,
     sched::{deque, task, SCHED},
 };
 
@@ -33,9 +32,9 @@ pub(super) static IDLE: Lazy<Tid> = Lazy::new(|| {
         .build()
         .unwrap();
 
-    let space = Arc::clone(unsafe { space::current() });
-
+    let space = super::Space::new_current();
     let stack = space
+        .mem()
         .init_stack(DEFAULT_STACK_SIZE)
         .expect("Failed to initialize stack for IDLE");
 
@@ -117,7 +116,7 @@ fn spawn_tinit() {
             crate::kargs().tinit_len,
         )
     };
-    let (tinit, ..) = task::from_elf(image, String::from("TINIT"), crate::cpu::all_mask(), chan)
+    let tinit = task::from_elf(image, String::from("TINIT"), crate::cpu::all_mask(), chan)
         .expect("Failed to initialize TINIT");
     SCHED.unblock(tinit);
 }

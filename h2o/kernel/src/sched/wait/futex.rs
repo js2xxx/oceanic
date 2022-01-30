@@ -81,7 +81,7 @@ mod syscall {
         };
 
         let ptr = unsafe { NonNull::new_unchecked(ptr.as_ptr()) };
-        let addr = SCHED.with_current(|cur| cur.space.get(ptr.cast()).map_err(Into::into))?;
+        let addr = SCHED.with_current(|cur| cur.space.mem().get(ptr.cast()).map_err(Into::into))?;
 
         let _pree = PREEMPT.lock();
         let futex = Futex::get_or_insert(addr);
@@ -100,7 +100,7 @@ mod syscall {
         ptr.check()?;
 
         let ptr = unsafe { NonNull::new_unchecked(ptr.as_ptr()) };
-        let addr = SCHED.with_current(|cur| cur.space.get(ptr.cast()).map_err(Into::into))?;
+        let addr = SCHED.with_current(|cur| cur.space.mem().get(ptr.cast()).map_err(Into::into))?;
 
         PREEMPT.scope(|| Futex::get_or_insert(addr).wake(num))
     }
@@ -124,7 +124,7 @@ mod syscall {
         };
 
         let (addr, other) = SCHED.with_current(|cur| {
-            let space = &cur.space;
+            let space = &cur.space.mem();
             space
                 .get(ptr.cast())
                 .and_then(|addr| space.get(other.cast()).map(|other| (addr, other)))

@@ -4,9 +4,6 @@ use crate::SerdeReg;
 #[repr(transparent)]
 pub struct Handle(u32);
 
-impl !Send for Handle {}
-impl !Sync for Handle {}
-
 impl Handle {
     pub const NULL: Handle = Handle(0);
 

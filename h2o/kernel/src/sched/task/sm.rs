@@ -9,10 +9,9 @@ use bitvec::prelude::BitVec;
 use derive_builder::Builder;
 use spin::Mutex;
 
-use super::{ctx, hdl::HandleMap, idle, sig::Signal, tid, Tid, Type};
+use super::{ctx, idle, sig::Signal, tid, Space, Tid, Type};
 use crate::{
     cpu::{time::Instant, CpuMask},
-    mem::space::Space,
     sched::{ipc::Channel, wait::WaitCell, PREEMPT},
 };
 
@@ -30,8 +29,6 @@ pub struct TaskInfo {
 
     affinity: CpuMask,
 
-    #[builder(setter(skip))]
-    handles: HandleMap,
     #[builder(setter(skip))]
     signal: Mutex<Option<Signal>>,
 }
@@ -60,11 +57,6 @@ impl TaskInfo {
     #[inline]
     pub fn affinity(&self) -> crate::cpu::CpuMask {
         self.affinity
-    }
-
-    #[inline]
-    pub fn handles(&self) -> &HandleMap {
-        &self.handles
     }
 
     #[inline]

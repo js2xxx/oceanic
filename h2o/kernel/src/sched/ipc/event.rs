@@ -70,7 +70,7 @@ mod syscall {
     #[syscall]
     fn event_new(wake_all: bool) -> Result<Handle> {
         let event = Event::new(wake_all);
-        SCHED.with_current(|cur| cur.tid().handles().insert(event))
+        SCHED.with_current(|cur| cur.space().handles().insert(event))
     }
 
     #[syscall]
@@ -82,7 +82,7 @@ mod syscall {
             Duration::from_micros(timeout_us)
         };
         SCHED.with_current(|cur| {
-            cur.tid()
+            cur.space()
                 .handles()
                 .get::<Event>(hdl)
                 .and_then(|event| event.wait(signal, timeout, "event_wait"))
@@ -93,7 +93,7 @@ mod syscall {
     fn event_notify(hdl: Handle, active: u8) -> Result<usize> {
         hdl.check_null()?;
         SCHED.with_current(|cur| {
-            cur.tid()
+            cur.space()
                 .handles()
                 .get::<Event>(hdl)
                 .and_then(|event| event.notify(active))
@@ -104,7 +104,7 @@ mod syscall {
     fn event_endn(hdl: Handle, masked: u8) -> Result {
         hdl.check_null()?;
         SCHED.with_current(|cur| {
-            cur.tid()
+            cur.space()
                 .handles()
                 .get::<Event>(hdl)
                 .map(|event| event.end_notify(masked))

@@ -3,7 +3,6 @@ use core::{hash::BuildHasherDefault, num::NonZeroU32, ops::Deref};
 
 use archop::Azy;
 use collection_ex::{CHashMap, FnvHasher, IdAllocator};
-use sv_call::Handle;
 
 use super::TaskInfo;
 use crate::sched::PREEMPT;
@@ -35,10 +34,6 @@ impl Tid {
     #[inline]
     pub fn raw(&self) -> u32 {
         self.raw.get()
-    }
-
-    pub fn child(&self, hdl: Handle) -> sv_call::Result<Tid> {
-        super::PREEMPT.scope(|| self.handles().get::<Tid>(hdl).map(|w| Tid::clone(w)))
     }
 }
 

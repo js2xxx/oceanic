@@ -193,14 +193,14 @@ mod syscall {
     #[syscall]
     fn obj_clone(hdl: Handle) -> Result<Handle> {
         hdl.check_null()?;
-        SCHED.with_current(|cur| cur.tid().handles().clone_ref(hdl))
+        SCHED.with_current(|cur| cur.space().handles().clone_ref(hdl))
     }
 
     #[syscall]
     fn obj_drop(hdl: Handle) -> Result {
         hdl.check_null()?;
         SCHED
-            .with_current(|cur| unsafe { cur.tid().handles().remove_ref(hdl) })
+            .with_current(|cur| unsafe { cur.space().handles().remove_ref(hdl) })
             .map(|_| {})
     }
 }

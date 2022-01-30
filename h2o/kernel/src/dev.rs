@@ -48,7 +48,7 @@ mod syscall {
     #[syscall]
     fn pio_acq(res: Handle, base: u16, size: u16) -> Result {
         SCHED.with_current(|cur| {
-            let res = cur.tid().handles().get::<Arc<Resource<u16>>>(res)?;
+            let res = cur.space().handles().get::<Arc<Resource<u16>>>(res)?;
             if res.magic_eq(pio_resource())
                 && res.range().start <= base
                 && base + size <= res.range().end
@@ -68,7 +68,7 @@ mod syscall {
     #[syscall]
     fn pio_rel(res: Handle, base: u16, size: u16) -> Result {
         SCHED.with_current(|cur| {
-            let res = cur.tid().handles().get::<Arc<Resource<u16>>>(res)?;
+            let res = cur.space().handles().get::<Arc<Resource<u16>>>(res)?;
             if res.magic_eq(pio_resource())
                 && res.range().start <= base
                 && base + size <= res.range().end

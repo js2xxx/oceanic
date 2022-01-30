@@ -5,10 +5,9 @@ use paging::LAddr;
 use spin::Mutex;
 use sv_call::*;
 
-use super::{Blocked, RunningState, Signal, Tid};
+use super::{Blocked, RunningState, Signal, Space, Tid};
 use crate::{
     cpu::time::Instant,
-    mem::space,
     sched::{imp::MIN_TIME_GRAN, PREEMPT, SCHED},
     syscall::{In, InOut, Out, UserPtr},
 };
@@ -62,6 +61,14 @@ fn task_sleep(ms: u32) -> Result {
 }
 
 #[syscall]
+fn space_new() -> Result<Handle> {
+    SCHED.with_current(|cur| {
+        let space = Space::new(cur.tid().ty());
+        cur.space().handles().insert(space)
+    })
+}
+
+#[syscall]
 fn task_exec(ci: UserPtr<In, task::ExecInfo>) -> Result<Handle> {
     let ci = unsafe { ci.read()? };
     ci.init_chan.check_null()?;
@@ -83,19 +90,21 @@ fn task_exec(ci: UserPtr<In, task::ExecInfo>) -> Result<Handle> {
 
     let (init_chan, space) = SCHED.with_current(|cur| {
         let init_chan = cur
-            .tid()
+            .space()
             .handles()
             .remove::<crate::sched::ipc::Channel>(ci.init_chan)?;
         if ci.space == Handle::NULL {
             Ok((init_chan, Arc::clone(cur.space())))
         } else {
-            cur.tid()
+            cur.space()
                 .handles()
-                .remove::<Arc<space::Space>>(ci.space)?
-                .downcast_ref::<Arc<space::Space>>()
+                .remove::<Arc<Space>>(ci.space)?
+                .downcast_ref::<Arc<Space>>()
                 .map(|space| (init_chan, Arc::clone(space)))
         }
     })?;
+
+    let init_chan = PREEMPT.scope(|| unsafe { space.handles().insert_ref(init_chan) })?;
 
     UserPtr::<In, _>::new(ci.entry).check()?;
     UserPtr::<In, _>::new(ci.stack).check()?;
@@ -133,13 +142,13 @@ fn task_new(
     };
 
     let new_space = if space == Handle::NULL {
-        space::with_current(Arc::clone)
+        SCHED.with_current(|cur| Ok(Arc::clone(cur.space())))?
     } else {
         SCHED.with_current(|cur| {
-            cur.tid()
+            cur.space()
                 .handles()
-                .remove::<Arc<space::Space>>(space)?
-                .downcast_ref::<Arc<space::Space>>()
+                .remove::<Arc<Space>>(space)?
+                .downcast_ref::<Arc<Space>>()
                 .map(|space| Arc::clone(space))
         })?
     };
@@ -156,7 +165,7 @@ fn task_new(
         tid,
     };
     SCHED.with_current(|cur| {
-        let st_h = cur.tid().handles().insert(st_data)?;
+        let st_h = cur.space().handles().insert(st_data)?;
         unsafe { st.write(st_h) }
     })?;
 
@@ -168,7 +177,7 @@ fn task_join(hdl: Handle) -> Result<usize> {
     hdl.check_null()?;
 
     let child = SCHED.with_current(|cur| {
-        cur.tid
+        cur.space()
             .handles()
             .remove::<Tid>(hdl)
             .and_then(|w| w.downcast_ref::<Tid>().map(|w| Tid::clone(w)))
@@ -183,11 +192,11 @@ fn task_join(hdl: Handle) -> Result<usize> {
 fn task_ctl(hdl: Handle, op: u32, data: UserPtr<InOut, Handle>) -> Result {
     hdl.check_null()?;
 
-    let cur_tid = SCHED.with_current(|cur| Ok(cur.tid.clone()))?;
+    let cur = SCHED.with_current(|cur| Ok(Arc::clone(cur.space())))?;
 
     match op {
         task::TASK_CTL_KILL => {
-            let child = cur_tid.child(hdl)?;
+            let child = cur.child(hdl)?;
             child.with_signal(|sig| *sig = Some(Signal::Kill));
 
             Ok(())
@@ -195,7 +204,7 @@ fn task_ctl(hdl: Handle, op: u32, data: UserPtr<InOut, Handle>) -> Result {
         task::TASK_CTL_SUSPEND => {
             data.out().check()?;
 
-            let child = cur_tid.child(hdl)?;
+            let child = cur.child(hdl)?;
 
             let st = SuspendToken {
                 slot: Arc::new(Mutex::new(None)),
@@ -211,7 +220,7 @@ fn task_ctl(hdl: Handle, op: u32, data: UserPtr<InOut, Handle>) -> Result {
                 }
             })?;
 
-            let out = super::PREEMPT.scope(|| cur_tid.handles().insert(st))?;
+            let out = super::PREEMPT.scope(|| cur.handles().insert(st))?;
             unsafe { data.out().write(out)? };
 
             Ok(())
@@ -283,7 +292,7 @@ fn task_debug(hdl: Handle, op: u32, addr: usize, data: UserPtr<InOut, u8>, len: 
     data.check_slice(len)?;
 
     let slot = SCHED.with_current(|cur| {
-        cur.tid
+        cur.space()
             .handles()
             .get::<SuspendToken>(hdl)
             .map(|st| Arc::clone(&st.slot))
@@ -300,13 +309,13 @@ fn task_debug(hdl: Handle, op: u32, addr: usize, data: UserPtr<InOut, u8>, len: 
         task::TASK_DBG_READ_REG => read_regs(&task, addr, data.out(), len),
         task::TASK_DBG_WRITE_REG => write_regs(&mut task, addr, data.r#in(), len),
         task::TASK_DBG_READ_MEM => unsafe {
-            space::with(task.space(), |_| {
+            crate::mem::space::with(task.space().mem(), |_| {
                 let slice = slice::from_raw_parts(addr as *mut u8, len);
                 data.out().write_slice(slice)
             })
         },
         task::TASK_DBG_WRITE_MEM => unsafe {
-            space::with(task.space(), |_| {
+            crate::mem::space::with(task.space().mem(), |_| {
                 data.r#in().read_slice(addr as *mut u8, len)
             })
         },
@@ -315,7 +324,7 @@ fn task_debug(hdl: Handle, op: u32, addr: usize, data: UserPtr<InOut, u8>, len: 
                 Err(Error::EBUFFER)
             } else {
                 let hdl = SCHED.with_current(|cur| {
-                    create_excep_chan(&task).and_then(|chan| cur.tid.handles().insert(chan))
+                    create_excep_chan(&task).and_then(|chan| cur.space().handles().insert(chan))
                 })?;
 
                 unsafe { data.out().cast::<Handle>().write(hdl) }

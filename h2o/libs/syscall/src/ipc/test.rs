@@ -129,7 +129,8 @@ pub fn test(stack: (*mut u8, *mut u8, Handle)) {
 
         p.id = 0;
         ::log::trace!("Receiving the response");
-        chan_crecv(c1, CUSTOM_MSG_ID_END, &mut p, u64::MAX).expect("Failed to receive the response");
+        chan_crecv(c1, CUSTOM_MSG_ID_END, &mut p, u64::MAX)
+            .expect("Failed to receive the response");
         assert_eq!(p.id, CUSTOM_MSG_ID_END);
         assert_eq!(buf, [6, 7, 8, 9, 10, 11, 12]);
 
