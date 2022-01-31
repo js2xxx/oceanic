@@ -57,21 +57,20 @@ impl WaitObject {
         let mut cnt = 0;
         while cnt < num {
             match self.wait_queue.pop() {
-                Some(timer) => {
-                    if !timer.cancel() {
-                        match timer.callback_arg() {
-                            CallbackArg::Task(task) => {
-                                let blocked = unsafe { Box::from_raw(task.as_ptr()) };
-                                SCHED.unblock(Box::into_inner(blocked));
-                            }
-                            CallbackArg::Event(event) => {
-                                let event = unsafe { Arc::from_raw(event.as_ptr()) };
-                                event.notify(EVENT_SIG_ASYNC).unwrap();
-                            }
+                Some(timer) if !timer.cancel() => {
+                    match timer.callback_arg() {
+                        CallbackArg::Task(task) => {
+                            let blocked = unsafe { Box::from_raw(task.as_ptr()) };
+                            SCHED.unblock(Box::into_inner(blocked));
                         }
-                        cnt += 1;
+                        CallbackArg::Event(event) => {
+                            let event = unsafe { Arc::from_raw(event.as_ptr()) };
+                            event.notify(EVENT_SIG_ASYNC).unwrap();
+                        }
                     }
+                    cnt += 1;
                 }
+                Some(_) => {}
                 None => break,
             }
         }

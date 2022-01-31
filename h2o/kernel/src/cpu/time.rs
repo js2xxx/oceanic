@@ -87,6 +87,15 @@ pub fn delay(duration: Duration) {
     while instant.elapsed() < duration {}
 }
 
+#[inline]
+pub fn from_us(us: u64) -> Duration {
+    if us == u64::MAX {
+        Duration::MAX
+    } else {
+        Duration::from_micros(us)
+    }
+}
+
 impl core::fmt::Display for Instant {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         let ns = unsafe { self.raw() };
