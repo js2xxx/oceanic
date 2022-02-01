@@ -8,7 +8,7 @@ use sv_call::*;
 use super::{Blocked, RunningState, Signal, Space, Tid};
 use crate::{
     cpu::time::Instant,
-    sched::{imp::MIN_TIME_GRAN, PREEMPT, SCHED},
+    sched::{imp::MIN_TIME_GRAN, PREEMPT, SCHED, SIG_READ},
     syscall::{In, InOut, Out, UserPtr},
 };
 
@@ -28,7 +28,7 @@ impl SuspendToken {
 impl Drop for SuspendToken {
     fn drop(&mut self) {
         match super::PREEMPT.scope(|| self.slot.lock().take()) {
-            Some(task) => SCHED.unblock(task),
+            Some(task) => SCHED.unblock(task, true),
             None => self.tid.with_signal(|sig| {
                 if matches!(sig, Some(sig) if sig == &mut self.signal()) {
                     *sig = None;
@@ -116,7 +116,7 @@ fn task_exec(ci: UserPtr<In, task::ExecInfo>) -> Result<Handle> {
     };
     let (task, hdl) = super::exec(name, space, init_chan, &starter)?;
 
-    SCHED.unblock(task);
+    SCHED.unblock(task, true);
 
     Ok(hdl)
 }
@@ -176,16 +176,15 @@ fn task_new(
 fn task_join(hdl: Handle) -> Result<usize> {
     hdl.check_null()?;
 
-    let child = SCHED.with_current(|cur| {
-        cur.space()
-            .handles()
-            .remove::<Tid>(hdl)
-            .and_then(|w| w.downcast_ref::<Tid>().map(|w| Tid::clone(w)))
-    })?;
-    child
-        .ret_cell()
-        .take(Duration::MAX, "task_join")
-        .ok_or(Error::ETIME)
+    let obj = SCHED.with_current(|cur| cur.space().handles().remove::<Tid>(hdl))?;
+    let blocker = crate::sched::Blocker::new(obj.event(), false, SIG_READ);
+    blocker.wait((), Duration::MAX);
+    if !blocker.detach().0 {
+        return Err(Error::ETIME);
+    }
+
+    let child = obj.downcast_ref::<Tid>().map(|w| Tid::clone(w))?;
+    PREEMPT.scope(|| child.ret_cell().lock().ok_or(Error::ETIME))
 }
 
 #[syscall]

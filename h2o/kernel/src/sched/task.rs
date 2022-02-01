@@ -104,7 +104,8 @@ fn exec(
     let cur = super::SCHED.with_current(|cur| Ok(cur.tid.clone()))?;
     let init = exec_inner(cur, name, None, None, space, init_chan, starter)?;
     super::SCHED.with_current(|cur| {
-        let handle = cur.space().handles().insert(init.tid().clone())?;
+        let obj = hdl::Ref::new_event(init.tid().clone(), Arc::clone(init.tid().event()) as _);
+        let handle = unsafe { cur.space().handles().insert_ref(obj.coerce_unchecked()) }?;
         Ok((init, handle))
     })
 }
@@ -129,7 +130,9 @@ fn create(name: Option<String>, space: Arc<Space>) -> sv_call::Result<(Init, sv_
 
     let init = Init::new(tid, space, kstack, ext_frame);
 
-    let handle =
-        super::SCHED.with_current(|cur| cur.space().handles().insert(init.tid().clone()))?;
+    let handle = super::SCHED.with_current(|cur| {
+        let obj = hdl::Ref::new_event(init.tid().clone(), Arc::clone(init.tid().event()) as _);
+        unsafe { cur.space().handles().insert_ref(obj.coerce_unchecked()) }
+    })?;
     Ok((init, handle))
 }

@@ -50,7 +50,7 @@ pub(super) static IDLE: Lazy<Tid> = Lazy::new(|| {
     let tid = tid::allocate(ti).expect("Tid exhausted");
 
     let init = Init::new(tid.clone(), space, kstack, ctx::ExtFrame::zeroed());
-    crate::sched::SCHED.unblock(init);
+    crate::sched::SCHED.unblock(init, true);
 
     tid
 });
@@ -118,5 +118,5 @@ fn spawn_tinit() {
     };
     let tinit = task::from_elf(image, String::from("TINIT"), crate::cpu::all_mask(), chan)
         .expect("Failed to initialize TINIT");
-    SCHED.unblock(tinit);
+    SCHED.unblock(tinit, true);
 }

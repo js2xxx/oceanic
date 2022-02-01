@@ -1,14 +1,16 @@
 pub mod deque;
 pub mod epoch;
+pub mod waiter;
 
 use alloc::{boxed::Box, vec::Vec};
 use core::{assert_matches::assert_matches, cell::UnsafeCell, mem, ptr::NonNull, time::Duration};
 
 use archop::{Azy, PreemptState, PreemptStateGuard};
 use canary::Canary;
+use crossbeam_queue::SegQueue;
 use deque::{Injector, Steal, Worker};
 
-use super::{ipc::Arsc, task, wait::WaitObject};
+use super::{ipc::Arsc, task};
 use crate::cpu::{
     time::{CallbackArg, Instant, Timer, TimerCallback, TimerType},
     Lazy,
@@ -41,7 +43,7 @@ pub struct Scheduler {
 }
 
 impl Scheduler {
-    pub fn unblock(&self, task: impl task::IntoReady) {
+    pub fn unblock(&self, task: impl task::IntoReady, preempt: bool) {
         self.canary.assert();
 
         let time_slice = MIN_TIME_GRAN;
@@ -51,17 +53,17 @@ impl Scheduler {
 
         log::trace!("Unblocking task {:?}, P{}", task.tid.raw(), PREEMPT.raw());
         if cpu == self.cpu {
-            self.enqueue(task, PREEMPT.lock());
+            self.enqueue(task, PREEMPT.lock(), preempt);
         } else {
             MIGRATION_QUEUE[cpu].push(task);
             unsafe { crate::cpu::arch::apic::ipi::task_migrate(cpu) };
         }
     }
 
-    fn enqueue(&self, task: task::Ready, pree: PreemptStateGuard) {
+    fn enqueue(&self, task: task::Ready, pree: PreemptStateGuard, preempt: bool) {
         // SAFETY: We have `pree`, which means preemption is disabled.
         match unsafe { &*self.current.get() } {
-            Some(ref cur) if Self::should_preempt(cur, &task) => {
+            Some(ref cur) if preempt && Self::should_preempt(cur, &task) => {
                 log::trace!(
                     "Preempting to task {:?}, P{}",
                     task.tid.raw(),
@@ -101,7 +103,7 @@ impl Scheduler {
     pub fn block_current<T>(
         &self,
         guard: T,
-        wo: Option<&WaitObject>,
+        wq: Option<&SegQueue<Arsc<Timer>>>,
         duration: Duration,
         block_desc: &'static str,
     ) -> sv_call::Result<Arsc<Timer>> {
@@ -123,8 +125,8 @@ impl Scheduler {
                 duration,
                 TimerCallback::new(block_callback, blocked),
             )?;
-            if let Some(wo) = wo {
-                wo.wait_queue.push(Arsc::clone(&timer));
+            if let Some(wq) = wq {
+                wq.push(Arsc::clone(&timer));
             }
             drop(guard);
             Ok(timer)
@@ -320,7 +322,7 @@ fn select_cpu(
 
 fn block_callback(_: Arsc<Timer>, _: Instant, arg: CallbackArg) {
     let blocked = unsafe { Box::from_raw(arg.as_ptr()) };
-    SCHED.unblock(Box::into_inner(blocked));
+    SCHED.unblock(Box::into_inner(blocked), true);
 }
 
 /// # Safety

@@ -12,7 +12,7 @@ use spin::Mutex;
 use super::{ctx, idle, sig::Signal, tid, Space, Tid, Type};
 use crate::{
     cpu::{time::Instant, CpuMask},
-    sched::{ipc::Channel, wait::WaitCell, PREEMPT},
+    sched::{ipc::Channel, BasicEvent, Event, PREEMPT, SIG_READ},
 };
 
 #[derive(Debug, Builder)]
@@ -20,7 +20,9 @@ use crate::{
 pub struct TaskInfo {
     from: Option<Tid>,
     #[builder(setter(skip))]
-    ret_cell: Arc<WaitCell<usize>>,
+    ret_cell: Mutex<Option<usize>>,
+    #[builder(setter(skip))]
+    event: Arc<BasicEvent>,
     #[builder(setter(skip))]
     excep_chan: Arc<Mutex<Option<Channel>>>,
 
@@ -60,8 +62,13 @@ impl TaskInfo {
     }
 
     #[inline]
-    pub fn ret_cell(&self) -> &Arc<WaitCell<usize>> {
+    pub fn ret_cell(&self) -> &Mutex<Option<usize>> {
         &self.ret_cell
+    }
+
+    #[inline]
+    pub fn event(&self) -> &Arc<BasicEvent> {
+        &self.event
     }
 
     #[inline]
@@ -256,7 +263,8 @@ impl Ready {
 
     pub fn exit(this: Self, retval: usize) {
         tid::deallocate(&this.ctx.tid);
-        this.ctx.tid.ret_cell.replace(retval);
+        *this.ctx.tid.ret_cell.lock() = Some(retval);
+        this.ctx.tid.event.notify(0, SIG_READ);
         idle::CTX_DROPPER.push(this.ctx);
     }
 }

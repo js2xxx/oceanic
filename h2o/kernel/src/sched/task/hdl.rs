@@ -1,5 +1,6 @@
 mod node;
 
+use alloc::sync::Arc;
 use core::{
     any::Any,
     marker::{PhantomData, Unsize},
@@ -13,7 +14,7 @@ use spin::Mutex;
 use sv_call::Result;
 
 pub use self::node::{List, Ptr, Ref, MAX_HANDLE_COUNT};
-use crate::sched::{ipc::Channel, PREEMPT};
+use crate::sched::{ipc::Channel, Event, PREEMPT};
 
 #[bitfield]
 struct Value {
@@ -25,6 +26,7 @@ struct Value {
 pub struct Object<T: ?Sized> {
     send: bool,
     sync: bool,
+    event: Arc<dyn Event>,
     data: T,
 }
 

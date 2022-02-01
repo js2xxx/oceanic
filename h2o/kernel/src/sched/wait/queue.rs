@@ -43,7 +43,7 @@ impl<T> WaitQueue<T> {
 
     pub fn push(&self, data: T) {
         self.data.push(data);
-        self.wo.notify(1);
+        self.wo.notify(1, true);
     }
 }
 

@@ -13,7 +13,10 @@ use archop::Azy;
 use sv_call::Result;
 
 use super::Object;
-use crate::{mem::Arena, sched::PREEMPT};
+use crate::{
+    mem::Arena,
+    sched::{BasicEvent, Event, PREEMPT},
+};
 
 pub const MAX_HANDLE_COUNT: usize = 1 << 18;
 
@@ -40,7 +43,38 @@ impl<T: ?Sized> Ref<T> {
         T: Sized,
     {
         Ref {
-            obj: Arc::new(Object { send, sync, data }),
+            obj: Arc::new(Object {
+                send,
+                sync,
+                event: BasicEvent::new(0),
+                data,
+            }),
+            next: None,
+            prev: None,
+            _marker: PhantomPinned,
+        }
+    }
+
+    /// # Safety
+    ///
+    /// The caller must ensure that `T` is [`Send`] if `send` and [`Sync`] if
+    /// `sync`.
+    pub unsafe fn new_unchecked_event(
+        data: T,
+        send: bool,
+        sync: bool,
+        event: Arc<dyn Event>,
+    ) -> Self
+    where
+        T: Sized,
+    {
+        Ref {
+            obj: Arc::new(Object {
+                send,
+                sync,
+                event,
+                data,
+            }),
             next: None,
             prev: None,
             _marker: PhantomPinned,
@@ -69,6 +103,11 @@ impl<T: ?Sized> Ref<T> {
     pub unsafe fn deref_unchecked(&self) -> &T {
         &self.obj.data
     }
+
+    #[inline]
+    pub fn event(&self) -> &Arc<dyn Event> {
+        &self.obj.event
+    }
 }
 
 impl<T: ?Sized + Send> Ref<T> {
@@ -78,6 +117,14 @@ impl<T: ?Sized + Send> Ref<T> {
         T: Sized,
     {
         unsafe { Self::new_unchecked(data, true, false) }
+    }
+
+    #[inline]
+    pub fn new_event(data: T, event: Arc<dyn Event>) -> Self
+    where
+        T: Sized,
+    {
+        unsafe { Self::new_unchecked_event(data, true, false, event) }
     }
 
     #[inline]

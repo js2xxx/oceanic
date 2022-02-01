@@ -29,11 +29,11 @@ impl WaitObject {
 
     #[inline]
     pub fn wait<T>(&self, guard: T, timeout: Duration, block_desc: &'static str) -> bool {
-        let timer = SCHED.block_current(guard, Some(self), timeout, block_desc);
+        let timer = SCHED.block_current(guard, Some(&self.wait_queue), timeout, block_desc);
         timer.map_or(false, |timer| !timer.is_fired())
     }
 
-    pub fn notify(&self, num: usize) -> usize {
+    pub fn notify(&self, num: usize, preempt: bool) -> usize {
         let num = if num == 0 { usize::MAX } else { num };
 
         let mut cnt = 0;
@@ -41,7 +41,7 @@ impl WaitObject {
             match self.wait_queue.pop() {
                 Some(timer) if !timer.cancel() => {
                     let blocked = unsafe { Box::from_raw(timer.callback_arg().as_ptr()) };
-                    SCHED.unblock(Box::into_inner(blocked));
+                    SCHED.unblock(Box::into_inner(blocked), preempt);
                     cnt += 1;
                 }
                 Some(_) => {}
