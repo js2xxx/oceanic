@@ -1,3 +1,4 @@
+use alloc::collections::LinkedList;
 use core::{
     cell::UnsafeCell,
     ptr::NonNull,
@@ -5,26 +6,63 @@ use core::{
     time::Duration,
 };
 
-use canary::Canary;
-
 use super::Instant;
-use crate::{
-    cpu::Lazy,
-    sched::{
-        deque::Worker,
-        ipc::{Arsc, Event},
-        task,
-    },
-};
+use crate::sched::{ipc::Arsc, task, PREEMPT};
 
 #[thread_local]
-static TIMER_QUEUE: Lazy<Worker<Arsc<Timer>>> = Lazy::new(Worker::new_fifo);
+static TIMER_QUEUE: TimerQueue = TimerQueue::new();
 
-#[derive(Debug, Copy, Clone)]
-pub enum CallbackArg {
-    Task(NonNull<task::Blocked>),
-    Event(NonNull<Event>),
+struct TimerQueue {
+    inner: UnsafeCell<LinkedList<Arsc<Timer>>>,
 }
+
+impl TimerQueue {
+    const fn new() -> Self {
+        TimerQueue {
+            inner: UnsafeCell::new(LinkedList::new()),
+        }
+    }
+
+    fn push(&self, timer: Arsc<Timer>) {
+        let ddl = timer.deadline;
+        PREEMPT.scope(|| {
+            let queue = unsafe { &mut *self.inner.get() };
+            let mut cur = queue.cursor_front_mut();
+            loop {
+                match cur.current() {
+                    Some(t) if t.deadline >= ddl => {
+                        cur.insert_before(timer);
+                        break;
+                    }
+                    None => {
+                        cur.insert_before(timer);
+                        break;
+                    }
+                    Some(_) => cur.move_next(),
+                }
+            }
+        })
+    }
+
+    fn pop(&self, timer: &Arsc<Timer>) -> bool {
+        PREEMPT.scope(|| {
+            let queue = unsafe { &mut *self.inner.get() };
+            let mut cur = queue.cursor_front_mut();
+            loop {
+                match cur.current() {
+                    Some(t) if Arsc::ptr_eq(t, timer) => {
+                        cur.remove_current();
+                        break true;
+                    }
+                    Some(_) => cur.move_next(),
+                    None => break false,
+                }
+            }
+        })
+    }
+}
+
+pub type CallbackArg = NonNull<task::Blocked>;
 
 type CallbackFn = fn(Arsc<Timer>, Instant, CallbackArg);
 
@@ -58,11 +96,10 @@ pub enum Type {
 
 #[derive(Debug)]
 pub struct Timer {
-    canary: Canary<Timer>,
     ty: Type,
     callback: Callback,
     duration: Duration,
-    deadline: UnsafeCell<Instant>,
+    deadline: Instant,
     cancel: AtomicBool,
 }
 
@@ -73,11 +110,10 @@ impl Timer {
         callback: Callback,
     ) -> sv_call::Result<Arsc<Self>> {
         let ret = Arsc::try_new(Timer {
-            canary: Canary::new(),
             ty,
             callback,
             duration,
-            deadline: UnsafeCell::new(Instant::now() + duration),
+            deadline: Instant::now() + duration,
             cancel: AtomicBool::new(false),
         })?;
         if duration < Duration::MAX {
@@ -96,8 +132,10 @@ impl Timer {
         self.duration
     }
 
-    pub fn cancel(&self) -> bool {
-        self.cancel.swap(true, AcqRel)
+    pub fn cancel(self: &Arsc<Self>) -> bool {
+        let ret = self.cancel.swap(true, AcqRel);
+        TIMER_QUEUE.pop(self);
+        ret
     }
 
     pub fn is_canceled(&self) -> bool {
@@ -111,37 +149,26 @@ impl Timer {
     pub fn callback_arg(&self) -> CallbackArg {
         self.callback.arg
     }
-
-    unsafe fn handle(timer: Arsc<Self>, cur_time: Instant) {
-        timer.canary.assert();
-        if !timer.is_canceled() {
-            if cur_time >= *timer.deadline.get() {
-                match timer.ty {
-                    Type::Oneshot => {
-                        if !timer.cancel() {
-                            timer.callback.call(Arsc::clone(&timer), cur_time);
-                        }
-                    }
-                    // Type::Periodic => {
-                    //     *timer.deadline.get() += timer.duration;
-                    //     timer.callback.call(Arsc::clone(&timer), cur_time);
-                    //     TIMER_QUEUE.push(timer);
-                    // }
-                }
-            } else {
-                TIMER_QUEUE.push(timer);
-            }
-        }
-    }
 }
 
 pub unsafe fn tick() {
-    let mut cnt = TIMER_QUEUE.len();
-    while cnt > 0 {
-        match TIMER_QUEUE.pop() {
-            Some(timer) => Timer::handle(timer, Instant::now()),
-            None => break,
+    let now = Instant::now();
+    PREEMPT.scope(|| {
+        let queue = unsafe { &mut *TIMER_QUEUE.inner.get() };
+        let mut cur = queue.cursor_front_mut();
+        loop {
+            match cur.current() {
+                Some(t) if t.is_canceled() => {
+                    cur.remove_current();
+                }
+                Some(t) if t.deadline <= now => {
+                    let timer = cur.remove_current().unwrap();
+                    if !timer.cancel() {
+                        timer.callback.call(Arsc::clone(&timer), now);
+                    }
+                }
+                _ => break,
+            }
         }
-        cnt -= 1;
-    }
+    })
 }

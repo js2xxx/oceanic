@@ -121,7 +121,7 @@ impl Scheduler {
             let timer = Timer::activate(
                 TimerType::Oneshot,
                 duration,
-                TimerCallback::new(block_callback, CallbackArg::Task(blocked)),
+                TimerCallback::new(block_callback, blocked),
             )?;
             if let Some(wo) = wo {
                 wo.wait_queue.push(Arsc::clone(&timer));
@@ -319,13 +319,8 @@ fn select_cpu(
 }
 
 fn block_callback(_: Arsc<Timer>, _: Instant, arg: CallbackArg) {
-    match arg {
-        CallbackArg::Task(arg) => {
-            let blocked = unsafe { Box::from_raw(arg.as_ptr()) };
-            SCHED.unblock(Box::into_inner(blocked));
-        }
-        CallbackArg::Event(_) => unreachable!("Non-task had been blocked"),
-    }
+    let blocked = unsafe { Box::from_raw(arg.as_ptr()) };
+    SCHED.unblock(Box::into_inner(blocked));
 }
 
 /// # Safety
