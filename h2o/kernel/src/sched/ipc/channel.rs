@@ -382,15 +382,21 @@ mod syscall {
         let user_buffer =
             unsafe { slice::from_raw_parts_mut(user_packet.buffer, user_packet.buffer_cap) };
 
-        let pree = PREEMPT.lock();
-        let cur = unsafe { (*SCHED.current()).as_ref().ok_or(Error::ESRCH) }?;
-        let map = cur.space().handles();
+        let (blocker, call_event) = if timeout.is_zero() {
+            None
+        } else {
+            let pree = PREEMPT.lock();
+            let cur = unsafe { (*SCHED.current()).as_ref().ok_or(Error::ESRCH) }?;
+            let map = cur.space().handles();
 
-        let channel = map.get::<Channel>(hdl)?;
+            let channel = map.get::<Channel>(hdl)?;
 
-        let call_event = channel.call_event(id)? as _;
-        let blocker = crate::sched::Blocker::new(&call_event, false, SIG_READ);
-        blocker.wait(pree, timeout)?;
+            let call_event = channel.call_event(id)? as _;
+            let blocker = crate::sched::Blocker::new(&call_event, false, SIG_READ);
+            blocker.wait(pree, timeout)?;
+            Some((blocker, call_event))
+        }
+        .unzip();
 
         let packet = SCHED.with_current(|cur| {
             let map = cur.space().handles();
@@ -405,13 +411,17 @@ mod syscall {
             user_packet.handle_count = handle_count;
             res.map(|mut packet| {
                 map.receive(&mut packet.objects, user_handles);
-                call_event.notify(SIG_READ, 0);
+                if let Some(call_event) = call_event {
+                    call_event.notify(SIG_READ, 0);
+                }
                 packet
             })
         })?;
 
-        if !blocker.detach().0 {
-            return Err(Error::ETIME);
+        if let Some(blocker) = blocker {
+            if !blocker.detach().0 {
+                return Err(Error::ETIME);
+            }
         }
 
         user_packet.id = packet.id;
@@ -421,5 +431,16 @@ mod syscall {
         unsafe { packet_ptr.out().write(user_packet)? };
 
         Ok(())
+    }
+
+    #[syscall]
+    fn chan_acrecv(hdl: Handle, id: usize, wake_all: bool) -> Result<Handle> {
+        SCHED.with_current(|cur| {
+            let chan = cur.space().handles().get::<Channel>(hdl)?;
+            let event = chan.call_event(id)? as _;
+
+            let blocker = crate::sched::Blocker::new(&event, wake_all, SIG_READ);
+            cur.space().handles().insert(blocker)
+        })
     }
 }
