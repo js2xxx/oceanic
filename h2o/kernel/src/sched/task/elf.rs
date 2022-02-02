@@ -103,7 +103,7 @@ pub fn from_elf(
     image: &[u8],
     name: String,
     affinity: CpuMask,
-    init_chan: hdl::Ref<dyn Any>,
+    init_chan: hdl::Ref,
 ) -> sv_call::Result<Init> {
     let file = Elf::parse(image)
         .map_err(|_| sv_call::Error::EINVAL)
@@ -139,6 +139,9 @@ pub fn from_elf(
         &starter,
     )?;
 
-    crate::sched::SCHED.with_current(|cur| cur.space().handles().insert(ret.tid().clone()))?;
+    crate::sched::SCHED.with_current(|cur| {
+        let event = Arc::downgrade(&ret.tid().event) as _;
+        cur.space().handles().insert_event(ret.tid().clone(), event)
+    })?;
     Ok(ret)
 }

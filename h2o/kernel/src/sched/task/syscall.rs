@@ -5,7 +5,7 @@ use paging::LAddr;
 use spin::Mutex;
 use sv_call::*;
 
-use super::{hdl::Ref, Blocked, RunningState, Signal, Space, Tid};
+use super::{Blocked, RunningState, Signal, Space, Tid};
 use crate::{
     cpu::time::Instant,
     sched::{imp::MIN_TIME_GRAN, PREEMPT, SCHED, SIG_READ},
@@ -177,7 +177,8 @@ fn task_join(hdl: Handle) -> Result<usize> {
     hdl.check_null()?;
 
     let obj = SCHED.with_current(|cur| cur.space().handles().remove::<Tid>(hdl))?;
-    let blocker = crate::sched::Blocker::new(obj.event(), false, SIG_READ);
+    let tid = obj.downcast_ref::<Tid>()?;
+    let blocker = crate::sched::Blocker::new(&(Arc::clone(&(**tid).event) as _), false, SIG_READ);
     blocker.wait((), Duration::MAX);
     if !blocker.detach().0 {
         return Err(Error::ETIME);
@@ -324,9 +325,10 @@ fn task_debug(hdl: Handle, op: u32, addr: usize, data: UserPtr<InOut, u8>, len: 
             } else {
                 let hdl = SCHED.with_current(|cur| {
                     create_excep_chan(&task).and_then(|chan| unsafe {
-                        let event = Arc::clone(chan.event());
-                        let obj = Ref::new_unchecked_event(chan, true, false, event);
-                        cur.space().handles().insert_ref(obj.coerce_unchecked())
+                        let event = Arc::downgrade(chan.event()) as _;
+                        cur.space()
+                            .handles()
+                            .insert_unchecked(chan, true, false, event)
                     })
                 })?;
 

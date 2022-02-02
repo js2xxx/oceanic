@@ -1,6 +1,6 @@
 mod node;
 
-use alloc::sync::Arc;
+use alloc::sync::Weak;
 use core::{
     any::Any,
     marker::{PhantomData, Unsize},
@@ -26,7 +26,7 @@ struct Value {
 pub struct Object<T: ?Sized> {
     send: bool,
     sync: bool,
-    event: Arc<dyn Event>,
+    event: Weak<dyn Event>,
     data: T,
 }
 
@@ -57,7 +57,7 @@ impl HandleMap {
     }
 
     #[inline]
-    pub fn get<T: Send + 'static>(&self, handle: sv_call::Handle) -> Result<&Ref<T>> {
+    pub fn get<T: Send + Any>(&self, handle: sv_call::Handle) -> Result<&Ref<T>> {
         // SAFETY: The type is `Send`.
         unsafe { self.get_unchecked(handle) }
     }
@@ -67,7 +67,7 @@ impl HandleMap {
     /// The caller must ensure that the list belongs to the current task if the
     /// expected type is not [`Send`].
     #[inline]
-    pub unsafe fn get_unchecked<T: 'static>(&self, handle: sv_call::Handle) -> Result<&Ref<T>> {
+    pub unsafe fn get_unchecked<T: Any>(&self, handle: sv_call::Handle) -> Result<&Ref<T>> {
         self.decode(handle)
             .and_then(|ptr| unsafe { ptr.as_ref().downcast_ref::<T>() })
     }
@@ -96,7 +96,7 @@ impl HandleMap {
     /// The caller must ensure that `value` comes from the current task if its
     /// not [`Send`].
     #[inline]
-    pub unsafe fn insert_ref(&self, value: Ref<dyn Any>) -> Result<sv_call::Handle> {
+    pub unsafe fn insert_ref(&self, value: Ref) -> Result<sv_call::Handle> {
         // SAFETY: The safety condition is guaranteed by the caller.
         let link = PREEMPT.scope(|| unsafe { self.list.lock().insert_impl(value) })?;
         self.encode(link)
@@ -111,18 +111,28 @@ impl HandleMap {
         data: T,
         send: bool,
         sync: bool,
+        event: Weak<dyn Event>,
     ) -> Result<sv_call::Handle> {
         // SAFETY: The safety condition is guaranteed by the caller.
-        let value = unsafe { Ref::new_unchecked(data, send, sync) };
+        let value = unsafe { Ref::new_unchecked(data, send, sync, event) };
         // SAFETY: The safety condition is guaranteed by the caller.
         unsafe { self.insert_ref(value.coerce_unchecked()) }
     }
 
     #[inline]
-    pub fn insert<T: Send + 'static>(&self, data: T) -> Result<sv_call::Handle> {
-        let value = Ref::new(data);
+    pub fn insert_event<T: Send + Any>(
+        &self,
+        data: T,
+        event: Weak<dyn Event>,
+    ) -> Result<sv_call::Handle> {
+        let value = Ref::new(data, event);
         // SAFETY: data is `Send`.
         unsafe { self.insert_ref(value.coerce_unchecked()) }
+    }
+
+    #[inline]
+    pub fn insert<T: Send + Any>(&self, data: T) -> Result<sv_call::Handle> {
+        self.insert_event(data, Weak::<crate::sched::BasicEvent>::new() as _)
     }
 
     /// # Safety
@@ -130,14 +140,14 @@ impl HandleMap {
     /// The caller must ensure that the list belongs to the current task if
     /// `link` is not [`Send`].
     #[inline]
-    pub unsafe fn remove_ref(&self, handle: sv_call::Handle) -> Result<Ref<dyn Any>> {
+    pub unsafe fn remove_ref(&self, handle: sv_call::Handle) -> Result<Ref> {
         let link = self.decode(handle)?;
         // SAFETY: The safety condition is guaranteed by the caller.
         PREEMPT.scope(|| unsafe { self.list.lock().remove_impl(link) })
     }
 
     #[inline]
-    pub fn remove<T: Send + 'static>(&self, handle: sv_call::Handle) -> Result<Ref<dyn Any>> {
+    pub fn remove<T: Send + Any>(&self, handle: sv_call::Handle) -> Result<Ref> {
         let _ = PhantomData::<T>;
         self.decode(handle)
             // SAFETY: Dereference within the available range.

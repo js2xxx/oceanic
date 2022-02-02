@@ -259,7 +259,7 @@ mod syscall {
 
     use super::*;
     use crate::{
-        sched::{task::hdl, SIG_READ},
+        sched::SIG_READ,
         syscall::{In, InOut, Out, UserPtr},
     };
 
@@ -271,12 +271,10 @@ mod syscall {
             let (c1, c2) = Channel::new();
             let map = cur.space().handles();
             unsafe {
-                let e1 = Arc::clone(&c1.me.event);
-                let e2 = Arc::clone(&c2.me.event);
-                let o1 = hdl::Ref::new_unchecked_event(c1, true, false, e1);
-                let o2 = hdl::Ref::new_unchecked_event(c2, true, false, e2);
-                let h1 = map.insert_ref(o1.coerce_unchecked())?;
-                let h2 = map.insert_ref(o2.coerce_unchecked())?;
+                let e1 = Arc::downgrade(&c1.me.event) as _;
+                let e2 = Arc::downgrade(&c2.me.event) as _;
+                let h1 = map.insert_unchecked(c1, true, false, e1)?;
+                let h2 = map.insert_unchecked(c2, true, false, e2)?;
                 p1.write(h1)?;
                 p2.write(h2)
             }
@@ -340,7 +338,8 @@ mod syscall {
 
         let channel = map.get::<Channel>(hdl)?;
 
-        let blocker = crate::sched::Blocker::new(channel.event(), false, SIG_READ);
+        let blocker =
+            crate::sched::Blocker::new(&(Arc::clone((**channel).event()) as _), false, SIG_READ);
         blocker.wait(pree, timeout);
 
         let packet = SCHED.with_current(|cur| {
@@ -356,7 +355,7 @@ mod syscall {
             user_packet.handle_count = handle_count;
             res.map(|mut packet| {
                 map.receive(&mut packet.objects, user_handles);
-                channel.event().notify(SIG_READ, 0);
+                (**channel).event().notify(SIG_READ, 0);
                 packet
             })
         })?;

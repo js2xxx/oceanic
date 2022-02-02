@@ -40,14 +40,14 @@ impl Event for Interrupt {
 
 impl Interrupt {
     #[inline]
-    pub fn new(res: &Resource<u32>, gsi: u32, level_triggered: bool) -> sv_call::Result<Self> {
+    pub fn new(res: &Resource<u32>, gsi: u32, level_triggered: bool) -> sv_call::Result<Arc<Self>> {
         if res.magic_eq(super::gsi_resource()) && res.range().contains(&gsi) {
-            Ok(Interrupt {
+            Ok(Arc::new(Interrupt {
                 gsi,
                 last_time: Mutex::new(None),
                 level_triggered,
                 event_data: EventData::new(0),
-            })
+            }))
         } else {
             Err(sv_call::Error::EPERM)
         }
@@ -81,7 +81,7 @@ mod syscall {
             intr::arch::MANAGER,
             time,
         },
-        sched::{task::hdl::Ref, SCHED},
+        sched::SCHED,
         syscall::{Out, UserPtr},
     };
 
@@ -110,8 +110,7 @@ mod syscall {
         let intr = SCHED.with_current(|cur| {
             let handles = cur.space().handles();
             let res = handles.get::<Arc<Resource<u32>>>(res)?;
-            let intr = Interrupt::new(res, gsi, level_triggered)?;
-            Ok(Arc::new(intr))
+            Interrupt::new(res, gsi, level_triggered)
         })?;
 
         MANAGER.config(gsi, trig_mode, polarity)?;
@@ -121,11 +120,8 @@ mod syscall {
         )?;
         MANAGER.mask(gsi, false)?;
 
-        SCHED.with_current(|cur| {
-            let event = Arc::clone(&intr);
-            let obj = Ref::new_event(intr, event);
-            unsafe { cur.space().handles().insert_ref(obj.coerce_unchecked()) }
-        })
+        let event = Arc::downgrade(&intr) as _;
+        SCHED.with_current(|cur| unsafe { cur.space().handles().insert_event(intr, event) })
     }
 
     #[syscall]
@@ -139,7 +135,7 @@ mod syscall {
             .handles()
             .get::<Arc<Interrupt>>(hdl)?;
 
-        let blocker = crate::sched::Blocker::new(intr.event(), false, SIG_GENERIC);
+        let blocker = crate::sched::Blocker::new(&(Arc::clone(intr) as _), false, SIG_GENERIC);
         blocker.wait(pree, time::from_us(timeout_us));
         if !blocker.detach().0 {
             return Err(Error::ETIME);

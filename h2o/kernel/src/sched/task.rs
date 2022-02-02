@@ -10,7 +10,6 @@ mod syscall;
 mod tid;
 
 use alloc::{format, string::String, sync::Arc};
-use core::any::Any;
 
 use paging::LAddr;
 
@@ -104,13 +103,12 @@ fn exec(
     let cur = super::SCHED.with_current(|cur| Ok(cur.tid.clone()))?;
     let init = exec_inner(cur, name, None, None, space, init_chan, starter)?;
     super::SCHED.with_current(|cur| {
-        let obj = hdl::Ref::new_event(init.tid().clone(), Arc::clone(init.tid().event()) as _);
-        let handle = unsafe { cur.space().handles().insert_ref(obj.coerce_unchecked()) }?;
+        let event = Arc::downgrade(&init.tid().event) as _;
+        let handle = unsafe { cur.space().handles().insert_event(init.tid().clone(), event) }?;
         Ok((init, handle))
     })
 }
 
-#[inline]
 fn create(name: Option<String>, space: Arc<Space>) -> sv_call::Result<(Init, sv_call::Handle)> {
     let cur = super::SCHED.with_current(|cur| Ok(cur.tid.clone()))?;
 
@@ -131,8 +129,8 @@ fn create(name: Option<String>, space: Arc<Space>) -> sv_call::Result<(Init, sv_
     let init = Init::new(tid, space, kstack, ext_frame);
 
     let handle = super::SCHED.with_current(|cur| {
-        let obj = hdl::Ref::new_event(init.tid().clone(), Arc::clone(init.tid().event()) as _);
-        unsafe { cur.space().handles().insert_ref(obj.coerce_unchecked()) }
+        let event = Arc::downgrade(&init.tid().event) as _;
+        cur.space().handles().insert_event(init.tid().clone(), event)
     })?;
     Ok((init, handle))
 }

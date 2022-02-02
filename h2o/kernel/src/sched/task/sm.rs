@@ -22,7 +22,7 @@ pub struct TaskInfo {
     #[builder(setter(skip))]
     ret_cell: Mutex<Option<usize>>,
     #[builder(setter(skip))]
-    event: Arc<BasicEvent>,
+    pub(super) event: Arc<BasicEvent>,
     #[builder(setter(skip))]
     excep_chan: Arc<Mutex<Option<Channel>>>,
 
@@ -64,11 +64,6 @@ impl TaskInfo {
     #[inline]
     pub fn ret_cell(&self) -> &Mutex<Option<usize>> {
         &self.ret_cell
-    }
-
-    #[inline]
-    pub fn event(&self) -> &Arc<BasicEvent> {
-        &self.event
     }
 
     #[inline]

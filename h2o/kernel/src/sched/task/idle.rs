@@ -84,19 +84,25 @@ fn idle(cpu: usize, fs_base: u64) -> ! {
 
 fn spawn_tinit() {
     let mut objects = hdl::List::new();
+    let noevent = alloc::sync::Weak::<crate::sched::BasicEvent>::new();
     {
         let mem_res = Arc::clone(crate::dev::mem_resource());
-        let res = unsafe { objects.insert_impl(hdl::Ref::new(mem_res).coerce_unchecked()) };
+        let res = unsafe {
+            objects.insert_impl(hdl::Ref::new(mem_res, noevent.clone()).coerce_unchecked())
+        };
         res.expect("Failed to insert memory resource");
     }
     {
         let pio_res = Arc::clone(crate::dev::pio_resource());
-        let res = unsafe { objects.insert_impl(hdl::Ref::new(pio_res).coerce_unchecked()) };
+        let res = unsafe {
+            objects.insert_impl(hdl::Ref::new(pio_res, noevent.clone()).coerce_unchecked())
+        };
         res.expect("Failed to insert port I/O resource");
     }
     {
         let gsi_res = Arc::clone(crate::dev::gsi_resource());
-        let res = unsafe { objects.insert_impl(hdl::Ref::new(gsi_res).coerce_unchecked()) };
+        let res =
+            unsafe { objects.insert_impl(hdl::Ref::new(gsi_res, noevent).coerce_unchecked()) };
         res.expect("Failed to insert GSI resource");
     }
     let buf = {
@@ -107,7 +113,8 @@ fn spawn_tinit() {
     };
 
     let (me, chan) = Channel::new();
-    let chan = unsafe { hdl::Ref::new(chan).coerce_unchecked() };
+    let event = Arc::downgrade(chan.event()) as _;
+    let chan = unsafe { hdl::Ref::new(chan, event).coerce_unchecked() };
     me.send(&mut crate::sched::ipc::Packet::new(0, objects, &buf))
         .expect("Failed to send message");
     let image = unsafe {
