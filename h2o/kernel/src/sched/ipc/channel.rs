@@ -5,7 +5,6 @@ use alloc::{
 use core::{
     mem,
     sync::atomic::{AtomicUsize, Ordering::SeqCst},
-    time::Duration,
 };
 
 use bytes::Bytes;
@@ -259,6 +258,7 @@ mod syscall {
 
     use super::*;
     use crate::{
+        cpu::time,
         sched::SIG_READ,
         syscall::{In, InOut, Out, UserPtr},
     };
@@ -309,6 +309,48 @@ mod syscall {
         })
     }
 
+    #[inline]
+    fn read_raw(packet_ptr: UserPtr<In, RawPacket>) -> Result<RawPacket> {
+        let raw = unsafe { packet_ptr.read()? };
+        UserPtr::<Out, Handle>::new(raw.handles).check_slice(raw.handle_cap)?;
+        UserPtr::<Out, u8>::new(raw.buffer).check_slice(raw.buffer_cap)?;
+
+        Ok(raw)
+    }
+
+    #[inline]
+    fn receive_handles<E: ?Sized + Event>(
+        res: Result<Packet>,
+        map: &crate::sched::task::hdl::HandleMap,
+        raw: &mut RawPacket,
+        event: &Arc<E>,
+    ) -> Result<Packet> {
+        match res {
+            Ok(mut packet) => {
+                let handles = unsafe { slice::from_raw_parts_mut(raw.handles, raw.handle_cap) };
+                map.receive(&mut packet.objects, handles);
+                event.notify(SIG_READ, 0);
+                Ok(packet)
+            }
+            Err(e) => Err(e),
+        }
+    }
+
+    #[inline]
+    fn write_raw_with_rest_of_packet(
+        packet_ptr: UserPtr<Out, RawPacket>,
+        mut raw: RawPacket,
+        packet: Packet,
+    ) -> Result {
+        raw.id = packet.id;
+        unsafe {
+            raw.buffer
+                .copy_from_nonoverlapping(packet.buffer().as_ptr(), packet.buffer().len())
+        };
+
+        unsafe { packet_ptr.write(raw) }
+    }
+
     #[syscall]
     fn chan_send(hdl: Handle, packet: UserPtr<In, RawPacket>) -> Result {
         chan_send_impl(hdl, packet, |channel, packet| channel.send(packet))
@@ -318,38 +360,19 @@ mod syscall {
     fn chan_recv(hdl: Handle, packet_ptr: UserPtr<InOut, RawPacket>) -> Result {
         hdl.check_null()?;
 
-        let mut raw = unsafe { packet_ptr.r#in().read()? };
-        UserPtr::<Out, Handle>::new(raw.handles).check_slice(raw.handle_cap)?;
-        UserPtr::<Out, u8>::new(raw.buffer).check_slice(raw.buffer_cap)?;
-
-        let user_handles = unsafe { slice::from_raw_parts_mut(raw.handles, raw.handle_cap) };
-        let user_buffer = unsafe { slice::from_raw_parts_mut(raw.buffer, raw.buffer_cap) };
+        let mut raw = read_raw(packet_ptr.r#in())?;
 
         let packet = SCHED.with_current(|cur| {
             let map = cur.space().handles();
-
             let channel = map.get::<Channel>(hdl)?;
 
-            let mut buffer_size = user_buffer.len();
-            let mut handle_count = user_handles.len();
-            let res = channel.receive(&mut buffer_size, &mut handle_count);
-
-            raw.buffer_size = buffer_size;
-            raw.handle_count = handle_count;
-            res.map(|mut packet| {
-                map.receive(&mut packet.objects, user_handles);
-                (**channel).event().notify(SIG_READ, 0);
-                packet
-            })
+            raw.buffer_size = raw.buffer_cap;
+            raw.handle_count = raw.handle_cap;
+            let res = channel.receive(&mut raw.buffer_size, &mut raw.handle_count);
+            receive_handles(res, map, &mut raw, (**channel).event())
         })?;
 
-        raw.id = packet.id;
-        let data = packet.buffer();
-        user_buffer[..data.len()].copy_from_slice(data);
-
-        unsafe { packet_ptr.out().write(raw)? };
-
-        Ok(())
+        write_raw_with_rest_of_packet(packet_ptr.out(), raw, packet)
     }
 
     #[syscall]
@@ -365,29 +388,19 @@ mod syscall {
         timeout_us: u64,
     ) -> Result {
         hdl.check_null()?;
-        let timeout = if timeout_us == u64::MAX {
-            Duration::MAX
-        } else {
-            Duration::from_micros(timeout_us)
-        };
 
-        let mut raw = unsafe { packet_ptr.r#in().read()? };
-        UserPtr::<Out, Handle>::new(raw.handles).check_slice(raw.handle_cap)?;
-        UserPtr::<Out, u8>::new(raw.buffer).check_slice(raw.buffer_cap)?;
-
-        let user_handles = unsafe { slice::from_raw_parts_mut(raw.handles, raw.handle_cap) };
-        let user_buffer = unsafe { slice::from_raw_parts_mut(raw.buffer, raw.buffer_cap) };
+        let mut raw = read_raw(packet_ptr.r#in())?;
 
         let call_event = SCHED.with_current(|cur| {
             let channel = cur.space().handles().get::<Channel>(hdl)?;
             Ok(channel.call_event(id)? as _)
         })?;
-        let blocker = if timeout.is_zero() {
+        let blocker = if timeout_us == 0 {
             None
         } else {
             let pree = PREEMPT.lock();
             let blocker = crate::sched::Blocker::new(&call_event, false, SIG_READ);
-            blocker.wait(pree, timeout)?;
+            blocker.wait(pree, time::from_us(timeout_us))?;
             Some(blocker)
         };
 
@@ -396,17 +409,10 @@ mod syscall {
 
             let channel = map.get::<Channel>(hdl)?;
 
-            let mut buffer_size = user_buffer.len();
-            let mut handle_count = user_handles.len();
-            let res = channel.call_receive(id, &mut buffer_size, &mut handle_count);
-
-            raw.buffer_size = buffer_size;
-            raw.handle_count = handle_count;
-            res.map(|mut packet| {
-                map.receive(&mut packet.objects, user_handles);
-                call_event.notify(SIG_READ, 0);
-                packet
-            })
+            raw.buffer_size = raw.buffer_cap;
+            raw.handle_count = raw.handle_cap;
+            let res = channel.call_receive(id, &mut raw.buffer_size, &mut raw.handle_count);
+            receive_handles(res, map, &mut raw, &call_event)
         })?;
 
         if let Some(blocker) = blocker {
@@ -415,13 +421,7 @@ mod syscall {
             }
         }
 
-        raw.id = packet.id;
-        let data = packet.buffer();
-        user_buffer[..data.len()].copy_from_slice(data);
-
-        unsafe { packet_ptr.out().write(raw)? };
-
-        Ok(())
+        write_raw_with_rest_of_packet(packet_ptr.out(), raw, packet)
     }
 
     #[syscall]
