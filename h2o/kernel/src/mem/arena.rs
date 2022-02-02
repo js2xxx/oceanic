@@ -141,7 +141,7 @@ impl<T> Arena<T> {
         index < self.max_count
     }
 
-    pub fn to_index(&self, ptr: NonNull<T>) -> sv_call::Result<usize> {
+    pub fn get_index(&self, ptr: NonNull<T>) -> sv_call::Result<usize> {
         if self.check_ptr(ptr) {
             let base = self.base.as_ptr() as usize;
             let addr = ptr.as_ptr() as usize;
@@ -154,7 +154,7 @@ impl<T> Arena<T> {
         }
     }
 
-    pub fn from_index(&self, index: usize) -> sv_call::Result<NonNull<T>> {
+    pub fn get_ptr(&self, index: usize) -> sv_call::Result<NonNull<T>> {
         if self.check_index(index) {
             let base = self.base.as_ptr() as usize;
             let addr = index.wrapping_mul(self.off).wrapping_add(base);

@@ -318,14 +318,12 @@ mod syscall {
     fn chan_recv(hdl: Handle, packet_ptr: UserPtr<InOut, RawPacket>) -> Result {
         hdl.check_null()?;
 
-        let mut user_packet = unsafe { packet_ptr.r#in().read()? };
-        UserPtr::<Out, Handle>::new(user_packet.handles).check_slice(user_packet.handle_cap)?;
-        UserPtr::<Out, u8>::new(user_packet.buffer).check_slice(user_packet.buffer_cap)?;
+        let mut raw = unsafe { packet_ptr.r#in().read()? };
+        UserPtr::<Out, Handle>::new(raw.handles).check_slice(raw.handle_cap)?;
+        UserPtr::<Out, u8>::new(raw.buffer).check_slice(raw.buffer_cap)?;
 
-        let user_handles =
-            unsafe { slice::from_raw_parts_mut(user_packet.handles, user_packet.handle_cap) };
-        let user_buffer =
-            unsafe { slice::from_raw_parts_mut(user_packet.buffer, user_packet.buffer_cap) };
+        let user_handles = unsafe { slice::from_raw_parts_mut(raw.handles, raw.handle_cap) };
+        let user_buffer = unsafe { slice::from_raw_parts_mut(raw.buffer, raw.buffer_cap) };
 
         let packet = SCHED.with_current(|cur| {
             let map = cur.space().handles();
@@ -336,8 +334,8 @@ mod syscall {
             let mut handle_count = user_handles.len();
             let res = channel.receive(&mut buffer_size, &mut handle_count);
 
-            user_packet.buffer_size = buffer_size;
-            user_packet.handle_count = handle_count;
+            raw.buffer_size = buffer_size;
+            raw.handle_count = handle_count;
             res.map(|mut packet| {
                 map.receive(&mut packet.objects, user_handles);
                 (**channel).event().notify(SIG_READ, 0);
@@ -345,11 +343,11 @@ mod syscall {
             })
         })?;
 
-        user_packet.id = packet.id;
+        raw.id = packet.id;
         let data = packet.buffer();
         user_buffer[..data.len()].copy_from_slice(data);
 
-        unsafe { packet_ptr.out().write(user_packet)? };
+        unsafe { packet_ptr.out().write(raw)? };
 
         Ok(())
     }
@@ -373,30 +371,25 @@ mod syscall {
             Duration::from_micros(timeout_us)
         };
 
-        let mut user_packet = unsafe { packet_ptr.r#in().read()? };
-        UserPtr::<Out, Handle>::new(user_packet.handles).check_slice(user_packet.handle_cap)?;
-        UserPtr::<Out, u8>::new(user_packet.buffer).check_slice(user_packet.buffer_cap)?;
+        let mut raw = unsafe { packet_ptr.r#in().read()? };
+        UserPtr::<Out, Handle>::new(raw.handles).check_slice(raw.handle_cap)?;
+        UserPtr::<Out, u8>::new(raw.buffer).check_slice(raw.buffer_cap)?;
 
-        let user_handles =
-            unsafe { slice::from_raw_parts_mut(user_packet.handles, user_packet.handle_cap) };
-        let user_buffer =
-            unsafe { slice::from_raw_parts_mut(user_packet.buffer, user_packet.buffer_cap) };
+        let user_handles = unsafe { slice::from_raw_parts_mut(raw.handles, raw.handle_cap) };
+        let user_buffer = unsafe { slice::from_raw_parts_mut(raw.buffer, raw.buffer_cap) };
 
-        let (blocker, call_event) = if timeout.is_zero() {
+        let call_event = SCHED.with_current(|cur| {
+            let channel = cur.space().handles().get::<Channel>(hdl)?;
+            Ok(channel.call_event(id)? as _)
+        })?;
+        let blocker = if timeout.is_zero() {
             None
         } else {
             let pree = PREEMPT.lock();
-            let cur = unsafe { (*SCHED.current()).as_ref().ok_or(Error::ESRCH) }?;
-            let map = cur.space().handles();
-
-            let channel = map.get::<Channel>(hdl)?;
-
-            let call_event = channel.call_event(id)? as _;
             let blocker = crate::sched::Blocker::new(&call_event, false, SIG_READ);
             blocker.wait(pree, timeout)?;
-            Some((blocker, call_event))
-        }
-        .unzip();
+            Some(blocker)
+        };
 
         let packet = SCHED.with_current(|cur| {
             let map = cur.space().handles();
@@ -407,13 +400,11 @@ mod syscall {
             let mut handle_count = user_handles.len();
             let res = channel.call_receive(id, &mut buffer_size, &mut handle_count);
 
-            user_packet.buffer_size = buffer_size;
-            user_packet.handle_count = handle_count;
+            raw.buffer_size = buffer_size;
+            raw.handle_count = handle_count;
             res.map(|mut packet| {
                 map.receive(&mut packet.objects, user_handles);
-                if let Some(call_event) = call_event {
-                    call_event.notify(SIG_READ, 0);
-                }
+                call_event.notify(SIG_READ, 0);
                 packet
             })
         })?;
@@ -424,11 +415,11 @@ mod syscall {
             }
         }
 
-        user_packet.id = packet.id;
+        raw.id = packet.id;
         let data = packet.buffer();
         user_buffer[..data.len()].copy_from_slice(data);
 
-        unsafe { packet_ptr.out().write(user_packet)? };
+        unsafe { packet_ptr.out().write(raw)? };
 
         Ok(())
     }

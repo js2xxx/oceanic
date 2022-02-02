@@ -390,14 +390,6 @@ impl Ioapics {
     ///
     /// The caller must ensure that the entry corresponding to `gsi` is not used
     /// by others.
-    pub unsafe fn ack(&mut self) {
-        lapic(|lapic| lapic.eoi());
-    }
-
-    /// # Safety
-    ///
-    /// The caller must ensure that the entry corresponding to `gsi` is not used
-    /// by others.
     pub unsafe fn eoi(&mut self, gsi: u32) -> sv_call::Result {
         lapic(|lapic| lapic.eoi());
 

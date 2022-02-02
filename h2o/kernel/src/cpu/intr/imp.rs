@@ -31,10 +31,13 @@ impl Event for Interrupt {
 
     fn notify(&self, clear: usize, set: usize) {
         PREEMPT.scope(|| *self.last_time.lock() = Some(Instant::now()));
+
         self.notify_impl(clear, set);
+
         if self.level_triggered {
             MANAGER.mask(self.gsi, true).unwrap();
         }
+        MANAGER.eoi(self.gsi).unwrap();
     }
 }
 
@@ -72,7 +75,7 @@ fn handler(arg: *mut u8) {
 mod syscall {
     use alloc::sync::Arc;
 
-    use sv_call::*;
+    use sv_call::{res::IntrConfig, *};
 
     use super::*;
     use crate::{
@@ -84,13 +87,6 @@ mod syscall {
         sched::SCHED,
         syscall::{Out, UserPtr},
     };
-
-    bitflags::bitflags! {
-        struct IntrConfig: u32 {
-            const ACTIVE_HIGH     = 0b01;
-            const LEVEL_TRIGGERED = 0b10;
-        }
-    }
 
     #[syscall]
     fn intr_new(res: Handle, gsi: u32, config: u32) -> Result<Handle> {

@@ -97,6 +97,11 @@ impl Manager {
     pub fn mask(&self, gsi: u32, masked: bool) -> sv_call::Result {
         PREEMPT.scope(|| unsafe { ioapic::chip().lock().mask(gsi, masked) })
     }
+
+    #[inline]
+    pub fn eoi(&self, gsi: u32) -> sv_call::Result {
+        PREEMPT.scope(|| unsafe { ioapic::chip().lock().eoi(gsi) })
+    }
 }
 
 /// # Safety

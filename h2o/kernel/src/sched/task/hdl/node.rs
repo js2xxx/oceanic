@@ -441,10 +441,10 @@ impl<'a> FusedIterator for Iter<'a> {}
 
 #[inline]
 pub fn decode(index: usize) -> Result<Ptr> {
-    PREEMPT.scope(|| HR_ARENA.from_index(index))
+    PREEMPT.scope(|| HR_ARENA.get_ptr(index))
 }
 
 #[inline]
 pub fn encode(value: Ptr) -> Result<usize> {
-    PREEMPT.scope(|| HR_ARENA.to_index(value))
+    PREEMPT.scope(|| HR_ARENA.get_index(value))
 }
