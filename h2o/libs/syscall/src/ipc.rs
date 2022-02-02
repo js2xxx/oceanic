@@ -21,6 +21,6 @@ pub const MAX_BUFFER_SIZE: usize = crate::mem::PAGE_SIZE;
 pub const CUSTOM_MSG_ID_START: usize = 0;
 pub const CUSTOM_MSG_ID_END: usize = 12;
 
-pub const EVENT_SIG_ASYNC: u8 = 0b1100_0000;
-pub const EVENT_SIG_ASYNC_OK: u8 = 0b1000_0000;
-pub const EVENT_SIG_ASYNC_TIMEOUT: u8 = 0b0100_0000;
+pub const SIG_GENERIC: usize = 0b001;
+pub const SIG_READ: usize = 0b010;
+pub const SIG_WRITE: usize = 0b100;

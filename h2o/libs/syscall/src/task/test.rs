@@ -9,7 +9,7 @@ use super::{
     excep::Exception,
     *,
 };
-use crate::{call::*, mem::Flags, task::excep::ExceptionResult};
+use crate::{call::*, mem::Flags, task::excep::ExceptionResult, ipc::SIG_READ};
 
 const PF_ADDR: usize = 0x1598_0000_0000;
 
@@ -38,9 +38,11 @@ extern "C" fn func(_: crate::Handle, arg: u32) {
 fn join(normal: Handle, fault: Handle) {
     log::trace!("join: normal = {:?}, fault = {:?}", normal, fault);
 
+    obj_wait(normal, u64::MAX, false, SIG_READ).expect("Failed to wait for the task");
     let ret = task_join(normal);
     assert_eq!(ret, Ok(12345));
 
+    obj_wait(fault, u64::MAX, false, SIG_READ).expect("Failed to wait for the task");
     let ret = task_join(fault);
     assert_eq!(ret, Err(crate::Error::EFAULT));
 }
@@ -137,7 +139,8 @@ fn debug_excep(task: Handle, st: Handle) {
         buffer_size: size_of::<Exception>(),
         buffer_cap: size_of::<Exception>(),
     };
-    chan_recv(chan, &mut packet, u64::MAX).expect("Failed to receive exception");
+    obj_wait(chan, u64::MAX, false, SIG_READ).expect("Failed to wait for the channel");
+    chan_recv(chan, &mut packet).expect("Failed to receive exception");
     let excep = unsafe { excep.assume_init() };
     assert_eq!(excep.cr2, PF_ADDR as u64);
 
@@ -147,6 +150,7 @@ fn debug_excep(task: Handle, st: Handle) {
     packet.buffer_cap = size_of::<ExceptionResult>();
     chan_send(chan, &packet).expect("Failed to send exception result");
 
+    obj_wait(task, u64::MAX, false, SIG_READ).expect("Failed to wait for the task");
     let ret = task_join(task);
     assert_eq!(ret, Err(crate::Error::EFAULT));
 }
@@ -171,6 +175,7 @@ fn kill(task: Handle) {
 
     task_ctl(task, TASK_CTL_KILL, null_mut()).expect("Failed to kill a task");
 
+    obj_wait(task, u64::MAX, false, SIG_READ).expect("Failed to wait for the task");
     let ret = task_join(task);
     assert_eq!(ret, Err(crate::Error::EKILLED));
 }

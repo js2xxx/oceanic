@@ -40,14 +40,18 @@ fn parse_file(file: impl AsRef<Path>) -> Result<Vec<syn::ItemFn>, Box<dyn Error>
         .to_str()
         .map_or(false, |s| s.ends_with("syscall.rs"));
     let content = {
-        let mut file = std::fs::File::open(file)?;
+        let mut file = std::fs::File::open(file.as_ref())?;
         let mut string = String::new();
         let _ = file.read_to_string(&mut string)?;
         string
     };
     let ast = syn::parse_file(&content)?;
 
-    parse_mod(is_syscall, ast.items)
+    let vec = parse_mod(is_syscall, ast.items)?;
+    if !vec.is_empty() {
+        println!("cargo:rerun-if-changed={:?}", file.as_ref());
+    }
+    Ok(vec)
 }
 
 pub fn parse_dir(dir: std::fs::ReadDir) -> Result<Vec<syn::ItemFn>, Box<dyn Error>> {

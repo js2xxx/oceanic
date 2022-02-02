@@ -136,7 +136,7 @@ mod syscall {
             .get::<Arc<Interrupt>>(hdl)?;
 
         let blocker = crate::sched::Blocker::new(&(Arc::clone(intr) as _), false, SIG_GENERIC);
-        blocker.wait(pree, time::from_us(timeout_us));
+        blocker.wait(pree, time::from_us(timeout_us))?;
         if !blocker.detach().0 {
             return Err(Error::ETIME);
         }

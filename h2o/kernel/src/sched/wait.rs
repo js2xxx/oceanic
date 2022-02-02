@@ -26,9 +26,20 @@ impl WaitObject {
     }
 
     #[inline]
-    pub fn wait<T>(&self, guard: T, timeout: Duration, block_desc: &'static str) -> bool {
+    pub fn wait<T>(
+        &self,
+        guard: T,
+        timeout: Duration,
+        block_desc: &'static str,
+    ) -> sv_call::Result {
         let timer = SCHED.block_current(guard, Some(&self.wait_queue), timeout, block_desc);
-        timer.map_or(false, |timer| !timer.is_fired())
+        timer.and_then(|timer| {
+            if !timer.is_fired() {
+                Ok(())
+            } else {
+                Err(sv_call::Error::ETIME)
+            }
+        })
     }
 
     pub fn notify(&self, num: usize, preempt: bool) -> usize {

@@ -315,13 +315,8 @@ mod syscall {
     }
 
     #[syscall]
-    fn chan_recv(hdl: Handle, packet_ptr: UserPtr<InOut, RawPacket>, timeout_us: u64) -> Result {
+    fn chan_recv(hdl: Handle, packet_ptr: UserPtr<InOut, RawPacket>) -> Result {
         hdl.check_null()?;
-        let timeout = if timeout_us == u64::MAX {
-            Duration::MAX
-        } else {
-            Duration::from_micros(timeout_us)
-        };
 
         let mut user_packet = unsafe { packet_ptr.r#in().read()? };
         UserPtr::<Out, Handle>::new(user_packet.handles).check_slice(user_packet.handle_cap)?;
@@ -331,16 +326,6 @@ mod syscall {
             unsafe { slice::from_raw_parts_mut(user_packet.handles, user_packet.handle_cap) };
         let user_buffer =
             unsafe { slice::from_raw_parts_mut(user_packet.buffer, user_packet.buffer_cap) };
-
-        let pree = PREEMPT.lock();
-        let cur = unsafe { (*SCHED.current()).as_ref().ok_or(Error::ESRCH) }?;
-        let map = cur.space().handles();
-
-        let channel = map.get::<Channel>(hdl)?;
-
-        let blocker =
-            crate::sched::Blocker::new(&(Arc::clone((**channel).event()) as _), false, SIG_READ);
-        blocker.wait(pree, timeout);
 
         let packet = SCHED.with_current(|cur| {
             let map = cur.space().handles();
@@ -359,10 +344,6 @@ mod syscall {
                 packet
             })
         })?;
-
-        if !blocker.detach().0 {
-            return Err(Error::ETIME);
-        }
 
         user_packet.id = packet.id;
         let data = packet.buffer();
@@ -409,7 +390,7 @@ mod syscall {
 
         let call_event = channel.call_event(id)? as _;
         let blocker = crate::sched::Blocker::new(&call_event, false, SIG_READ);
-        blocker.wait(pree, timeout);
+        blocker.wait(pree, timeout)?;
 
         let packet = SCHED.with_current(|cur| {
             let map = cur.space().handles();

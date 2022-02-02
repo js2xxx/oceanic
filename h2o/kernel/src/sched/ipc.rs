@@ -10,6 +10,7 @@ use core::{
 };
 
 use spin::Mutex;
+pub use sv_call::ipc::{SIG_GENERIC, SIG_READ, SIG_WRITE};
 
 pub use self::{
     arsc::Arsc,
@@ -17,10 +18,6 @@ pub use self::{
 };
 use super::PREEMPT;
 use crate::cpu::arch::apic::TriggerMode;
-
-pub const SIG_GENERIC: usize = 0b001;
-pub const SIG_READ: usize = 0b010;
-pub const SIG_WRITE: usize = 0b100;
 
 #[derive(Debug, Default)]
 pub struct EventData {
@@ -156,4 +153,61 @@ pub trait Waiter: Debug + Send + Sync {
     fn on_cancel(&self, signal: usize);
 
     fn on_notify(&self, signal: usize);
+}
+
+mod syscall {
+    use sv_call::*;
+
+    use super::*;
+    use crate::{
+        cpu::time,
+        sched::{Blocker, SCHED},
+    };
+
+    #[syscall]
+    fn obj_wait(hdl: Handle, timeout_us: u64, wake_all: bool, signal: usize) -> Result<usize> {
+        let pree = PREEMPT.lock();
+        let cur = unsafe { (*SCHED.current()).as_ref().ok_or(Error::ESRCH) }?;
+
+        let obj = unsafe { cur.space().handles().decode(hdl)?.as_ref() };
+        let event = obj.event().upgrade().ok_or(Error::EPERM)?;
+
+        let blocker = Blocker::new(&event, wake_all, signal);
+        blocker.wait(pree, time::from_us(timeout_us))?;
+
+        let (detach_ret, signal) = blocker.detach();
+        if !detach_ret {
+            return Err(Error::ETIME);
+        }
+        Ok(signal)
+    }
+
+    #[syscall]
+    fn obj_await(hdl: Handle, wake_all: bool, signal: usize) -> Result<Handle> {
+        SCHED.with_current(|cur| {
+            let obj = unsafe { cur.space().handles().decode(hdl)?.as_ref() };
+            let event = obj.event().upgrade().ok_or(Error::EPERM)?;
+
+            let blocker = Blocker::new(&event, wake_all, signal);
+            cur.space().handles().insert(blocker)
+        })
+    }
+
+    #[syscall]
+    fn obj_awend(waiter: Handle, timeout_us: u64) -> Result<usize> {
+        let pree = PREEMPT.lock();
+        let cur = unsafe { (*SCHED.current()).as_ref().ok_or(Error::ESRCH) }?;
+
+        let blocker = cur.space().handles().get::<Arc<Blocker>>(waiter)?;
+        blocker.wait(pree, time::from_us(timeout_us))?;
+
+        let (detach_ret, signal) = Arc::clone(blocker).detach();
+        SCHED.with_current(|cur| cur.space().handles().remove::<Arc<Blocker>>(waiter))?;
+
+        if !detach_ret {
+            Err(Error::ETIME)
+        } else {
+            Ok(signal)
+        }
+    }
 }

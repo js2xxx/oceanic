@@ -28,10 +28,10 @@ impl Futex {
         self.wo.wait_queue.is_empty()
     }
 
-    fn wait<T>(&self, guard: T, val: u64, timeout: Duration) -> Result<bool> {
+    fn wait<T>(&self, guard: T, val: u64, timeout: Duration) -> Result {
         let ptr = self.key.as_ptr();
         if unsafe { intrinsics::atomic_load(ptr) } == val {
-            Ok(self.wo.wait(guard, timeout, "Futex::wait"))
+            self.wo.wait(guard, timeout, "Futex::wait")
         } else {
             Err(Error::EINVAL)
         }
@@ -67,7 +67,7 @@ mod syscall {
     };
 
     #[syscall]
-    fn futex_wait(ptr: UserPtr<In, u64>, expected: u64, timeout_us: u64) -> Result<bool> {
+    fn futex_wait(ptr: UserPtr<In, u64>, expected: u64, timeout_us: u64) -> Result {
         let _ = unsafe { ptr.read() }?;
         let timeout = if timeout_us == u64::MAX {
             Duration::MAX

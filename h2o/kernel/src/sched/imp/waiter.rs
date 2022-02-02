@@ -31,24 +31,26 @@ impl Blocker {
         ret
     }
 
-    pub fn wait<T>(&self, guard: T, timeout: Duration) -> bool {
+    pub fn wait<T>(&self, guard: T, timeout: Duration) -> sv_call::Result {
         if timeout.is_zero() || PREEMPT.scope(|| self.status.lock().1 != 0) {
-            true
+            Ok(())
         } else {
             self.wo.wait(guard, timeout, "Blocker::wait")
         }
     }
 
     pub fn detach(self: Arc<Self>) -> (bool, usize) {
-        let (ret, signal) = PREEMPT.scope(|| *self.status.lock());
+        let (has_signal, signal) = PREEMPT.scope(|| *self.status.lock());
         if let Some(event) = self.event.upgrade() {
-            if !self.wake_all {
-                event.notify(self.waiter_data().signal(), 0);
-            }
+            let (wait_for, wake_all) = (self.waiter_data().signal(), self.wake_all);
             let (not_signaled, newer) = event.unwait(&(self as _));
-            (!not_signaled && ret, newer)
+            let has_signal = !not_signaled && has_signal;
+            if !wake_all && has_signal {
+                event.notify(wait_for, 0);
+            }
+            (has_signal, newer)
         } else {
-            (ret, signal)
+            (has_signal, signal)
         }
     }
 }

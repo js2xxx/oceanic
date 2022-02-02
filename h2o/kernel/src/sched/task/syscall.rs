@@ -8,7 +8,7 @@ use sv_call::*;
 use super::{Blocked, RunningState, Signal, Space, Tid};
 use crate::{
     cpu::time::Instant,
-    sched::{imp::MIN_TIME_GRAN, PREEMPT, SCHED, SIG_READ},
+    sched::{imp::MIN_TIME_GRAN, PREEMPT, SCHED},
     syscall::{In, InOut, Out, UserPtr},
 };
 
@@ -178,14 +178,8 @@ fn task_join(hdl: Handle) -> Result<usize> {
 
     let obj = SCHED.with_current(|cur| cur.space().handles().remove::<Tid>(hdl))?;
     let tid = obj.downcast_ref::<Tid>()?;
-    let blocker = crate::sched::Blocker::new(&(Arc::clone(&(**tid).event) as _), false, SIG_READ);
-    blocker.wait((), Duration::MAX);
-    if !blocker.detach().0 {
-        return Err(Error::ETIME);
-    }
 
-    let child = obj.downcast_ref::<Tid>().map(|w| Tid::clone(w))?;
-    PREEMPT.scope(|| child.ret_cell().lock().ok_or(Error::ETIME))
+    PREEMPT.scope(|| tid.ret_cell().lock().ok_or(Error::ENOENT))
 }
 
 #[syscall]

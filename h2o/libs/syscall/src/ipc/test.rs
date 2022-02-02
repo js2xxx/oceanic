@@ -58,17 +58,18 @@ pub fn test(stack: (*mut u8, *mut u8, Handle)) {
 
         {
             let mut receivee = rp(0, &mut [], &mut buf);
-            let ret = chan_recv(c2, &mut receivee, u64::MAX);
+            obj_wait(c2, u64::MAX, false, SIG_READ).expect("Failed to wait for the channel");
+            let ret = chan_recv(c2, &mut receivee);
             assert_eq!(ret, Err(Error::EBUFFER));
 
             receivee = rp(0, &mut hdl, &mut []);
-            let ret = chan_recv(c2, &mut receivee, u64::MAX);
+            let ret = chan_recv(c2, &mut receivee);
             assert_eq!(ret, Err(Error::EBUFFER));
         }
 
         buf.fill(0);
         let mut receivee = rp(0, &mut hdl, &mut buf);
-        chan_recv(c2, &mut receivee, u64::MAX)
+        chan_recv(c2, &mut receivee)
             .expect("Failed to receive a packet from the channel");
         assert_eq!(buf, [1u8, 2, 3, 4, 5, 6, 7]);
         assert_eq!(receivee.id, 100);
@@ -77,7 +78,7 @@ pub fn test(stack: (*mut u8, *mut u8, Handle)) {
         assert_eq!(int_get(e), Ok(12345));
 
         receivee = rp(0, &mut hdl, &mut buf);
-        let ret = chan_recv(c2, &mut receivee, 0);
+        let ret = chan_recv(c2, &mut receivee);
         assert_eq!(ret, Err(Error::ENOENT));
 
         e
@@ -91,7 +92,8 @@ pub fn test(stack: (*mut u8, *mut u8, Handle)) {
             let mut hdl = [Handle::NULL];
             let mut p = rp(0, &mut hdl, &mut buf);
 
-            chan_recv(init_chan, &mut p, u64::MAX).expect("Failed to receive the init packet");
+            obj_wait(init_chan, u64::MAX, false, SIG_READ).expect("Failed to wait for the channel");
+            chan_recv(init_chan, &mut p).expect("Failed to receive the init packet");
             assert_eq!(p.id, CUSTOM_MSG_ID_END);
             for b in buf.iter_mut() {
                 *b += 5;
