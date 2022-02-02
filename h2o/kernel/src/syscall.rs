@@ -34,3 +34,21 @@ pub fn handler(num: usize, args: &[usize; 5]) -> usize {
         _ => Error::EINVAL.into_retval(),
     }
 }
+
+/// An example of syscall
+#[allow(clippy::module_inception)]
+mod syscall {
+    use sv_call::*;
+
+    use crate::sched::SCHED;
+
+    #[syscall]
+    fn int_new(value: u64) -> Result<Handle> {
+        SCHED.with_current(|cur| cur.space().handles().insert(value))
+    }
+
+    #[syscall]
+    fn int_get(hdl: Handle) -> Result<u64> {
+        SCHED.with_current(|cur| cur.space().handles().get::<u64>(hdl).map(|obj| **obj))
+    }
+}

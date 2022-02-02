@@ -1,11 +1,6 @@
 mod arsc;
-mod channel;
 pub mod basic;
-
-pub use self::{
-    arsc::Arsc,
-    channel::{Channel, Packet},
-};
+mod channel;
 
 use alloc::{sync::Arc, vec::Vec};
 use core::{
@@ -16,6 +11,10 @@ use core::{
 
 use spin::Mutex;
 
+pub use self::{
+    arsc::Arsc,
+    channel::{Channel, Packet},
+};
 use super::PREEMPT;
 use crate::cpu::arch::apic::TriggerMode;
 
@@ -113,6 +112,7 @@ pub trait Event: Debug + Send + Sync {
                 .signal
                 .compare_exchange_weak(prev, new, SeqCst, SeqCst)
             {
+                Ok(_) if prev & new == new => return,
                 Ok(_) => break new,
                 _ => hint::spin_loop(),
             }

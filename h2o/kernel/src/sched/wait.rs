@@ -1,13 +1,11 @@
-mod cell;
 mod futex;
-mod queue;
 
 use alloc::boxed::Box;
 use core::time::Duration;
 
 use crossbeam_queue::SegQueue;
 
-pub use self::{cell::WaitCell, futex::*, queue::WaitQueue};
+pub use self::futex::*;
 use super::{ipc::Arsc, *};
 use crate::cpu::time::Timer;
 

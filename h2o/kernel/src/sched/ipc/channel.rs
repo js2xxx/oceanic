@@ -9,13 +9,11 @@ use core::{
 };
 
 use bytes::Bytes;
+use crossbeam_queue::SegQueue;
 use spin::Mutex;
 
-use crate::sched::{
-    task::hdl,
-    wait::{WaitCell, WaitQueue},
-    PREEMPT, SCHED,
-};
+use super::{Event, SIG_READ};
+use crate::sched::{task::hdl, BasicEvent, PREEMPT, SCHED};
 
 const MAX_QUEUE_SIZE: usize = 2048;
 
@@ -57,14 +55,16 @@ impl Packet {
 
 #[derive(Debug, Default)]
 struct Caller {
-    cell: WaitCell<Packet>,
+    cell: Option<Packet>,
+    event: Arc<BasicEvent>,
     head: Option<Packet>,
 }
 
 #[derive(Debug)]
 struct ChannelSide {
     msg_id: AtomicUsize,
-    msgs: WaitQueue<Packet>,
+    msgs: SegQueue<Packet>,
+    event: Arc<BasicEvent>,
     callers: Mutex<BTreeMap<usize, Caller>>,
 }
 
@@ -73,7 +73,8 @@ impl Default for ChannelSide {
     fn default() -> Self {
         ChannelSide {
             msg_id: AtomicUsize::new(sv_call::ipc::CUSTOM_MSG_ID_END),
-            msgs: WaitQueue::new(),
+            msgs: SegQueue::new(),
+            event: BasicEvent::new(0),
             callers: Mutex::new(BTreeMap::new()),
         }
     }
@@ -113,6 +114,11 @@ impl Channel {
         self.peer_id == other.peer_id
     }
 
+    #[inline]
+    pub fn event(&self) -> &Arc<BasicEvent> {
+        &self.me.event
+    }
+
     /// # Errors
     ///
     /// Returns error if the peer is closed or if the channel is full.
@@ -121,10 +127,11 @@ impl Channel {
             None => Err(sv_call::Error::EPIPE),
             Some(peer) => {
                 let called = PREEMPT.scope(|| {
-                    let callers = peer.callers.lock();
-                    let called = callers.get(&msg.id);
+                    let mut callers = peer.callers.lock();
+                    let called = callers.get_mut(&msg.id);
                     if let Some(caller) = called {
                         let _old = caller.cell.replace(mem::take(msg));
+                        caller.event.notify(0, SIG_READ);
                         debug_assert!(_old.is_none());
                         true
                     } else {
@@ -137,6 +144,7 @@ impl Channel {
                     Err(sv_call::Error::ENOSPC)
                 } else {
                     peer.msgs.push(mem::take(msg));
+                    peer.event.notify(0, SIG_READ);
                     Ok(())
                 }
             }
@@ -166,23 +174,27 @@ impl Channel {
     /// Returns error if the peer is closed.
     pub fn receive(
         &self,
-        timeout: Duration,
         buffer_cap: &mut usize,
         handle_cap: &mut usize,
     ) -> sv_call::Result<Packet> {
         let _pree = PREEMPT.lock();
         let mut head = self.head.lock();
         if head.is_none() {
-            *head = Some(if timeout.is_zero() {
-                self.me.msgs.try_pop().ok_or(sv_call::Error::ENOENT)?
-            } else {
-                self.me
-                    .msgs
-                    .pop(timeout, "Channel::receive")
-                    .ok_or(sv_call::Error::EPIPE)?
-            });
+            *head = Some(self.me.msgs.pop().ok_or(sv_call::Error::ENOENT)?);
         }
         Self::get_packet(&mut head, buffer_cap, handle_cap)
+    }
+
+    #[inline]
+    fn next_msg_id(id: &AtomicUsize) -> usize {
+        id.fetch_update(SeqCst, SeqCst, |id| {
+            Some(if id == usize::MAX {
+                sv_call::ipc::CUSTOM_MSG_ID_END
+            } else {
+                id + 1
+            })
+        })
+        .unwrap()
     }
 
     pub fn call_send(&self, msg: &mut Packet) -> sv_call::Result<usize> {
@@ -192,17 +204,7 @@ impl Channel {
                 if peer.msgs.len() >= MAX_QUEUE_SIZE {
                     Err(sv_call::Error::ENOSPC)
                 } else {
-                    let id = self
-                        .me
-                        .msg_id
-                        .fetch_update(SeqCst, SeqCst, |id| {
-                            Some(if id == usize::MAX {
-                                sv_call::ipc::CUSTOM_MSG_ID_END
-                            } else {
-                                id + 1
-                            })
-                        })
-                        .unwrap();
+                    let id = Self::next_msg_id(&self.me.msg_id);
                     msg.id = id;
                     self.me
                         .callers
@@ -210,16 +212,25 @@ impl Channel {
                         .try_insert(id, Caller::default())
                         .map_err(|_| sv_call::Error::EEXIST)?;
                     peer.msgs.push(mem::take(msg));
+                    peer.event.notify(0, SIG_READ);
                     Ok(id)
                 }
             }
         }
     }
 
+    fn call_event(&self, id: usize) -> sv_call::Result<Arc<BasicEvent>> {
+        PREEMPT.scope(|| {
+            let callers = self.me.callers.lock();
+            callers.get(&id).map_or(Err(sv_call::Error::ENOENT), |ent| {
+                Ok(Arc::clone(&ent.event))
+            })
+        })
+    }
+
     pub fn call_receive(
         &self,
         id: usize,
-        timeout: Duration,
         buffer_cap: &mut usize,
         handle_cap: &mut usize,
     ) -> sv_call::Result<Packet> {
@@ -230,15 +241,7 @@ impl Channel {
             alloc::collections::btree_map::Entry::Occupied(caller) => caller,
         };
         if caller.get().head.is_none() {
-            let packet = if timeout.is_zero() {
-                caller.get().cell.try_take().ok_or(sv_call::Error::ENOENT)?
-            } else {
-                caller
-                    .get()
-                    .cell
-                    .take(timeout, "Channel::call_receive")
-                    .ok_or(sv_call::Error::EPIPE)?
-            };
+            let packet = caller.get_mut().cell.take().ok_or(sv_call::Error::ENOENT)?;
             caller.get_mut().head = Some(packet);
         }
         Self::get_packet(&mut caller.get_mut().head, buffer_cap, handle_cap)
@@ -255,7 +258,10 @@ mod syscall {
     };
 
     use super::*;
-    use crate::syscall::{In, InOut, Out, UserPtr};
+    use crate::{
+        sched::{task::hdl, SIG_READ},
+        syscall::{In, InOut, Out, UserPtr},
+    };
 
     #[syscall]
     fn chan_new(p1: UserPtr<Out, Handle>, p2: UserPtr<Out, Handle>) -> Result {
@@ -265,8 +271,12 @@ mod syscall {
             let (c1, c2) = Channel::new();
             let map = cur.space().handles();
             unsafe {
-                let h1 = map.insert_unchecked(c1, true, false)?;
-                let h2 = map.insert_unchecked(c2, true, false)?;
+                let e1 = Arc::clone(&c1.me.event);
+                let e2 = Arc::clone(&c2.me.event);
+                let o1 = hdl::Ref::new_unchecked_event(c1, true, false, e1);
+                let o2 = hdl::Ref::new_unchecked_event(c2, true, false, e2);
+                let h1 = map.insert_ref(o1.coerce_unchecked())?;
+                let h2 = map.insert_ref(o2.coerce_unchecked())?;
                 p1.write(h1)?;
                 p2.write(h2)
             }
@@ -301,15 +311,13 @@ mod syscall {
         })
     }
 
-    fn chan_recv_impl<F>(
-        hdl: Handle,
-        packet_ptr: UserPtr<InOut, RawPacket>,
-        timeout_us: u64,
-        recv: F,
-    ) -> Result
-    where
-        F: FnOnce(&Channel, Duration, usize, usize) -> (Result<Packet>, usize, usize),
-    {
+    #[syscall]
+    fn chan_send(hdl: Handle, packet: UserPtr<In, RawPacket>) -> Result {
+        chan_send_impl(hdl, packet, |channel, packet| channel.send(packet))
+    }
+
+    #[syscall]
+    fn chan_recv(hdl: Handle, packet_ptr: UserPtr<InOut, RawPacket>, timeout_us: u64) -> Result {
         hdl.check_null()?;
         let timeout = if timeout_us == u64::MAX {
             Duration::MAX
@@ -326,19 +334,36 @@ mod syscall {
         let user_buffer =
             unsafe { slice::from_raw_parts_mut(user_packet.buffer, user_packet.buffer_cap) };
 
+        let pree = PREEMPT.lock();
+        let cur = unsafe { (*SCHED.current()).as_ref().ok_or(Error::ESRCH) }?;
+        let map = cur.space().handles();
+
+        let channel = map.get::<Channel>(hdl)?;
+
+        let blocker = crate::sched::Blocker::new(channel.event(), false, SIG_READ);
+        blocker.wait(pree, timeout);
+
         let packet = SCHED.with_current(|cur| {
             let map = cur.space().handles();
 
             let channel = map.get::<Channel>(hdl)?;
-            let (res, buffer_size, handle_count) =
-                recv(channel, timeout, user_buffer.len(), user_handles.len());
+
+            let mut buffer_size = user_buffer.len();
+            let mut handle_count = user_handles.len();
+            let res = channel.receive(&mut buffer_size, &mut handle_count);
+
             user_packet.buffer_size = buffer_size;
             user_packet.handle_count = handle_count;
             res.map(|mut packet| {
                 map.receive(&mut packet.objects, user_handles);
+                channel.event().notify(SIG_READ, 0);
                 packet
             })
         })?;
+
+        if !blocker.detach().0 {
+            return Err(Error::ETIME);
+        }
 
         user_packet.id = packet.id;
         let data = packet.buffer();
@@ -347,24 +372,6 @@ mod syscall {
         unsafe { packet_ptr.out().write(user_packet)? };
 
         Ok(())
-    }
-
-    #[syscall]
-    fn chan_send(hdl: Handle, packet: UserPtr<In, RawPacket>) -> Result {
-        chan_send_impl(hdl, packet, |channel, packet| channel.send(packet))
-    }
-
-    #[syscall]
-    fn chan_recv(hdl: Handle, packet_ptr: UserPtr<InOut, RawPacket>, timeout_us: u64) -> Result {
-        chan_recv_impl(
-            hdl,
-            packet_ptr,
-            timeout_us,
-            |channel, timeout, mut buffer_cap, mut handle_cap| {
-                let ret = channel.receive(timeout, &mut buffer_cap, &mut handle_cap);
-                (ret, buffer_cap, handle_cap)
-            },
-        )
     }
 
     #[syscall]
@@ -379,14 +386,60 @@ mod syscall {
         packet_ptr: UserPtr<InOut, RawPacket>,
         timeout_us: u64,
     ) -> Result {
-        chan_recv_impl(
-            hdl,
-            packet_ptr,
-            timeout_us,
-            |channel, timeout, mut buffer_cap, mut handle_cap| {
-                let ret = channel.call_receive(id, timeout, &mut buffer_cap, &mut handle_cap);
-                (ret, buffer_cap, handle_cap)
-            },
-        )
+        hdl.check_null()?;
+        let timeout = if timeout_us == u64::MAX {
+            Duration::MAX
+        } else {
+            Duration::from_micros(timeout_us)
+        };
+
+        let mut user_packet = unsafe { packet_ptr.r#in().read()? };
+        UserPtr::<Out, Handle>::new(user_packet.handles).check_slice(user_packet.handle_cap)?;
+        UserPtr::<Out, u8>::new(user_packet.buffer).check_slice(user_packet.buffer_cap)?;
+
+        let user_handles =
+            unsafe { slice::from_raw_parts_mut(user_packet.handles, user_packet.handle_cap) };
+        let user_buffer =
+            unsafe { slice::from_raw_parts_mut(user_packet.buffer, user_packet.buffer_cap) };
+
+        let pree = PREEMPT.lock();
+        let cur = unsafe { (*SCHED.current()).as_ref().ok_or(Error::ESRCH) }?;
+        let map = cur.space().handles();
+
+        let channel = map.get::<Channel>(hdl)?;
+
+        let call_event = channel.call_event(id)? as _;
+        let blocker = crate::sched::Blocker::new(&call_event, false, SIG_READ);
+        blocker.wait(pree, timeout);
+
+        let packet = SCHED.with_current(|cur| {
+            let map = cur.space().handles();
+
+            let channel = map.get::<Channel>(hdl)?;
+
+            let mut buffer_size = user_buffer.len();
+            let mut handle_count = user_handles.len();
+            let res = channel.call_receive(id, &mut buffer_size, &mut handle_count);
+
+            user_packet.buffer_size = buffer_size;
+            user_packet.handle_count = handle_count;
+            res.map(|mut packet| {
+                map.receive(&mut packet.objects, user_handles);
+                call_event.notify(SIG_READ, 0);
+                packet
+            })
+        })?;
+
+        if !blocker.detach().0 {
+            return Err(Error::ETIME);
+        }
+
+        user_packet.id = packet.id;
+        let data = packet.buffer();
+        user_buffer[..data.len()].copy_from_slice(data);
+
+        unsafe { packet_ptr.out().write(user_packet)? };
+
+        Ok(())
     }
 }

@@ -24,8 +24,8 @@ pub fn test(stack: (*mut u8, *mut u8, Handle)) {
 
     // Test in 1 task (transfering to myself).
     let e = {
-        let e = event_new(false).expect("Failed to create a event");
-        event_notify(e, u8::MAX).expect("Failed to notify the event");
+        let e = int_new(12345).expect("Failed to create a event");
+        assert_eq!(int_get(e), Ok(12345));
 
         // Sending
 
@@ -74,7 +74,7 @@ pub fn test(stack: (*mut u8, *mut u8, Handle)) {
         assert_eq!(receivee.id, 100);
 
         let e = hdl[0];
-        event_notify(e, u8::MAX).expect("Failed to notify the event");
+        assert_eq!(int_get(e), Ok(12345));
 
         receivee = rp(0, &mut hdl, &mut buf);
         let ret = chan_recv(c2, &mut receivee, 0);
@@ -96,7 +96,7 @@ pub fn test(stack: (*mut u8, *mut u8, Handle)) {
             for b in buf.iter_mut() {
                 *b += 5;
             }
-            event_notify(hdl[0], u8::MAX).expect("Failed to notify the e in func");
+            assert_eq!(int_get(hdl[0]), Ok(12345));
             ::log::trace!("Responding");
             p.id = CUSTOM_MSG_ID_END;
             chan_send(init_chan, &p).expect("Failed to send the response");
@@ -136,7 +136,7 @@ pub fn test(stack: (*mut u8, *mut u8, Handle)) {
 
         ::log::trace!("Finished");
         let e = hdl[0];
-        event_notify(e, u8::MAX).expect("Failed to notify the event in master");
+        assert_eq!(int_get(e), Ok(12345));
         obj_drop(e).expect("Failed to drop the event in master");
 
         task_join(other).expect("Failed to join the task");

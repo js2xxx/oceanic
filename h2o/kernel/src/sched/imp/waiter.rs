@@ -32,7 +32,7 @@ impl Blocker {
     }
 
     pub fn wait<T>(&self, guard: T, timeout: Duration) -> bool {
-        if PREEMPT.scope(|| self.status.lock().1 != 0) {
+        if timeout.is_zero() || PREEMPT.scope(|| self.status.lock().1 != 0) {
             true
         } else {
             self.wo.wait(guard, timeout, "Blocker::wait")
@@ -42,6 +42,9 @@ impl Blocker {
     pub fn detach(self: Arc<Self>) -> (bool, usize) {
         let (ret, signal) = PREEMPT.scope(|| *self.status.lock());
         if let Some(event) = self.event.upgrade() {
+            if !self.wake_all {
+                event.notify(self.waiter_data().signal(), 0);
+            }
             let (not_signaled, newer) = event.unwait(&(self as _));
             (!not_signaled && ret, newer)
         } else {
