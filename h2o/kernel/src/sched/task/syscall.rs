@@ -8,20 +8,20 @@ use sv_call::*;
 use super::{Blocked, RunningState, Signal, Space, Tid};
 use crate::{
     cpu::time::Instant,
-    sched::{imp::MIN_TIME_GRAN, PREEMPT, SCHED},
+    sched::{imp::MIN_TIME_GRAN, Arsc, PREEMPT, SCHED},
     syscall::{In, InOut, Out, UserPtr},
 };
 
 #[derive(Debug)]
 struct SuspendToken {
-    slot: Arc<Mutex<Option<super::Blocked>>>,
+    slot: Arsc<Mutex<Option<super::Blocked>>>,
     tid: Tid,
 }
 
 impl SuspendToken {
     #[inline]
     pub fn signal(&self) -> Signal {
-        Signal::Suspend(Arc::clone(&self.slot))
+        Signal::Suspend(Arsc::clone(&self.slot))
     }
 }
 
@@ -94,13 +94,13 @@ fn task_exec(ci: UserPtr<In, task::ExecInfo>) -> Result<Handle> {
             .handles()
             .remove::<crate::sched::ipc::Channel>(ci.init_chan)?;
         if ci.space == Handle::NULL {
-            Ok((init_chan, Arc::clone(cur.space())))
+            Ok((init_chan, Arsc::clone(cur.space())))
         } else {
             cur.space()
                 .handles()
-                .remove::<Arc<Space>>(ci.space)?
-                .downcast_ref::<Arc<Space>>()
-                .map(|space| (init_chan, Arc::clone(space)))
+                .remove::<Arsc<Space>>(ci.space)?
+                .downcast_ref::<Arsc<Space>>()
+                .map(|space| (init_chan, Arsc::clone(space)))
         }
     })?;
 
@@ -142,27 +142,32 @@ fn task_new(
     };
 
     let new_space = if space == Handle::NULL {
-        SCHED.with_current(|cur| Ok(Arc::clone(cur.space())))?
+        SCHED.with_current(|cur| Ok(Arsc::clone(cur.space())))?
     } else {
         SCHED.with_current(|cur| {
             cur.space()
                 .handles()
-                .remove::<Arc<Space>>(space)?
-                .downcast_ref::<Arc<Space>>()
-                .map(|space| Arc::clone(space))
+                .remove::<Arsc<Space>>(space)?
+                .downcast_ref::<Arsc<Space>>()
+                .map(|space| Arsc::clone(space))
         })?
     };
+    let mut sus_slot = Arsc::try_new_uninit()?;
 
-    let (task, hdl) = super::create(name, Arc::clone(&new_space))?;
+    let (task, hdl) = super::create(name, Arsc::clone(&new_space))?;
 
     let task = super::Ready::block(
         super::IntoReady::into_ready(task, unsafe { crate::cpu::id() }, MIN_TIME_GRAN),
         "task_ctl_suspend",
     );
+
     let tid = task.tid().clone();
-    let st_data = SuspendToken {
-        slot: Arc::new(Mutex::new(Some(task))),
-        tid,
+    let st_data = unsafe {
+        Arsc::get_mut_unchecked(&mut sus_slot).write(Mutex::new(Some(task)));
+        SuspendToken {
+            slot: Arsc::assume_init(sus_slot),
+            tid,
+        }
     };
     SCHED.with_current(|cur| {
         let st_h = cur.space().handles().insert(st_data)?;
@@ -186,7 +191,7 @@ fn task_join(hdl: Handle) -> Result<usize> {
 fn task_ctl(hdl: Handle, op: u32, data: UserPtr<InOut, Handle>) -> Result {
     hdl.check_null()?;
 
-    let cur = SCHED.with_current(|cur| Ok(Arc::clone(cur.space())))?;
+    let cur = SCHED.with_current(|cur| Ok(Arsc::clone(cur.space())))?;
 
     match op {
         task::TASK_CTL_KILL => {
@@ -201,7 +206,7 @@ fn task_ctl(hdl: Handle, op: u32, data: UserPtr<InOut, Handle>) -> Result {
             let child = cur.child(hdl)?;
 
             let st = SuspendToken {
-                slot: Arc::new(Mutex::new(None)),
+                slot: Arsc::try_new(Mutex::new(None))?,
                 tid: child,
             };
 
@@ -289,7 +294,7 @@ fn task_debug(hdl: Handle, op: u32, addr: usize, data: UserPtr<InOut, u8>, len: 
         cur.space()
             .handles()
             .get::<SuspendToken>(hdl)
-            .map(|st| Arc::clone(&st.slot))
+            .map(|st| Arsc::clone(&st.slot))
     })?;
 
     let mut task = loop {

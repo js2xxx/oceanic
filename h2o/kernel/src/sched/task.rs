@@ -17,7 +17,7 @@ use paging::LAddr;
 pub use self::ctx::arch::{DEFAULT_STACK_LAYOUT, DEFAULT_STACK_SIZE};
 use self::elf::from_elf;
 pub use self::{excep::dispatch_exception, sig::Signal, sm::*, space::Space, tid::Tid};
-use super::{ipc::Channel, PREEMPT};
+use super::{ipc::Channel, Arsc, PREEMPT};
 use crate::cpu::{CpuMask, Lazy};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -65,13 +65,14 @@ fn exec_inner(
     name: Option<String>,
     ty: Option<Type>,
     affinity: Option<CpuMask>,
-    space: Arc<Space>,
+    space: Arsc<Space>,
     init_chan: sv_call::Handle,
     s: &Starter,
 ) -> sv_call::Result<Init> {
     let ty = Type::pass(ty, cur.ty())?;
     let ti = TaskInfo::builder()
         .from(Some(cur.clone()))
+        .excep_chan(Arsc::try_new(Default::default())?)
         .name(name.unwrap_or(format!("{}.func{}", cur.name(), archop::rand::get())))
         .ty(ty)
         .affinity(affinity.unwrap_or_else(|| cur.affinity()))
@@ -96,7 +97,7 @@ fn exec_inner(
 #[inline]
 fn exec(
     name: Option<String>,
-    space: Arc<Space>,
+    space: Arsc<Space>,
     init_chan: sv_call::Handle,
     starter: &Starter,
 ) -> sv_call::Result<(Init, sv_call::Handle)> {
@@ -104,17 +105,22 @@ fn exec(
     let init = exec_inner(cur, name, None, None, space, init_chan, starter)?;
     super::SCHED.with_current(|cur| {
         let event = Arc::downgrade(&init.tid().event) as _;
-        let handle = unsafe { cur.space().handles().insert_event(init.tid().clone(), event) }?;
+        let handle = unsafe {
+            cur.space()
+                .handles()
+                .insert_event(init.tid().clone(), event)
+        }?;
         Ok((init, handle))
     })
 }
 
-fn create(name: Option<String>, space: Arc<Space>) -> sv_call::Result<(Init, sv_call::Handle)> {
+fn create(name: Option<String>, space: Arsc<Space>) -> sv_call::Result<(Init, sv_call::Handle)> {
     let cur = super::SCHED.with_current(|cur| Ok(cur.tid.clone()))?;
 
     let ty = cur.ty();
     let ti = TaskInfo::builder()
         .from(Some(cur.clone()))
+        .excep_chan(Arsc::try_new(Default::default())?)
         .name(name.unwrap_or(format!("{}.func{}", cur.name(), archop::rand::get())))
         .ty(ty)
         .affinity(cur.affinity())
@@ -130,7 +136,9 @@ fn create(name: Option<String>, space: Arc<Space>) -> sv_call::Result<(Init, sv_
 
     let handle = super::SCHED.with_current(|cur| {
         let event = Arc::downgrade(&init.tid().event) as _;
-        cur.space().handles().insert_event(init.tid().clone(), event)
+        cur.space()
+            .handles()
+            .insert_event(init.tid().clone(), event)
     })?;
     Ok((init, handle))
 }

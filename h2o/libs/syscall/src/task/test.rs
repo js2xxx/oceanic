@@ -9,7 +9,7 @@ use super::{
     excep::Exception,
     *,
 };
-use crate::{call::*, mem::Flags, task::excep::ExceptionResult, ipc::SIG_READ};
+use crate::{call::*, ipc::SIG_READ, mem::Flags, task::excep::ExceptionResult};
 
 const PF_ADDR: usize = 0x1598_0000_0000;
 

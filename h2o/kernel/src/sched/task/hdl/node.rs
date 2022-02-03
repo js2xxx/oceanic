@@ -1,4 +1,4 @@
-use alloc::sync::{Arc, Weak};
+use alloc::sync::Weak;
 use core::{
     any::Any,
     fmt,
@@ -15,7 +15,7 @@ use sv_call::Result;
 use super::Object;
 use crate::{
     mem::Arena,
-    sched::{Event, PREEMPT},
+    sched::{Arsc, Event, PREEMPT},
 };
 
 pub const MAX_HANDLE_COUNT: usize = 1 << 18;
@@ -24,7 +24,7 @@ pub(super) static HR_ARENA: Azy<Arena<Ref>> = Azy::new(|| Arena::new(MAX_HANDLE_
 
 #[derive(Debug)]
 pub struct Ref<T: ?Sized = dyn Any> {
-    obj: Arc<Object<T>>,
+    obj: Arsc<Object<T>>,
     next: Option<Ptr>,
     prev: Option<Ptr>,
     _marker: PhantomPinned,
@@ -38,21 +38,26 @@ impl<T: ?Sized> Ref<T> {
     ///
     /// The caller must ensure that `T` is [`Send`] if `send` and [`Sync`] if
     /// `sync`.
-    pub unsafe fn new_unchecked(data: T, send: bool, sync: bool, event: Weak<dyn Event>) -> Self
+    pub unsafe fn try_new_unchecked(
+        data: T,
+        send: bool,
+        sync: bool,
+        event: Weak<dyn Event>,
+    ) -> sv_call::Result<Self>
     where
         T: Sized,
     {
-        Ref {
-            obj: Arc::new(Object {
+        Ok(Ref {
+            obj: Arsc::try_new(Object {
                 send,
                 sync,
                 event,
                 data,
-            }),
+            })?,
             next: None,
             prev: None,
             _marker: PhantomPinned,
-        }
+        })
     }
 
     /// # Safety
@@ -86,25 +91,25 @@ impl<T: ?Sized> Ref<T> {
 
 impl<T: ?Sized + Send> Ref<T> {
     #[inline]
-    pub fn new(data: T, event: Weak<dyn Event>) -> Self
+    pub fn try_new(data: T, event: Weak<dyn Event>) -> sv_call::Result<Self>
     where
         T: Sized,
     {
-        unsafe { Self::new_unchecked(data, true, false, event) }
+        unsafe { Self::try_new_unchecked(data, true, false, event) }
     }
 
     #[inline]
-    pub fn raw(&self) -> &Arc<Object<T>> {
+    pub fn raw(&self) -> &Arsc<Object<T>> {
         &self.obj
     }
 
     #[inline]
-    pub fn into_raw(self) -> Arc<Object<T>> {
+    pub fn into_raw(self) -> Arsc<Object<T>> {
         self.obj
     }
 
     #[inline]
-    pub fn from_raw(obj: Arc<Object<T>>) -> Self {
+    pub fn from_raw(obj: Arsc<Object<T>>) -> Self {
         Self {
             obj,
             next: None,
@@ -128,7 +133,7 @@ impl<T: ?Sized + Send + Sync> Clone for Ref<T> {
     #[inline]
     fn clone(&self) -> Self {
         Self {
-            obj: Arc::clone(&self.obj),
+            obj: Arsc::clone(&self.obj),
             next: None,
             prev: None,
             _marker: PhantomPinned,
@@ -153,7 +158,7 @@ impl Ref {
     #[must_use = "Don't make useless clonings"]
     pub unsafe fn clone_unchecked(&self) -> Ref {
         Self {
-            obj: Arc::clone(&self.obj),
+            obj: Arsc::clone(&self.obj),
             next: None,
             prev: None,
             _marker: PhantomPinned,

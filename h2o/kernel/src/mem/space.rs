@@ -20,7 +20,6 @@ use core::{
     ptr::NonNull,
 };
 
-use ::alloc::sync::Arc;
 use archop::Azy;
 use bitop_ex::BitOpEx;
 use canary::Canary;
@@ -30,14 +29,15 @@ use spin::Mutex;
 pub use sv_call::mem::Flags;
 
 pub use self::{arch::init_pgc, obj::*};
-use crate::sched::{task, PREEMPT};
+use crate::sched::{task, Arsc, PREEMPT};
 
 type ArchSpace = arch::Space;
 
-pub static KRL: Azy<Arc<Space>> = Azy::new(|| Space::new(task::Type::Kernel));
+pub static KRL: Azy<Arsc<Space>> =
+    Azy::new(|| Space::try_new(task::Type::Kernel).expect("Failed to create kernel space"));
 
 #[thread_local]
-static mut CURRENT: Option<Arc<Space>> = None;
+static mut CURRENT: Option<Arsc<Space>> = None;
 
 fn paging_error(err: paging::Error) -> sv_call::Error {
     use sv_call::Error;
@@ -85,7 +85,7 @@ pub struct Space {
 
     /// The general allocator.
     pub(super) range: Range<usize>,
-    map: Mutex<RangeMap<usize, Arc<Phys>>>,
+    map: Mutex<RangeMap<usize, Arsc<Phys>>>,
 }
 
 unsafe impl Send for Space {}
@@ -93,15 +93,16 @@ unsafe impl Sync for Space {}
 
 impl Space {
     /// Create a new address space.
-    pub fn new(ty: task::Type) -> Arc<Self> {
+    pub fn try_new(ty: task::Type) -> sv_call::Result<Arsc<Self>> {
         let range = ty_to_range(ty);
-        Arc::new(Space {
+        Arsc::try_new(Space {
             canary: Canary::new(),
             ty,
             arch: ArchSpace::new(),
             range: range.clone(),
             map: Mutex::new(RangeMap::new(range)),
         })
+        .map_err(sv_call::Error::from)
     }
 
     #[inline]
@@ -126,7 +127,7 @@ impl Space {
     pub fn map_addr(
         &self,
         virt: Range<LAddr>,
-        phys: Option<Arc<Phys>>,
+        phys: Option<Arsc<Phys>>,
         flags: Flags,
     ) -> sv_call::Result {
         self.canary.assert();
@@ -153,7 +154,7 @@ impl Space {
     pub fn map(
         &self,
         offset: Option<usize>,
-        phys: Arc<Phys>,
+        phys: Arsc<Phys>,
         phys_offset: usize,
         len: usize,
         flags: Flags,
@@ -261,7 +262,7 @@ impl Space {
         self.arch.load()
     }
 
-    pub fn init_stack(self: &Arc<Self>, size: usize) -> sv_call::Result<LAddr> {
+    pub fn init_stack(&self, size: usize) -> sv_call::Result<LAddr> {
         self.canary.assert();
 
         let cnt = size.div_ceil_bit(paging::PAGE_SHIFT);
@@ -303,7 +304,7 @@ impl Drop for Space {
 ///
 /// The function must be called only once from each application CPU.
 pub unsafe fn init() {
-    let space = Arc::clone(&KRL);
+    let space = Arsc::clone(&KRL);
     unsafe { space.load() };
     CURRENT = Some(space);
 }
@@ -314,7 +315,7 @@ pub unsafe fn init() {
 ///
 /// The caller must ensure that [`CURRENT`] will not be modified where the
 /// reference is alive.
-pub unsafe fn current<'a>() -> &'a Arc<Space> {
+pub unsafe fn current<'a>() -> &'a Arsc<Space> {
     unsafe { CURRENT.as_ref().expect("No current space available") }
 }
 
@@ -322,7 +323,7 @@ pub unsafe fn current<'a>() -> &'a Arc<Space> {
 #[inline]
 pub fn with_current<'a, F, R>(func: F) -> R
 where
-    F: FnOnce(&'a Arc<Space>) -> R,
+    F: FnOnce(&'a Arsc<Space>) -> R,
     R: 'a,
 {
     PREEMPT.scope(|| {
@@ -331,12 +332,12 @@ where
     })
 }
 
-pub unsafe fn with<F, R>(space: &Arc<Space>, func: F) -> R
+pub unsafe fn with<F, R>(space: &Arsc<Space>, func: F) -> R
 where
-    F: FnOnce(&Arc<Space>) -> R,
+    F: FnOnce(&Arsc<Space>) -> R,
 {
     PREEMPT.scope(|| {
-        let old = set_current(Arc::clone(space));
+        let old = set_current(Arsc::clone(space));
         let ret = func(space);
         set_current(old);
         ret
@@ -348,9 +349,9 @@ where
 /// # Safety
 ///
 /// The function must be called only from the epilogue of context switching.
-pub unsafe fn set_current(space: Arc<Space>) -> Arc<Space> {
+pub unsafe fn set_current(space: Arsc<Space>) -> Arsc<Space> {
     PREEMPT.scope(|| {
-        if !Arc::ptr_eq(current(), &space) {
+        if !Arsc::ptr_eq(current(), &space) {
             space.load();
             CURRENT.replace(space).expect("No current space available")
         } else {

@@ -69,8 +69,7 @@ pub fn test(stack: (*mut u8, *mut u8, Handle)) {
 
         buf.fill(0);
         let mut receivee = rp(0, &mut hdl, &mut buf);
-        chan_recv(c2, &mut receivee)
-            .expect("Failed to receive a packet from the channel");
+        chan_recv(c2, &mut receivee).expect("Failed to receive a packet from the channel");
         assert_eq!(buf, [1u8, 2, 3, 4, 5, 6, 7]);
         assert_eq!(receivee.id, 100);
 

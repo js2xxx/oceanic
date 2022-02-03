@@ -60,8 +60,8 @@ impl Futex {
 mod syscall {
     use sv_call::*;
 
-    use super::*;
     use crate::{
+        cpu::time,
         sched::{PREEMPT, SCHED},
         syscall::{In, InOut, UserPtr},
     };
@@ -69,15 +69,10 @@ mod syscall {
     #[syscall]
     fn futex_wait(ptr: UserPtr<In, u64>, expected: u64, timeout_us: u64) -> Result {
         let _ = unsafe { ptr.read() }?;
-        let timeout = if timeout_us == u64::MAX {
-            Duration::MAX
-        } else {
-            Duration::from_micros(timeout_us)
-        };
 
         let pree = PREEMPT.lock();
         let futex = unsafe { (*SCHED.current()).as_ref().unwrap().space.futex(ptr) };
-        let ret = futex.wait(pree, expected, timeout);
+        let ret = futex.wait(pree, expected, time::from_us(timeout_us));
 
         if futex.wo.wait_queue.is_empty() {
             drop(futex);

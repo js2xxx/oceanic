@@ -1,14 +1,15 @@
-use alloc::sync::Arc;
-
 use super::{hdl::HandleMap, Tid};
 use crate::{
     mem,
-    sched::wait::{Futex, FutexKey, FutexRef, Futexes},
+    sched::{
+        wait::{Futex, FutexKey, FutexRef, Futexes},
+        Arsc,
+    },
 };
 
 #[derive(Debug)]
 pub struct Space {
-    mem: Arc<mem::space::Space>,
+    mem: Arsc<mem::space::Space>,
     handles: HandleMap,
     futexes: Futexes,
 }
@@ -17,24 +18,27 @@ unsafe impl Send for Space {}
 unsafe impl Sync for Space {}
 
 impl Space {
-    pub fn new(ty: super::Type) -> Arc<Self> {
-        Arc::new(Space {
-            mem: mem::space::Space::new(ty),
+    pub fn new(ty: super::Type) -> sv_call::Result<Arsc<Self>> {
+        let mem = mem::space::Space::try_new(ty)?;
+        Arsc::try_new(Space {
+            mem,
             handles: HandleMap::new(),
-            futexes: Futexes::new(core::hash::BuildHasherDefault::default()),
+            futexes: Futexes::new(Default::default()),
         })
+        .map_err(sv_call::Error::from)
     }
 
-    pub fn new_current() -> Arc<Self> {
-        Arc::new(Space {
-            mem: mem::space::with_current(Arc::clone),
+    pub fn new_current() -> sv_call::Result<Arsc<Self>> {
+        Arsc::try_new(Space {
+            mem: mem::space::with_current(Arsc::clone),
             handles: HandleMap::new(),
-            futexes: Futexes::new(core::hash::BuildHasherDefault::default()),
+            futexes: Futexes::new(Default::default()),
         })
+        .map_err(sv_call::Error::from)
     }
 
     #[inline]
-    pub fn mem(&self) -> &Arc<mem::space::Space> {
+    pub fn mem(&self) -> &Arsc<mem::space::Space> {
         &self.mem
     }
 

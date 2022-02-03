@@ -8,10 +8,11 @@ use super::*;
 use crate::{
     cpu::CpuMask,
     mem::space::{Flags, Phys, Space},
+    sched::Arsc,
 };
 
 fn load_prog(
-    space: &Arc<Space>,
+    space: &Arsc<Space>,
     flags: u32,
     virt: LAddr,
     phys: PAddr,
@@ -48,7 +49,7 @@ fn load_prog(
         log::trace!("Mapping {:?}", virt);
         let cnt = fsize.div_ceil_bit(paging::PAGE_SHIFT);
         let (layout, _) = paging::PAGE_LAYOUT.repeat(cnt)?;
-        let phys = Phys::new(phys, layout, flags);
+        let phys = Phys::new(phys, layout, flags)?;
         unsafe { space.map_addr(virt, Some(phys), flags) }?;
     }
 
@@ -63,7 +64,7 @@ fn load_prog(
     Ok(())
 }
 
-fn load_elf(space: &Arc<Space>, file: &Elf, image: &[u8]) -> sv_call::Result<(LAddr, usize)> {
+fn load_elf(space: &Arsc<Space>, file: &Elf, image: &[u8]) -> sv_call::Result<(LAddr, usize)> {
     log::trace!(
         "Loading ELF file from image {:?}, space = {:?}",
         image.as_ptr(),
@@ -115,7 +116,7 @@ pub fn from_elf(
             }
         })?;
 
-    let space = super::Space::new(Type::User);
+    let space = super::Space::new(Type::User)?;
     let init_chan = unsafe { space.handles().insert_ref(init_chan) }?;
 
     let (entry, stack_size) = load_elf(space.mem(), &file, image)?;

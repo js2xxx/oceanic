@@ -114,7 +114,7 @@ impl HandleMap {
         event: Weak<dyn Event>,
     ) -> Result<sv_call::Handle> {
         // SAFETY: The safety condition is guaranteed by the caller.
-        let value = unsafe { Ref::new_unchecked(data, send, sync, event) };
+        let value = unsafe { Ref::try_new_unchecked(data, send, sync, event) }?;
         // SAFETY: The safety condition is guaranteed by the caller.
         unsafe { self.insert_ref(value.coerce_unchecked()) }
     }
@@ -125,7 +125,7 @@ impl HandleMap {
         data: T,
         event: Weak<dyn Event>,
     ) -> Result<sv_call::Handle> {
-        let value = Ref::new(data, event);
+        let value = Ref::try_new(data, event)?;
         // SAFETY: data is `Send`.
         unsafe { self.insert_ref(value.coerce_unchecked()) }
     }

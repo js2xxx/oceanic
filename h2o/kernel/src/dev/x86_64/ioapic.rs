@@ -1,4 +1,4 @@
-use alloc::{sync::Arc, vec::Vec};
+use alloc::vec::Vec;
 use core::ops::Range;
 
 use acpi::platform::interrupt::{
@@ -14,23 +14,23 @@ use spin::Mutex;
 use crate::{
     cpu::arch::apic::{lapic, DelivMode, Polarity, TriggerMode},
     mem::space::{self, Flags, Phys},
+    sched::Arsc,
 };
 
 const LEGACY_IRQ: Range<u32> = 0..16;
 
-#[allow(clippy::type_complexity)]
-static IOAPIC_CHIP: Azy<(Arc<Mutex<Ioapics>>, Vec<IntrOvr>)> = Azy::new(|| {
+static IOAPIC_CHIP: Azy<(Mutex<Ioapics>, Vec<IntrOvr>)> = Azy::new(|| {
     let ioapic_data = match crate::dev::acpi::platform_info().interrupt_model {
         acpi::InterruptModel::Apic(ref apic) => apic,
         _ => panic!("Failed to get IOAPIC data"),
     };
     let (ioapics, intr_ovr) =
         unsafe { Ioapics::new(ioapic_data) }.expect("Failed to create IOAPIC");
-    (Arc::new(Mutex::new(ioapics)), intr_ovr)
+    (Mutex::new(ioapics), intr_ovr)
 });
 
 #[inline]
-pub fn chip() -> &'static Arc<Mutex<Ioapics>> {
+pub fn chip() -> &'static Mutex<Ioapics> {
     &IOAPIC_CHIP.0
 }
 
@@ -178,11 +178,12 @@ impl Ioapic {
             PAddr::new(*paddr as usize),
             PAGE_LAYOUT,
             Flags::READABLE | Flags::WRITABLE | Flags::UNCACHED,
-        );
+        )
+        .expect("Failed to acquire memory for I/O APIC");
         let addr = space::KRL
             .map(
                 None,
-                Arc::clone(&phys),
+                Arsc::clone(&phys),
                 0,
                 phys.layout().size(),
                 phys.flags(),

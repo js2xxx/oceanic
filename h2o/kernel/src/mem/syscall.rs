@@ -7,7 +7,7 @@ use sv_call::{mem::MapInfo, *};
 use super::space;
 use crate::{
     dev::Resource,
-    sched::{task::Space as TaskSpace, PREEMPT, SCHED},
+    sched::{task::Space as TaskSpace, Arsc, PREEMPT, SCHED},
     syscall::{In, UserPtr},
 };
 
@@ -41,10 +41,10 @@ fn mem_map(space: Handle, mi: UserPtr<In, MapInfo>) -> Result<*mut u8> {
     let phys = SCHED.with_current(|cur| {
         cur.space()
             .handles()
-            .get::<Arc<space::Phys>>(mi.phys)
-            .map(|obj| Arc::clone(obj))
+            .get::<Arsc<space::Phys>>(mi.phys)
+            .map(|obj| Arsc::clone(obj))
     })?;
-    let op = |space: &Arc<space::Space>| {
+    let op = |space: &Arsc<space::Space>| {
         let offset = if mi.map_addr {
             Some(
                 mi.addr
@@ -61,7 +61,7 @@ fn mem_map(space: Handle, mi: UserPtr<In, MapInfo>) -> Result<*mut u8> {
     if space == Handle::NULL {
         space::with_current(op)
     } else {
-        SCHED.with_current(|cur| op(cur.space().handles().get::<Arc<TaskSpace>>(space)?.mem()))
+        SCHED.with_current(|cur| op(cur.space().handles().get::<Arsc<TaskSpace>>(space)?.mem()))
     }
 }
 
@@ -77,7 +77,7 @@ fn mem_reprot(space: Handle, ptr: *mut u8, len: usize, flags: u32) -> Result {
             SCHED.with_current(|cur| {
                 cur.space()
                     .handles()
-                    .get::<Arc<TaskSpace>>(space)?
+                    .get::<Arsc<TaskSpace>>(space)?
                     .mem()
                     .reprotect(ptr, flags)
             })
@@ -95,7 +95,7 @@ fn mem_unmap(space: Handle, ptr: *mut u8) -> Result {
             SCHED.with_current(|cur| {
                 cur.space()
                     .handles()
-                    .get::<Arc<TaskSpace>>(space)?
+                    .get::<Arsc<TaskSpace>>(space)?
                     .mem()
                     .unmap(ptr)
             })

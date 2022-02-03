@@ -26,13 +26,14 @@ pub(super) static IDLE: Lazy<Tid> = Lazy::new(|| {
 
     let ti = TaskInfo::builder()
         .from(None)
+        .excep_chan(Arsc::try_new(Default::default()).expect("Failed to create task info"))
         .name(format!("IDLE{}", cpu))
         .ty(Type::Kernel)
         .affinity(crate::cpu::current_mask())
         .build()
         .unwrap();
 
-    let space = super::Space::new_current();
+    let space = super::Space::new_current().expect("Failed to create space");
     let stack = space
         .mem()
         .init_stack(DEFAULT_STACK_SIZE)
@@ -88,21 +89,34 @@ fn spawn_tinit() {
     {
         let mem_res = Arc::clone(crate::dev::mem_resource());
         let res = unsafe {
-            objects.insert_impl(hdl::Ref::new(mem_res, noevent.clone()).coerce_unchecked())
+            objects.insert_impl(
+                hdl::Ref::try_new(mem_res, noevent.clone())
+                    .expect("Failed to create memory resource")
+                    .coerce_unchecked(),
+            )
         };
         res.expect("Failed to insert memory resource");
     }
     {
         let pio_res = Arc::clone(crate::dev::pio_resource());
         let res = unsafe {
-            objects.insert_impl(hdl::Ref::new(pio_res, noevent.clone()).coerce_unchecked())
+            objects.insert_impl(
+                hdl::Ref::try_new(pio_res, noevent.clone())
+                    .expect("Failed to create port I/O resource")
+                    .coerce_unchecked(),
+            )
         };
         res.expect("Failed to insert port I/O resource");
     }
     {
         let gsi_res = Arc::clone(crate::dev::gsi_resource());
-        let res =
-            unsafe { objects.insert_impl(hdl::Ref::new(gsi_res, noevent).coerce_unchecked()) };
+        let res = unsafe {
+            objects.insert_impl(
+                hdl::Ref::try_new(gsi_res, noevent)
+                    .expect("Failed to create GSI resource")
+                    .coerce_unchecked(),
+            )
+        };
         res.expect("Failed to insert GSI resource");
     }
     let buf = {
@@ -114,7 +128,11 @@ fn spawn_tinit() {
 
     let (me, chan) = Channel::new();
     let event = Arc::downgrade(chan.event()) as _;
-    let chan = unsafe { hdl::Ref::new(chan, event).coerce_unchecked() };
+    let chan = unsafe {
+        hdl::Ref::try_new(chan, event)
+            .expect("Failed to create channel")
+            .coerce_unchecked()
+    };
     me.send(&mut crate::sched::ipc::Packet::new(0, objects, &buf))
         .expect("Failed to send message");
     let image = unsafe {

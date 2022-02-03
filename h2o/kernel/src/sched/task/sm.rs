@@ -12,7 +12,7 @@ use spin::Mutex;
 use super::{ctx, idle, sig::Signal, tid, Space, Tid, Type};
 use crate::{
     cpu::{time::Instant, CpuMask},
-    sched::{ipc::Channel, BasicEvent, Event, PREEMPT, SIG_READ},
+    sched::{ipc::Channel, Arsc, BasicEvent, Event, PREEMPT, SIG_READ},
 };
 
 #[derive(Debug, Builder)]
@@ -23,8 +23,7 @@ pub struct TaskInfo {
     ret_cell: Mutex<Option<usize>>,
     #[builder(setter(skip))]
     pub(super) event: Arc<BasicEvent>,
-    #[builder(setter(skip))]
-    excep_chan: Arc<Mutex<Option<Channel>>>,
+    excep_chan: Arsc<Mutex<Option<Channel>>>,
 
     name: String,
     ty: Type,
@@ -75,8 +74,8 @@ impl TaskInfo {
     }
 
     #[inline]
-    pub fn excep_chan(&self) -> Arc<Mutex<Option<Channel>>> {
-        Arc::clone(&self.excep_chan)
+    pub fn excep_chan(&self) -> Arsc<Mutex<Option<Channel>>> {
+        Arsc::clone(&self.excep_chan)
     }
 
     #[inline]
@@ -92,7 +91,7 @@ impl TaskInfo {
 pub struct Context {
     pub(in crate::sched) tid: Tid,
 
-    pub(in crate::sched) space: Arc<Space>,
+    pub(in crate::sched) space: Arsc<Space>,
     pub(in crate::sched) kstack: ctx::Kstack,
     pub(in crate::sched) ext_frame: ctx::ExtFrame,
     pub(in crate::sched) io_bitmap: Option<BitVec>,
@@ -108,7 +107,7 @@ impl Context {
     }
 
     #[inline]
-    pub fn space(&self) -> &Arc<Space> {
+    pub fn space(&self) -> &Arsc<Space> {
         &self.space
     }
 
@@ -211,7 +210,12 @@ impl IntoReady for Init {
 }
 
 impl Init {
-    pub fn new(tid: Tid, space: Arc<Space>, kstack: ctx::Kstack, ext_frame: ctx::ExtFrame) -> Self {
+    pub fn new(
+        tid: Tid,
+        space: Arsc<Space>,
+        kstack: ctx::Kstack,
+        ext_frame: ctx::ExtFrame,
+    ) -> Self {
         Init {
             ctx: Box::new(Context {
                 tid,
@@ -321,7 +325,7 @@ impl Blocked {
     }
 
     #[inline]
-    pub fn space(&self) -> &Arc<Space> {
+    pub fn space(&self) -> &Arsc<Space> {
         &self.ctx.space
     }
 
