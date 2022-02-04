@@ -39,6 +39,7 @@ pub fn test() {
     let flags = Flags::READABLE | Flags::WRITABLE | Flags::USER_ACCESS;
     let phys = crate::call::phys_alloc(4096, 4096, flags.bits)
         .expect("Failed to allocate physical object");
+
     let mi = MapInfo {
         addr: 0,
         map_addr: false,
@@ -47,9 +48,19 @@ pub fn test() {
         len: 4096,
         flags: flags.bits,
     };
+
     let ptr =
         crate::call::mem_map(crate::Handle::NULL, &mi).expect("Failed to map the physical memory");
-    unsafe { ptr.cast::<u32>().write(12345) };
+
+    let data = [1, 2, 3, 4];
+    unsafe { ptr.copy_from_nonoverlapping(data.as_ptr(), data.len()) };
+
     crate::call::mem_unmap(crate::Handle::NULL, ptr).expect("Failed to unmap the memory");
+
+    let mut buf = [0; 4];
+    crate::call::phys_read(phys, 0, buf.len(), buf.as_mut_ptr())
+        .expect("Failed to read from physical memory");
+    assert_eq!(buf, data);
+
     crate::call::obj_drop(phys).expect("Failed to deallocate the physical object");
 }

@@ -19,6 +19,10 @@ impl Handle {
         }
     }
 
+    pub fn is_null(&self) -> bool {
+        self.0 != 0
+    }
+
     pub fn raw(&self) -> u32 {
         self.0
     }

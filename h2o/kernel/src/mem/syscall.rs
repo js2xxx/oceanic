@@ -1,8 +1,11 @@
 use alloc::sync::Arc;
-use core::{alloc::Layout, ptr::NonNull};
+use core::{alloc::Layout, ptr::NonNull, slice};
 
 use bitop_ex::BitOpEx;
-use sv_call::{mem::{MapInfo, MemInfo}, *};
+use sv_call::{
+    mem::{MapInfo, MemInfo},
+    *,
+};
 
 use super::space;
 use crate::{
@@ -32,6 +35,61 @@ fn phys_alloc(size: usize, align: usize, flags: u32) -> Result<Handle> {
     let flags = check_flags(flags)?;
     let phys = PREEMPT.scope(|| space::Phys::allocate(layout, flags))?;
     SCHED.with_current(|cur| cur.space().handles().insert(phys))
+}
+
+fn phys_rw_check<T: crate::syscall::Type>(
+    hdl: Handle,
+    offset: usize,
+    len: usize,
+    buffer: UserPtr<T, u8>,
+) -> Result<Arsc<space::Phys>> {
+    hdl.check_null()?;
+    buffer.check_slice(len)?;
+    let offset_end = offset.wrapping_add(len);
+    if offset_end < offset {
+        return Err(Error::ERANGE);
+    }
+    let phys = SCHED.with_current(|cur| {
+        cur.space()
+            .handles()
+            .get::<Arsc<space::Phys>>(hdl)
+            .map(|obj| Arsc::clone(obj))
+    })?;
+    if offset_end > phys.layout().size() {
+        return Err(Error::ERANGE);
+    }
+    Ok(phys)
+}
+
+#[syscall]
+fn phys_read(hdl: Handle, offset: usize, len: usize, buffer: UserPtr<Out, u8>) -> Result {
+    let phys = phys_rw_check(hdl, offset, len, buffer)?;
+    if !phys.flags().contains(space::Flags::READABLE) {
+        return Err(Error::EPERM);
+    }
+    if len > 0 {
+        unsafe {
+            let ptr = phys.raw_ptr().add(offset);
+            let slice = slice::from_raw_parts(ptr, len);
+            buffer.write_slice(slice)?;
+        }
+    }
+    Ok(())
+}
+
+#[syscall]
+fn phys_write(hdl: Handle, offset: usize, len: usize, buffer: UserPtr<In, u8>) -> Result {
+    let phys = phys_rw_check(hdl, offset, len, buffer)?;
+    if !phys.flags().contains(space::Flags::WRITABLE) {
+        return Err(Error::EPERM);
+    }
+    if len > 0 {
+        unsafe {
+            let ptr = phys.raw_ptr().add(offset);
+            buffer.read_slice(ptr, len)?;
+        }
+    }
+    Ok(())
 }
 
 #[syscall]

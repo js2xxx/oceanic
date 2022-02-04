@@ -12,4 +12,5 @@ pub struct ExceptionResult {
     pub code: u64,
 }
 
-pub const EXRES_CODE_OK: u64 = 1;
+pub const EXRES_CODE_RECOVERED: u64 = 1;
+pub const EXRES_CODE_KILLING: u64 = 2;
