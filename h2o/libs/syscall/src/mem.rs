@@ -10,6 +10,13 @@ bitflags::bitflags! {
     }
 }
 
+#[derive(Debug, Default)]
+#[repr(C)]
+pub struct MemInfo {
+    pub all_available: usize,
+    pub current_used: usize,
+}
+
 cfg_if::cfg_if! { if #[cfg(target_arch = "x86_64")] {
 
 pub const PAGE_SHIFT: usize = 12;
@@ -17,6 +24,7 @@ pub const PAGE_SIZE: usize = 4096;
 
 } }
 
+#[repr(C)]
 pub struct MapInfo {
     pub addr: usize,
     pub map_addr: bool,

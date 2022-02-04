@@ -2,13 +2,13 @@ use alloc::sync::Arc;
 use core::{alloc::Layout, ptr::NonNull};
 
 use bitop_ex::BitOpEx;
-use sv_call::{mem::MapInfo, *};
+use sv_call::{mem::{MapInfo, MemInfo}, *};
 
 use super::space;
 use crate::{
     dev::Resource,
     sched::{task::Space as TaskSpace, Arsc, PREEMPT, SCHED},
-    syscall::{In, UserPtr},
+    syscall::{In, Out, UserPtr},
 };
 
 fn check_layout(size: usize, align: usize) -> Result<Layout> {
@@ -100,6 +100,19 @@ fn mem_unmap(space: Handle, ptr: *mut u8) -> Result {
                     .unmap(ptr)
             })
         }
+    }
+}
+
+#[syscall]
+fn mem_info(info: UserPtr<Out, MemInfo>) -> Result {
+    info.check()?;
+    let all_available = super::ALL_AVAILABLE.load(core::sync::atomic::Ordering::Relaxed);
+    let current_used = super::heap::current_used();
+    unsafe {
+        info.write(MemInfo {
+            all_available,
+            current_used,
+        })
     }
 }
 

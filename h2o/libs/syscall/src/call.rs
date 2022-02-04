@@ -4,7 +4,11 @@ mod raw;
 pub(crate) mod reg;
 
 #[cfg(feature = "call")]
-use crate::{ipc::RawPacket, mem::MapInfo, task, Handle, Result, SerdeReg};
+use crate::{
+    ipc::RawPacket,
+    mem::{MapInfo, MemInfo},
+    task, Handle, Result, SerdeReg,
+};
 
 #[cfg(feature = "call")]
 include!(concat!(env!("CARGO_MANIFEST_DIR"), "/target/call.rs"));
