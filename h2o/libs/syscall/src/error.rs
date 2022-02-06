@@ -1,3 +1,5 @@
+pub mod c_ty;
+
 use core::{fmt::Debug, ops::Range};
 
 use crate::SerdeReg;
@@ -12,37 +14,44 @@ impl<T: SerdeReg> SerdeReg for Result<T> {
     fn encode(self) -> usize {
         match self {
             Ok(t) => t.encode(),
-            Err(e) => (-e.raw()) as usize,
+            Err(e) => e.raw() as usize,
         }
     }
 
     #[inline]
     fn decode(val: usize) -> Self {
-        let err = -(val as i32);
-        if ERRC_RANGE.contains(&err) || CUSTOM_RANGE.contains(&err) {
-            Err(Error(err))
-        } else {
-            Ok(T::decode(val))
-        }
+        Error::try_decode(val).map_or_else(|| Ok(T::decode(val)), Err)
     }
 }
 
 #[derive(Copy, Clone, PartialEq, Eq)]
 #[repr(transparent)]
-pub struct Error(i32);
+pub struct Error {
+    raw: i32,
+}
 
 impl Error {
-    pub fn desc(&self) -> &'static str {
-        if ERRC_RANGE.contains(&self.0) {
-            ERRC_DESC[self.0 as usize]
+    fn try_decode(val: usize) -> Option<Self> {
+        let err = -(val as i32);
+        if ERRC_RANGE.contains(&err) || CUSTOM_RANGE.contains(&err) {
+            Some(Error { raw: -err })
         } else {
-            CUSTOM_DESC[(self.0 - Self::CUSTOM_OFFSET) as usize]
+            None
+        }
+    }
+
+    pub fn desc(&self) -> &'static str {
+        let index = -self.raw;
+        if ERRC_RANGE.contains(&index) {
+            ERRC_DESC[index as usize]
+        } else {
+            CUSTOM_DESC[(index - Self::CUSTOM_OFFSET) as usize]
         }
     }
 
     #[inline]
     pub fn raw(&self) -> i32 {
-        self.0
+        self.raw
     }
 
     #[inline]
@@ -88,7 +97,7 @@ impl From<core::str::Utf8Error> for Error {
 macro_rules! declare_error {
     ($e:ident, $v:literal, $desc:literal) => {
         #[doc = $desc]
-        pub const $e: Error = Error($v);
+        pub const $e: Error = Error { raw: -$v };
     };
 }
 

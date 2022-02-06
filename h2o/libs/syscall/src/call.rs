@@ -5,6 +5,7 @@ pub(crate) mod reg;
 
 #[cfg(feature = "call")]
 use crate::{
+    c_ty::*,
     ipc::RawPacket,
     mem::{Flags, MapInfo, MemInfo},
     res::IntrConfig,

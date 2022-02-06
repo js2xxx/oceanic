@@ -39,8 +39,10 @@ impl Drop for SuspendToken {
 }
 
 #[syscall]
-fn task_exit(retval: usize) {
+fn task_exit(retval: usize) -> Result {
     SCHED.exit_current(retval);
+    #[allow(unreachable_code)]
+    Err(Error::EKILLED)
 }
 
 #[syscall]
