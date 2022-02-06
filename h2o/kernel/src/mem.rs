@@ -4,8 +4,7 @@ pub mod space;
 mod syscall;
 
 use alloc::{alloc::Global, sync::Arc};
-use core::sync::atomic::AtomicUsize;
-use core::{alloc::Allocator, ptr::NonNull};
+use core::{alloc::Allocator, ptr::NonNull, sync::atomic::AtomicUsize};
 
 use archop::Azy;
 use iter_ex::PointerIterator;

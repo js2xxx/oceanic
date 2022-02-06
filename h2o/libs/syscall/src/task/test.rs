@@ -194,14 +194,14 @@ pub fn test() -> (*mut u8, *mut u8, Handle) {
 
     let flags = Flags::READABLE | Flags::WRITABLE | Flags::USER_ACCESS;
     let stack_phys =
-        phys_alloc(DEFAULT_STACK_SIZE, 4096, flags.bits()).expect("Failed to allocate memory");
+        phys_alloc(DEFAULT_STACK_SIZE, 4096, flags).expect("Failed to allocate memory");
     let mi = crate::mem::MapInfo {
         addr: 0,
         map_addr: false,
         phys: stack_phys,
         phys_offset: 0,
         len: DEFAULT_STACK_SIZE,
-        flags: flags.bits(),
+        flags,
     };
     let stack_base = mem_map(Handle::NULL, &mi).expect("Failed to map memory");
     let stack_ptr = unsafe { stack_base.add(DEFAULT_STACK_SIZE - 4096) };

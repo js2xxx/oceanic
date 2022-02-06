@@ -89,8 +89,7 @@ mod syscall {
     };
 
     #[syscall]
-    fn intr_new(res: Handle, gsi: u32, config: u32) -> Result<Handle> {
-        let config = IntrConfig::from_bits(config).ok_or(Error::EINVAL)?;
+    fn intr_new(res: Handle, gsi: u32, config: IntrConfig) -> Result<Handle> {
         let level_triggered = config.contains(IntrConfig::LEVEL_TRIGGERED);
         let trig_mode = if level_triggered {
             TriggerMode::Level

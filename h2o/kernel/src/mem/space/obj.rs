@@ -1,4 +1,4 @@
-use alloc::{alloc::Global};
+use alloc::alloc::Global;
 use core::alloc::{Allocator, Layout};
 
 use paging::{LAddr, PAddr};

@@ -9,10 +9,6 @@ use crate::Handle;
 
 pub const DEFAULT_STACK_SIZE: usize = 256 * 1024;
 
-pub const PRIO_DEFAULT: u16 = 20;
-
-pub const TASK_CFLAGS_SUSPEND: u32 = 0b0000_0001;
-
 pub const TASK_CTL_KILL: u32 = 1;
 pub const TASK_CTL_SUSPEND: u32 = 2;
 

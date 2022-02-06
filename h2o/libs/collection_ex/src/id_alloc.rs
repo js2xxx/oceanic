@@ -61,7 +61,7 @@ impl IdAllocator {
             let len = 1 << self.secondary_bits;
             let mut bvec = bitvec![0; len];
 
-            let id = (&mut insert_bvec)(&mut bvec, prim, sec);
+            let id = insert_bvec(&mut bvec, prim, sec);
             let _old = self.inner.insert(prim, bvec);
             debug_assert!(_old.is_none());
 
@@ -71,15 +71,13 @@ impl IdAllocator {
                 .inner
                 .range_mut(prim..=*self.range.end())
                 .find_map(|(&prim, bvec)| {
-                    bvec.first_zero()
-                        .map(|sec| (&mut insert_bvec)(bvec, prim, sec))
+                    bvec.first_zero().map(|sec| insert_bvec(bvec, prim, sec))
                 });
             id.or_else(|| {
                 self.inner
                     .range_mut(*self.range.start()..prim)
                     .find_map(|(&prim, bvec)| {
-                        bvec.first_zero()
-                            .map(|sec| (&mut insert_bvec)(bvec, prim, sec))
+                        bvec.first_zero().map(|sec| insert_bvec(bvec, prim, sec))
                     })
             })
         }

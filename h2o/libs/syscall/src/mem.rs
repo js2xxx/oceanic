@@ -1,5 +1,10 @@
-bitflags::bitflags! {
+use bitflags::bitflags;
+
+use crate::SerdeReg;
+
+bitflags! {
     /// Flags to describe a block of memory.
+    #[repr(transparent)]
     pub struct Flags: u32 {
         const USER_ACCESS = 1;
         const READABLE    = 1 << 1;
@@ -7,6 +12,16 @@ bitflags::bitflags! {
         const EXECUTABLE  = 1 << 3;
         const UNCACHED    = 1 << 4;
         const ZEROED      = 1 << 10;
+    }
+}
+
+impl SerdeReg for Flags {
+    fn encode(self) -> usize {
+        self.bits() as usize
+    }
+
+    fn decode(val: usize) -> Self {
+        Self::from_bits_truncate(val as u32)
     }
 }
 
@@ -31,14 +46,14 @@ pub struct MapInfo {
     pub phys: crate::Handle,
     pub phys_offset: usize,
     pub len: usize,
-    pub flags: u32,
+    pub flags: Flags,
 }
 
 #[cfg(feature = "call")]
 pub fn test() {
     let flags = Flags::READABLE | Flags::WRITABLE | Flags::USER_ACCESS;
-    let phys = crate::call::phys_alloc(4096, 4096, flags.bits)
-        .expect("Failed to allocate physical object");
+    let phys =
+        crate::call::phys_alloc(4096, 4096, flags).expect("Failed to allocate physical object");
 
     let mi = MapInfo {
         addr: 0,
@@ -46,7 +61,7 @@ pub fn test() {
         phys,
         phys_offset: 0,
         len: 4096,
-        flags: flags.bits,
+        flags,
     };
 
     let ptr =

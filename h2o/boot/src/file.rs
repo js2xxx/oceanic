@@ -33,7 +33,7 @@ pub fn init(img: Handle, syst: &SystemTable<Boot>) {
     unsafe {
         // Open the volume with the file system.
         LOCAL_VOL = Some(
-            (&mut *fs.get())
+            (*fs.get())
                 .open_volume()
                 .expect_success("Failed to open the local volume"),
         );

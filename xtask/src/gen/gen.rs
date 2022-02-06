@@ -150,6 +150,8 @@ pub fn call_stub(num: usize, func: ItemFn) -> Result<[ItemFn; 2]> {
     let mut attrs = func.attrs;
     attrs.retain(|attr| attr.path.to_token_stream().to_string() != "syscall");
 
+    let mut c_attrs = attrs.clone();
+    c_attrs.push(parse_quote!(#[no_mangle]));
     let c_func = ItemFn {
         sig: Signature {
             inputs: inputs.clone(),
@@ -160,7 +162,7 @@ pub fn call_stub(num: usize, func: ItemFn) -> Result<[ItemFn; 2]> {
         },
         vis: parse_quote!(pub),
         block: Box::new(c_out_body),
-        attrs: attrs.clone(),
+        attrs: c_attrs,
     };
 
     let rust_func = ItemFn {

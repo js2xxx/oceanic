@@ -7,7 +7,7 @@ use sv_call::{
     *,
 };
 
-use super::space;
+use super::space::{self, Flags};
 use crate::{
     dev::Resource,
     sched::{task::Space as TaskSpace, Arsc, PREEMPT, SCHED},
@@ -21,16 +21,15 @@ fn check_layout(size: usize, align: usize) -> Result<Layout> {
     Layout::from_size_align(size, align).map_err(Error::from)
 }
 
-fn check_flags(flags: u32) -> Result<space::Flags> {
-    let flags = space::Flags::from_bits(flags).ok_or(Error::EINVAL)?;
-    if !flags.contains(space::Flags::USER_ACCESS) {
+fn check_flags(flags: Flags) -> Result<Flags> {
+    if !flags.contains(Flags::USER_ACCESS) {
         return Err(Error::EPERM);
     }
     Ok(flags)
 }
 
 #[syscall]
-fn phys_alloc(size: usize, align: usize, flags: u32) -> Result<Handle> {
+fn phys_alloc(size: usize, align: usize, flags: Flags) -> Result<Handle> {
     let layout = check_layout(size, align)?;
     let flags = check_flags(flags)?;
     let phys = PREEMPT.scope(|| space::Phys::allocate(layout, flags))?;
@@ -64,7 +63,7 @@ fn phys_rw_check<T: crate::syscall::Type>(
 #[syscall]
 fn phys_read(hdl: Handle, offset: usize, len: usize, buffer: UserPtr<Out, u8>) -> Result {
     let phys = phys_rw_check(hdl, offset, len, buffer)?;
-    if !phys.flags().contains(space::Flags::READABLE) {
+    if !phys.flags().contains(Flags::READABLE) {
         return Err(Error::EPERM);
     }
     if len > 0 {
@@ -80,7 +79,7 @@ fn phys_read(hdl: Handle, offset: usize, len: usize, buffer: UserPtr<Out, u8>) -
 #[syscall]
 fn phys_write(hdl: Handle, offset: usize, len: usize, buffer: UserPtr<In, u8>) -> Result {
     let phys = phys_rw_check(hdl, offset, len, buffer)?;
-    if !phys.flags().contains(space::Flags::WRITABLE) {
+    if !phys.flags().contains(Flags::WRITABLE) {
         return Err(Error::EPERM);
     }
     if len > 0 {
@@ -124,7 +123,7 @@ fn mem_map(space: Handle, mi: UserPtr<In, MapInfo>) -> Result<*mut u8> {
 }
 
 #[syscall]
-fn mem_reprot(space: Handle, ptr: *mut u8, len: usize, flags: u32) -> Result {
+fn mem_reprot(space: Handle, ptr: *mut u8, len: usize, flags: Flags) -> Result {
     let flags = check_flags(flags)?;
     unsafe {
         let ptr = NonNull::new(ptr).ok_or(Error::EINVAL)?;
@@ -175,7 +174,7 @@ fn mem_info(info: UserPtr<Out, MemInfo>) -> Result {
 }
 
 #[syscall]
-fn phys_acq(res: Handle, addr: usize, size: usize, align: usize, flags: u32) -> Result<Handle> {
+fn phys_acq(res: Handle, addr: usize, size: usize, align: usize, flags: Flags) -> Result<Handle> {
     if addr.contains_bit(paging::PAGE_MASK)
         || size.contains_bit(paging::PAGE_MASK)
         || !align.is_power_of_two()

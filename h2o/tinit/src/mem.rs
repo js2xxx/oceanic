@@ -9,14 +9,14 @@ unsafe fn alloc_pages(n: usize) -> Option<NonNull<[heap::Page]>> {
     let (layout, _) = Layout::new::<heap::Page>().repeat(n).ok()?;
     let ptr = {
         let (size, align) = (layout.size(), layout.align());
-        let phys = sv_call::call::phys_alloc(size, align, flags.bits()).ok()?;
+        let phys = sv_call::call::phys_alloc(size, align, flags).ok()?;
         let mi = sv_call::mem::MapInfo {
             addr: 0,
             map_addr: false,
             phys,
             phys_offset: 0,
             len: size,
-            flags: flags.bits(),
+            flags,
         };
         let ptr = sv_call::call::mem_map(sv_call::Handle::NULL, &mi).ok()?;
         let _ = sv_call::call::obj_drop(phys);
