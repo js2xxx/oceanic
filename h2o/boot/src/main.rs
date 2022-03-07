@@ -12,7 +12,6 @@
 #![feature(alloc_error_handler)]
 #![feature(bool_to_option)]
 #![feature(box_syntax)]
-#![feature(int_abs_diff)]
 #![feature(nonnull_slice_from_raw_parts)]
 #![feature(panic_info_message)]
 #![feature(slice_ptr_get)]

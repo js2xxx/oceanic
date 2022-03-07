@@ -4,5 +4,6 @@ members = [
   "h2o/kernel",
   "h2o/libs/*",
   "h2o/tinit",
+  "lib/h2o_rs",
   "xtask",
 ]
