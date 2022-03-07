@@ -43,7 +43,7 @@
     },
     {
         "name": "sv_chan_csend",
-        "returns": "()",
+        "returns": "usize",
         "args": [
             {
                 "name": "hdl",

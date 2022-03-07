@@ -5,7 +5,7 @@
         "args": [
             {
                 "name": "hdl",
-                "type": "Handle"
+                "ty": "Handle"
             }
         ]
     },
@@ -15,7 +15,7 @@
         "args": [
             {
                 "name": "hdl",
-                "type": "Handle"
+                "ty": "Handle"
             }
         ]
     },

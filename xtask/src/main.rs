@@ -6,6 +6,7 @@ use structopt::StructOpt;
 
 mod check;
 mod dist;
+mod gen;
 
 const H2O_BOOT: &str = "h2o/boot";
 const H2O_KERNEL: &str = "h2o/kernel";

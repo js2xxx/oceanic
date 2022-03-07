@@ -10,7 +10,7 @@ impl log::Log for Logger {
     }
 
     fn log(&self, record: &log::Record) {
-        let _ = sv_call::call::log(record);
+        let _ = sv_call::call::sv_log(record as *const _ as *const _);
     }
 
     fn flush(&self) {}

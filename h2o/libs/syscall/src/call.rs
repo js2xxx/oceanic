@@ -9,7 +9,8 @@ use crate::{
     ipc::RawPacket,
     mem::{Flags, MapInfo, MemInfo},
     res::IntrConfig,
-    task, Handle, Result, SerdeReg,
+    task::ExecInfo,
+    Handle, SerdeReg,
 };
 
 #[cfg(feature = "call")]

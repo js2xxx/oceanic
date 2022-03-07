@@ -110,7 +110,7 @@ mod syscall {
     use crate::syscall::{Out, UserPtr};
 
     #[syscall]
-    pub(super) fn get_time(ptr: UserPtr<Out, u128>) -> Result {
+    pub(super) fn time_get(ptr: UserPtr<Out, u128>) -> Result {
         #[cfg(target_arch = "x86_64")]
         unsafe {
             let raw = super::Instant::now().raw();

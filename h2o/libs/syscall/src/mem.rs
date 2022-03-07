@@ -52,8 +52,9 @@ pub struct MapInfo {
 #[cfg(feature = "call")]
 pub fn test() {
     let flags = Flags::READABLE | Flags::WRITABLE | Flags::USER_ACCESS;
-    let phys =
-        crate::call::phys_alloc(4096, 4096, flags).expect("Failed to allocate physical object");
+    let phys = crate::call::sv_phys_alloc(4096, 4096, flags)
+        .into_res()
+        .expect("Failed to allocate physical object");
 
     let mi = MapInfo {
         addr: 0,
@@ -64,18 +65,24 @@ pub fn test() {
         flags,
     };
 
-    let ptr =
-        crate::call::mem_map(crate::Handle::NULL, &mi).expect("Failed to map the physical memory");
+    let ptr = crate::call::sv_mem_map(crate::Handle::NULL, &mi)
+        .into_res()
+        .expect("Failed to map the physical memory") as *mut u8;
 
     let data = [1, 2, 3, 4];
     unsafe { ptr.copy_from_nonoverlapping(data.as_ptr(), data.len()) };
 
-    crate::call::mem_unmap(crate::Handle::NULL, ptr).expect("Failed to unmap the memory");
+    crate::call::sv_mem_unmap(crate::Handle::NULL, ptr)
+        .into_res()
+        .expect("Failed to unmap the memory");
 
     let mut buf = [0; 4];
-    crate::call::phys_read(phys, 0, buf.len(), buf.as_mut_ptr())
+    crate::call::sv_phys_read(phys, 0, buf.len(), buf.as_mut_ptr())
+        .into_res()
         .expect("Failed to read from physical memory");
     assert_eq!(buf, data);
 
-    crate::call::obj_drop(phys).expect("Failed to deallocate the physical object");
+    crate::call::sv_obj_drop(phys)
+        .into_res()
+        .expect("Failed to deallocate the physical object");
 }

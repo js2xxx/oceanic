@@ -27,6 +27,12 @@ impl Dist {
         let target_dir = env::var("CARGO_TARGET_DIR")
             .unwrap_or_else(|_| src_root.join("target").to_string_lossy().to_string());
 
+        crate::gen::gen_syscall(
+            src_root.join(H2O_KERNEL).join("syscall"),
+            src_root.join(H2O_KERNEL).join("target/wrapper.rs"),
+            src_root.join("h2o/libs/syscall/target/call.rs"),
+        )?;
+
         {
             // Build h2o_boot
             println!("Building h2o_boot");
