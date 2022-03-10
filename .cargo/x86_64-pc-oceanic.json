@@ -1,0 +1,37 @@
+{
+    "llvm-target": "x86_64-pc-oceanic",
+    "data-layout": "e-m:e-i64:64-f80:128-n8:16:32:64-S128",
+    "dynamic-linking": true,
+    "arch": "x86_64",
+    "target-endian": "little",
+    "target-pointer-width": "64",
+    "target-c-int-width": "32",
+    "os": "h2o",
+    "has-rpath": true,
+    "has-thread-local": true,
+    "executables": true,
+    "position-independent-executables": true,
+    "static-position-independent-executables": true,
+    "linker-flavor": "ld.lld",
+    "linker": "rust-lld",
+    "pre-link-args": {
+        "ld.lld": [
+            "--build-id",
+            "-zmax-page-size=4096",
+            "-zseparate-loadable-segments",
+            "--pack-dyn-relocs=relr"
+        ]
+    },
+    "panic-strategy": "abort",
+    "relro-level": "full",
+    "supported-sanitizers": [
+        "address",
+        "cfi",
+        "leak",
+        "memory",
+        "thread"
+    ],
+    "stack-probes": {
+        "kind": "call"
+    }
+}

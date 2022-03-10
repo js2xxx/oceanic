@@ -9,10 +9,10 @@
 #![feature(slice_ptr_len)]
 #![feature(thread_local)]
 
-mod mem;
-
 mod log;
+mod mem;
 mod rxx;
+mod test;
 
 extern crate alloc;
 
@@ -22,7 +22,7 @@ extern "C" fn tmain(_: sv_call::Handle) {
     ::log::info!("Starting initialization");
     mem::init();
 
-    sv_call::test();
+    test::test_syscall();
 
     ::log::debug!("Reaching end of TINIT");
 }

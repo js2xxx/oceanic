@@ -1,7 +1,6 @@
 use core::ptr;
 
-use super::*;
-use crate::{call::*, Error};
+use sv_call::{call::*, ipc::*, Error, Handle};
 
 pub fn test(stack: (*mut u8, *mut u8, Handle)) {
     #[inline]
@@ -123,7 +122,7 @@ pub fn test(stack: (*mut u8, *mut u8, Handle)) {
         }
 
         let other = {
-            let ci = crate::task::ExecInfo {
+            let ci = sv_call::task::ExecInfo {
                 name: ptr::null_mut(),
                 name_len: 0,
                 space: Handle::NULL,

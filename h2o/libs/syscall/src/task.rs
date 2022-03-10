@@ -1,10 +1,6 @@
 pub mod ctx;
 pub mod excep;
 
-#[cfg(feature = "call")]
-// #[cfg(debug_assertions)]
-pub mod test;
-
 use crate::Handle;
 
 pub const DEFAULT_STACK_SIZE: usize = 256 * 1024;

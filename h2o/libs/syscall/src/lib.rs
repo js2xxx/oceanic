@@ -20,13 +20,3 @@ pub use self::{
     call::{hdl::Handle, reg::*},
     error::*,
 };
-
-#[cfg(feature = "call")]
-pub fn test() {
-    // #[cfg(debug_assertions)]
-    {
-        let stack = task::test::test();
-        ipc::test::test(stack);
-        mem::test();
-    }
-}

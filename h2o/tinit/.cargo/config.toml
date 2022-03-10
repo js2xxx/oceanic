@@ -1,5 +1,5 @@
 [build]
-target = ".cargo/x86_64-unknown-h2o.json"
+target = ".cargo/x86_64-h2o-tinit.json"
 
 [unstable]
 build-std = ["core", "compiler_builtins", "alloc", "panic_abort"]

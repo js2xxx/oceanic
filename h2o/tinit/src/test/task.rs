@@ -4,16 +4,21 @@ use core::{
     ptr::null_mut,
 };
 
-use super::{
-    ctx::{Gpr, GPR_SIZE},
-    excep::Exception,
-    *,
+use sv_call::{
+    call::*,
+    ipc::{RawPacket, SIG_READ},
+    mem::{Flags, MapInfo},
+    task::{
+        ctx::{Gpr, GPR_SIZE},
+        excep::{Exception, ExceptionResult},
+        *,
+    },
+    Error, Handle,
 };
-use crate::{call::*, ipc::SIG_READ, mem::Flags, task::excep::ExceptionResult};
 
 const PF_ADDR: usize = 0x1598_0000_0000;
 
-extern "C" fn func(_: crate::Handle, arg: u32) {
+extern "C" fn func(_: Handle, arg: u32) {
     log::trace!("arg = {}", arg);
     match arg {
         0 => {
@@ -50,7 +55,7 @@ fn join(normal: Handle, fault: Handle) {
         .into_res()
         .expect("Failed to wait for the task");
     let ret = sv_task_join(fault);
-    assert_eq!(ret.into_res(), Err(crate::Error::EFAULT));
+    assert_eq!(ret.into_res(), Err(Error::EFAULT));
 }
 
 fn sleep() {
@@ -72,7 +77,7 @@ fn debug_mem(st: Handle) {
         buf.as_mut_ptr(),
         buf.len(),
     );
-    assert_eq!(ret.into_res(), Err(crate::Error::EPERM));
+    assert_eq!(ret.into_res(), Err(Error::EPERM));
 }
 
 fn debug_reg_gpr(st: Handle) {
@@ -144,7 +149,7 @@ fn debug_excep(task: Handle, st: Handle) {
 
     let mut hdl_buf = [Handle::NULL; 0];
     let mut excep = MaybeUninit::<Exception>::uninit();
-    let mut packet = crate::ipc::RawPacket {
+    let mut packet = RawPacket {
         id: 0,
         handles: hdl_buf.as_mut_ptr(),
         handle_count: 0,
@@ -174,7 +179,7 @@ fn debug_excep(task: Handle, st: Handle) {
         .into_res()
         .expect("Failed to wait for the task");
     let ret = sv_task_join(task);
-    assert_eq!(ret.into_res(), Err(crate::Error::EFAULT));
+    assert_eq!(ret.into_res(), Err(Error::EFAULT));
 }
 
 fn suspend(task: Handle) {
@@ -207,7 +212,7 @@ fn kill(task: Handle) {
         .into_res()
         .expect("Failed to wait for the task");
     let ret = sv_task_join(task);
-    assert_eq!(ret.into_res(), Err(crate::Error::EKILLED));
+    assert_eq!(ret.into_res(), Err(Error::EKILLED));
 }
 
 fn ctl(task: Handle) {
@@ -220,13 +225,13 @@ fn ctl(task: Handle) {
 pub fn test() -> (*mut u8, *mut u8, Handle) {
     // Test the defence of invalid user pointer access.
     let ret = sv_task_exec(0x100000000 as *const ExecInfo);
-    assert_eq!(ret.into_res(), Err(crate::Error::EPERM));
+    assert_eq!(ret.into_res(), Err(Error::EPERM));
 
     let flags = Flags::READABLE | Flags::WRITABLE | Flags::USER_ACCESS;
     let stack_phys = sv_phys_alloc(DEFAULT_STACK_SIZE, 4096, flags)
         .into_res()
         .expect("Failed to allocate memory");
-    let mi = crate::mem::MapInfo {
+    let mi = MapInfo {
         addr: 0,
         map_addr: false,
         phys: stack_phys,

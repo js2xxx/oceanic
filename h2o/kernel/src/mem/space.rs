@@ -29,7 +29,10 @@ use spin::Mutex;
 pub use sv_call::mem::Flags;
 
 pub use self::{arch::init_pgc, obj::*};
-use crate::sched::{task, Arsc, PREEMPT};
+use crate::sched::{
+    task::{self, VDSO},
+    Arsc, PREEMPT,
+};
 
 type ArchSpace = arch::Space;
 
@@ -86,6 +89,8 @@ pub struct Space {
     /// The general allocator.
     pub(super) range: Range<usize>,
     map: Mutex<RangeMap<usize, Arsc<Phys>>>,
+
+    vdso: Mutex<Option<LAddr>>,
 }
 
 unsafe impl Send for Space {}
@@ -101,6 +106,7 @@ impl Space {
             arch: ArchSpace::new(),
             range: range.clone(),
             map: Mutex::new(RangeMap::new(range)),
+            vdso: Mutex::new(None),
         })
         .map_err(sv_call::Error::from)
     }
@@ -165,6 +171,24 @@ impl Space {
             return Err(sv_call::Error::EPERM);
         }
 
+        let (len, set_vdso) = if Arsc::ptr_eq(&phys, &VDSO) {
+            if flags != Flags::READABLE | Flags::EXECUTABLE {
+                return Err(sv_call::Error::EACCES);
+            }
+
+            if phys_offset != 0 || len != 0 {
+                return Err(sv_call::Error::EACCES);
+            }
+
+            if PREEMPT.scope(|| self.vdso.lock().is_some()) {
+                return Err(sv_call::Error::EACCES);
+            }
+
+            (phys.layout().pad_to_align().size(), true)
+        } else {
+            (len, false)
+        };
+
         let phys_offset_end = phys_offset.wrapping_add(len);
         if !(phys_offset < phys_offset_end && phys_offset_end <= phys.layout().size()) {
             return Err(sv_call::Error::ERANGE);
@@ -178,7 +202,7 @@ impl Space {
                 .map_err(paging_error)
         };
 
-        if let Some(offset) = offset {
+        let ret = if let Some(offset) = offset {
             let start = offset.wrapping_add(self.range.start);
             let end = start.wrapping_add(len);
             if !(self.range.start <= start && start < end && end <= self.range.end) {
@@ -203,11 +227,26 @@ impl Space {
                     )
                     .map(|(start, _)| LAddr::from(start))
             })
+        };
+
+        if let (true, Ok(addr)) = (set_vdso, ret) {
+            PREEMPT.scope(|| *self.vdso.lock() = Some(addr));
         }
+
+        ret
     }
 
     /// Get the mapped physical address of the specified pointer.
     pub fn get(&self, ptr: NonNull<u8>) -> sv_call::Result<paging::PAddr> {
+        self.canary.assert();
+
+        let vdso_size = VDSO.layout().pad_to_align().size();
+        if PREEMPT.scope(|| *self.vdso.lock()).map_or(false, |base| {
+            *base <= ptr.as_ptr() && ptr.as_ptr() < *LAddr::from(base.val() + vdso_size)
+        }) {
+            return Err(sv_call::Error::EACCES);
+        }
+
         self.arch.query(LAddr::from(ptr)).map_err(paging_error)
     }
 
@@ -219,6 +258,13 @@ impl Space {
     /// range are present (or will be influenced by the modification).
     pub unsafe fn reprotect(&self, mut ptr: NonNull<[u8]>, flags: Flags) -> sv_call::Result {
         self.canary.assert();
+
+        let vdso_size = VDSO.layout().pad_to_align().size();
+        if PREEMPT.scope(|| *self.vdso.lock()).map_or(false, |base| {
+            *base <= ptr.as_mut_ptr() && ptr.as_mut_ptr() < *LAddr::from(base.val() + vdso_size)
+        }) {
+            return Err(sv_call::Error::EACCES);
+        }
 
         let virt = {
             let ptr = ptr.as_mut().as_mut_ptr_range();
@@ -242,6 +288,13 @@ impl Space {
     /// address range to be deallocated.
     pub unsafe fn unmap(&self, ptr: NonNull<u8>) -> sv_call::Result {
         self.canary.assert();
+
+        if PREEMPT
+            .scope(|| *self.vdso.lock())
+            .map_or(false, |base| *base == ptr.as_ptr())
+        {
+            return Err(sv_call::Error::EACCES);
+        }
 
         let ret = PREEMPT.scope(|| self.map.lock().remove(LAddr::from(ptr).val()));
         ret.map_or(Err(sv_call::Error::ENOENT), |(range, _phys)| {

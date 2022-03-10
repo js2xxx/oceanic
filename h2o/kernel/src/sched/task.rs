@@ -1,3 +1,4 @@
+mod boot;
 pub mod ctx;
 mod elf;
 mod excep;
@@ -16,7 +17,7 @@ use paging::LAddr;
 #[cfg(target_arch = "x86_64")]
 pub use self::ctx::arch::{DEFAULT_STACK_LAYOUT, DEFAULT_STACK_SIZE};
 use self::elf::from_elf;
-pub use self::{excep::dispatch_exception, sig::Signal, sm::*, space::Space, tid::Tid};
+pub use self::{boot::VDSO, excep::dispatch_exception, sig::Signal, sm::*, space::Space, tid::Tid};
 use super::{ipc::Channel, Arsc, PREEMPT};
 use crate::cpu::{CpuMask, Lazy};
 
