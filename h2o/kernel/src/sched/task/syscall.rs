@@ -66,7 +66,7 @@ fn task_sleep(ms: u32) -> Result {
 fn space_new() -> Result<Handle> {
     SCHED.with_current(|cur| {
         let space = Space::new(cur.tid().ty());
-        cur.space().handles().insert(space)
+        cur.space().handles().insert_shared(space)
     })
 }
 

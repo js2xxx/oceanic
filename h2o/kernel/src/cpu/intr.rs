@@ -34,7 +34,7 @@ static GSI_RES: Azy<Arc<Resource<u32>>> = Azy::new(|| {
             .lock()
             .gsi_range()
             .expect("Failed to get GSI range");
-        Resource::new(archop::rand::get(), range, None)
+        Resource::new_root(archop::rand::get(), range)
     })
 });
 

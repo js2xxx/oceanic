@@ -44,7 +44,7 @@ mod syscall {
 
     #[syscall]
     fn int_new(value: u64) -> Result<Handle> {
-        SCHED.with_current(|cur| cur.space().handles().insert(value))
+        SCHED.with_current(|cur| cur.space().handles().insert_shared(value))
     }
 
     #[syscall]

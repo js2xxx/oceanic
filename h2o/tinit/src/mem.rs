@@ -9,7 +9,7 @@ unsafe fn alloc_pages(n: usize) -> Option<NonNull<[heap::Page]>> {
     let (layout, _) = Layout::new::<heap::Page>().repeat(n).ok()?;
     let phys = solvent::mem::Phys::allocate(layout, flags).ok()?;
     let ptr = solvent::mem::Space::current()
-        .map(None, phys, 0, layout.size(), flags)
+        .map(None, &phys, 0, layout.size(), flags)
         .ok()?;
     Some(NonNull::slice_from_raw_parts(ptr.cast::<heap::Page>(), n))
 }

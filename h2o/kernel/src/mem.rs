@@ -33,7 +33,7 @@ static MEM_RESOURCE: Azy<Arc<Resource<usize>>> = Azy::new(|| {
     heap::test_global();
     unsafe { space::init() };
 
-    let ret = Resource::new(archop::rand::get(), 0..addr_max, None);
+    let ret = Resource::new_root(archop::rand::get(), 0..addr_max);
     // Make memory in heap not to be used by devices.
     for mdsc_ptr in &*MMAP {
         let mdsc = unsafe { &*mdsc_ptr };

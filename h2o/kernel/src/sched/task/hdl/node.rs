@@ -129,6 +129,16 @@ impl<T: ?Sized + Send> Deref for Ref<T> {
     }
 }
 
+impl<T: ?Sized + Send + Sync> Ref<T> {
+    #[inline]
+    pub fn try_new_shared(data: T, event: Weak<dyn Event>) -> sv_call::Result<Self>
+    where
+        T: Sized,
+    {
+        unsafe { Self::try_new_unchecked(data, true, true, event) }
+    }
+}
+
 impl<T: ?Sized + Send + Sync> Clone for Ref<T> {
     #[inline]
     fn clone(&self) -> Self {

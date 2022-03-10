@@ -83,7 +83,7 @@ impl Space {
     pub fn map(
         &self,
         addr: Option<usize>,
-        phys: Phys,
+        phys: &Phys,
         phys_offset: usize,
         len: usize,
         flags: Flags,
@@ -91,7 +91,8 @@ impl Space {
         let mi = sv_call::mem::MapInfo {
             addr: addr.unwrap_or_default(),
             map_addr: addr.is_some(),
-            phys: Phys::into_raw(phys),
+            // SAFETY: The kernel create another implicit reference of `phys`.
+            phys: unsafe { phys.raw() },
             phys_offset,
             len,
             flags,

@@ -131,8 +131,24 @@ impl HandleMap {
     }
 
     #[inline]
+    pub fn insert_event_shared<T: Send + Sync + Any>(
+        &self,
+        data: T,
+        event: Weak<dyn Event>,
+    ) -> Result<sv_call::Handle> {
+        let value = Ref::try_new_shared(data, event)?;
+        // SAFETY: data is `Send`.
+        unsafe { self.insert_ref(value.coerce_unchecked()) }
+    }
+
+    #[inline]
     pub fn insert<T: Send + Any>(&self, data: T) -> Result<sv_call::Handle> {
         self.insert_event(data, Weak::<crate::sched::BasicEvent>::new() as _)
+    }
+
+    #[inline]
+    pub fn insert_shared<T: Send + Sync + Any>(&self, data: T) -> Result<sv_call::Handle> {
+        self.insert_event_shared(data, Weak::<crate::sched::BasicEvent>::new() as _)
     }
 
     /// # Safety

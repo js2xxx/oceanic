@@ -16,7 +16,7 @@ pub use self::res::Resource;
 pub use crate::{cpu::intr::gsi_resource, mem::mem_resource};
 
 static PIO_RESOURCE: Azy<Arc<Resource<u16>>> = Azy::new(|| {
-    let ret = Resource::new(archop::rand::get(), 0..u16::MAX, None);
+    let ret = Resource::new_root(archop::rand::get(), 0..u16::MAX);
     core::mem::forget(
         ret.allocate(crate::log::COM_LOG..(crate::log::COM_LOG + 1))
             .expect("Failed to reserve debug port"),

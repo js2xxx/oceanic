@@ -33,7 +33,7 @@ fn phys_alloc(size: usize, align: usize, flags: Flags) -> Result<Handle> {
     let layout = check_layout(size, align)?;
     let flags = check_flags(flags)?;
     let phys = PREEMPT.scope(|| space::Phys::allocate(layout, flags))?;
-    SCHED.with_current(|cur| cur.space().handles().insert(phys))
+    SCHED.with_current(|cur| cur.space().handles().insert_shared(phys))
 }
 
 fn phys_rw_check<T: crate::syscall::Type>(
@@ -193,7 +193,7 @@ fn phys_acq(res: Handle, addr: usize, size: usize, align: usize, flags: Flags) -
             let align = paging::PAGE_LAYOUT.align();
             let layout = unsafe { Layout::from_size_align(size, align) }?;
             let phys = space::Phys::new(paging::PAddr::new(addr), layout, flags);
-            cur.space().handles().insert(phys)
+            cur.space().handles().insert_shared(phys)
         } else {
             Err(Error::EPERM)
         }

@@ -15,12 +15,21 @@ pub struct Resource<T: Ord + Copy> {
 
 impl<T: Ord + Copy> Resource<T> {
     #[inline]
-    pub fn new(magic: u64, range: Range<T>, parent: Option<Weak<Resource<T>>>) -> Arc<Self> {
+    fn new(magic: u64, range: Range<T>, parent: Weak<Resource<T>>) -> Arc<Self> {
         Arc::new(Resource {
             magic,
             range: range.clone(),
             map: Mutex::new(RangeMap::new(range)),
-            parent,
+            parent: Some(parent),
+        })
+    }
+
+    pub fn new_root(magic: u64, range: Range<T>) -> Arc<Self> {
+        Arc::new(Resource {
+            magic,
+            range: range.clone(),
+            map: Mutex::new(RangeMap::new(range)),
+            parent: None,
         })
     }
 
@@ -33,19 +42,13 @@ impl<T: Ord + Copy> Resource<T> {
     pub fn allocate(self: &Arc<Self>, range: Range<T>) -> Option<Arc<Self>> {
         if self.parent.as_ref().map_or(true, |p| p.strong_count() >= 1) {
             PREEMPT.scope(|| {
-                self.map
-                    .lock()
-                    .try_insert_with(
-                        range.clone(),
-                        || {
-                            Ok::<_, ()>((
-                                (),
-                                Self::new(self.magic, range, Some(Arc::downgrade(self))),
-                            ))
-                        },
-                        (),
-                    )
-                    .ok()
+                let mut map = self.map.lock();
+                map.try_insert_with(
+                    range.clone(),
+                    || Ok::<_, ()>(((), Self::new(self.magic, range, Arc::downgrade(self)))),
+                    (),
+                )
+                .ok()
             })
         } else {
             None
@@ -83,7 +86,7 @@ mod syscall {
         SCHED.with_current(|cur| {
             let res = cur.space().handles().get::<Arc<Resource<T>>>(hdl)?;
             let sub = res.allocate(base..(base + size)).ok_or(Error::ENOMEM)?;
-            cur.space().handles().insert(sub)
+            cur.space().handles().insert_shared(sub)
         })
     }
 
