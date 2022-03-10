@@ -12,6 +12,7 @@ path = "src/tmain.rs"
 # Local crates
 heap = {path = "../libs/heap"}
 sv-call = {path = "../libs/syscall"}
+solvent = {path = "../../lib/h2o_rs"}
 # External crates
 log = "0.4"
 spin = "0.9"

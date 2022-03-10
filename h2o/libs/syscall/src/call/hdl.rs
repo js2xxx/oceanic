@@ -22,7 +22,7 @@ impl Handle {
     }
 
     pub fn is_null(&self) -> bool {
-        self.raw != 0
+        self.raw == 0
     }
 
     pub fn raw(&self) -> u32 {

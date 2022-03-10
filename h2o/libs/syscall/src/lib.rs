@@ -1,4 +1,5 @@
 #![no_std]
+#![warn(clippy::missing_panics_doc)]
 #![feature(allocator_api)]
 #![feature(lang_items)]
 #![feature(linkage)]
@@ -9,8 +10,6 @@ pub mod ipc;
 pub mod mem;
 pub mod res;
 pub mod task;
-#[cfg(feature = "call")]
-pub mod rxx;
 
 pub use sv_gen::*;
 
@@ -20,3 +19,5 @@ pub use self::{
     call::{hdl::Handle, reg::*},
     error::*,
 };
+
+include!(concat!(env!("CARGO_MANIFEST_DIR"), "/target/rxx.rs"));

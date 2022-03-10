@@ -63,6 +63,8 @@ impl Dist {
             let cd = src_root.join(H2O_SYSCALL);
             let ldscript = cd.join("syscall.ld");
 
+            fs::copy(cd.join("target/rxx.rs.in"), cd.join("target/rxx.rs"))?;
+
             let mut cmd = Command::new(&cargo);
             let cmd = cmd.current_dir(&cd).arg("rustc").args([
                 "--crate-type=cdylib",
@@ -86,6 +88,12 @@ impl Dist {
                 bin_dir.join("libsv_call.so"),
                 src_root.join(H2O_KERNEL).join("target/vdso"),
             )?;
+
+            fs::File::options()
+                .create(true)
+                .write(true)
+                .truncate(true)
+                .open(cd.join("target/rxx.rs"))?;
         }
 
         // Build h2o_kernel

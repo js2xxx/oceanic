@@ -22,19 +22,20 @@ crate::impl_obj!(@DROP, Phys);
 impl Phys {
     pub fn allocate(layout: Layout, flags: Flags) -> Result<Self> {
         let layout = layout.align_to(PAGE_LAYOUT.align())?.pad_to_align();
-        sv_call::phys_alloc(layout.size(), layout.align(), flags)
+        sv_call::sv_phys_alloc(layout.size(), layout.align(), flags).into_res()
             // SAFETY: The handle is freshly allocated.
             .map(|handle| unsafe { Self::from_raw(handle) })
     }
 
     pub fn read_into(&self, offset: usize, buffer: &mut [u8]) -> Result {
-        sv_call::phys_read(
+        sv_call::sv_phys_read(
             // SAFETY: We don't move the ownership of the handle.
             unsafe { self.raw() },
             offset,
             buffer.len(),
             buffer.as_mut_ptr(),
         )
+        .into_res()
     }
 
     pub fn read(&self, offset: usize, len: usize) -> Result<Vec<u8>> {
@@ -52,7 +53,8 @@ impl Phys {
     /// The caller must guarantee the memory safety of sharing the object.
     pub unsafe fn write(&self, offset: usize, buffer: &[u8]) -> Result {
         // SAFETY: We don't move the ownership of the handle.
-        sv_call::phys_write(unsafe { self.raw() }, offset, buffer.len(), buffer.as_ptr())
+        sv_call::sv_phys_write(unsafe { self.raw() }, offset, buffer.len(), buffer.as_ptr())
+            .into_res()
     }
 }
 
@@ -64,7 +66,9 @@ crate::impl_obj!(@CLONE, Space);
 impl Space {
     pub fn try_new() -> Result<Self> {
         // SAFETY: The handle is freshly allocated.
-        sv_call::space_new().map(|handle| unsafe { Self::from_raw(handle) })
+        sv_call::sv_space_new()
+            .into_res()
+            .map(|handle| unsafe { Self::from_raw(handle) })
     }
 
     pub fn new() -> Self {
@@ -93,11 +97,13 @@ impl Space {
             flags,
         };
         // SAFETY: We don't move the ownership of the handle.
-        sv_call::mem_map(unsafe { self.raw() }, &mi).map(|ptr| {
-            // SAFETY: The pointer returned is always non-null.
-            let ptr = unsafe { NonNull::new_unchecked(ptr) };
-            NonNull::slice_from_raw_parts(ptr, len)
-        })
+        sv_call::sv_mem_map(unsafe { self.raw() }, &mi)
+            .into_res()
+            .map(|ptr| {
+                // SAFETY: The pointer returned is always non-null.
+                let ptr = unsafe { NonNull::new_unchecked(ptr as *mut u8) };
+                NonNull::slice_from_raw_parts(ptr, len)
+            })
     }
 
     /// # Safety
@@ -106,7 +112,7 @@ impl Space {
     /// anymore.
     pub unsafe fn unmap(&self, ptr: NonNull<u8>) -> Result {
         // SAFETY: We don't move the ownership of the handle.
-        sv_call::mem_unmap(unsafe { self.raw() }, ptr.as_ptr())
+        sv_call::sv_mem_unmap(unsafe { self.raw() }, ptr.as_ptr()).into_res()
     }
 
     /// # Safety
@@ -114,13 +120,14 @@ impl Space {
     /// The pointer must be allocated from this space and must not be used
     /// improperly anymore.
     pub unsafe fn reprotect(&self, ptr: NonNull<[u8]>, flags: Flags) -> Result {
-        sv_call::mem_reprot(
+        sv_call::sv_mem_reprot(
             // SAFETY: We don't move the ownership of the handle.
             unsafe { self.raw() },
             ptr.as_non_null_ptr().as_ptr(),
             ptr.len(),
             flags,
         )
+        .into_res()
     }
 }
 

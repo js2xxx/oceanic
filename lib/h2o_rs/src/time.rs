@@ -7,8 +7,8 @@ pub struct Instant(u128);
 impl Instant {
     #[inline]
     pub fn try_now() -> crate::error::Result<Self> {
-        let mut data = 0;
-        sv_call::get_time(&mut data)?;
+        let mut data = 0u128;
+        sv_call::sv_time_get(&mut data as *mut _ as *mut _).into_res()?;
         // SAFETY: The data represents a valid timestamp.
         Ok(unsafe { Self::from_raw(data) })
     }

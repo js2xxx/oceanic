@@ -3,7 +3,7 @@ use core::mem;
 pub trait Object {
     /// # Safety
     ///
-    /// The ownership of the object must not be moved if it in use.
+    /// The ownership of the object must not be moved if it's still in use.
     unsafe fn raw(&self) -> sv_call::Handle;
 
     /// # Safety
@@ -28,7 +28,7 @@ pub trait Object {
         Self: Sized,
     {
         // SAFETY: We don't move the ownership of the handle.
-        let handle = sv_call::obj_clone(unsafe { this.raw() })?;
+        let handle = sv_call::sv_obj_clone(unsafe { this.raw() }).into_res()?;
         // SAFETY: The handle is freshly allocated.
         Ok(unsafe { Self::from_raw(handle) })
     }
@@ -40,7 +40,7 @@ pub trait Object {
     unsafe fn try_drop(this: &mut Self) -> crate::error::Result {
         // SAFETY: We move the ownership and guarantee that the object is not used
         // anymore because we're in the drop context.
-        sv_call::obj_drop(unsafe { this.raw() })
+        sv_call::sv_obj_drop(unsafe { this.raw() }).into_res()
     }
 }
 
