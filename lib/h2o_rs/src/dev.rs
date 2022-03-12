@@ -2,6 +2,8 @@ mod intr;
 mod pio;
 mod res;
 
-pub use intr::Interrupt;
-pub use pio::PortIo;
-pub use res::{GsiRes, MemRes, PioRes};
+pub use self::{
+    intr::Interrupt,
+    pio::PortIo,
+    res::{GsiRes, MemRes, PioRes},
+};

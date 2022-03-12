@@ -9,7 +9,7 @@ pub struct PortIo<'a> {
 }
 
 impl<'a> PortIo<'a> {
-    pub fn new(res: &PioRes, range: Range<u16>) -> Result<PortIo> {
+    pub fn acquire(res: &PioRes, range: Range<u16>) -> Result<PortIo> {
         sv_call::sv_pio_acq(unsafe { res.raw() }, range.start, range.end - range.start)
             .into_res()?;
         Ok(PortIo { range, res })

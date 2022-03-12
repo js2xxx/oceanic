@@ -2,7 +2,7 @@ mod chan;
 
 use core::time::Duration;
 
-pub use chan::{Channel, Packet};
+pub use self::chan::{Channel, Packet};
 
 use crate::{error::Result, obj::Object};
 

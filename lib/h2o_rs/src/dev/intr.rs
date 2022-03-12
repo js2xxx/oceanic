@@ -10,13 +10,13 @@ pub struct Interrupt(sv_call::Handle);
 crate::impl_obj!(Interrupt);
 
 impl Interrupt {
-    pub fn new(res: &GsiRes, gsi: u32, config: IntrConfig) -> Result<Interrupt> {
+    pub fn acquire(res: &GsiRes, gsi: u32, config: IntrConfig) -> Result<Interrupt> {
         // SAFETY: We don't move the ownership of the resource handle, and it represents
         // a valid GSI resource.
         sv_call::sv_intr_new(unsafe { res.raw() }, gsi, config)
             .into_res()
             // SAFETY: The handle is freshly allocated.
-            .map(|hdl| unsafe { Self::from_raw(hdl) })
+            .map(|handle| unsafe { Self::from_raw(handle) })
     }
 
     pub fn wait(&self, timeout: Duration) -> Result<Instant> {

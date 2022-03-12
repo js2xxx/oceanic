@@ -22,12 +22,16 @@ crate::impl_obj!(Channel);
 crate::impl_obj!(@DROP, Channel);
 
 impl Channel {
-    pub fn new() -> Result<(Channel, Channel)> {
+    pub fn try_new() -> Result<(Channel, Channel)> {
         let (mut h1, mut h2) = (sv_call::Handle::NULL, sv_call::Handle::NULL);
         sv_call::sv_chan_new(&mut h1, &mut h2).into_res()?;
 
         // SAFETY: The handles are freshly allocated.
         Ok(unsafe { (Channel::from_raw(h1), Channel::from_raw(h2)) })
+    }
+
+    pub fn new() -> (Channel, Channel) {
+        Self::try_new().expect("Failed to create a pair of channels")
     }
 
     pub fn send_raw(
