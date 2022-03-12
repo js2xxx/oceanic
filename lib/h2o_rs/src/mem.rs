@@ -11,8 +11,10 @@ pub const PAGE_SHIFT: usize = 12;
 pub const PAGE_SIZE: usize = 1 << PAGE_SHIFT;
 
 }}
+// SAFETY: Both the size and the alignment are 2^n-bounded.
 pub const PAGE_LAYOUT: Layout = unsafe { Layout::from_size_align_unchecked(PAGE_SIZE, PAGE_SIZE) };
 
+#[repr(transparent)]
 pub struct Phys(sv_call::Handle);
 
 crate::impl_obj!(Phys);
@@ -58,6 +60,7 @@ impl Phys {
     }
 }
 
+#[repr(transparent)]
 pub struct Space(sv_call::Handle);
 
 crate::impl_obj!(Space);

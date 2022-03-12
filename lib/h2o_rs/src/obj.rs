@@ -1,4 +1,6 @@
-use core::mem;
+use core::{mem, time::Duration};
+
+use crate::error::Result;
 
 pub trait Object {
     /// # Safety
@@ -23,7 +25,7 @@ pub trait Object {
         raw
     }
 
-    fn try_clone(this: &Self) -> crate::error::Result<Self>
+    fn try_clone(this: &Self) -> Result<Self>
     where
         Self: Sized,
     {
@@ -37,10 +39,29 @@ pub trait Object {
     ///
     /// This function must be called only in the drop context and the object
     /// must not be used anymore.
-    unsafe fn try_drop(this: &mut Self) -> crate::error::Result {
+    unsafe fn try_drop(this: &mut Self) -> Result {
         // SAFETY: We move the ownership and guarantee that the object is not used
         // anymore because we're in the drop context.
         sv_call::sv_obj_drop(unsafe { this.raw() }).into_res()
+    }
+
+    fn try_wait(&self, timeout: Duration, wake_all: bool, signal: usize) -> Result<usize> {
+        sv_call::sv_obj_wait(
+            // SAFETY: We don't move the ownership of the handle.
+            unsafe { self.raw() },
+            u64::try_from(timeout.as_micros())?,
+            wake_all,
+            signal,
+        )
+        .into_res()
+        .map(|value| value as usize)
+    }
+
+    fn try_wait_async(&self, wake_all: bool, signal: usize) -> Result<crate::ipc::Waiter> {
+        // SAFETY: We don't move the ownership of the handle.
+        let handle = sv_call::sv_obj_await(unsafe { self.raw() }, wake_all, signal).into_res()?;
+        // SAFETY: The handle is freshly allocated.
+        Ok(unsafe { Object::from_raw(handle) })
     }
 }
 

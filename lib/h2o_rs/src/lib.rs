@@ -9,5 +9,6 @@ pub mod mem;
 pub mod obj;
 pub mod time;
 pub mod ipc;
+pub mod dev;
 
 extern crate alloc;

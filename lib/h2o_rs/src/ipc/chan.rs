@@ -15,6 +15,7 @@ pub struct Packet {
     pub handles: Vec<sv_call::Handle>,
 }
 
+#[repr(transparent)]
 pub struct Channel(sv_call::Handle);
 
 crate::impl_obj!(Channel);
@@ -130,6 +131,7 @@ impl Channel {
             Ok(us) => us,
             Err(err) => return (Err(Error::from(err)), 0, 0),
         };
+        // SAFETY: We don't move the ownership of the handle.
         let res =
             sv_call::sv_chan_crecv(unsafe { self.raw() }, id, &mut packet, timeout_us).into_res();
         (res, packet.buffer_size, packet.handle_count)
@@ -151,6 +153,13 @@ impl Channel {
 
     pub fn call_receive(&self, id: usize, packet: &mut Packet, timeout: Duration) -> Result {
         self.call_receive_into(id, &mut packet.buffer, &mut packet.handles, timeout)
+    }
+
+    pub fn call_receive_async(&self, id: usize, wake_all: bool) -> Result<super::Waiter> {
+        // SAFETY: We don't move the ownership of the handle.
+        let handle = sv_call::sv_chan_acrecv(unsafe { self.raw() }, id, wake_all).into_res()?;
+        // SAFETY: The handle is freshly allocated.
+        Ok(unsafe { super::Waiter::from_raw(handle) })
     }
 
     pub fn call(&self, packet: &mut Packet, timeout: Duration) -> Result {
@@ -178,10 +187,32 @@ fn receive_into_impl<F, R>(
 where
     F: FnMut(&mut [u8], &mut [MaybeUninit<sv_call::Handle>]) -> (Result<R>, usize, usize),
 {
-    const MIN_CAP: usize = 4;
     handles.clear();
-    buffer.reserve(MIN_CAP);
-    handles.reserve(MIN_CAP);
+
+    // We use smaller stack-based buffers to avoid dangling pointers in empty
+    // vectors and to reduce times of heap allocations.
+    let mut min_buffer = [0u8; 8];
+    let mut min_handles = [MaybeUninit::uninit(); 4];
+    match receiver(&mut min_buffer, &mut min_handles) {
+        (Ok(value), buffer_size, handle_count) => {
+            buffer.resize(buffer_size, 0);
+            buffer.copy_from_slice(&min_buffer[..buffer_size]);
+
+            handles.reserve(handle_count);
+            handles
+                .spare_capacity_mut()
+                .copy_from_slice(&min_handles[..handle_count]);
+            // SAFETY: `handles` is ensured to have the given numbers of elements.
+            unsafe { handles.set_len(handle_count) };
+            return Ok(value);
+        }
+        (Err(Error::EBUFFER), buffer_size, handle_count) => {
+            buffer.reserve(buffer_size);
+            handles.reserve(handle_count);
+        }
+        (Err(err), ..) => return Err(err),
+    }
+
     loop {
         let buffer_cap = buffer.capacity();
         let handle_cap = handles.capacity();
