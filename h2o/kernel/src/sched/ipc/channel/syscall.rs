@@ -89,15 +89,16 @@ fn receive_handles<E: ?Sized + Event>(
 fn write_raw_with_rest_of_packet(
     packet_ptr: UserPtr<Out, RawPacket>,
     mut raw: RawPacket,
-    packet: Packet,
+    res: Result<Packet>,
 ) -> Result {
-    raw.id = packet.id;
-    unsafe {
+    let ret = res.map(|packet| unsafe {
+        raw.id = packet.id;
         raw.buffer
-            .copy_from_nonoverlapping(packet.buffer().as_ptr(), packet.buffer().len())
-    };
+            .copy_from_nonoverlapping(packet.buffer().as_ptr(), packet.buffer().len());
+    });
 
-    unsafe { packet_ptr.write(raw) }
+    unsafe { packet_ptr.write(raw) }?;
+    ret
 }
 
 #[syscall]
@@ -111,7 +112,7 @@ fn chan_recv(hdl: Handle, packet_ptr: UserPtr<InOut, RawPacket>) -> Result {
 
     let mut raw = read_raw(packet_ptr.r#in())?;
 
-    let packet = SCHED.with_current(|cur| {
+    let res = SCHED.with_current(|cur| {
         let map = cur.space().handles();
         let channel = map.get::<Channel>(hdl)?;
 
@@ -119,9 +120,9 @@ fn chan_recv(hdl: Handle, packet_ptr: UserPtr<InOut, RawPacket>) -> Result {
         raw.handle_count = raw.handle_cap;
         let res = channel.receive(&mut raw.buffer_size, &mut raw.handle_count);
         receive_handles(res, map, &mut raw, (**channel).event())
-    })?;
+    });
 
-    write_raw_with_rest_of_packet(packet_ptr.out(), raw, packet)
+    write_raw_with_rest_of_packet(packet_ptr.out(), raw, res)
 }
 
 #[syscall]
@@ -153,7 +154,7 @@ fn chan_crecv(
         Some(blocker)
     };
 
-    let packet = SCHED.with_current(|cur| {
+    let res = SCHED.with_current(|cur| {
         let map = cur.space().handles();
 
         let channel = map.get::<Channel>(hdl)?;
@@ -162,7 +163,7 @@ fn chan_crecv(
         raw.handle_count = raw.handle_cap;
         let res = channel.call_receive(id, &mut raw.buffer_size, &mut raw.handle_count);
         receive_handles(res, map, &mut raw, &call_event)
-    })?;
+    });
 
     if let Some(blocker) = blocker {
         if !blocker.detach().0 {
@@ -170,7 +171,7 @@ fn chan_crecv(
         }
     }
 
-    write_raw_with_rest_of_packet(packet_ptr.out(), raw, packet)
+    write_raw_with_rest_of_packet(packet_ptr.out(), raw, res)
 }
 
 #[syscall]

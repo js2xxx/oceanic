@@ -6,7 +6,8 @@
 
 pub mod error;
 pub mod mem;
-pub(crate) mod obj;
+pub mod obj;
 pub mod time;
+pub mod ipc;
 
 extern crate alloc;

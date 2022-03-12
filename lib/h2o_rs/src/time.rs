@@ -78,3 +78,12 @@ impl Sub<Instant> for Instant {
         Duration::new((nanos / NPS) as u64, (nanos % NPS) as u32)
     }
 }
+
+#[inline]
+pub fn from_us(us: u64) -> Duration {
+    if us == u64::MAX {
+        Duration::MAX
+    } else {
+        Duration::from_micros(us)
+    }
+}
