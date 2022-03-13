@@ -91,22 +91,26 @@ fn task_exec(ci: UserPtr<In, task::ExecInfo>) -> Result<Handle> {
     let name = get_name(UserPtr::<In, _>::new(ci.name as *mut u8), ci.name_len)?;
 
     let (init_chan, space) = SCHED.with_current(|cur| {
-        let init_chan = cur
-            .space()
-            .handles()
-            .remove::<crate::sched::ipc::Channel>(ci.init_chan)?;
+        let handles = cur.space().handles();
+        let init_chan = if ci.init_chan == Handle::NULL {
+            None
+        } else {
+            Some(handles.remove::<crate::sched::ipc::Channel>(ci.init_chan)?)
+        };
         if ci.space == Handle::NULL {
             Ok((init_chan, Arsc::clone(cur.space())))
         } else {
-            cur.space()
-                .handles()
+            handles
                 .remove::<Arsc<Space>>(ci.space)?
                 .downcast_ref::<Arsc<Space>>()
                 .map(|space| (init_chan, Arsc::clone(space)))
         }
     })?;
 
-    let init_chan = PREEMPT.scope(|| unsafe { space.handles().insert_ref(init_chan) })?;
+    let init_chan = match init_chan {
+        Some(obj) => PREEMPT.scope(|| unsafe { space.handles().insert_ref(obj) })?,
+        None => Handle::NULL,
+    };
 
     UserPtr::<In, _>::new(ci.entry).check()?;
     UserPtr::<In, _>::new(ci.stack).check()?;
