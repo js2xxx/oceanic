@@ -10,5 +10,6 @@ pub mod obj;
 pub mod time;
 pub mod ipc;
 pub mod dev;
+pub mod task;
 
 extern crate alloc;

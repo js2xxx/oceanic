@@ -49,7 +49,7 @@ pub trait Object {
         sv_call::sv_obj_wait(
             // SAFETY: We don't move the ownership of the handle.
             unsafe { self.raw() },
-            u64::try_from(timeout.as_micros())?,
+            crate::time::try_into_us(timeout)?,
             wake_all,
             signal,
         )

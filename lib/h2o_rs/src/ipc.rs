@@ -3,7 +3,6 @@ mod chan;
 use core::time::Duration;
 
 pub use self::chan::{Channel, Packet};
-
 use crate::{error::Result, obj::Object};
 
 #[repr(transparent)]
@@ -13,7 +12,7 @@ crate::impl_obj!(@DROP, Waiter);
 
 impl Waiter {
     pub fn end_wait(self, timeout: Duration) -> Result<usize> {
-        sv_call::sv_obj_awend(Waiter::into_raw(self), u64::try_from(timeout.as_micros())?)
+        sv_call::sv_obj_awend(Waiter::into_raw(self), crate::time::try_into_us(timeout)?)
             .into_res()
             .map(|value| value as usize)
     }

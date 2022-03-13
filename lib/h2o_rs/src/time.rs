@@ -1,12 +1,14 @@
 use core::{ops::*, time::Duration};
 
+use crate::error::{Error, Result};
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(transparent)]
 pub struct Instant(u128);
 
 impl Instant {
     #[inline]
-    pub fn try_now() -> crate::error::Result<Self> {
+    pub fn try_now() -> Result<Self> {
         let mut data = 0u128;
         sv_call::sv_time_get(&mut data as *mut _ as *mut _).into_res()?;
         // SAFETY: The data represents a valid timestamp.
@@ -85,5 +87,13 @@ pub fn from_us(us: u64) -> Duration {
         Duration::MAX
     } else {
         Duration::from_micros(us)
+    }
+}
+
+pub fn try_into_us(duration: Duration) -> Result<u64> {
+    if duration == Duration::MAX {
+        Ok(u64::MAX)
+    } else {
+        u64::try_from(duration.as_micros()).map_err(Error::from)
     }
 }

@@ -24,7 +24,7 @@ impl Interrupt {
         // SAFETY: We don't move the ownership of the handle.
         sv_call::sv_intr_wait(
             unsafe { self.raw() },
-            u64::try_from(timeout.as_micros())?,
+            crate::time::try_into_us(timeout)?,
             &mut ins as *mut _ as *mut _,
         )
         .into_res()?;

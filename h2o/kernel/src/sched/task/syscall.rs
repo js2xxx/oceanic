@@ -70,25 +70,25 @@ fn space_new() -> Result<Handle> {
     })
 }
 
+fn get_name(ptr: UserPtr<In, u8>, len: usize) -> Result<Option<String>> {
+    if !ptr.as_ptr().is_null() {
+        let mut buf = Vec::<u8>::with_capacity(len);
+        unsafe {
+            ptr.read_slice(buf.as_mut_ptr(), len)?;
+            buf.set_len(len);
+        }
+        Ok(Some(String::from_utf8(buf).map_err(|_| Error::EINVAL)?))
+    } else {
+        Ok(None)
+    }
+}
+
 #[syscall]
 fn task_exec(ci: UserPtr<In, task::ExecInfo>) -> Result<Handle> {
     let ci = unsafe { ci.read()? };
     ci.init_chan.check_null()?;
 
-    let name = {
-        let ptr = UserPtr::<In, _>::new(ci.name as *mut u8);
-        if !ptr.as_ptr().is_null() {
-            let name_len = ci.name_len;
-            let mut buf = Vec::<u8>::with_capacity(name_len);
-            unsafe {
-                ptr.read_slice(buf.as_mut_ptr(), name_len)?;
-                buf.set_len(name_len);
-            }
-            Some(String::from_utf8(buf).map_err(|_| Error::EINVAL)?)
-        } else {
-            None
-        }
-    };
+    let name = get_name(UserPtr::<In, _>::new(ci.name as *mut u8), ci.name_len)?;
 
     let (init_chan, space) = SCHED.with_current(|cur| {
         let init_chan = cur
@@ -130,18 +130,7 @@ fn task_new(
     space: Handle,
     st: UserPtr<Out, Handle>,
 ) -> Result<Handle> {
-    let name = {
-        if !name.as_ptr().is_null() {
-            let mut buf = Vec::<u8>::with_capacity(name_len);
-            unsafe {
-                name.read_slice(buf.as_mut_ptr(), name_len)?;
-                buf.set_len(name_len);
-            }
-            Some(String::from_utf8(buf).map_err(|_| Error::EINVAL)?)
-        } else {
-            None
-        }
-    };
+    let name = get_name(name, name_len)?;
 
     let new_space = if space == Handle::NULL {
         SCHED.with_current(|cur| Ok(Arsc::clone(cur.space())))?
@@ -183,10 +172,12 @@ fn task_new(
 fn task_join(hdl: Handle) -> Result<usize> {
     hdl.check_null()?;
 
-    let obj = SCHED.with_current(|cur| cur.space().handles().remove::<Tid>(hdl))?;
-    let tid = obj.downcast_ref::<Tid>()?;
-
-    PREEMPT.scope(|| tid.ret_cell().lock().ok_or(Error::ENOENT))
+    SCHED.with_current(|cur| {
+        let handles = cur.space().handles();
+        { handles.get::<Tid>(hdl) }
+            .map(|tid| tid.ret_cell().lock().ok_or(Error::ENOENT))?
+            .inspect(|_| drop(handles.remove::<Tid>(hdl)))
+    })
 }
 
 #[syscall]

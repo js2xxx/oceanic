@@ -131,9 +131,9 @@ impl Channel {
             buffer_size: buffer.len(),
             buffer_cap: buffer.len(),
         };
-        let timeout_us = match u64::try_from(timeout.as_micros()) {
+        let timeout_us = match crate::time::try_into_us(timeout) {
             Ok(us) => us,
-            Err(err) => return (Err(Error::from(err)), 0, 0),
+            Err(err) => return (Err(err), 0, 0),
         };
         // SAFETY: We don't move the ownership of the handle.
         let res =
