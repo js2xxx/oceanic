@@ -26,8 +26,9 @@ trait Resource: Sized + Object {
     fn allocate(&self, range: Range<Self::Data>) -> Result<Self> {
         let base = range.start.to_usize();
         let size = range.end.to_usize() - base;
-        let child =
-            sv_call::sv_res_alloc(unsafe { self.raw() }, Self::TYPE, base, size).into_res()?;
+        let child = unsafe {
+            sv_call::sv_res_alloc(unsafe { self.raw() }, Self::TYPE, base, size).into_res()?
+        };
         Ok(unsafe { Self::from_raw(child) })
     }
 }

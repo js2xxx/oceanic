@@ -6,7 +6,8 @@ version = "0.1.0"
 
 [features]
 call = []
-default = ["call"]
+default = ["stub"]
+stub = []
 
 [dependencies]
 # Local crates

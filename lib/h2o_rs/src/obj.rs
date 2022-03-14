@@ -30,7 +30,7 @@ pub trait Object {
         Self: Sized,
     {
         // SAFETY: We don't move the ownership of the handle.
-        let handle = sv_call::sv_obj_clone(unsafe { this.raw() }).into_res()?;
+        let handle = unsafe { sv_call::sv_obj_clone(unsafe { this.raw() }).into_res()? };
         // SAFETY: The handle is freshly allocated.
         Ok(unsafe { Self::from_raw(handle) })
     }
@@ -46,20 +46,23 @@ pub trait Object {
     }
 
     fn try_wait(&self, timeout: Duration, wake_all: bool, signal: usize) -> Result<usize> {
-        sv_call::sv_obj_wait(
-            // SAFETY: We don't move the ownership of the handle.
-            unsafe { self.raw() },
-            crate::time::try_into_us(timeout)?,
-            wake_all,
-            signal,
-        )
-        .into_res()
-        .map(|value| value as usize)
+        unsafe {
+            sv_call::sv_obj_wait(
+                // SAFETY: We don't move the ownership of the handle.
+                unsafe { self.raw() },
+                crate::time::try_into_us(timeout)?,
+                wake_all,
+                signal,
+            )
+            .into_res()
+            .map(|value| value as usize)
+        }
     }
 
     fn try_wait_async(&self, wake_all: bool, signal: usize) -> Result<crate::ipc::Waiter> {
         // SAFETY: We don't move the ownership of the handle.
-        let handle = sv_call::sv_obj_await(unsafe { self.raw() }, wake_all, signal).into_res()?;
+        let handle =
+            unsafe { sv_call::sv_obj_await(unsafe { self.raw() }, wake_all, signal).into_res()? };
         // SAFETY: The handle is freshly allocated.
         Ok(unsafe { Object::from_raw(handle) })
     }

@@ -10,20 +10,26 @@ pub struct PortIo<'a> {
 
 impl<'a> PortIo<'a> {
     pub fn acquire(res: &PioRes, range: Range<u16>) -> Result<PortIo> {
-        sv_call::sv_pio_acq(unsafe { res.raw() }, range.start, range.end - range.start)
-            .into_res()?;
+        unsafe {
+            // SAFETY: We don't move the ownership of the handle.
+            sv_call::sv_pio_acq(unsafe { res.raw() }, range.start, range.end - range.start)
+                .into_res()?;
+        }
         Ok(PortIo { range, res })
     }
 }
 
 impl<'a> Drop for PortIo<'a> {
     fn drop(&mut self) {
-        sv_call::sv_pio_rel(
-            unsafe { self.res.raw() },
-            self.range.start,
-            self.range.end - self.range.start,
-        )
-        .into_res()
-        .expect("Failed to release port I/O");
+        unsafe {
+            // SAFETY: We don't move the ownership of the handle.
+            sv_call::sv_pio_rel(
+                unsafe { self.res.raw() },
+                self.range.start,
+                self.range.end - self.range.start,
+            )
+            .into_res()
+            .expect("Failed to release port I/O");
+        }
     }
 }

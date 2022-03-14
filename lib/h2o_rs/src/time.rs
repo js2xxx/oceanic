@@ -10,7 +10,7 @@ impl Instant {
     #[inline]
     pub fn try_now() -> Result<Self> {
         let mut data = 0u128;
-        sv_call::sv_time_get(&mut data as *mut _ as *mut _).into_res()?;
+        unsafe { sv_call::sv_time_get(&mut data as *mut _ as *mut _).into_res()? };
         // SAFETY: The data represents a valid timestamp.
         Ok(unsafe { Self::from_raw(data) })
     }

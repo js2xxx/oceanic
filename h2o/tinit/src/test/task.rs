@@ -18,7 +18,7 @@ use sv_call::{
 
 const PF_ADDR: usize = 0x1598_0000_0000;
 
-extern "C" fn func(_: Handle, arg: u32) {
+unsafe extern "C" fn func(_: Handle, arg: u32) {
     log::trace!("arg = {}", arg);
     match arg {
         0 => {
@@ -42,7 +42,7 @@ extern "C" fn func(_: Handle, arg: u32) {
         .expect("Failed to exit the task");
 }
 
-fn join(normal: Handle, fault: Handle) {
+unsafe fn join(normal: Handle, fault: Handle) {
     log::trace!("join: normal = {:?}, fault = {:?}", normal, fault);
 
     sv_obj_wait(normal, u64::MAX, false, SIG_READ)
@@ -58,12 +58,12 @@ fn join(normal: Handle, fault: Handle) {
     assert_eq!(ret.into_res(), Err(Error::EFAULT));
 }
 
-fn sleep() {
+unsafe fn sleep() {
     log::trace!("sleep");
     sv_task_sleep(50).into_res().expect("Failed to sleep");
 }
 
-fn debug_mem(st: Handle) {
+unsafe fn debug_mem(st: Handle) {
     log::trace!("debug_mem: st = {:?}", st);
 
     let mut buf = [0u8; 15];
@@ -80,7 +80,7 @@ fn debug_mem(st: Handle) {
     assert_eq!(ret.into_res(), Err(Error::EPERM));
 }
 
-fn debug_reg_gpr(st: Handle) {
+unsafe fn debug_reg_gpr(st: Handle) {
     log::trace!("debug_reg_gpr: st = {:?}", st);
 
     let mut buf = MaybeUninit::<Gpr>::uninit();
@@ -104,7 +104,7 @@ fn debug_reg_gpr(st: Handle) {
     .expect("Failed to write general registers");
 }
 
-fn debug_reg_fpu(st: Handle) {
+unsafe fn debug_reg_fpu(st: Handle) {
     log::trace!("debug_reg_fpu: st = {:?}", st);
 
     let mut buf = [0u8; 576];
@@ -128,7 +128,7 @@ fn debug_reg_fpu(st: Handle) {
     .expect("Failed to write FPU registers");
 }
 
-fn debug_excep(task: Handle, st: Handle) {
+unsafe fn debug_excep(task: Handle, st: Handle) {
     log::trace!("debug_reg_excep: task = {:?}, st = {:?}", task, st);
     let chan = {
         let mut chan = Handle::NULL;
@@ -182,7 +182,7 @@ fn debug_excep(task: Handle, st: Handle) {
     assert_eq!(ret.into_res(), Err(Error::EFAULT));
 }
 
-fn suspend(task: Handle) {
+unsafe fn suspend(task: Handle) {
     log::trace!("suspend: task = {:?}", task);
 
     let mut st = Handle::NULL;
@@ -201,7 +201,7 @@ fn suspend(task: Handle) {
         .expect("Failed to resume the task");
 }
 
-fn kill(task: Handle) {
+unsafe fn kill(task: Handle) {
     log::trace!("kill: task = {:?}", task);
 
     sv_task_ctl(task, TASK_CTL_KILL, null_mut())
@@ -215,14 +215,14 @@ fn kill(task: Handle) {
     assert_eq!(ret.into_res(), Err(Error::EKILLED));
 }
 
-fn ctl(task: Handle) {
+unsafe fn ctl(task: Handle) {
     log::trace!("ctl: task = {:?}", task);
     suspend(task);
     sleep();
     kill(task);
 }
 
-pub fn test() -> (*mut u8, *mut u8, Handle) {
+pub unsafe fn test() -> (*mut u8, *mut u8, Handle) {
     // Test the defence of invalid user pointer access.
     let ret = sv_task_exec(0x100000000 as *const ExecInfo);
     assert_eq!(ret.into_res(), Err(Error::EPERM));

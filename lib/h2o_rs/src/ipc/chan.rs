@@ -24,7 +24,7 @@ crate::impl_obj!(@DROP, Channel);
 impl Channel {
     pub fn try_new() -> Result<(Channel, Channel)> {
         let (mut h1, mut h2) = (sv_call::Handle::NULL, sv_call::Handle::NULL);
-        sv_call::sv_chan_new(&mut h1, &mut h2).into_res()?;
+        unsafe { sv_call::sv_chan_new(&mut h1, &mut h2).into_res()? };
 
         // SAFETY: The handles are freshly allocated.
         Ok(unsafe { (Channel::from_raw(h1), Channel::from_raw(h2)) })
@@ -50,7 +50,7 @@ impl Channel {
             buffer_cap: buffer.len(),
         };
         // SAFETY: We don't move the ownership of the handle.
-        sv_call::sv_chan_send(unsafe { self.raw() }, &packet).into_res()
+        unsafe { sv_call::sv_chan_send(unsafe { self.raw() }, &packet).into_res() }
     }
 
     pub fn send(&self, packet: &Packet) -> Result {
@@ -72,7 +72,7 @@ impl Channel {
             buffer_cap: buffer.len(),
         };
         // SAFETY: We don't move the ownership of the handle.
-        let res = sv_call::sv_chan_recv(unsafe { self.raw() }, &mut packet).into_res();
+        let res = unsafe { sv_call::sv_chan_recv(unsafe { self.raw() }, &mut packet).into_res() };
         (
             res.map(|_| packet.id),
             packet.buffer_size,
@@ -105,10 +105,12 @@ impl Channel {
             buffer_cap: buffer.len(),
         };
 
-        // SAFETY: We don't move the ownership of the handle.
-        sv_call::sv_chan_csend(unsafe { self.raw() }, &packet)
-            .into_res()
-            .map(|value| value as usize)
+        unsafe {
+            // SAFETY: We don't move the ownership of the handle.
+            sv_call::sv_chan_csend(unsafe { self.raw() }, &packet)
+                .into_res()
+                .map(|value| value as usize)
+        }
     }
 
     pub fn call_send(&self, packet: &Packet) -> Result<usize> {
@@ -136,8 +138,9 @@ impl Channel {
             Err(err) => return (Err(err), 0, 0),
         };
         // SAFETY: We don't move the ownership of the handle.
-        let res =
-            sv_call::sv_chan_crecv(unsafe { self.raw() }, id, &mut packet, timeout_us).into_res();
+        let res = unsafe {
+            sv_call::sv_chan_crecv(unsafe { self.raw() }, id, &mut packet, timeout_us).into_res()
+        };
         (res, packet.buffer_size, packet.handle_count)
     }
 
@@ -161,7 +164,8 @@ impl Channel {
 
     pub fn call_receive_async(&self, id: usize, wake_all: bool) -> Result<super::Waiter> {
         // SAFETY: We don't move the ownership of the handle.
-        let handle = sv_call::sv_chan_acrecv(unsafe { self.raw() }, id, wake_all).into_res()?;
+        let handle =
+            unsafe { sv_call::sv_chan_acrecv(unsafe { self.raw() }, id, wake_all).into_res()? };
         // SAFETY: The handle is freshly allocated.
         Ok(unsafe { super::Waiter::from_raw(handle) })
     }

@@ -3,7 +3,7 @@ use sv_call::{
     *,
 };
 
-pub fn test() {
+pub unsafe fn test() {
     let flags = Flags::READABLE | Flags::WRITABLE | Flags::USER_ACCESS;
     let phys = sv_phys_alloc(4096, 4096, flags)
         .into_res()

@@ -69,7 +69,11 @@ pub fn gen_rust_calls(funcs: &[SyscallFn], output: impl AsRef<Path>) -> Result<(
     let mut output = BufWriter::new(&mut file);
 
     for (i, func) in funcs.iter().enumerate() {
-        write!(output, "#[no_mangle] pub extern \"C\" fn {}(", func.name)?;
+        write!(
+            output,
+            "#[no_mangle] pub unsafe extern \"C\" fn {}(",
+            func.name
+        )?;
         for arg in &func.args {
             write!(output, "{}: {}, ", arg.name, arg.ty)?;
         }
@@ -88,6 +92,33 @@ pub fn gen_rust_calls(funcs: &[SyscallFn], output: impl AsRef<Path>) -> Result<(
         }
         write!(output, ") }}; SerdeReg::decode(ret) }} ")?;
     }
+
+    output.flush()?;
+    Ok(())
+}
+
+pub fn gen_rust_stubs(funcs: &[SyscallFn], output: impl AsRef<Path>) -> Result<(), Box<dyn Error>> {
+    let mut file = fs::File::options()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(output)?;
+    let mut output = BufWriter::new(&mut file);
+
+    write!(output, "extern \"C\" {{")?;
+    for func in funcs.iter() {
+        write!(output, "pub fn {}(", func.name)?;
+        for arg in &func.args {
+            write!(output, "{}: {}, ", arg.name, arg.ty)?;
+        }
+        let c_returns = match &*func.returns {
+            "()" => "Status",
+            "Handle" => "StatusOrHandle",
+            _ => "StatusOrValue",
+        };
+        write!(output, ") -> {}; ", c_returns)?;
+    }
+    write!(output, "}}")?;
 
     output.flush()?;
     Ok(())

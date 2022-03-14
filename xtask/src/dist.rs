@@ -32,6 +32,7 @@ impl Dist {
             src_root.join(H2O_KERNEL).join("syscall"),
             src_root.join(H2O_KERNEL).join("target/wrapper.rs"),
             src_root.join("h2o/libs/syscall/target/call.rs"),
+            src_root.join("h2o/libs/syscall/target/stub.rs"),
         )?;
 
         // Build h2o_boot
@@ -74,6 +75,9 @@ impl Dist {
                 "-Zbuild-std-features=compiler-builtins-mem",
                 "--release", /* VDSO can always be the release version and discard the debug
                               * symbols. */
+                "--no-default-features",
+                "--features",
+                "call",
             ]);
             cmd.args([
                 "--",

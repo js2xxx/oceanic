@@ -11,10 +11,12 @@ crate::impl_obj!(@CLONE, Space);
 
 impl Space {
     pub fn try_new() -> Result<Self> {
-        // SAFETY: The handle is freshly allocated.
-        sv_call::sv_space_new()
-            .into_res()
-            .map(|handle| unsafe { Self::from_raw(handle) })
+        unsafe {
+            // SAFETY: The handle is freshly allocated.
+            sv_call::sv_space_new()
+                .into_res()
+                .map(|handle| unsafe { Self::from_raw(handle) })
+        }
     }
 
     pub fn new() -> Self {
@@ -43,14 +45,16 @@ impl Space {
             len,
             flags,
         };
-        // SAFETY: We don't move the ownership of the handle.
-        sv_call::sv_mem_map(unsafe { self.raw() }, &mi)
-            .into_res()
-            .map(|ptr| {
-                // SAFETY: The pointer returned is always non-null.
-                let ptr = unsafe { NonNull::new_unchecked(ptr as *mut u8) };
-                NonNull::slice_from_raw_parts(ptr, len)
-            })
+        unsafe {
+            // SAFETY: We don't move the ownership of the handle.
+            sv_call::sv_mem_map(unsafe { self.raw() }, &mi)
+                .into_res()
+                .map(|ptr| {
+                    // SAFETY: The pointer returned is always non-null.
+                    let ptr = unsafe { NonNull::new_unchecked(ptr as *mut u8) };
+                    NonNull::slice_from_raw_parts(ptr, len)
+                })
+        }
     }
 
     /// # Safety

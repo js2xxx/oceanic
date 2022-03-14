@@ -9,12 +9,16 @@ mod error;
 pub mod ipc;
 pub mod mem;
 pub mod res;
+#[cfg(feature = "stub")]
+pub mod stub;
 pub mod task;
 
 pub use sv_gen::*;
 
-#[cfg(feature = "call")]
+#[cfg(all(not(feature = "stub"), feature = "call"))]
 pub use self::call::*;
+#[cfg(feature = "stub")]
+pub use self::stub::*;
 pub use self::{
     call::{hdl::Handle, reg::*},
     error::*,

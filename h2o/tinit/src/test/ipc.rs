@@ -2,7 +2,7 @@ use core::ptr;
 
 use sv_call::{call::*, ipc::*, Error, Handle};
 
-pub fn test(stack: (*mut u8, *mut u8, Handle)) {
+pub unsafe fn test(stack: (*mut u8, *mut u8, Handle)) {
     #[inline]
     fn rp(id: usize, hdl: &mut [Handle], buf: &mut [u8]) -> RawPacket {
         RawPacket {
@@ -94,7 +94,7 @@ pub fn test(stack: (*mut u8, *mut u8, Handle)) {
 
     // Multiple tasks.
     {
-        extern "C" fn func(init_chan: Handle) {
+        unsafe extern "C" fn func(init_chan: Handle) {
             ::log::trace!("func here: {:?}", init_chan);
             let mut buf = [0; 7];
             let mut hdl = [Handle::NULL];

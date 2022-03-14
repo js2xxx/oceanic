@@ -1,5 +1,6 @@
 #![no_std]
 #![no_main]
+#![allow(unused_unsafe)]
 #![feature(alloc_error_handler)]
 #![feature(alloc_layout_extra)]
 #![feature(box_syntax)]
@@ -24,7 +25,7 @@ extern "C" fn tmain(init_chan: sv_call::Handle) {
     ::log::info!("Starting initialization");
     mem::init();
 
-    test::test_syscall();
+    unsafe { test::test_syscall() };
 
     let init_chan = unsafe { Channel::from_raw(init_chan) };
     let mut packet = Default::default();

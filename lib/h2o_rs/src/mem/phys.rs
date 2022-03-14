@@ -14,35 +14,41 @@ crate::impl_obj!(@DROP, Phys);
 impl Phys {
     pub fn allocate(layout: Layout, flags: Flags) -> Result<Self> {
         let layout = layout.align_to(PAGE_LAYOUT.align())?.pad_to_align();
-        sv_call::sv_phys_alloc(layout.size(), layout.align(), flags).into_res()
+        unsafe {
+            sv_call::sv_phys_alloc(layout.size(), layout.align(), flags).into_res()
             // SAFETY: The handle is freshly allocated.
             .map(|handle| unsafe { Self::from_raw(handle) })
+        }
     }
 
     pub fn acquire(res: &MemRes, addr: usize, layout: Layout, flags: Flags) -> Result<Self> {
         let layout = layout.align_to(PAGE_LAYOUT.align())?.pad_to_align();
-        let handle = sv_call::sv_phys_acq(
-            // SAFETY: We don't move the ownership of the memory resource handle.
-            unsafe { res.raw() },
-            addr,
-            layout.size(),
-            layout.align(),
-            flags,
-        )
-        .into_res()?;
+        let handle = unsafe {
+            sv_call::sv_phys_acq(
+                // SAFETY: We don't move the ownership of the memory resource handle.
+                unsafe { res.raw() },
+                addr,
+                layout.size(),
+                layout.align(),
+                flags,
+            )
+            .into_res()?
+        };
         // SAFETY: The handle is freshly allocated.
         Ok(unsafe { Self::from_raw(handle) })
     }
 
     pub fn read_into(&self, offset: usize, buffer: &mut [u8]) -> Result {
-        sv_call::sv_phys_read(
-            // SAFETY: We don't move the ownership of the handle.
-            unsafe { self.raw() },
-            offset,
-            buffer.len(),
-            buffer.as_mut_ptr(),
-        )
-        .into_res()
+        unsafe {
+            sv_call::sv_phys_read(
+                // SAFETY: We don't move the ownership of the handle.
+                unsafe { self.raw() },
+                offset,
+                buffer.len(),
+                buffer.as_mut_ptr(),
+            )
+            .into_res()
+        }
     }
 
     pub fn read(&self, offset: usize, len: usize) -> Result<Vec<u8>> {
