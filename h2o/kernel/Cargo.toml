@@ -22,6 +22,7 @@ paging = {path = "../libs/paging"}
 pmm = {path = "../libs/pmm"}
 repeat = {path = "../libs/repeat"}
 sv-call = {path = "../libs/syscall", default-features = false}
+targs = {path = "../libs/targs"}
 # External crates
 acpi = "4.1"
 array-macro = "2.1"

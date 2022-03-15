@@ -7,5 +7,5 @@ version = "0.1.0"
 gen = []
 
 [dependencies]
-either = "1.6"
+either = {version = "1.6", default-features = false}
 static_assertions = "1.1"

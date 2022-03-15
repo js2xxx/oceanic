@@ -37,7 +37,7 @@ impl<'a> Directory<'a> {
         }
     }
 
-    pub fn find_entry(self, name: &[u8]) -> Option<Entry<'a>> {
+    pub fn get(self, name: &[u8]) -> Option<Entry<'a>> {
         self.iter().find(|ent| ent.name_eq(name))
     }
 
@@ -45,7 +45,7 @@ impl<'a> Directory<'a> {
         let mut dir = self;
         let mut names = path.split(|&b| b == seperator);
         loop {
-            let entry: Entry<'a> = dir.find_entry(names.next()?)?;
+            let entry: Entry<'a> = dir.get(names.next()?)?;
             dir = match entry.content() {
                 Either::Left(content) => break Some(content),
                 Either::Right(dir) => dir,

@@ -1,7 +1,7 @@
-use core::alloc::Layout;
+use core::{alloc::Layout, mem};
 
 use archop::Azy;
-use bytes::{BufMut, BytesMut};
+use targs::Targs;
 
 use super::*;
 use crate::{
@@ -13,8 +13,11 @@ static VDSO_DATA: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/t
 pub static VDSO: Azy<Arsc<Phys>> = Azy::new(|| {
     let vdso_layout = Layout::from_size_align(VDSO_DATA.len(), paging::PAGE_LAYOUT.align())
         .expect("Failed to get the layout of VDSO");
-    let vdso_mem = Phys::allocate(vdso_layout, Flags::READABLE | Flags::EXECUTABLE)
-        .expect("Failed to allocate memory for VDSO");
+    let vdso_mem = Phys::allocate(
+        vdso_layout,
+        Flags::READABLE | Flags::EXECUTABLE | Flags::USER_ACCESS,
+    )
+    .expect("Failed to allocate memory for VDSO");
     unsafe {
         let dst = vdso_mem.base().to_laddr(minfo::ID_OFFSET);
         dst.copy_from_nonoverlapping(VDSO_DATA.as_ptr(), VDSO_DATA.len());
@@ -27,7 +30,7 @@ pub static BOOTFS: Azy<Arsc<Phys>> = Azy::new(|| {
     Phys::new(
         crate::kargs().bootfs_phys,
         layout,
-        Flags::READABLE | Flags::EXECUTABLE,
+        Flags::READABLE | Flags::EXECUTABLE | Flags::USER_ACCESS,
     )
     .expect("Failed to create boot FS object")
 });
@@ -35,6 +38,9 @@ pub static BOOTFS: Azy<Arsc<Phys>> = Azy::new(|| {
 pub fn setup() {
     let mut objects = hdl::List::new();
     let noevent = alloc::sync::Weak::<crate::sched::BasicEvent>::new();
+
+    // The sequence of kernel objects must match the one defined in
+    // `targs::HandleIndex`.
     {
         let mem_res = Arc::clone(crate::dev::mem_resource());
         let res = unsafe {
@@ -87,10 +93,12 @@ pub fn setup() {
     }
 
     let buf = {
-        let mut buf = BytesMut::new();
-        buf.put_u64(*crate::kargs().rsdp as u64);
-        buf.put_u64(*crate::kargs().smbios as u64);
-        buf
+        let targs = Targs {
+            rsdp: *crate::kargs().rsdp,
+            smbios: *crate::kargs().smbios,
+            bootfs_size: crate::kargs().bootfs_len,
+        };
+        unsafe { mem::transmute::<_, [u8; mem::size_of::<Targs>()]>(targs) }
     };
 
     let (me, chan) = Channel::new();
