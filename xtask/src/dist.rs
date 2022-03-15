@@ -140,6 +140,8 @@ impl Dist {
             fs::copy(bin_dir.join("tinit"), Path::new(&target_dir).join("TINIT"))?;
         }
 
+        crate::gen::gen_bootfs(Path::new(crate::BOOTFS).join("../BOOT.fs"))?;
+
         // Generate debug symbols
         println!("Generating debug symbols");
         Command::new("sh")

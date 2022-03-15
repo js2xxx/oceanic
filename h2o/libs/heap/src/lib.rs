@@ -43,7 +43,6 @@
 
 #![no_std]
 #![feature(allocator_api)]
-#![feature(const_fn_fn_ptr_basics)]
 #![feature(lang_items)]
 #![feature(nonnull_slice_from_raw_parts)]
 #![feature(result_into_ok_or_err)]

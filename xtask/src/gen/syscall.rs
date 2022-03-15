@@ -40,12 +40,7 @@ pub fn parse_dir(dir: impl AsRef<Path>) -> Result<Vec<SyscallFn>, Box<dyn Error>
 }
 
 pub fn gen_wrappers(funcs: &[SyscallFn], output: impl AsRef<Path>) -> Result<(), Box<dyn Error>> {
-    let mut file = fs::File::options()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .open(output)?;
-    let mut output = BufWriter::new(&mut file);
+    let mut output = BufWriter::new(fs::File::create(output)?);
 
     write!(output, "[")?;
     for func in funcs {
@@ -61,12 +56,7 @@ pub fn gen_wrappers(funcs: &[SyscallFn], output: impl AsRef<Path>) -> Result<(),
 }
 
 pub fn gen_rust_calls(funcs: &[SyscallFn], output: impl AsRef<Path>) -> Result<(), Box<dyn Error>> {
-    let mut file = fs::File::options()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .open(output)?;
-    let mut output = BufWriter::new(&mut file);
+    let mut output = BufWriter::new(fs::File::create(output)?);
 
     for (i, func) in funcs.iter().enumerate() {
         write!(
@@ -98,12 +88,7 @@ pub fn gen_rust_calls(funcs: &[SyscallFn], output: impl AsRef<Path>) -> Result<(
 }
 
 pub fn gen_rust_stubs(funcs: &[SyscallFn], output: impl AsRef<Path>) -> Result<(), Box<dyn Error>> {
-    let mut file = fs::File::options()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .open(output)?;
-    let mut output = BufWriter::new(&mut file);
+    let mut output = BufWriter::new(fs::File::create(output)?);
 
     write!(output, "extern \"C\" {{")?;
     for func in funcs.iter() {

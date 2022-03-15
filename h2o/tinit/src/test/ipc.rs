@@ -1,6 +1,6 @@
 use core::ptr;
 
-use sv_call::{call::*, ipc::*, Error, Handle};
+use sv_call::{ipc::*, *};
 
 pub unsafe fn test(stack: (*mut u8, *mut u8, Handle)) {
     #[inline]

@@ -21,6 +21,16 @@ pub static VDSO: Azy<Arsc<Phys>> = Azy::new(|| {
     }
     vdso_mem
 });
+pub static BOOTFS: Azy<Arsc<Phys>> = Azy::new(|| {
+    let layout = Layout::from_size_align(crate::kargs().bootfs_len, paging::PAGE_LAYOUT.align())
+        .expect("Failed to get the layout of boot FS");
+    Phys::new(
+        crate::kargs().bootfs_phys,
+        layout,
+        Flags::READABLE | Flags::EXECUTABLE,
+    )
+    .expect("Failed to create boot FS object")
+});
 
 pub fn setup() {
     let mut objects = hdl::List::new();
@@ -61,11 +71,19 @@ pub fn setup() {
     unsafe {
         objects
             .insert_impl(
-                hdl::Ref::try_new(Arsc::clone(&VDSO), noevent)
+                hdl::Ref::try_new(Arsc::clone(&VDSO), noevent.clone())
                     .expect("Failed to create VDSO reference")
                     .coerce_unchecked(),
             )
             .expect("Failed to insert VDSO");
+
+        objects
+            .insert_impl(
+                hdl::Ref::try_new(Arsc::clone(&BOOTFS), noevent)
+                    .expect("Failed to create boot FS reference")
+                    .coerce_unchecked(),
+            )
+            .expect("Failed to insert boot FS");
     }
 
     let buf = {

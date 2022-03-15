@@ -5,7 +5,6 @@ use core::{
 };
 
 use sv_call::{
-    call::*,
     ipc::{RawPacket, SIG_READ},
     mem::{Flags, MapInfo},
     task::{
@@ -13,7 +12,7 @@ use sv_call::{
         excep::{Exception, ExceptionResult},
         *,
     },
-    Error, Handle,
+    *,
 };
 
 const PF_ADDR: usize = 0x1598_0000_0000;

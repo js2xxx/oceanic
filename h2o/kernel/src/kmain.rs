@@ -13,7 +13,6 @@
 #![feature(box_syntax)]
 #![feature(coerce_unsized)]
 #![feature(const_btree_new)]
-#![feature(const_fn_fn_ptr_basics)]
 #![feature(core_intrinsics)]
 #![feature(downcast_unchecked)]
 #![feature(drain_filter)]

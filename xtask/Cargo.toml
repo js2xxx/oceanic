@@ -9,6 +9,9 @@ name = "xtask"
 path = "src/main.rs"
 
 [dependencies]
+# Local crates
+bootfs = {path = "../lib/bootfs", features = ["gen"]}
+# External crates
 cc = "1.0"
 quote = "1.0"
 serde = {version = "1.0", features = ["derive"]}
