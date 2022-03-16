@@ -43,7 +43,7 @@ impl Manager {
         })
     }
 
-    pub fn register(&self, gsi: u32, handler: Option<(IntrHandler, *mut u8)>) -> solvent::Result {
+    pub fn register(&self, gsi: u32, handler: Option<(IntrHandler, *mut u8)>) -> sv_call::Result {
         let _pree = PREEMPT.lock();
         let mut ioapic = ioapic::chip().lock();
         let entry = ioapic.get_entry(gsi)?;
@@ -53,10 +53,10 @@ impl Manager {
         let self_apic_id = *LAPIC_ID
             .read()
             .get(&self.cpu)
-            .ok_or(solvent::Error::EINVAL)?;
+            .ok_or(sv_call::Error::EINVAL)?;
         let apic_id = entry.dest_id();
         if in_use && self_apic_id != apic_id {
-            return Err(solvent::Error::EEXIST);
+            return Err(sv_call::Error::EEXIST);
         }
 
         let vec = in_use.then_some(entry.vec());
@@ -66,15 +66,15 @@ impl Manager {
             let vec = if let Some(vec) = vec {
                 map.try_insert_with(
                     vec..(vec + 1),
-                    || Ok::<_, solvent::Error>(((), ())),
-                    solvent::Error::EEXIST,
+                    || Ok::<_, sv_call::Error>(((), ())),
+                    sv_call::Error::EEXIST,
                 )?;
                 vec
             } else {
                 map.allocate_with(
                     1,
-                    |_| Ok::<_, solvent::Error>(((), ())),
-                    solvent::Error::ENOMEM,
+                    |_| Ok::<_, sv_call::Error>(((), ())),
+                    sv_call::Error::ENOMEM,
                 )?
                 .0
             };
@@ -89,13 +89,18 @@ impl Manager {
     }
 
     #[inline]
-    pub fn config(&self, gsi: u32, trig_mode: TriggerMode, polarity: Polarity) -> solvent::Result {
+    pub fn config(&self, gsi: u32, trig_mode: TriggerMode, polarity: Polarity) -> sv_call::Result {
         PREEMPT.scope(|| unsafe { ioapic::chip().lock().config(gsi, trig_mode, polarity) })
     }
 
     #[inline]
-    pub fn mask(&self, gsi: u32, masked: bool) -> solvent::Result {
+    pub fn mask(&self, gsi: u32, masked: bool) -> sv_call::Result {
         PREEMPT.scope(|| unsafe { ioapic::chip().lock().mask(gsi, masked) })
+    }
+
+    #[inline]
+    pub fn eoi(&self, gsi: u32) -> sv_call::Result {
+        PREEMPT.scope(|| unsafe { ioapic::chip().lock().eoi(gsi) })
     }
 }
 
@@ -123,13 +128,23 @@ unsafe fn exception(frame_ptr: *mut Frame, vec: def::ExVec) {
     match SCHED.with_current(|cur| Ok(cur.tid().ty())) {
         Ok(task::Type::User) if frame.cs == USR_CODE_X64.into_val().into() => {
             if !task::dispatch_exception(frame, vec) {
-                // #[cfg(debug_assertions)]
-                // let _ = SCHED.with_current(|cur| {
-                //     log::warn!("Unhandled exception from task {}.", cur.tid().raw());
-                //     Ok(())
-                // });
+                #[cfg(debug_assertions)]
+                {
+                    let _ = SCHED.with_current(|cur| {
+                        log::warn!("Unhandled exception from task {}.", cur.tid().raw());
+                        Ok(())
+                    });
+
+                    log::error!("{:?}", vec);
+
+                    frame.dump(if vec == PageFault {
+                        Frame::ERRC_PF
+                    } else {
+                        Frame::ERRC
+                    });
+                }
                 // Kill the fucking task.
-                SCHED.exit_current(solvent::Error::EFAULT.into_retval())
+                SCHED.exit_current(sv_call::Error::EFAULT.into_retval())
             }
             // unreachable!()
         }

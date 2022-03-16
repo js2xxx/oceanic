@@ -12,7 +12,6 @@
 #![feature(alloc_error_handler)]
 #![feature(bool_to_option)]
 #![feature(box_syntax)]
-#![feature(int_abs_diff)]
 #![feature(nonnull_slice_from_raw_parts)]
 #![feature(panic_info_message)]
 #![feature(slice_ptr_get)]
@@ -96,7 +95,7 @@ fn efi_main(img: Handle, syst: SystemTable<Boot>) -> Status {
     outp::choose_mode(&syst, (1024, 768));
     outp::draw_logo(&syst);
 
-    let (entry, pls_layout, tinit) = {
+    let (entry, pls_layout, tinit, bootfs) = {
         // Load the TAR archive file.
         let tar = file::load(&syst, "\\EFI\\Oceanic\\H2O.k");
         // Get the files.
@@ -116,8 +115,10 @@ fn efi_main(img: Handle, syst: SystemTable<Boot>) -> Status {
 
         let tinit = unsafe { &*file::realloc_file(&syst, files.find("TINIT")) };
 
+        let bootfs = unsafe { &*file::realloc_file(&syst, files.find("BOOT.fs")) };
+
         mem::alloc(&syst).dealloc_from_slice(tar, mem::EFI_ID_OFFSET);
-        (h2o_entry, h2o_pls_layout, tinit)
+        (h2o_entry, h2o_pls_layout, tinit, bootfs)
     };
 
     // Prepare the data needed for H2O.
@@ -148,6 +149,8 @@ fn efi_main(img: Handle, syst: SystemTable<Boot>) -> Status {
             pls_layout,
             tinit_phys: paging::LAddr::new(tinit.as_ptr() as *mut _).to_paddr(mem::EFI_ID_OFFSET),
             tinit_len: tinit.len(),
+            bootfs_phys: paging::LAddr::new(bootfs.as_ptr() as *mut _).to_paddr(mem::EFI_ID_OFFSET),
+            bootfs_len: bootfs.len(),
         });
         call_kmain(entry);
     }

@@ -2,34 +2,33 @@ use alloc::{string::String, sync::Arc, vec::Vec};
 use core::{hint, slice, time::Duration};
 
 use paging::LAddr;
-use solvent::*;
 use spin::Mutex;
+use sv_call::*;
 
-use super::{Blocked, RunningState, Signal, Tid};
+use super::{Blocked, RunningState, Signal, Space, Tid};
 use crate::{
     cpu::time::Instant,
-    mem::space,
-    sched::{imp::MIN_TIME_GRAN, PREEMPT, SCHED},
+    sched::{imp::MIN_TIME_GRAN, Arsc, PREEMPT, SCHED},
     syscall::{In, InOut, Out, UserPtr},
 };
 
 #[derive(Debug)]
 struct SuspendToken {
-    slot: Arc<Mutex<Option<super::Blocked>>>,
+    slot: Arsc<Mutex<Option<super::Blocked>>>,
     tid: Tid,
 }
 
 impl SuspendToken {
     #[inline]
     pub fn signal(&self) -> Signal {
-        Signal::Suspend(Arc::clone(&self.slot))
+        Signal::Suspend(Arsc::clone(&self.slot))
     }
 }
 
 impl Drop for SuspendToken {
     fn drop(&mut self) {
         match super::PREEMPT.scope(|| self.slot.lock().take()) {
-            Some(task) => SCHED.unblock(task),
+            Some(task) => SCHED.unblock(task, true),
             None => self.tid.with_signal(|sig| {
                 if matches!(sig, Some(sig) if sig == &mut self.signal()) {
                     *sig = None;
@@ -40,8 +39,10 @@ impl Drop for SuspendToken {
 }
 
 #[syscall]
-fn task_exit(retval: usize) {
+fn task_exit(retval: usize) -> Result {
     SCHED.exit_current(retval);
+    #[allow(unreachable_code)]
+    Err(Error::EKILLED)
 }
 
 #[syscall]
@@ -62,40 +63,54 @@ fn task_sleep(ms: u32) -> Result {
 }
 
 #[syscall]
+fn space_new() -> Result<Handle> {
+    SCHED.with_current(|cur| {
+        let space = Space::new(cur.tid().ty());
+        cur.space().handles().insert_shared(space)
+    })
+}
+
+fn get_name(ptr: UserPtr<In, u8>, len: usize) -> Result<Option<String>> {
+    if !ptr.as_ptr().is_null() {
+        let mut buf = Vec::<u8>::with_capacity(len);
+        unsafe {
+            ptr.read_slice(buf.as_mut_ptr(), len)?;
+            buf.set_len(len);
+        }
+        Ok(Some(String::from_utf8(buf).map_err(|_| Error::EINVAL)?))
+    } else {
+        Ok(None)
+    }
+}
+
+#[syscall]
 fn task_exec(ci: UserPtr<In, task::ExecInfo>) -> Result<Handle> {
     let ci = unsafe { ci.read()? };
     ci.init_chan.check_null()?;
 
-    let name = {
-        let ptr = UserPtr::<In, _>::new(ci.name as *mut u8);
-        if !ptr.as_ptr().is_null() {
-            let name_len = ci.name_len;
-            let mut buf = Vec::<u8>::with_capacity(name_len);
-            unsafe {
-                ptr.read_slice(buf.as_mut_ptr(), name_len)?;
-                buf.set_len(name_len);
-            }
-            Some(String::from_utf8(buf).map_err(|_| Error::EINVAL)?)
-        } else {
-            None
-        }
-    };
+    let name = get_name(UserPtr::<In, _>::new(ci.name as *mut u8), ci.name_len)?;
 
     let (init_chan, space) = SCHED.with_current(|cur| {
-        let init_chan = cur
-            .tid()
-            .handles()
-            .remove::<crate::sched::ipc::Channel>(ci.init_chan)?;
-        if ci.space == Handle::NULL {
-            Ok((init_chan, Arc::clone(cur.space())))
+        let handles = cur.space().handles();
+        let init_chan = if ci.init_chan == Handle::NULL {
+            None
         } else {
-            cur.tid()
-                .handles()
-                .remove::<Arc<space::Space>>(ci.space)?
-                .downcast_ref::<Arc<space::Space>>()
-                .map(|space| (init_chan, Arc::clone(space)))
+            Some(handles.remove::<crate::sched::ipc::Channel>(ci.init_chan)?)
+        };
+        if ci.space == Handle::NULL {
+            Ok((init_chan, Arsc::clone(cur.space())))
+        } else {
+            handles
+                .remove::<Arsc<Space>>(ci.space)?
+                .downcast_ref::<Arsc<Space>>()
+                .map(|space| (init_chan, Arsc::clone(space)))
         }
     })?;
+
+    let init_chan = match init_chan {
+        Some(obj) => PREEMPT.scope(|| unsafe { space.handles().insert_ref(obj) })?,
+        None => Handle::NULL,
+    };
 
     UserPtr::<In, _>::new(ci.entry).check()?;
     UserPtr::<In, _>::new(ci.stack).check()?;
@@ -107,7 +122,7 @@ fn task_exec(ci: UserPtr<In, task::ExecInfo>) -> Result<Handle> {
     };
     let (task, hdl) = super::exec(name, space, init_chan, &starter)?;
 
-    SCHED.unblock(task);
+    SCHED.unblock(task, true);
 
     Ok(hdl)
 }
@@ -119,44 +134,38 @@ fn task_new(
     space: Handle,
     st: UserPtr<Out, Handle>,
 ) -> Result<Handle> {
-    let name = {
-        if !name.as_ptr().is_null() {
-            let mut buf = Vec::<u8>::with_capacity(name_len);
-            unsafe {
-                name.read_slice(buf.as_mut_ptr(), name_len)?;
-                buf.set_len(name_len);
-            }
-            Some(String::from_utf8(buf).map_err(|_| Error::EINVAL)?)
-        } else {
-            None
-        }
-    };
+    let name = get_name(name, name_len)?;
 
     let new_space = if space == Handle::NULL {
-        space::with_current(Arc::clone)
+        SCHED.with_current(|cur| Ok(Arsc::clone(cur.space())))?
     } else {
         SCHED.with_current(|cur| {
-            cur.tid()
+            cur.space()
                 .handles()
-                .remove::<Arc<space::Space>>(space)?
-                .downcast_ref::<Arc<space::Space>>()
-                .map(|space| Arc::clone(space))
+                .remove::<Arsc<Space>>(space)?
+                .downcast_ref::<Arsc<Space>>()
+                .map(|space| Arsc::clone(space))
         })?
     };
+    let mut sus_slot = Arsc::try_new_uninit()?;
 
-    let (task, hdl) = super::create(name, Arc::clone(&new_space))?;
+    let (task, hdl) = super::create(name, Arsc::clone(&new_space))?;
 
     let task = super::Ready::block(
         super::IntoReady::into_ready(task, unsafe { crate::cpu::id() }, MIN_TIME_GRAN),
         "task_ctl_suspend",
     );
+
     let tid = task.tid().clone();
-    let st_data = SuspendToken {
-        slot: Arc::new(Mutex::new(Some(task))),
-        tid,
+    let st_data = unsafe {
+        Arsc::get_mut_unchecked(&mut sus_slot).write(Mutex::new(Some(task)));
+        SuspendToken {
+            slot: Arsc::assume_init(sus_slot),
+            tid,
+        }
     };
     SCHED.with_current(|cur| {
-        let st_h = cur.tid().handles().insert(st_data)?;
+        let st_h = cur.space().handles().insert(st_data)?;
         unsafe { st.write(st_h) }
     })?;
 
@@ -167,27 +176,23 @@ fn task_new(
 fn task_join(hdl: Handle) -> Result<usize> {
     hdl.check_null()?;
 
-    let child = SCHED.with_current(|cur| {
-        cur.tid
-            .handles()
-            .remove::<Tid>(hdl)
-            .and_then(|w| w.downcast_ref::<Tid>().map(|w| Tid::clone(w)))
-    })?;
-    child
-        .ret_cell()
-        .take(Duration::MAX, "task_join")
-        .ok_or(Error::ETIME)
+    SCHED.with_current(|cur| {
+        let handles = cur.space().handles();
+        { handles.get::<Tid>(hdl) }
+            .map(|tid| tid.ret_cell().lock().ok_or(Error::ENOENT))?
+            .inspect(|_| drop(handles.remove::<Tid>(hdl)))
+    })
 }
 
 #[syscall]
 fn task_ctl(hdl: Handle, op: u32, data: UserPtr<InOut, Handle>) -> Result {
     hdl.check_null()?;
 
-    let cur_tid = SCHED.with_current(|cur| Ok(cur.tid.clone()))?;
+    let cur = SCHED.with_current(|cur| Ok(Arsc::clone(cur.space())))?;
 
     match op {
         task::TASK_CTL_KILL => {
-            let child = cur_tid.child(hdl)?;
+            let child = cur.child(hdl)?;
             child.with_signal(|sig| *sig = Some(Signal::Kill));
 
             Ok(())
@@ -195,10 +200,10 @@ fn task_ctl(hdl: Handle, op: u32, data: UserPtr<InOut, Handle>) -> Result {
         task::TASK_CTL_SUSPEND => {
             data.out().check()?;
 
-            let child = cur_tid.child(hdl)?;
+            let child = cur.child(hdl)?;
 
             let st = SuspendToken {
-                slot: Arc::new(Mutex::new(None)),
+                slot: Arsc::try_new(Mutex::new(None))?,
                 tid: child,
             };
 
@@ -211,7 +216,7 @@ fn task_ctl(hdl: Handle, op: u32, data: UserPtr<InOut, Handle>) -> Result {
                 }
             })?;
 
-            let out = super::PREEMPT.scope(|| cur_tid.handles().insert(st))?;
+            let out = super::PREEMPT.scope(|| cur.handles().insert(st))?;
             unsafe { data.out().write(out)? };
 
             Ok(())
@@ -244,7 +249,7 @@ fn read_regs(task: &Blocked, addr: usize, data: UserPtr<Out, u8>, len: usize) ->
 fn write_regs(task: &mut Blocked, addr: usize, data: UserPtr<In, u8>, len: usize) -> Result<()> {
     match addr {
         task::TASK_DBGADDR_GPR => {
-            if len < solvent::task::ctx::GPR_SIZE {
+            if len < sv_call::task::ctx::GPR_SIZE {
                 Err(Error::EBUFFER)
             } else {
                 let gpr = unsafe { data.cast().read()? };
@@ -283,10 +288,10 @@ fn task_debug(hdl: Handle, op: u32, addr: usize, data: UserPtr<InOut, u8>, len: 
     data.check_slice(len)?;
 
     let slot = SCHED.with_current(|cur| {
-        cur.tid
+        cur.space()
             .handles()
             .get::<SuspendToken>(hdl)
-            .map(|st| Arc::clone(&st.slot))
+            .map(|st| Arsc::clone(&st.slot))
     })?;
 
     let mut task = loop {
@@ -300,13 +305,13 @@ fn task_debug(hdl: Handle, op: u32, addr: usize, data: UserPtr<InOut, u8>, len: 
         task::TASK_DBG_READ_REG => read_regs(&task, addr, data.out(), len),
         task::TASK_DBG_WRITE_REG => write_regs(&mut task, addr, data.r#in(), len),
         task::TASK_DBG_READ_MEM => unsafe {
-            space::with(task.space(), |_| {
+            crate::mem::space::with(task.space().mem(), |_| {
                 let slice = slice::from_raw_parts(addr as *mut u8, len);
                 data.out().write_slice(slice)
             })
         },
         task::TASK_DBG_WRITE_MEM => unsafe {
-            space::with(task.space(), |_| {
+            crate::mem::space::with(task.space().mem(), |_| {
                 data.r#in().read_slice(addr as *mut u8, len)
             })
         },
@@ -315,7 +320,12 @@ fn task_debug(hdl: Handle, op: u32, addr: usize, data: UserPtr<InOut, u8>, len: 
                 Err(Error::EBUFFER)
             } else {
                 let hdl = SCHED.with_current(|cur| {
-                    create_excep_chan(&task).and_then(|chan| cur.tid.handles().insert(chan))
+                    create_excep_chan(&task).and_then(|chan| unsafe {
+                        let event = Arc::downgrade(chan.event()) as _;
+                        cur.space()
+                            .handles()
+                            .insert_unchecked(chan, true, false, event)
+                    })
                 })?;
 
                 unsafe { data.out().cast::<Handle>().write(hdl) }

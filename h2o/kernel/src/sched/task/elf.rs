@@ -8,16 +8,17 @@ use super::*;
 use crate::{
     cpu::CpuMask,
     mem::space::{Flags, Phys, Space},
+    sched::Arsc,
 };
 
 fn load_prog(
-    space: &Arc<Space>,
+    space: &Arsc<Space>,
     flags: u32,
     virt: LAddr,
     phys: PAddr,
     fsize: usize,
     msize: usize,
-) -> solvent::Result {
+) -> sv_call::Result {
     fn flags_to_pg_attr(flags: u32) -> Flags {
         let mut ret = Flags::USER_ACCESS;
         if (flags & program_header::PF_R) != 0 {
@@ -48,7 +49,7 @@ fn load_prog(
         log::trace!("Mapping {:?}", virt);
         let cnt = fsize.div_ceil_bit(paging::PAGE_SHIFT);
         let (layout, _) = paging::PAGE_LAYOUT.repeat(cnt)?;
-        let phys = Phys::new(phys, layout, flags);
+        let phys = Phys::new(phys, layout, flags)?;
         unsafe { space.map_addr(virt, Some(phys), flags) }?;
     }
 
@@ -63,7 +64,7 @@ fn load_prog(
     Ok(())
 }
 
-fn load_elf(space: &Arc<Space>, file: &Elf, image: &[u8]) -> solvent::Result<(LAddr, usize)> {
+fn load_elf(space: &Arsc<Space>, file: &Elf, image: &[u8]) -> sv_call::Result<(LAddr, usize)> {
     log::trace!(
         "Loading ELF file from image {:?}, space = {:?}",
         image.as_ptr(),
@@ -93,7 +94,7 @@ fn load_elf(space: &Arc<Space>, file: &Elf, image: &[u8]) -> solvent::Result<(LA
                 (phdr.p_memsz as usize).round_up_bit(paging::PAGE_SHIFT),
             )?,
 
-            _ => return Err(solvent::Error::ESPRT),
+            _ => return Err(sv_call::Error::ESPRT),
         }
     }
     Ok((entry, stack_size))
@@ -103,29 +104,33 @@ pub fn from_elf(
     image: &[u8],
     name: String,
     affinity: CpuMask,
-    init_chan: hdl::Ref<dyn Any>,
-) -> solvent::Result<(Init, Handle)> {
+    init_chan: hdl::Ref,
+) -> sv_call::Result<Init> {
     let file = Elf::parse(image)
-        .map_err(|_| solvent::Error::EINVAL)
+        .map_err(|_| sv_call::Error::EINVAL)
         .and_then(|file| {
             if file.is_64 {
                 Ok(file)
             } else {
-                Err(solvent::Error::EPERM)
+                Err(sv_call::Error::EPERM)
             }
         })?;
 
-    let tid = crate::sched::SCHED.with_current(|cur| Ok(cur.tid.clone()))?;
-    let space = Space::new(Type::User);
-    let (entry, stack_size) = load_elf(&space, &file, image)?;
-    let stack = space.init_stack(stack_size)?;
+    let space = super::Space::new(Type::User)?;
+    let init_chan = unsafe { space.handles().insert_ref(init_chan) }?;
+
+    let (entry, stack_size) = load_elf(space.mem(), &file, image)?;
+    let stack = space.mem().init_stack(stack_size)?;
 
     let starter = super::Starter {
         entry,
         stack,
         arg: 0,
     };
-    super::exec_inner(
+
+    let tid = crate::sched::SCHED.with_current(|cur| Ok(cur.tid.clone()))?;
+
+    let ret = super::exec_inner(
         tid,
         Some(name),
         Some(Type::User),
@@ -133,5 +138,11 @@ pub fn from_elf(
         space,
         init_chan,
         &starter,
-    )
+    )?;
+
+    crate::sched::SCHED.with_current(|cur| {
+        let event = Arc::downgrade(&ret.tid().event) as _;
+        cur.space().handles().insert_event(ret.tid().clone(), event)
+    })?;
+    Ok(ret)
 }

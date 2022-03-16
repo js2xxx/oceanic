@@ -1,8 +1,6 @@
-use alloc::sync::Arc;
 use core::{mem, ptr::addr_of};
 
 use archop::Azy;
-// use core::ptr::addr_of_mut;
 use canary::Canary;
 use paging::{PAddr, PAGE_LAYOUT};
 use spin::RwLock;
@@ -13,6 +11,7 @@ use crate::{
         Instant,
     },
     mem::space::{self, Flags, Phys},
+    sched::Arsc,
 };
 
 #[repr(C, packed)]
@@ -37,11 +36,11 @@ struct HpetReg {
 }
 const HPET_REG_CFG_ENABLE: u64 = 1;
 
-static HPET: Azy<Option<Arc<RwLock<Hpet>>>> = Azy::new(|| {
+static HPET: Azy<Option<Arsc<RwLock<Hpet>>>> = Azy::new(|| {
     acpi::HpetInfo::new(crate::dev::acpi::tables())
         .ok()
         .and_then(|info| unsafe { Hpet::new(info) }.ok())
-        .map(|hpet| Arc::new(RwLock::new(hpet)))
+        .and_then(|hpet| Arsc::try_new(RwLock::new(hpet)).ok())
 });
 
 pub static HPET_CLOCK: Azy<Option<HpetClock>> = Azy::new(HpetClock::new);
@@ -64,11 +63,12 @@ impl Hpet {
             PAddr::new(data.base_address),
             PAGE_LAYOUT,
             Flags::READABLE | Flags::WRITABLE | Flags::UNCACHED,
-        );
+        )
+        .map_err(|_| "Failed to acquire memory for HPET")?;
         let addr = space::KRL
             .map(
                 None,
-                Arc::clone(&phys),
+                Arsc::clone(&phys),
                 0,
                 phys.layout().size(),
                 phys.flags(),
@@ -134,7 +134,7 @@ impl Hpet {
 
 pub struct HpetClock {
     canary: Canary<HpetClock>,
-    hpet: Arc<RwLock<Hpet>>,
+    hpet: Arsc<RwLock<Hpet>>,
     mul: u128,
     sft: u128,
 }

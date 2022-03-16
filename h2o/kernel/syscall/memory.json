@@ -1,0 +1,124 @@
+[
+    {
+        "name": "sv_phys_alloc",
+        "returns": "Handle",
+        "args": [
+            {
+                "name": "size",
+                "ty": "usize"
+            },
+            {
+                "name": "align",
+                "ty": "usize"
+            },
+            {
+                "name": "flags",
+                "ty": "Flags"
+            }
+        ]
+    },
+    {
+        "name": "sv_phys_read",
+        "returns": "()",
+        "args": [
+            {
+                "name": "hdl",
+                "ty": "Handle"
+            },
+            {
+                "name": "offset",
+                "ty": "usize"
+            },
+            {
+                "name": "len",
+                "ty": "usize"
+            },
+            {
+                "name": "buffer",
+                "ty": "*mut u8"
+            }
+        ]
+    },
+    {
+        "name": "sv_phys_write",
+        "returns": "()",
+        "args": [
+            {
+                "name": "hdl",
+                "ty": "Handle"
+            },
+            {
+                "name": "offset",
+                "ty": "usize"
+            },
+            {
+                "name": "len",
+                "ty": "usize"
+            },
+            {
+                "name": "buffer",
+                "ty": "*const u8"
+            }
+        ]
+    },
+    {
+        "name": "sv_mem_map",
+        "returns": "*mut u8",
+        "args": [
+            {
+                "name": "space",
+                "ty": "Handle"
+            },
+            {
+                "name": "mi",
+                "ty": "*const MapInfo"
+            }
+        ]
+    },
+    {
+        "name": "sv_mem_reprot",
+        "returns": "()",
+        "args": [
+            {
+                "name": "space",
+                "ty": "Handle"
+            },
+            {
+                "name": "ptr",
+                "ty": "*mut u8"
+            },
+            {
+                "name": "len",
+                "ty": "usize"
+            },
+            {
+                "name": "flags",
+                "ty": "Flags"
+            }
+        ]
+    },
+    {
+        "name": "sv_mem_unmap",
+        "returns": "()",
+        "args": [
+            {
+                "name": "space",
+                "ty": "Handle"
+            },
+            {
+                "name": "ptr",
+                "ty": "*mut u8"
+            }
+        ]
+    },
+    {
+        "name": "sv_mem_info",
+        "returns": "()",
+        "args": [
+            {
+                "name": "info",
+                "ty": "*mut MemInfo"
+            }
+        ]
+    }
+]

@@ -1,25 +1,35 @@
 #![no_std]
 #![no_main]
+#![allow(unused_unsafe)]
+#![feature(alloc_error_handler)]
 #![feature(alloc_layout_extra)]
 #![feature(box_syntax)]
+#![feature(lang_items)]
 #![feature(nonnull_slice_from_raw_parts)]
 #![feature(slice_ptr_get)]
 #![feature(slice_ptr_len)]
 #![feature(thread_local)]
 
+mod log;
 mod mem;
+mod rxx;
+mod test;
+
+use solvent::{ipc::Channel, obj::Object};
 
 extern crate alloc;
 
-pub use solvent::rxx::*;
-
 #[no_mangle]
-extern "C" fn tmain(_: solvent::Handle) {
-    solvent::log::init(log::Level::Debug);
-    log::info!("Starting initialization");
+extern "C" fn tmain(init_chan: sv_call::Handle) {
+    log::init(::log::Level::Debug);
+    ::log::info!("Starting initialization");
     mem::init();
 
-    solvent::test();
+    unsafe { test::test_syscall() };
 
-    log::debug!("Reaching end of TINIT");
+    let init_chan = unsafe { Channel::from_raw(init_chan) };
+    let mut packet = Default::default();
+    { init_chan.receive(&mut packet) }.expect("Failed to receive the initial packet");
+
+    ::log::debug!("Reaching end of TINIT");
 }

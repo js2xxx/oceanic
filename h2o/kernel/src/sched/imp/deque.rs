@@ -1,6 +1,6 @@
 //! This module started its life as crossbeam-deque.
 
-use alloc::{boxed::Box, sync::Arc, vec::Vec};
+use alloc::{boxed::Box, vec::Vec};
 use core::{
     cell::{Cell, UnsafeCell},
     cmp, fmt,
@@ -16,6 +16,7 @@ use epoch::{Atomic, Owned};
 use utils::{Backoff, CachePadded};
 
 use super::epoch;
+use crate::sched::Arsc;
 
 // Minimum buffer capacity.
 const MIN_CAP: usize = 64;
@@ -196,7 +197,7 @@ enum Flavor {
 /// ```
 pub struct Worker<T> {
     /// A reference to the inner representation of the queue.
-    inner: Arc<CachePadded<Inner<T>>>,
+    inner: Arsc<CachePadded<Inner<T>>>,
 
     /// A copy of `inner.buffer` for quick access.
     buffer: Cell<Buffer<T>>,
@@ -225,11 +226,12 @@ impl<T> Worker<T> {
     pub fn new_fifo() -> Worker<T> {
         let buffer = Buffer::alloc(MIN_CAP);
 
-        let inner = Arc::new(CachePadded::new(Inner {
+        let inner = Arsc::try_new(CachePadded::new(Inner {
             front: AtomicIsize::new(0),
             back: AtomicIsize::new(0),
             buffer: CachePadded::new(Atomic::new(buffer)),
-        }));
+        }))
+        .expect("Failed to allocate memory");
 
         Worker {
             inner,
@@ -253,11 +255,12 @@ impl<T> Worker<T> {
     pub fn new_lifo() -> Worker<T> {
         let buffer = Buffer::alloc(MIN_CAP);
 
-        let inner = Arc::new(CachePadded::new(Inner {
+        let inner = Arsc::try_new(CachePadded::new(Inner {
             front: AtomicIsize::new(0),
             back: AtomicIsize::new(0),
             buffer: CachePadded::new(Atomic::new(buffer)),
-        }));
+        }))
+        .expect("Failed to allocate memory");
 
         Worker {
             inner,
@@ -569,7 +572,7 @@ impl<T> fmt::Debug for Worker<T> {
 /// ```
 pub struct Stealer<T> {
     /// A reference to the inner representation of the queue.
-    inner: Arc<CachePadded<Inner<T>>>,
+    inner: Arsc<CachePadded<Inner<T>>>,
 
     /// The flavor of the queue.
     flavor: Flavor,
@@ -704,7 +707,7 @@ impl<T> Stealer<T> {
     /// assert_eq!(w2.pop(), Some(2));
     /// ```
     pub fn steal_batch(&self, dest: &Worker<T>) -> Steal<()> {
-        if Arc::ptr_eq(&self.inner, &dest.inner) {
+        if Arsc::ptr_eq(&self.inner, &dest.inner) {
             if dest.is_empty() {
                 return Steal::Empty;
             } else {
@@ -905,7 +908,7 @@ impl<T> Stealer<T> {
     /// assert_eq!(w2.pop(), Some(2));
     /// ```
     pub fn steal_batch_and_pop(&self, dest: &Worker<T>) -> Steal<T> {
-        if Arc::ptr_eq(&self.inner, &dest.inner) {
+        if Arsc::ptr_eq(&self.inner, &dest.inner) {
             match dest.pop() {
                 None => return Steal::Empty,
                 Some(task) => return Steal::Success(task),

@@ -4,7 +4,7 @@ pub mod space;
 mod syscall;
 
 use alloc::{alloc::Global, sync::Arc};
-use core::{alloc::Allocator, ptr::NonNull};
+use core::{alloc::Allocator, ptr::NonNull, sync::atomic::AtomicUsize};
 
 use archop::Azy;
 use iter_ex::PointerIterator;
@@ -20,13 +20,7 @@ pub static MMAP: Azy<PointerIterator<pmm::boot::MemRange>> = Azy::new(|| {
     )
 });
 
-pub fn alloc_system_stack() -> solvent::Result<NonNull<u8>> {
-    let layout = crate::sched::task::DEFAULT_STACK_LAYOUT;
-    Global
-        .allocate(layout)
-        .map(|ptr| unsafe { NonNull::new_unchecked(ptr.as_mut_ptr().add(layout.size())) })
-        .map_err(Into::into)
-}
+static ALL_AVAILABLE: AtomicUsize = AtomicUsize::new(0);
 
 static MEM_RESOURCE: Azy<Arc<Resource<usize>>> = Azy::new(|| {
     let (all_available, addr_max) = pmm::init(&*MMAP, minfo::TRAMPOLINE_RANGE);
@@ -35,10 +29,11 @@ static MEM_RESOURCE: Azy<Arc<Resource<usize>>> = Azy::new(|| {
         (all_available as f64) / 1073741824.0,
         all_available
     );
+    ALL_AVAILABLE.store(all_available, core::sync::atomic::Ordering::SeqCst);
     heap::test_global();
     unsafe { space::init() };
 
-    let ret = Resource::new(archop::rand::get(), 0..addr_max, None);
+    let ret = Resource::new_root(archop::rand::get(), 0..addr_max);
     // Make memory in heap not to be used by devices.
     for mdsc_ptr in &*MMAP {
         let mdsc = unsafe { &*mdsc_ptr };
@@ -60,6 +55,14 @@ static MEM_RESOURCE: Azy<Arc<Resource<usize>>> = Azy::new(|| {
 #[inline]
 pub fn mem_resource() -> &'static Arc<Resource<usize>> {
     &MEM_RESOURCE
+}
+
+pub fn alloc_system_stack() -> sv_call::Result<NonNull<u8>> {
+    let layout = crate::sched::task::DEFAULT_STACK_LAYOUT;
+    Global
+        .allocate(layout)
+        .map(|ptr| unsafe { NonNull::new_unchecked(ptr.as_mut_ptr().add(layout.size())) })
+        .map_err(Into::into)
 }
 
 /// Initialize the PMM and the kernel heap (Rust global allocator).

@@ -1,4 +1,4 @@
-use core::time::Duration;
+use alloc::sync::Arc;
 
 use spin::Mutex;
 
@@ -6,28 +6,53 @@ use super::arch::MANAGER;
 use crate::{
     cpu::time::Instant,
     dev::Resource,
-    sched::{ipc::Event, PREEMPT},
+    sched::{Event, EventData, PREEMPT, SIG_GENERIC},
 };
 
+#[derive(Debug)]
 pub struct Interrupt {
     gsi: u32,
-    event: Event,
     last_time: Mutex<Option<Instant>>,
     level_triggered: bool,
+    event_data: EventData,
+}
+
+impl Event for Interrupt {
+    fn event_data(&self) -> &EventData {
+        &self.event_data
+    }
+
+    fn wait(&self, waiter: Arc<dyn crate::sched::Waiter>) {
+        if self.level_triggered {
+            MANAGER.mask(self.gsi, false).unwrap();
+        }
+        self.wait_impl(waiter);
+    }
+
+    fn notify(&self, clear: usize, set: usize) {
+        PREEMPT.scope(|| *self.last_time.lock() = Some(Instant::now()));
+
+        self.notify_impl(clear, set);
+
+        if self.level_triggered {
+            MANAGER.mask(self.gsi, true).unwrap();
+        }
+        MANAGER.eoi(self.gsi).unwrap();
+    }
 }
 
 impl Interrupt {
     #[inline]
-    pub fn new(res: &Resource<u32>, gsi: u32, level_triggered: bool) -> solvent::Result<Self> {
+    pub fn new(res: &Resource<u32>, gsi: u32, level_triggered: bool) -> sv_call::Result<Arc<Self>> {
         if res.magic_eq(super::gsi_resource()) && res.range().contains(&gsi) {
-            Ok(Interrupt {
+            Ok(Arc::new(Interrupt {
                 gsi,
-                event: Event::new(false),
                 last_time: Mutex::new(None),
                 level_triggered,
-            })
+                event_data: EventData::new(0),
+            }))
         } else {
-            Err(solvent::Error::EPERM)
+            Err(sv_call::Error::EPERM)
         }
     }
 
@@ -40,56 +65,31 @@ impl Interrupt {
     pub fn gsi(&self) -> u32 {
         self.gsi
     }
-
-    pub fn handle(&self) {
-        PREEMPT.scope(|| *self.last_time.lock() = Some(Instant::now()));
-        let _ = self.event.notify(u8::MAX);
-        if self.level_triggered {
-            MANAGER.mask(self.gsi, true).unwrap();
-        }
-    }
-
-    pub fn wait(&self, timeout: Duration, block_desc: &'static str) -> (Instant, solvent::Result) {
-        if self.level_triggered {
-            MANAGER.mask(self.gsi, false).unwrap();
-        }
-        let ret = self.event.wait(u8::MAX, timeout, block_desc);
-        let t = self.last_time().unwrap();
-        (t, ret)
-    }
 }
 
 fn handler(arg: *mut u8) {
     let intr = unsafe { &*arg.cast::<Interrupt>() };
-    intr.handle()
+    intr.notify(0, SIG_GENERIC);
 }
 
 mod syscall {
-    use alloc::{boxed::Box, sync::Arc};
-    use core::time::Duration;
+    use alloc::sync::Arc;
 
-    use solvent::*;
+    use sv_call::{res::IntrConfig, *};
 
     use super::*;
     use crate::{
         cpu::{
             arch::apic::{Polarity, TriggerMode},
             intr::arch::MANAGER,
+            time,
         },
         sched::SCHED,
         syscall::{Out, UserPtr},
     };
 
-    bitflags::bitflags! {
-        struct IntrConfig: u32 {
-            const ACTIVE_HIGH     = 0b01;
-            const LEVEL_TRIGGERED = 0b10;
-        }
-    }
-
     #[syscall]
-    fn intr_new(res: Handle, gsi: u32, config: u32) -> Result<Handle> {
-        let config = IntrConfig::from_bits(config).ok_or(Error::EINVAL)?;
+    fn intr_new(res: Handle, gsi: u32, config: IntrConfig) -> Result<Handle> {
         let level_triggered = config.contains(IntrConfig::LEVEL_TRIGGERED);
         let trig_mode = if level_triggered {
             TriggerMode::Level
@@ -103,10 +103,9 @@ mod syscall {
         };
 
         let intr = SCHED.with_current(|cur| {
-            let handles = cur.tid().handles();
+            let handles = cur.space().handles();
             let res = handles.get::<Arc<Resource<u32>>>(res)?;
-            let intr = Interrupt::new(res, gsi, level_triggered)?;
-            Box::try_new(intr).map_err(Error::from)
+            Interrupt::new(res, gsi, level_triggered)
         })?;
 
         MANAGER.config(gsi, trig_mode, polarity)?;
@@ -116,32 +115,38 @@ mod syscall {
         )?;
         MANAGER.mask(gsi, false)?;
 
-        SCHED.with_current(|cur| cur.tid().handles().insert(intr))
+        let event = Arc::downgrade(&intr) as _;
+        SCHED.with_current(|cur| unsafe { cur.space().handles().insert_event(intr, event) })
     }
 
     #[syscall]
     fn intr_wait(hdl: Handle, timeout_us: u64, last_time: UserPtr<Out, u128>) -> Result {
         hdl.check_null()?;
         last_time.check()?;
-        let timeout = if timeout_us == u64::MAX {
-            Duration::MAX
-        } else {
-            Duration::from_micros(timeout_us)
-        };
-        SCHED.with_current(|cur| {
-            let intr = cur.tid().handles().get::<Box<Interrupt>>(hdl)?;
-            let (t, ret) = intr.wait(timeout, "intr_wait");
-            unsafe { last_time.write(t.raw()) }?;
-            ret
-        })
+
+        let pree = PREEMPT.lock();
+        let intr = unsafe { (*SCHED.current()).as_ref().ok_or(Error::ESRCH)? }
+            .space()
+            .handles()
+            .get::<Arc<Interrupt>>(hdl)?;
+
+        let blocker = crate::sched::Blocker::new(&(Arc::clone(intr) as _), false, SIG_GENERIC);
+        blocker.wait(pree, time::from_us(timeout_us))?;
+        if !blocker.detach().0 {
+            return Err(Error::ETIME);
+        }
+
+        unsafe { last_time.write(intr.last_time().unwrap().raw()) }?;
+        Ok(())
     }
 
     #[syscall]
-    fn intr_drop(hdl: Handle) -> solvent::Result {
+    fn intr_drop(hdl: Handle) -> Result {
         hdl.check_null()?;
         SCHED.with_current(|cur| {
-            let intr = cur.tid().handles().remove::<Box<Interrupt>>(hdl)?;
-            let intr = intr.downcast_ref::<Box<Interrupt>>()?;
+            let intr = cur.space().handles().remove::<Arc<Interrupt>>(hdl)?;
+            let intr = intr.downcast_ref::<Arc<Interrupt>>()?;
+            intr.cancel();
             MANAGER.register(intr.gsi, None)?;
             Ok(())
         })

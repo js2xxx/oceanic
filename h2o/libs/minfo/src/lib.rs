@@ -40,4 +40,7 @@ pub struct KernelArgs {
 
     pub tinit_phys: paging::PAddr,
     pub tinit_len: usize,
+
+    pub bootfs_phys: paging::PAddr,
+    pub bootfs_len: usize,
 }

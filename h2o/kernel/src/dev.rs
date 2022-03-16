@@ -16,7 +16,7 @@ pub use self::res::Resource;
 pub use crate::{cpu::intr::gsi_resource, mem::mem_resource};
 
 static PIO_RESOURCE: Azy<Arc<Resource<u16>>> = Azy::new(|| {
-    let ret = Resource::new(archop::rand::get(), 0..u16::MAX, None);
+    let ret = Resource::new_root(archop::rand::get(), 0..u16::MAX);
     core::mem::forget(
         ret.allocate(crate::log::COM_LOG..(crate::log::COM_LOG + 1))
             .expect("Failed to reserve debug port"),
@@ -40,7 +40,7 @@ pub unsafe fn init() {
 
 mod syscall {
     use bitvec::bitvec;
-    use solvent::*;
+    use sv_call::*;
 
     use super::*;
     use crate::{cpu::arch::KERNEL_GS, sched::SCHED};
@@ -48,7 +48,7 @@ mod syscall {
     #[syscall]
     fn pio_acq(res: Handle, base: u16, size: u16) -> Result {
         SCHED.with_current(|cur| {
-            let res = cur.tid().handles().get::<Arc<Resource<u16>>>(res)?;
+            let res = cur.space().handles().get::<Arc<Resource<u16>>>(res)?;
             if res.magic_eq(pio_resource())
                 && res.range().start <= base
                 && base + size <= res.range().end
@@ -68,7 +68,7 @@ mod syscall {
     #[syscall]
     fn pio_rel(res: Handle, base: u16, size: u16) -> Result {
         SCHED.with_current(|cur| {
-            let res = cur.tid().handles().get::<Arc<Resource<u16>>>(res)?;
+            let res = cur.space().handles().get::<Arc<Resource<u16>>>(res)?;
             if res.magic_eq(pio_resource())
                 && res.range().start <= base
                 && base + size <= res.range().end

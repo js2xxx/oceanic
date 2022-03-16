@@ -2,7 +2,7 @@ use core::mem::size_of;
 
 use archop::{msr, reg};
 use paging::LAddr;
-use solvent::SerdeReg;
+use sv_call::SerdeReg;
 
 use super::seg::ndt::{INTR_CODE, USR_CODE_X86};
 use crate::sched::task::ctx::arch::Frame;
@@ -14,7 +14,7 @@ extern "C" {
 /// # Safety
 ///
 /// This function should only be called once per CPU.
-pub unsafe fn init() -> solvent::Result<LAddr> {
+pub unsafe fn init() -> sv_call::Result<LAddr> {
     let stack = crate::mem::alloc_system_stack()?
         .as_ptr()
         .sub(size_of::<usize>());
@@ -32,10 +32,10 @@ pub unsafe fn init() -> solvent::Result<LAddr> {
 
 #[no_mangle]
 unsafe extern "C" fn hdl_syscall(frame: *const Frame) {
-    let arg = (*frame).syscall_args();
+    let (num, args) = (*frame).syscall_args();
 
     archop::resume_intr(None);
-    let res = crate::syscall::handler(&arg);
+    let res = crate::syscall::handler(num, &args);
     archop::pause_intr();
 
     let _ = crate::sched::SCHED.with_current(|cur| {

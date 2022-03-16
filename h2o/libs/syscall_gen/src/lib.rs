@@ -1,10 +1,9 @@
 mod syscall_fn;
-mod syscall_stub;
 
 extern crate proc_macro;
 
 use proc_macro::TokenStream;
-use quote::{format_ident, quote};
+use quote::quote;
 use syn::{punctuated::Punctuated, *};
 
 fn wrap_args<T, F>(
@@ -36,31 +35,4 @@ pub fn syscall(args: TokenStream, item_fn: TokenStream) -> TokenStream {
     let func = parse_macro_input!(item_fn as syscall_fn::SyscallFn);
 
     quote!(#func).into()
-}
-
-#[proc_macro]
-pub fn syscall_wrapper(input: TokenStream) -> TokenStream {
-    let ident = parse_macro_input!(input as Ident);
-    let wrapper_ident = format_ident!("wrapper_{}", ident);
-    let token = quote! {
-          {
-                extern "C" {
-                      fn #wrapper_ident (
-                            a: usize,
-                            b: usize,
-                            c: usize,
-                            d: usize,
-                            e: usize,
-                      ) -> usize;
-                }
-                #wrapper_ident
-          }
-    };
-    token.into()
-}
-
-#[proc_macro]
-pub fn syscall_stub(input: TokenStream) -> TokenStream {
-    let stub = parse_macro_input!(input as syscall_stub::SyscallStub);
-    quote!(#stub).into()
 }

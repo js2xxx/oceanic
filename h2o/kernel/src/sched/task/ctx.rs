@@ -21,7 +21,7 @@ use crate::{
     mem::space::{self, Flags},
 };
 
-pub const KSTACK_SIZE: usize = paging::PAGE_SIZE * 16;
+pub const KSTACK_SIZE: usize = paging::PAGE_SIZE * 18;
 
 #[derive(Debug)]
 pub struct Entry {
@@ -121,9 +121,9 @@ impl Kstack {
         cur_frame: &mut arch::Frame,
         errc: u64,
         addr: u64,
-    ) -> solvent::Result {
+    ) -> sv_call::Result {
         match self.pf_resume.take() {
-            None => Err(solvent::Error::ENOENT),
+            None => Err(sv_call::Error::ENOENT),
             Some(ret) => {
                 cur_frame.set_pf_resume(ret.into(), errc, addr);
                 Ok(())

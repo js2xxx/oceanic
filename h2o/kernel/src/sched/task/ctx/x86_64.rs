@@ -1,4 +1,3 @@
-use alloc::sync::Arc;
 use core::{alloc::Layout, mem::size_of};
 
 use paging::LAddr;
@@ -15,7 +14,7 @@ use crate::{
             KERNEL_GS,
         },
     },
-    sched::{task, PREEMPT},
+    sched::{task, Arsc, PREEMPT},
 };
 
 pub const DEFAULT_STACK_SIZE: usize = 64 * paging::PAGE_SIZE;
@@ -107,17 +106,18 @@ impl Frame {
         self.rsi = entry.args[1];
     }
 
-    pub fn syscall_args(&self) -> solvent::Arguments {
-        solvent::Arguments {
-            fn_num: self.rax as usize,
-            args: [
+    #[inline]
+    pub fn syscall_args(&self) -> (usize, [usize; 5]) {
+        (
+            self.rax as usize,
+            [
                 self.rdi as usize,
                 self.rsi as usize,
                 self.rdx as usize,
                 self.r8 as usize,
                 self.r9 as usize,
             ],
-        }
+        )
     }
 
     #[inline]
@@ -133,8 +133,8 @@ impl Frame {
     }
 
     #[inline]
-    pub fn debug_get(&self) -> solvent::task::ctx::Gpr {
-        solvent::task::ctx::Gpr {
+    pub fn debug_get(&self) -> sv_call::task::ctx::Gpr {
+        sv_call::task::ctx::Gpr {
             rax: self.rax,
             rcx: self.rcx,
             rdx: self.rdx,
@@ -162,11 +162,11 @@ impl Frame {
     ///
     /// Returns error if `fs_base` or `gs_base` is invalid.
     #[inline]
-    pub fn debug_set(&mut self, gpr: &solvent::task::ctx::Gpr) -> solvent::Result<()> {
+    pub fn debug_set(&mut self, gpr: &sv_call::task::ctx::Gpr) -> sv_call::Result<()> {
         if !archop::canonical(LAddr::from(gpr.fs_base))
             || !archop::canonical(LAddr::from(gpr.gs_base))
         {
-            return Err(solvent::Error::EINVAL);
+            return Err(sv_call::Error::EINVAL);
         }
         self.gs_base = gpr.gs_base;
         self.fs_base = gpr.fs_base;
@@ -256,7 +256,7 @@ pub(super) unsafe extern "C" fn switch_finishing() {
         let tss_rsp0 = cur.kstack.top().val() as u64;
         KERNEL_GS.update_tss_rsp0(tss_rsp0);
         KERNEL_GS.update_tss_io_bitmap(cur.io_bitmap.as_deref());
-        crate::mem::space::set_current(Arc::clone(&cur.space));
+        crate::mem::space::set_current(Arsc::clone(cur.space.mem()));
         cur.ext_frame.load();
         if !cpu::arch::in_intr() && cur.tid.ty() == task::Type::Kernel {
             KERNEL_GS.load();

@@ -1,3 +1,4 @@
+mod boot;
 pub mod ctx;
 mod elf;
 mod excep;
@@ -5,24 +6,20 @@ pub mod hdl;
 mod idle;
 mod sig;
 mod sm;
+mod space;
 mod syscall;
 mod tid;
 
 use alloc::{format, string::String, sync::Arc};
-use core::any::Any;
 
 use paging::LAddr;
-use solvent::Handle;
 
 #[cfg(target_arch = "x86_64")]
 pub use self::ctx::arch::{DEFAULT_STACK_LAYOUT, DEFAULT_STACK_SIZE};
 use self::elf::from_elf;
-pub use self::{excep::dispatch_exception, sig::Signal, sm::*, tid::Tid};
-use super::{ipc::Channel, PREEMPT};
-use crate::{
-    cpu::{CpuMask, Lazy},
-    mem::space::Space,
-};
+pub use self::{boot::VDSO, excep::dispatch_exception, sig::Signal, sm::*, space::Space, tid::Tid};
+use super::{ipc::Channel, Arsc, PREEMPT};
+use crate::cpu::{CpuMask, Lazy};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Type {
@@ -36,9 +33,9 @@ impl Type {
     /// Returns error if current task's type is less privileged than the
     /// expected type.
     #[inline]
-    pub fn pass(this: Option<Self>, cur_ty: Type) -> solvent::Result<Type> {
+    pub fn pass(this: Option<Self>, cur_ty: Type) -> sv_call::Result<Type> {
         match (this, cur_ty) {
-            (Some(Self::Kernel), Self::User) => Err(solvent::Error::EPERM),
+            (Some(Self::Kernel), Self::User) => Err(sv_call::Error::EPERM),
             (Some(ty), _) => Ok(ty),
             _ => Ok(cur_ty),
         }
@@ -69,22 +66,21 @@ fn exec_inner(
     name: Option<String>,
     ty: Option<Type>,
     affinity: Option<CpuMask>,
-    space: Arc<Space>,
-    init_chan: hdl::Ref<dyn Any>,
+    space: Arsc<Space>,
+    init_chan: sv_call::Handle,
     s: &Starter,
-) -> solvent::Result<(Init, Handle)> {
+) -> sv_call::Result<Init> {
     let ty = Type::pass(ty, cur.ty())?;
     let ti = TaskInfo::builder()
         .from(Some(cur.clone()))
+        .excep_chan(Arsc::try_new(Default::default())?)
         .name(name.unwrap_or(format!("{}.func{}", cur.name(), archop::rand::get())))
         .ty(ty)
         .affinity(affinity.unwrap_or_else(|| cur.affinity()))
         .build()
         .unwrap();
 
-    let init_chan = unsafe { ti.handles().insert_ref(init_chan) }?;
-
-    let tid = tid::allocate(ti).map_err(|_| solvent::Error::EBUSY)?;
+    let tid = tid::allocate(ti).map_err(|_| sv_call::Error::EBUSY)?;
 
     let entry = ctx::Entry {
         entry: s.entry,
@@ -94,45 +90,56 @@ fn exec_inner(
     let kstack = ctx::Kstack::new(Some(entry), ty);
     let ext_frame = ctx::ExtFrame::zeroed();
 
-    let handle = cur.handles().insert(tid.clone())?;
-
     let init = Init::new(tid, space, kstack, ext_frame);
 
-    Ok((init, handle))
+    Ok(init)
 }
 
 #[inline]
 fn exec(
     name: Option<String>,
-    space: Arc<Space>,
-    init_chan: hdl::Ref<dyn Any>,
+    space: Arsc<Space>,
+    init_chan: sv_call::Handle,
     starter: &Starter,
-) -> solvent::Result<(Init, Handle)> {
+) -> sv_call::Result<(Init, sv_call::Handle)> {
     let cur = super::SCHED.with_current(|cur| Ok(cur.tid.clone()))?;
-    exec_inner(cur, name, None, None, space, init_chan, starter)
+    let init = exec_inner(cur, name, None, None, space, init_chan, starter)?;
+    super::SCHED.with_current(|cur| {
+        let event = Arc::downgrade(&init.tid().event) as _;
+        let handle = unsafe {
+            cur.space()
+                .handles()
+                .insert_event(init.tid().clone(), event)
+        }?;
+        Ok((init, handle))
+    })
 }
 
-#[inline]
-fn create(name: Option<String>, space: Arc<Space>) -> solvent::Result<(Init, solvent::Handle)> {
+fn create(name: Option<String>, space: Arsc<Space>) -> sv_call::Result<(Init, sv_call::Handle)> {
     let cur = super::SCHED.with_current(|cur| Ok(cur.tid.clone()))?;
 
     let ty = cur.ty();
     let ti = TaskInfo::builder()
         .from(Some(cur.clone()))
+        .excep_chan(Arsc::try_new(Default::default())?)
         .name(name.unwrap_or(format!("{}.func{}", cur.name(), archop::rand::get())))
         .ty(ty)
         .affinity(cur.affinity())
         .build()
         .unwrap();
 
-    let tid = tid::allocate(ti).map_err(|_| solvent::Error::EBUSY)?;
+    let tid = tid::allocate(ti).map_err(|_| sv_call::Error::EBUSY)?;
 
     let kstack = ctx::Kstack::new(None, ty);
     let ext_frame = ctx::ExtFrame::zeroed();
 
-    let handle = cur.handles().insert(tid.clone())?;
-
     let init = Init::new(tid, space, kstack, ext_frame);
 
+    let handle = super::SCHED.with_current(|cur| {
+        let event = Arc::downgrade(&init.tid().event) as _;
+        cur.space()
+            .handles()
+            .insert_event(init.tid().clone(), event)
+    })?;
     Ok((init, handle))
 }

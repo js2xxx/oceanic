@@ -1,17 +1,9 @@
 pub mod ctx;
 pub mod excep;
 
-#[cfg(feature = "call")]
-#[cfg(debug_assertions)]
-pub mod test;
-
 use crate::Handle;
 
 pub const DEFAULT_STACK_SIZE: usize = 256 * 1024;
-
-pub const PRIO_DEFAULT: u16 = 20;
-
-pub const TASK_CFLAGS_SUSPEND: u32 = 0b0000_0001;
 
 pub const TASK_CTL_KILL: u32 = 1;
 pub const TASK_CTL_SUSPEND: u32 = 2;
@@ -35,15 +27,4 @@ pub struct ExecInfo {
     pub stack: *mut u8,
     pub init_chan: Handle,
     pub arg: u64,
-}
-
-#[cfg(feature = "call")]
-pub fn exit<T>(res: crate::Result<T>) -> !
-where
-    T: crate::SerdeReg,
-{
-    use crate::SerdeReg;
-
-    let _ = crate::call::task_exit(res.encode());
-    unreachable!();
 }

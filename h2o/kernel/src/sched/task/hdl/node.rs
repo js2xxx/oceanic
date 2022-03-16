@@ -1,4 +1,4 @@
-use alloc::sync::Arc;
+use alloc::sync::Weak;
 use core::{
     any::Any,
     fmt,
@@ -10,23 +10,26 @@ use core::{
 };
 
 use archop::Azy;
-use solvent::Result;
+use sv_call::Result;
 
 use super::Object;
-use crate::{mem::Arena, sched::PREEMPT};
+use crate::{
+    mem::Arena,
+    sched::{Arsc, Event, PREEMPT},
+};
 
 pub const MAX_HANDLE_COUNT: usize = 1 << 18;
 
-pub(super) static HR_ARENA: Azy<Arena<Ref<dyn Any>>> = Azy::new(|| Arena::new(MAX_HANDLE_COUNT));
+pub(super) static HR_ARENA: Azy<Arena<Ref>> = Azy::new(|| Arena::new(MAX_HANDLE_COUNT));
 
 #[derive(Debug)]
-pub struct Ref<T: ?Sized> {
-    obj: Arc<Object<T>>,
+pub struct Ref<T: ?Sized = dyn Any> {
+    obj: Arsc<Object<T>>,
     next: Option<Ptr>,
     prev: Option<Ptr>,
     _marker: PhantomPinned,
 }
-pub type Ptr = NonNull<Ref<dyn Any>>;
+pub type Ptr = NonNull<Ref>;
 
 unsafe impl<T: ?Sized> Send for Ref<T> {}
 
@@ -35,22 +38,32 @@ impl<T: ?Sized> Ref<T> {
     ///
     /// The caller must ensure that `T` is [`Send`] if `send` and [`Sync`] if
     /// `sync`.
-    pub unsafe fn new_unchecked(data: T, send: bool, sync: bool) -> Self
+    pub unsafe fn try_new_unchecked(
+        data: T,
+        send: bool,
+        sync: bool,
+        event: Weak<dyn Event>,
+    ) -> sv_call::Result<Self>
     where
         T: Sized,
     {
-        Ref {
-            obj: Arc::new(Object { send, sync, data }),
+        Ok(Ref {
+            obj: Arsc::try_new(Object {
+                send,
+                sync,
+                event,
+                data,
+            })?,
             next: None,
             prev: None,
             _marker: PhantomPinned,
-        }
+        })
     }
 
     /// # Safety
     ///
     /// The caller must ensure that `self` is not inserted in any handle list.
-    pub unsafe fn coerce_unchecked(self) -> Ref<dyn Any>
+    pub unsafe fn coerce_unchecked(self) -> Ref
     where
         T: Sized + Any,
     {
@@ -69,29 +82,34 @@ impl<T: ?Sized> Ref<T> {
     pub unsafe fn deref_unchecked(&self) -> &T {
         &self.obj.data
     }
+
+    #[inline]
+    pub fn event(&self) -> &Weak<dyn Event> {
+        &self.obj.event
+    }
 }
 
 impl<T: ?Sized + Send> Ref<T> {
     #[inline]
-    pub fn new(data: T) -> Self
+    pub fn try_new(data: T, event: Weak<dyn Event>) -> sv_call::Result<Self>
     where
         T: Sized,
     {
-        unsafe { Self::new_unchecked(data, true, false) }
+        unsafe { Self::try_new_unchecked(data, true, false, event) }
     }
 
     #[inline]
-    pub fn raw(&self) -> &Arc<Object<T>> {
+    pub fn raw(&self) -> &Arsc<Object<T>> {
         &self.obj
     }
 
     #[inline]
-    pub fn into_raw(self) -> Arc<Object<T>> {
+    pub fn into_raw(self) -> Arsc<Object<T>> {
         self.obj
     }
 
     #[inline]
-    pub fn from_raw(obj: Arc<Object<T>>) -> Self {
+    pub fn from_raw(obj: Arsc<Object<T>>) -> Self {
         Self {
             obj,
             next: None,
@@ -111,11 +129,21 @@ impl<T: ?Sized + Send> Deref for Ref<T> {
     }
 }
 
+impl<T: ?Sized + Send + Sync> Ref<T> {
+    #[inline]
+    pub fn try_new_shared(data: T, event: Weak<dyn Event>) -> sv_call::Result<Self>
+    where
+        T: Sized,
+    {
+        unsafe { Self::try_new_unchecked(data, true, true, event) }
+    }
+}
+
 impl<T: ?Sized + Send + Sync> Clone for Ref<T> {
     #[inline]
     fn clone(&self) -> Self {
         Self {
-            obj: Arc::clone(&self.obj),
+            obj: Arsc::clone(&self.obj),
             next: None,
             prev: None,
             _marker: PhantomPinned,
@@ -123,12 +151,12 @@ impl<T: ?Sized + Send + Sync> Clone for Ref<T> {
     }
 }
 
-impl Ref<dyn Any> {
+impl Ref {
     pub fn downcast_ref<T: Any>(&self) -> Result<&Ref<T>> {
         if self.obj.data.is::<T>() {
-            Ok(unsafe { &*(self as *const Ref<dyn Any> as *const Ref<T>) })
+            Ok(unsafe { &*(self as *const Ref as *const Ref<T>) })
         } else {
-            Err(solvent::Error::ETYPE)
+            Err(sv_call::Error::ETYPE)
         }
     }
 
@@ -138,21 +166,21 @@ impl Ref<dyn Any> {
     /// not to be moved to another task if its not [`Send`] or [`Sync`].
     #[inline]
     #[must_use = "Don't make useless clonings"]
-    pub unsafe fn clone_unchecked(&self) -> Ref<dyn Any> {
+    pub unsafe fn clone_unchecked(&self) -> Ref {
         Self {
-            obj: Arc::clone(&self.obj),
+            obj: Arsc::clone(&self.obj),
             next: None,
             prev: None,
             _marker: PhantomPinned,
         }
     }
 
-    pub fn try_clone(&self) -> Result<Ref<dyn Any>> {
+    pub fn try_clone(&self) -> Result<Ref> {
         if self.obj.send && self.obj.sync {
             // SAFETY: The underlying object is `send` and `sync`.
             Ok(unsafe { self.clone_unchecked() })
         } else {
-            Err(solvent::Error::EPERM)
+            Err(sv_call::Error::EPERM)
         }
     }
 
@@ -166,7 +194,7 @@ pub struct List {
     head: Option<Ptr>,
     tail: Option<Ptr>,
     len: usize,
-    _marker: PhantomData<Ref<dyn Any>>,
+    _marker: PhantomData<Ref>,
 }
 
 unsafe impl Send for List {}
@@ -250,7 +278,7 @@ impl List {
     ///
     /// The caller must ensure that `value` comes from the current task if its
     /// not [`Send`].
-    pub unsafe fn insert_impl(&mut self, value: Ref<dyn Any>) -> Result<Ptr> {
+    pub unsafe fn insert_impl(&mut self, value: Ref) -> Result<Ptr> {
         let link = HR_ARENA.allocate()?;
         // SAFETY: The pointer is allocated from the arena.
         unsafe { link.as_ptr().write(value) };
@@ -265,7 +293,7 @@ impl List {
     ///
     /// The caller must ensure that the list belongs to the current task if
     /// `link` is not [`Send`].
-    pub(super) unsafe fn remove_impl(&mut self, link: Ptr) -> Result<Ref<dyn Any>> {
+    pub(super) unsafe fn remove_impl(&mut self, link: Ptr) -> Result<Ref> {
         let mut cur = self.head;
         loop {
             cur = match cur {
@@ -284,7 +312,7 @@ impl List {
                 }
                 // SAFETY: The pointer is allocated from the arena.
                 Some(cur) => unsafe { cur.as_ref().next },
-                None => break Err(solvent::Error::ERANGE),
+                None => break Err(sv_call::Error::ERANGE),
             }
         }
     }
@@ -292,7 +320,7 @@ impl List {
     pub(super) fn split<I, F>(&mut self, iter: I, check: F) -> Result<List>
     where
         I: Iterator<Item = Result<Ptr>>,
-        F: Fn(&Ref<dyn Any>) -> Result,
+        F: Fn(&Ref) -> Result,
     {
         let mut ret = List::new();
 
@@ -385,7 +413,7 @@ impl Drop for List {
 pub struct Iter<'a> {
     head: Option<Ptr>,
     len: usize,
-    _marker: PhantomData<&'a Ref<dyn Any>>,
+    _marker: PhantomData<&'a Ref>,
 }
 
 impl<'a> Iter<'a> {
@@ -400,7 +428,7 @@ impl<'a> Iter<'a> {
 }
 
 impl<'a> Iterator for Iter<'a> {
-    type Item = &'a Ref<dyn Any>;
+    type Item = &'a Ref;
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
@@ -428,10 +456,10 @@ impl<'a> FusedIterator for Iter<'a> {}
 
 #[inline]
 pub fn decode(index: usize) -> Result<Ptr> {
-    PREEMPT.scope(|| HR_ARENA.from_index(index))
+    PREEMPT.scope(|| HR_ARENA.get_ptr(index))
 }
 
 #[inline]
 pub fn encode(value: Ptr) -> Result<usize> {
-    PREEMPT.scope(|| HR_ARENA.to_index(value))
+    PREEMPT.scope(|| HR_ARENA.get_index(value))
 }

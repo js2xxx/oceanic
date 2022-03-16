@@ -1,6 +1,6 @@
-use core::{fmt, marker::PhantomData, mem, mem::MaybeUninit, num::NonZeroU64};
+use core::{fmt, hash::Hash, marker::PhantomData, mem, mem::MaybeUninit, num::NonZeroU64};
 
-use solvent::{Result, SerdeReg};
+use sv_call::{Result, SerdeReg};
 
 pub use self::types::*;
 use crate::{mem::space::PageFaultErrCode, sched::SCHED};
@@ -9,6 +9,20 @@ use crate::{mem::space::PageFaultErrCode, sched::SCHED};
 pub struct UserPtr<T: Type, D> {
     data: *mut D,
     _marker: PhantomData<T>,
+}
+
+impl<T: Type, D> PartialEq for UserPtr<T, D> {
+    #[inline]
+    fn eq(&self, other: &Self) -> bool {
+        self.data == other.data
+    }
+}
+
+impl<T: Type, D> Hash for UserPtr<T, D> {
+    #[inline]
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
+        self.data.hash(state);
+    }
 }
 
 impl<T: Type, D> UserPtr<T, D> {
@@ -189,17 +203,20 @@ fn check_ptr(ptr: *mut u8, size: usize, align: usize) -> Result<()> {
         minfo::USER_BASE <= ptr as usize && (ptr as usize).saturating_add(size) <= minfo::USER_END;
     let is_aligned = (ptr as usize) & (align - 1) == 0;
     if !is_in_range {
-        Err(solvent::Error::ERANGE)
+        Err(sv_call::Error::ERANGE)
     } else if !is_aligned {
-        Err(solvent::Error::EALIGN)
+        Err(sv_call::Error::EALIGN)
     } else {
         Ok(())
     }
 }
 
 mod types {
+    #[derive(Copy, Clone)]
     pub enum In {}
+    #[derive(Copy, Clone)]
     pub enum Out {}
+    #[derive(Copy, Clone)]
     pub enum InOut {}
 
     pub trait Type {}
@@ -222,7 +239,7 @@ impl CheckedCopyRet {
                 self.addr_p1 - 1,
                 self.errc
             );
-            Err(solvent::Error::EPERM)
+            Err(sv_call::Error::EPERM)
         } else {
             Ok(())
         }

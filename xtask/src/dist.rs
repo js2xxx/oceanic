@@ -2,7 +2,7 @@ use std::{env, error::Error, fs, path::Path, process::Command};
 
 use structopt::StructOpt;
 
-use crate::{H2O_BOOT, H2O_KERNEL, H2O_TINIT};
+use crate::{H2O_BOOT, H2O_KERNEL, H2O_SYSCALL, H2O_TINIT};
 
 #[derive(Debug, StructOpt)]
 pub enum Type {
@@ -27,9 +27,17 @@ impl Dist {
         let target_dir = env::var("CARGO_TARGET_DIR")
             .unwrap_or_else(|_| src_root.join("target").to_string_lossy().to_string());
 
+        // Generate syscall stubs
+        crate::gen::gen_syscall(
+            src_root.join(H2O_KERNEL).join("syscall"),
+            src_root.join(H2O_KERNEL).join("target/wrapper.rs"),
+            src_root.join("h2o/libs/syscall/target/call.rs"),
+            src_root.join("h2o/libs/syscall/target/stub.rs"),
+        )?;
+
+        // Build h2o_boot
         {
-            // Build h2o_boot
-            log::info!("Building h2o_boot");
+            println!("Building h2o_boot");
 
             let mut cmd = Command::new(&cargo);
             let cmd = cmd.current_dir(src_root.join(H2O_BOOT)).arg("build");
@@ -39,18 +47,62 @@ impl Dist {
             cmd.status()?.exit_ok()?;
 
             // Copy the binary to target.
-            let src = if self.release {
+            let bin_dir = if self.release {
                 Path::new(&target_dir).join("x86_64-unknown-uefi/release")
             } else {
                 Path::new(&target_dir).join("x86_64-unknown-uefi/debug")
-            }
-            .join("h2o_boot.efi");
-            fs::copy(src, Path::new(&target_dir).join("BootX64.efi"))?;
+            };
+            fs::copy(
+                bin_dir.join("h2o_boot.efi"),
+                Path::new(&target_dir).join("BootX64.efi"),
+            )?;
+        }
+
+        // Build the VDSO
+        {
+            let target_triple = src_root.join(".cargo/x86_64-pc-oceanic.json");
+            let cd = src_root.join(H2O_SYSCALL);
+            let ldscript = cd.join("syscall.ld");
+
+            fs::copy(cd.join("target/rxx.rs.in"), cd.join("target/rxx.rs"))?;
+
+            let mut cmd = Command::new(&cargo);
+            let cmd = cmd.current_dir(&cd).arg("rustc").args([
+                "--crate-type=cdylib",
+                &format!("--target={}", target_triple.to_string_lossy()),
+                "-Zunstable-options",
+                "-Zbuild-std=core,compiler_builtins,alloc,panic_abort",
+                "-Zbuild-std-features=compiler-builtins-mem",
+                "--release", /* VDSO can always be the release version and discard the debug
+                              * symbols. */
+                "--no-default-features",
+                "--features",
+                "call",
+            ]);
+            cmd.args([
+                "--",
+                &format!("-Clink-arg=-T{}", ldscript.to_string_lossy()),
+            ])
+            .status()?
+            .exit_ok()?;
+
+            // Copy the binary to target.
+            let bin_dir = Path::new(&target_dir).join("x86_64-pc-oceanic/release");
+            fs::copy(
+                bin_dir.join("libsv_call.so"),
+                src_root.join(H2O_KERNEL).join("target/vdso"),
+            )?;
+
+            fs::File::options()
+                .create(true)
+                .write(true)
+                .truncate(true)
+                .open(cd.join("target/rxx.rs"))?;
         }
 
         // Build h2o_kernel
         {
-            log::info!("Building h2o_kernel");
+            println!("Building h2o_kernel");
 
             let mut cmd = Command::new(&cargo);
             let cmd = cmd.current_dir(src_root.join(H2O_KERNEL)).arg("build");
@@ -60,18 +112,17 @@ impl Dist {
             cmd.status()?.exit_ok()?;
 
             // Copy the binary to target.
-            let src = if self.release {
+            let bin_dir = if self.release {
                 Path::new(&target_dir).join("x86_64-h2o-kernel/release")
             } else {
                 Path::new(&target_dir).join("x86_64-h2o-kernel/debug")
-            }
-            .join("h2o");
-            fs::copy(src, Path::new(&target_dir).join("KERNEL"))?;
+            };
+            fs::copy(bin_dir.join("h2o"), Path::new(&target_dir).join("KERNEL"))?;
         }
 
         // Build h2o_tinit
         {
-            log::info!("Building h2o_tinit");
+            println!("Building h2o_tinit");
 
             let mut cmd = Command::new(&cargo);
             let cmd = cmd.current_dir(src_root.join(H2O_TINIT)).arg("build");
@@ -81,17 +132,18 @@ impl Dist {
             cmd.status()?.exit_ok()?;
 
             // Copy the binary to target.
-            let src = if self.release {
-                Path::new(&target_dir).join("x86_64-unknown-h2o/release")
+            let bin_dir = if self.release {
+                Path::new(&target_dir).join("x86_64-h2o-tinit/release")
             } else {
-                Path::new(&target_dir).join("x86_64-unknown-h2o/debug")
-            }
-            .join("tinit");
-            fs::copy(src, Path::new(&target_dir).join("TINIT"))?;
+                Path::new(&target_dir).join("x86_64-h2o-tinit/debug")
+            };
+            fs::copy(bin_dir.join("tinit"), Path::new(&target_dir).join("TINIT"))?;
         }
 
+        crate::gen::gen_bootfs(Path::new(crate::BOOTFS).join("../BOOT.fs"))?;
+
         // Generate debug symbols
-        log::info!("Generating debug symbols");
+        println!("Generating debug symbols");
         Command::new("sh")
             .current_dir(src_root)
             .arg("scripts/gendbg.sh")
@@ -101,7 +153,7 @@ impl Dist {
         match &self.ty {
             Type::Iso => {
                 // Generate img
-                log::info!("Generating a hard disk image file");
+                println!("Generating a hard disk image file");
                 Command::new("sh")
                     .current_dir(src_root)
                     .arg("scripts/genimg.sh")

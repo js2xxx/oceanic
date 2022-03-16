@@ -1,17 +1,17 @@
-use alloc::sync::Arc;
-
 use spin::Mutex;
+
+use crate::sched::Arsc;
 
 #[derive(Debug, Clone)]
 pub enum Signal {
     Kill,
-    Suspend(Arc<Mutex<Option<super::Blocked>>>),
+    Suspend(Arsc<Mutex<Option<super::Blocked>>>),
 }
 
 impl PartialEq for Signal {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            (Self::Suspend(a), Self::Suspend(b)) => Arc::ptr_eq(a, b),
+            (Self::Suspend(a), Self::Suspend(b)) => Arsc::ptr_eq(a, b),
             _ => core::mem::discriminant(self) == core::mem::discriminant(other),
         }
     }

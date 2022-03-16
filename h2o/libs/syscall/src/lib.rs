@@ -1,48 +1,27 @@
 #![no_std]
+#![warn(clippy::missing_panics_doc)]
 #![feature(allocator_api)]
-#![feature(bool_to_option)]
 #![feature(lang_items)]
-#![feature(negative_impls)]
-#![feature(nonnull_slice_from_raw_parts)]
-#![feature(result_into_ok_or_err)]
-#![feature(slice_ptr_get)]
-#![feature(slice_ptr_len)]
+#![feature(linkage)]
 
-mod call;
+pub mod call;
 mod error;
 pub mod ipc;
 pub mod mem;
 pub mod res;
+#[cfg(feature = "stub")]
+pub mod stub;
 pub mod task;
-pub mod time;
-cfg_if::cfg_if! {
-    if #[cfg(feature = "call")] {
-        pub mod rxx;
-        pub mod log;
-    }
-}
 
-pub use solvent_gen::*;
+pub use sv_gen::*;
 
+#[cfg(all(not(feature = "stub"), feature = "call"))]
+pub use self::call::*;
+#[cfg(feature = "stub")]
+pub use self::stub::*;
 pub use self::{
     call::{hdl::Handle, reg::*},
     error::*,
 };
 
-#[derive(Debug, Copy, Clone)]
-pub struct Arguments {
-    pub fn_num: usize,
-    pub args: [usize; 5],
-}
-
-pub type SyscallWrapper = unsafe extern "C" fn(usize, usize, usize, usize, usize) -> usize;
-
-#[cfg(feature = "call")]
-pub fn test() {
-    #[cfg(debug_assertions)]
-    {
-        let stack = task::test::test();
-        ipc::test::test(stack);
-        mem::test();
-    }
-}
+include!(concat!(env!("CARGO_MANIFEST_DIR"), "/target/rxx.rs"));

@@ -1,13 +1,7 @@
 use core::hint;
 
-use bytes::{BufMut, BytesMut};
-
 use super::*;
-use crate::{
-    cpu::Lazy,
-    mem::space,
-    sched::{deque, task, SCHED},
-};
+use crate::{cpu::Lazy, sched::deque};
 
 /// Context dropper - used for dropping kernel stacks of threads.
 ///
@@ -27,15 +21,16 @@ pub(super) static IDLE: Lazy<Tid> = Lazy::new(|| {
 
     let ti = TaskInfo::builder()
         .from(None)
+        .excep_chan(Arsc::try_new(Default::default()).expect("Failed to create task info"))
         .name(format!("IDLE{}", cpu))
         .ty(Type::Kernel)
         .affinity(crate::cpu::current_mask())
         .build()
         .unwrap();
 
-    let space = Arc::clone(unsafe { space::current() });
-
+    let space = super::Space::new_current().expect("Failed to create space");
     let stack = space
+        .mem()
         .init_stack(DEFAULT_STACK_SIZE)
         .expect("Failed to initialize stack for IDLE");
 
@@ -51,7 +46,7 @@ pub(super) static IDLE: Lazy<Tid> = Lazy::new(|| {
     let tid = tid::allocate(ti).expect("Tid exhausted");
 
     let init = Init::new(tid.clone(), space, kstack, ctx::ExtFrame::zeroed());
-    crate::sched::SCHED.unblock(init);
+    crate::sched::SCHED.unblock(init, true);
 
     tid
 });
@@ -62,7 +57,7 @@ fn idle(cpu: usize, fs_base: u64) -> ! {
     log::debug!("IDLE #{}", cpu);
 
     if cpu == 0 {
-        spawn_tinit();
+        boot::setup();
     }
 
     let worker = deque::Worker::new_fifo();
@@ -81,43 +76,4 @@ fn idle(cpu: usize, fs_base: u64) -> ! {
         });
         unsafe { archop::resume_intr(None) };
     }
-}
-
-fn spawn_tinit() {
-    let mut objects = hdl::List::new();
-    {
-        let mem_res = Arc::clone(crate::dev::mem_resource());
-        let res = unsafe { objects.insert_impl(hdl::Ref::new(mem_res).coerce_unchecked()) };
-        res.expect("Failed to insert memory resource");
-    }
-    {
-        let pio_res = Arc::clone(crate::dev::pio_resource());
-        let res = unsafe { objects.insert_impl(hdl::Ref::new(pio_res).coerce_unchecked()) };
-        res.expect("Failed to insert port I/O resource");
-    }
-    {
-        let gsi_res = Arc::clone(crate::dev::gsi_resource());
-        let res = unsafe { objects.insert_impl(hdl::Ref::new(gsi_res).coerce_unchecked()) };
-        res.expect("Failed to insert GSI resource");
-    }
-    let buf = {
-        let mut buf = BytesMut::new();
-        buf.put_u64(*crate::kargs().rsdp as u64);
-        buf.put_u64(*crate::kargs().smbios as u64);
-        buf
-    };
-
-    let (me, chan) = Channel::new();
-    let chan = unsafe { hdl::Ref::new(chan).coerce_unchecked() };
-    me.send(&mut crate::sched::ipc::Packet::new(0, objects, &buf))
-        .expect("Failed to send message");
-    let image = unsafe {
-        core::slice::from_raw_parts(
-            *crate::kargs().tinit_phys.to_laddr(minfo::ID_OFFSET),
-            crate::kargs().tinit_len,
-        )
-    };
-    let (tinit, ..) = task::from_elf(image, String::from("TINIT"), crate::cpu::all_mask(), chan)
-        .expect("Failed to initialize TINIT");
-    SCHED.unblock(tinit);
 }

@@ -1,3 +1,4 @@
+use alloc::sync::Arc;
 use core::{
     mem::{self, MaybeUninit},
     slice,
@@ -6,12 +7,12 @@ use core::{
 
 use archop::reg::cr2;
 use bytes::Buf;
-use solvent::task::excep::{Exception, ExceptionResult, EXRES_CODE_OK};
+use sv_call::task::excep::{Exception, ExceptionResult, EXRES_CODE_RECOVERED};
 
 use super::{ctx::x86_64::Frame, hdl};
 use crate::{
     cpu::intr::arch::ExVec,
-    sched::{ipc::Packet, PREEMPT, SCHED},
+    sched::{ipc::Packet, PREEMPT, SCHED, SIG_READ},
 };
 
 pub fn dispatch_exception(frame: &mut Frame, vec: ExVec) -> bool {
@@ -42,7 +43,17 @@ pub fn dispatch_exception(frame: &mut Frame, vec: ExVec) -> bool {
         return false;
     }
 
-    let ret = match excep_chan.receive(Duration::MAX, usize::MAX, usize::MAX) {
+    let blocker =
+        crate::sched::Blocker::new(&(Arc::clone(excep_chan.event()) as _), false, SIG_READ);
+    if blocker.wait((), Duration::MAX).is_err() {
+        return false;
+    }
+    if !blocker.detach().0 {
+        return false;
+    }
+
+    #[allow(const_item_mutation)]
+    let ret = match excep_chan.receive(&mut usize::MAX, &mut usize::MAX) {
         Ok(mut res) => {
             let mut data = MaybeUninit::<ExceptionResult>::uninit();
             res.buffer_mut().copy_to_slice(unsafe {
@@ -53,10 +64,10 @@ pub fn dispatch_exception(frame: &mut Frame, vec: ExVec) -> bool {
             });
 
             let res = unsafe { data.assume_init() };
-            Some(res.code == EXRES_CODE_OK)
+            Some(res.code == EXRES_CODE_RECOVERED)
         }
         Err(err) => match err {
-            solvent::Error::EPIPE => None,
+            sv_call::Error::EPIPE => None,
             _ => Some(false),
         },
     };

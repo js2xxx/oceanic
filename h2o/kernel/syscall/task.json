@@ -1,0 +1,113 @@
+[
+    {
+        "name": "sv_task_exit",
+        "returns": "()",
+        "args": [
+            {
+                "name": "retval",
+                "ty": "usize"
+            }
+        ]
+    },
+    {
+        "name": "sv_task_sleep",
+        "returns": "()",
+        "args": [
+            {
+                "name": "ms",
+                "ty": "u32"
+            }
+        ]
+    },
+    {
+        "name": "sv_space_new",
+        "returns": "Handle",
+        "args": []
+    },
+    {
+        "name": "sv_task_exec",
+        "returns": "Handle",
+        "args": [
+            {
+                "name": "ci",
+                "ty": "*const ExecInfo"
+            }
+        ]
+    },
+    {
+        "name": "sv_task_new",
+        "returns": "Handle",
+        "args": [
+            {
+                "name": "name",
+                "ty": "*const u8"
+            },
+            {
+                "name": "name_len",
+                "ty": "usize"
+            },
+            {
+                "name": "space",
+                "ty": "Handle"
+            },
+            {
+                "name": "st",
+                "ty": "*mut Handle"
+            }
+        ]
+    },
+    {
+        "name": "sv_task_join",
+        "returns": "usize",
+        "args": [
+            {
+                "name": "hdl",
+                "ty": "Handle"
+            }
+        ]
+    },
+    {
+        "name": "sv_task_ctl",
+        "returns": "()",
+        "args": [
+            {
+                "name": "hdl",
+                "ty": "Handle"
+            },
+            {
+                "name": "op",
+                "ty": "u32"
+            },
+            {
+                "name": "data",
+                "ty": "*mut Handle"
+            }
+        ]
+    },
+    {
+        "name": "sv_task_debug",
+        "returns": "()",
+        "args": [
+            {
+                "name": "hdl",
+                "ty": "Handle"
+            },
+            {
+                "name": "op",
+                "ty": "u32"
+            },
+            {
+                "name": "addr",
+                "ty": "usize"
+            },
+            {
+                "name": "data",
+                "ty": "*mut u8"
+            },
+            {
+                "name": "len",
+                "ty": "usize"
+            }
+        ]
+    }
+]

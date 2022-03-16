@@ -9,11 +9,10 @@ use bitvec::prelude::BitVec;
 use derive_builder::Builder;
 use spin::Mutex;
 
-use super::{ctx, hdl::HandleMap, idle, sig::Signal, tid, Tid, Type};
+use super::{ctx, idle, sig::Signal, tid, Space, Tid, Type};
 use crate::{
     cpu::{time::Instant, CpuMask},
-    mem::space::Space,
-    sched::{ipc::Channel, wait::WaitCell, PREEMPT},
+    sched::{ipc::Channel, Arsc, BasicEvent, Event, PREEMPT, SIG_READ},
 };
 
 #[derive(Debug, Builder)]
@@ -21,17 +20,16 @@ use crate::{
 pub struct TaskInfo {
     from: Option<Tid>,
     #[builder(setter(skip))]
-    ret_cell: Arc<WaitCell<usize>>,
+    ret_cell: Mutex<Option<usize>>,
     #[builder(setter(skip))]
-    excep_chan: Arc<Mutex<Option<Channel>>>,
+    pub(super) event: Arc<BasicEvent>,
+    excep_chan: Arsc<Mutex<Option<Channel>>>,
 
     name: String,
     ty: Type,
 
     affinity: CpuMask,
 
-    #[builder(setter(skip))]
-    handles: HandleMap,
     #[builder(setter(skip))]
     signal: Mutex<Option<Signal>>,
 }
@@ -63,12 +61,7 @@ impl TaskInfo {
     }
 
     #[inline]
-    pub fn handles(&self) -> &HandleMap {
-        &self.handles
-    }
-
-    #[inline]
-    pub fn ret_cell(&self) -> &Arc<WaitCell<usize>> {
+    pub fn ret_cell(&self) -> &Mutex<Option<usize>> {
         &self.ret_cell
     }
 
@@ -81,8 +74,8 @@ impl TaskInfo {
     }
 
     #[inline]
-    pub fn excep_chan(&self) -> Arc<Mutex<Option<Channel>>> {
-        Arc::clone(&self.excep_chan)
+    pub fn excep_chan(&self) -> Arsc<Mutex<Option<Channel>>> {
+        Arsc::clone(&self.excep_chan)
     }
 
     #[inline]
@@ -98,7 +91,7 @@ impl TaskInfo {
 pub struct Context {
     pub(in crate::sched) tid: Tid,
 
-    pub(in crate::sched) space: Arc<Space>,
+    pub(in crate::sched) space: Arsc<Space>,
     pub(in crate::sched) kstack: ctx::Kstack,
     pub(in crate::sched) ext_frame: ctx::ExtFrame,
     pub(in crate::sched) io_bitmap: Option<BitVec>,
@@ -114,7 +107,7 @@ impl Context {
     }
 
     #[inline]
-    pub fn space(&self) -> &Arc<Space> {
+    pub fn space(&self) -> &Arsc<Space> {
         &self.space
     }
 
@@ -217,7 +210,12 @@ impl IntoReady for Init {
 }
 
 impl Init {
-    pub fn new(tid: Tid, space: Arc<Space>, kstack: ctx::Kstack, ext_frame: ctx::ExtFrame) -> Self {
+    pub fn new(
+        tid: Tid,
+        space: Arsc<Space>,
+        kstack: ctx::Kstack,
+        ext_frame: ctx::ExtFrame,
+    ) -> Self {
         Init {
             ctx: Box::new(Context {
                 tid,
@@ -264,7 +262,8 @@ impl Ready {
 
     pub fn exit(this: Self, retval: usize) {
         tid::deallocate(&this.ctx.tid);
-        this.ctx.tid.ret_cell.replace(retval);
+        *this.ctx.tid.ret_cell.lock() = Some(retval);
+        this.ctx.tid.event.notify(0, SIG_READ);
         idle::CTX_DROPPER.push(this.ctx);
     }
 }
@@ -326,7 +325,7 @@ impl Blocked {
     }
 
     #[inline]
-    pub fn space(&self) -> &Arc<Space> {
+    pub fn space(&self) -> &Arsc<Space> {
         &self.ctx.space
     }
 

@@ -39,6 +39,11 @@ unsafe impl GlobalAlloc for KHeap {
     }
 }
 
+#[inline]
+pub fn current_used() -> usize {
+    KH.global_mem.stat().current_used()
+}
+
 #[inline(never)]
 unsafe fn alloc_pages(n: usize) -> Option<NonNull<[::heap::Page]>> {
     let laddr = pmm::alloc_pages_exact(n, None)?.to_laddr(minfo::ID_OFFSET);

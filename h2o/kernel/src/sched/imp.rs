@@ -1,16 +1,18 @@
 pub mod deque;
 pub mod epoch;
+pub mod waiter;
 
 use alloc::{boxed::Box, vec::Vec};
 use core::{assert_matches::assert_matches, cell::UnsafeCell, mem, ptr::NonNull, time::Duration};
 
 use archop::{Azy, PreemptState, PreemptStateGuard};
 use canary::Canary;
+use crossbeam_queue::SegQueue;
 use deque::{Injector, Steal, Worker};
 
-use super::{ipc::Arsc, task, wait::WaitObject};
+use super::{ipc::Arsc, task};
 use crate::cpu::{
-    time::{Instant, Timer, TimerCallback, TimerType},
+    time::{CallbackArg, Instant, Timer, TimerCallback, TimerType},
     Lazy,
 };
 
@@ -41,7 +43,7 @@ pub struct Scheduler {
 }
 
 impl Scheduler {
-    pub fn unblock(&self, task: impl task::IntoReady) {
+    pub fn unblock(&self, task: impl task::IntoReady, preempt: bool) {
         self.canary.assert();
 
         let time_slice = MIN_TIME_GRAN;
@@ -51,17 +53,17 @@ impl Scheduler {
 
         log::trace!("Unblocking task {:?}, P{}", task.tid.raw(), PREEMPT.raw());
         if cpu == self.cpu {
-            self.enqueue(task, PREEMPT.lock());
+            self.enqueue(task, PREEMPT.lock(), preempt);
         } else {
             MIGRATION_QUEUE[cpu].push(task);
             unsafe { crate::cpu::arch::apic::ipi::task_migrate(cpu) };
         }
     }
 
-    fn enqueue(&self, task: task::Ready, pree: PreemptStateGuard) {
+    fn enqueue(&self, task: task::Ready, pree: PreemptStateGuard, preempt: bool) {
         // SAFETY: We have `pree`, which means preemption is disabled.
         match unsafe { &*self.current.get() } {
-            Some(ref cur) if Self::should_preempt(cur, &task) => {
+            Some(ref cur) if preempt && Self::should_preempt(cur, &task) => {
                 log::trace!(
                     "Preempting to task {:?}, P{}",
                     task.tid.raw(),
@@ -78,9 +80,9 @@ impl Scheduler {
     }
 
     #[inline]
-    pub fn with_current<F, R>(&self, func: F) -> solvent::Result<R>
+    pub fn with_current<F, R>(&self, func: F) -> sv_call::Result<R>
     where
-        F: FnOnce(&mut task::Ready) -> solvent::Result<R>,
+        F: FnOnce(&mut task::Ready) -> sv_call::Result<R>,
     {
         self.canary.assert();
 
@@ -88,7 +90,7 @@ impl Scheduler {
         PREEMPT.scope(|| unsafe {
             (*self.current.get())
                 .as_mut()
-                .ok_or(solvent::Error::ESRCH)
+                .ok_or(sv_call::Error::ESRCH)
                 .and_then(func)
         })
     }
@@ -101,10 +103,10 @@ impl Scheduler {
     pub fn block_current<T>(
         &self,
         guard: T,
-        wo: Option<&WaitObject>,
+        wq: Option<&SegQueue<Arsc<Timer>>>,
         duration: Duration,
         block_desc: &'static str,
-    ) -> solvent::Result<Arsc<Timer>> {
+    ) -> sv_call::Result<Arsc<Timer>> {
         self.canary.assert();
 
         let pree = PREEMPT.lock();
@@ -123,8 +125,8 @@ impl Scheduler {
                 duration,
                 TimerCallback::new(block_callback, blocked),
             )?;
-            if let Some(wo) = wo {
-                wo.wait_queue.push(Arsc::clone(&timer));
+            if let Some(wq) = wq {
+                wq.push(Arsc::clone(&timer));
             }
             drop(guard);
             Ok(timer)
@@ -170,7 +172,7 @@ impl Scheduler {
         if unsafe { self.update(cur_time) } {
             let ret = self.schedule(cur_time, pree);
             match ret {
-                Ok(()) | Err(solvent::Error::ENOENT) => {}
+                Ok(()) | Err(sv_call::Error::ENOENT) => {}
                 Err(err) => log::warn!("Scheduling failed: {:?}", err),
             }
         }
@@ -197,7 +199,7 @@ impl Scheduler {
             Some(task::Signal::Kill) => {
                 log::trace!("Killing task {:?}, P{}", cur.tid.raw(), PREEMPT.raw());
                 let _ = self.schedule_impl(cur_time, pree, None, |task| {
-                    task::Ready::exit(task, solvent::Error::EKILLED.into_retval());
+                    task::Ready::exit(task, sv_call::Error::EKILLED.into_retval());
                     Ok(())
                 });
                 unreachable!("Dead task");
@@ -208,7 +210,7 @@ impl Scheduler {
                     *slot.lock() = Some(task::Ready::block(task, "task_ctl_suspend"));
                     Ok(())
                 });
-                assert_matches!(ret, Ok(()) | Err(solvent::Error::ENOENT));
+                assert_matches!(ret, Ok(()) | Err(sv_call::Error::ENOENT));
 
                 None
             }
@@ -245,7 +247,7 @@ impl Scheduler {
         }
     }
 
-    fn schedule(&self, cur_time: Instant, pree: PreemptStateGuard) -> solvent::Result {
+    fn schedule(&self, cur_time: Instant, pree: PreemptStateGuard) -> sv_call::Result {
         self.canary.assert();
         #[cfg(debug_assertions)]
         // SAFETY: We have `pree`, which means preemption is disabled.
@@ -267,9 +269,9 @@ impl Scheduler {
         pree: PreemptStateGuard,
         next: Option<task::Ready>,
         func: F,
-    ) -> solvent::Result<R>
+    ) -> sv_call::Result<R>
     where
-        F: FnOnce(task::Ready) -> solvent::Result<R>,
+        F: FnOnce(task::Ready) -> sv_call::Result<R>,
     {
         self.canary.assert();
 
@@ -277,7 +279,7 @@ impl Scheduler {
             Some(next) => next,
             None => match self.run_queue.pop() {
                 Some(task) => task,
-                None => return Err(solvent::Error::ENOENT),
+                None => return Err(sv_call::Error::ENOENT),
             },
         };
         log::trace!("Switching to {:?}, P{}", next.tid.raw(), PREEMPT.raw());
@@ -303,7 +305,7 @@ impl Scheduler {
         mem::forget(pree);
         unsafe { task::ctx::switch_ctx(old, new) };
         ret.transpose()
-            .and_then(|res| res.ok_or(solvent::Error::ESRCH))
+            .and_then(|res| res.ok_or(sv_call::Error::ESRCH))
     }
 }
 
@@ -318,9 +320,9 @@ fn select_cpu(
     }
 }
 
-fn block_callback(_: Arsc<Timer>, _: Instant, arg: NonNull<task::Blocked>) {
+fn block_callback(_: Arsc<Timer>, _: Instant, arg: CallbackArg) {
     let blocked = unsafe { Box::from_raw(arg.as_ptr()) };
-    SCHED.unblock(Box::into_inner(blocked));
+    SCHED.unblock(Box::into_inner(blocked), true);
 }
 
 /// # Safety

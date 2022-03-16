@@ -56,18 +56,12 @@ impl log::Log for Logger {
             .unwrap_or(unsafe { Instant::from_raw(0) });
 
         let res = if record.level() < log::Level::Debug {
-            writeln!(
-                &mut *os,
-                "[{}] {}: {}",
-                cur_time,
-                record.level(),
-                record.args(),
-            )
+            writeln!(*os, "[{}] {}: {}", cur_time, record.level(), record.args(),)
         } else {
             let file = record.file().unwrap_or("<NULL>");
             let line = OptionU32Display(record.line());
             writeln!(
-                &mut *os,
+                *os,
                 "[{}] {}: [#{} {}:{}] {}",
                 cur_time,
                 record.level(),
@@ -97,7 +91,7 @@ pub unsafe fn init(max_level: log::Level) {
 }
 
 mod syscall {
-    use solvent::*;
+    use sv_call::*;
 
     use crate::syscall::{In, UserPtr};
 
