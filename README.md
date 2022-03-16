@@ -2,6 +2,8 @@
 
 [![996.icu](https://img.shields.io/badge/link-996.icu-red.svg)](https://996.icu)
 
+[中文说明](README.zh-cn.md)
+
 **WARNING:** The project is still at the very early stage, and user programs are
 unavailable in the OS. Any potential risk of running the software either in 
 virtual machines or bare metals should be taken into account by the user.
@@ -12,10 +14,11 @@ support aarch64 in the future.
 # Source tree
 
 - `debug` - contains the decompiled assembly files, debug symbols, object file informations. and the serial log files of the virtual machines.
+- `h2o` - contains the source code for the kernel.
+- `lib` - contains the source library code for the entire project.
 - `scripts` - contains the scripts required for building the project.
 - `target` - contains the binaries and virtual disk files.
 - `xtask` - contains the builder for the project.
-- `h2o` - contains the source code for the kernel.
 
 # Build and debug from source
 
