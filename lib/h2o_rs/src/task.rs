@@ -94,7 +94,14 @@ impl Task {
         // SAFETY: The handles are freshly allocated.
         Ok(unsafe { SuspendToken::from_raw(st) })
     }
+}
 
+#[repr(transparent)]
+pub struct SuspendToken(sv_call::Handle);
+crate::impl_obj!(SuspendToken);
+crate::impl_obj!(@DROP, SuspendToken);
+
+impl SuspendToken {
     pub fn read_memory_into(&self, addr: usize, buffer: &mut [u8]) -> Result {
         unsafe {
             sv_call::sv_task_debug(
@@ -158,11 +165,6 @@ impl Task {
         }
     }
 }
-
-#[repr(transparent)]
-pub struct SuspendToken(sv_call::Handle);
-crate::impl_obj!(SuspendToken);
-crate::impl_obj!(@DROP, SuspendToken);
 
 /// # Safety
 ///
