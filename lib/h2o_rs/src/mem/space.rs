@@ -1,6 +1,6 @@
 use core::ptr::NonNull;
 
-use super::{Flags, Phys};
+use super::{Flags, Phys, PhysRef};
 use crate::{error::Result, obj::Object};
 
 #[repr(transparent)]
@@ -11,12 +11,9 @@ crate::impl_obj!(@CLONE, Space);
 
 impl Space {
     pub fn try_new() -> Result<Self> {
-        unsafe {
-            // SAFETY: The handle is freshly allocated.
-            sv_call::sv_space_new()
-                .into_res()
-                .map(|handle| unsafe { Self::from_raw(handle) })
-        }
+        let handle = unsafe { sv_call::sv_space_new().into_res() }?;
+        // SAFETY: The handle is freshly allocated.
+        Ok(unsafe { Self::from_raw(handle) })
     }
 
     pub fn new() -> Self {
@@ -31,7 +28,7 @@ impl Space {
     pub fn map(
         &self,
         addr: Option<usize>,
-        phys: &Phys,
+        phys: Phys,
         phys_offset: usize,
         len: usize,
         flags: Flags,
@@ -39,8 +36,7 @@ impl Space {
         let mi = sv_call::mem::MapInfo {
             addr: addr.unwrap_or_default(),
             map_addr: addr.is_some(),
-            // SAFETY: The kernel create another implicit reference of `phys`.
-            phys: unsafe { phys.raw() },
+            phys: Phys::into_raw(phys),
             phys_offset,
             len,
             flags,
@@ -55,6 +51,16 @@ impl Space {
                     NonNull::slice_from_raw_parts(ptr, len)
                 })
         }
+    }
+
+    pub fn map_ref(
+        &self,
+        addr: Option<usize>,
+        phys_ref: PhysRef,
+        flags: Flags,
+    ) -> Result<NonNull<[u8]>> {
+        let (phys, phys_offset, len) = phys_ref.into_parts();
+        self.map(addr, phys, phys_offset, len, flags)
     }
 
     /// # Safety

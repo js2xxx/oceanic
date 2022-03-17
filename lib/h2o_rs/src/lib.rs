@@ -14,6 +14,10 @@ pub mod time;
 
 extern crate alloc;
 
+pub mod prelude {
+    pub use crate::{dev::*, error::*, ipc::*, mem::*, obj::*, task::*, time::*};
+}
+
 #[cfg(all(feature = "call", target = "x86_64-pc-oceanic"))]
 compile_error!("The application should only use VDSO");
 

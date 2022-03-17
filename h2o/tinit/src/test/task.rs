@@ -230,6 +230,9 @@ pub unsafe fn test() -> (*mut u8, *mut u8, Handle) {
     let stack_phys = sv_phys_alloc(DEFAULT_STACK_SIZE, 4096, flags)
         .into_res()
         .expect("Failed to allocate memory");
+    let stack_phys2 = sv_obj_clone(stack_phys)
+        .into_res()
+        .expect("Failed to clone stack");
     let mi = MapInfo {
         addr: 0,
         map_addr: false,
@@ -295,5 +298,5 @@ pub unsafe fn test() -> (*mut u8, *mut u8, Handle) {
     };
     debug_excep(task, st);
 
-    (stack_ptr, stack_base, stack_phys)
+    (stack_ptr, stack_base, stack_phys2)
 }

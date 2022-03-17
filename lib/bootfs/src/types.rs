@@ -1,5 +1,6 @@
 use core::{alloc::Layout, mem};
 
+use plain::Plain;
 use static_assertions::const_assert;
 
 #[cfg(target_arch = "x86_64")]
@@ -24,6 +25,9 @@ pub struct Entry {
     pub len: usize,
 }
 const_assert!(mem::size_of::<Entry>() <= 128);
+
+unsafe impl Plain for Entry {}
+
 pub const ENTRY_LAYOUT: Layout = Layout::new::<Entry>();
 
 pub const MAX_NAME_LEN: usize = 64;
@@ -37,6 +41,8 @@ pub struct BootfsHeader {
     pub root_dir_offset: usize,
     pub root_dir_len: usize,
 }
+
+unsafe impl Plain for BootfsHeader {}
 
 pub const VERSION: u32 = u32::from_ne_bytes([0xbb, 0xff, 0xee, 0xaa]);
 

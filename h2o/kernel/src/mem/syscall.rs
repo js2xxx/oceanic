@@ -98,8 +98,8 @@ fn mem_map(space: Handle, mi: UserPtr<In, MapInfo>) -> Result<*mut u8> {
     let phys = SCHED.with_current(|cur| {
         cur.space()
             .handles()
-            .get::<Arsc<space::Phys>>(mi.phys)
-            .map(|obj| Arsc::clone(obj))
+            .remove::<Arsc<space::Phys>>(mi.phys)
+            .and_then(|obj| Ok(Arsc::clone(obj.downcast_ref::<Arsc<space::Phys>>()?)))
     })?;
     let op = |space: &Arsc<space::Space>| {
         let offset = if mi.map_addr {

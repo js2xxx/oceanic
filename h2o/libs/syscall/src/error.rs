@@ -5,7 +5,7 @@ use core::{fmt::Debug, ops::Range};
 use crate::SerdeReg;
 
 pub const ERRC_RANGE: Range<i32> = 1..35;
-pub const CUSTOM_RANGE: Range<i32> = 1001..1005;
+pub const CUSTOM_RANGE: Range<i32> = 1001..1007;
 
 pub type Result<T = ()> = core::result::Result<T, Error>;
 
@@ -110,7 +110,7 @@ impl Error {
     declare_error!(EIO, 5, "I/O error");
     declare_error!(ENXIO, 6, "No such device or address");
     declare_error!(E2BIG, 7, "Argument list too long");
-    declare_error!(ENOEXEC, 8, "Exec format error");
+    declare_error!(ENOEXEC, 8, "Executable format error");
     declare_error!(EBADF, 9, "Bad file number");
     declare_error!(ECHILD, 10, "No child processes");
     declare_error!(EAGAIN, 11, "Try again");
@@ -156,7 +156,7 @@ const ERRC_DESC: &[&str] = &[
     "I/O error",
     "No such device or address",
     "Argument list too long",
-    "Exec format error",
+    "Executable format error",
     "Bad file number",
     "No child processes",
     "Try again",
@@ -190,4 +190,6 @@ const CUSTOM_DESC: &[&str] = &[
     "Buffer range exceeded",
     "Timed out",
     "Pointer unaligned",
+    "Object type mismatch",
+    "Function not supported"
 ];

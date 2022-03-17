@@ -17,4 +17,7 @@ sv-call = {path = "../libs/syscall", default-features = false, features = ["call
 targs = {path = "../libs/targs"}
 # External crates
 log = "0.4"
+memchr = {version = "2.4", default-features = false}
+object = {version = "0.28", default-features = false, features = ["elf", "read_core"]}
+plain = "0.2"
 spin = "0.9"

@@ -1,5 +1,7 @@
 use core::{mem, time::Duration};
 
+pub use sv_call::Handle;
+
 use crate::error::Result;
 
 pub trait Object {

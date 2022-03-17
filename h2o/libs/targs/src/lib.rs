@@ -10,9 +10,11 @@ pub enum HandleIndex {
     Bootfs = 4,
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Default)]
 pub struct Targs {
     pub rsdp: usize,
     pub smbios: usize,
     pub bootfs_size: usize,
 }
+
+unsafe impl plain::Plain for Targs {}

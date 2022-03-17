@@ -1,6 +1,7 @@
-use core::{mem, ptr};
+use core::mem;
 
 use either::Either;
+use plain::Plain;
 
 use crate::{MAX_NAME_LEN, VERSION};
 
@@ -12,14 +13,8 @@ pub struct Directory<'a> {
 
 impl<'a> Directory<'a> {
     pub fn root(image: &'a [u8]) -> Option<Self> {
-        let header: crate::BootfsHeader = if image[..4] == VERSION.to_ne_bytes() {
-            unsafe {
-                ptr::read(
-                    image[..mem::size_of::<crate::BootfsHeader>()]
-                        .as_ptr()
-                        .cast(),
-                )
-            }
+        let header = if image[..4] == VERSION.to_ne_bytes() {
+            crate::BootfsHeader::from_bytes(&image[..mem::size_of::<crate::BootfsHeader>()]).ok()?
         } else {
             return None;
         };
@@ -37,13 +32,17 @@ impl<'a> Directory<'a> {
         }
     }
 
+    pub fn image(&self) -> &'a [u8] {
+        self.image
+    }
+
     pub fn get(self, name: &[u8]) -> Option<Entry<'a>> {
         self.iter().find(|ent| ent.name_eq(name))
     }
 
-    pub fn find(self, path: &[u8], seperator: u8) -> Option<&'a [u8]> {
+    pub fn find(self, path: &[u8], separator: u8) -> Option<&'a [u8]> {
         let mut dir = self;
-        let mut names = path.split(|&b| b == seperator);
+        let mut names = path.split(|&b| b == separator);
         loop {
             let entry: Entry<'a> = dir.get(names.next()?)?;
             dir = match entry.content() {
@@ -76,10 +75,10 @@ impl<'a> Iterator for DirIter<'a> {
             return None;
         }
 
-        let ret: super::Entry = unsafe { ptr::read(entry.as_ptr().cast()) };
+        let ret = crate::Entry::from_bytes(entry).ok()?;
         Some(Entry {
             image: self.image,
-            metadata: ret,
+            metadata: *ret,
         })
     }
 }

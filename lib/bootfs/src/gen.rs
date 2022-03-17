@@ -1,4 +1,6 @@
-use std::{boxed::Box, collections::VecDeque, error::Error, io::Write, mem, slice, vec::Vec};
+use std::{boxed::Box, collections::VecDeque, error::Error, io::Write, mem, vec::Vec};
+
+use plain::Plain;
 
 use crate::{
     BootfsHeader, EntryType, ENTRY_LAYOUT, HEADER_SIZE, MAX_NAME_LEN, PAGE_LAYOUT, VERSION,
@@ -53,7 +55,7 @@ fn split(input: &Entry, entries: &mut Vec<super::Entry>, contents: &mut Vec<Vec<
     }
 }
 
-fn write_typed<T: ?Sized>(
+fn write_typed<T: ?Sized + Plain>(
     data: &T,
     size: usize,
     output: &mut impl Write,
@@ -61,14 +63,10 @@ fn write_typed<T: ?Sized>(
     let alsize = mem::size_of_val(data);
     let size = alsize.max(size);
 
-    unsafe {
-        let data = data as *const T as *const u8;
-        let data = slice::from_raw_parts(data, alsize);
-
-        output.write_all(data)?;
-        for _ in alsize..size {
-            output.write_all(&[0])?;
-        }
+    // SAFETY: The data is `Plain`.
+    output.write_all(unsafe { plain::as_bytes(data) })?;
+    for _ in alsize..size {
+        output.write_all(&[0])?;
     }
 
     Ok(())

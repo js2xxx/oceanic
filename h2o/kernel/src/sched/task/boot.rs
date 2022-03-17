@@ -30,7 +30,7 @@ pub static BOOTFS: Azy<Arsc<Phys>> = Azy::new(|| {
     Phys::new(
         crate::kargs().bootfs_phys,
         layout,
-        Flags::READABLE | Flags::EXECUTABLE | Flags::USER_ACCESS,
+        Flags::READABLE | Flags::WRITABLE | Flags::EXECUTABLE | Flags::USER_ACCESS,
     )
     .expect("Failed to create boot FS object")
 });
@@ -77,7 +77,7 @@ pub fn setup() {
     unsafe {
         objects
             .insert_impl(
-                hdl::Ref::try_new(Arsc::clone(&VDSO), noevent.clone())
+                hdl::Ref::try_new_shared(Arsc::clone(&VDSO), noevent.clone())
                     .expect("Failed to create VDSO reference")
                     .coerce_unchecked(),
             )
@@ -85,7 +85,7 @@ pub fn setup() {
 
         objects
             .insert_impl(
-                hdl::Ref::try_new(Arsc::clone(&BOOTFS), noevent)
+                hdl::Ref::try_new_shared(Arsc::clone(&BOOTFS), noevent)
                     .expect("Failed to create boot FS reference")
                     .coerce_unchecked(),
             )

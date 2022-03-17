@@ -9,6 +9,10 @@ pub unsafe fn test() {
         .into_res()
         .expect("Failed to allocate physical object");
 
+    let phys2 = sv_obj_clone(phys)
+        .into_res()
+        .expect("Failed to clone physical object");
+
     let mi = MapInfo {
         addr: 0,
         map_addr: false,
@@ -30,12 +34,12 @@ pub unsafe fn test() {
         .expect("Failed to unmap the memory");
 
     let mut buf = [0; 4];
-    sv_phys_read(phys, 0, buf.len(), buf.as_mut_ptr())
+    sv_phys_read(phys2, 0, buf.len(), buf.as_mut_ptr())
         .into_res()
         .expect("Failed to read from physical memory");
     assert_eq!(buf, data);
 
-    sv_obj_drop(phys)
+    sv_obj_drop(phys2)
         .into_res()
         .expect("Failed to deallocate the physical object");
 }

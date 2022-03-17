@@ -24,7 +24,7 @@ use archop::Azy;
 use bitop_ex::BitOpEx;
 use canary::Canary;
 use collection_ex::RangeMap;
-use paging::{LAddr, PAddr, PAGE_LAYOUT};
+use paging::{LAddr, PAddr, PAGE_LAYOUT, PAGE_MASK};
 use spin::Mutex;
 pub use sv_call::mem::Flags;
 
@@ -169,6 +169,13 @@ impl Space {
 
         if flags & !phys.flags() != Flags::empty() || flags.contains(Flags::ZEROED) {
             return Err(sv_call::Error::EPERM);
+        }
+
+        if matches!(offset, Some(offset) if offset & PAGE_MASK != 0) {
+            return Err(sv_call::Error::EALIGN);
+        }
+        if phys_offset & PAGE_MASK != 0 || len & PAGE_MASK != 0 {
+            return Err(sv_call::Error::EALIGN);
         }
 
         let (len, set_vdso) = if Arsc::ptr_eq(&phys, &VDSO) {
