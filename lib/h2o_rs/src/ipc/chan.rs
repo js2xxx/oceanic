@@ -1,13 +1,12 @@
+#[cfg(feature = "alloc")]
 use alloc::vec::Vec;
 use core::{mem::MaybeUninit, time::Duration};
 
 use sv_call::ipc::RawPacket;
 
-use crate::{
-    error::{Error, Result},
-    obj::Object,
-};
+use crate::{error::*, obj::Object};
 
+#[cfg(feature = "alloc")]
 #[derive(Debug, Default)]
 pub struct Packet {
     pub id: Option<usize>,
@@ -53,6 +52,7 @@ impl Channel {
         unsafe { sv_call::sv_chan_send(unsafe { self.raw() }, &packet).into_res() }
     }
 
+    #[cfg(feature = "alloc")]
     pub fn send(&self, packet: &Packet) -> Result {
         self.send_raw(packet.id, &packet.buffer, &packet.handles)
     }
@@ -80,6 +80,7 @@ impl Channel {
         )
     }
 
+    #[cfg(feature = "alloc")]
     pub fn receive_into(
         &self,
         buffer: &mut Vec<u8>,
@@ -88,6 +89,7 @@ impl Channel {
         receive_into_impl(|buf, hdl| self.receive_raw(buf, hdl), buffer, handles)
     }
 
+    #[cfg(feature = "alloc")]
     pub fn receive(&self, packet: &mut Packet) -> Result {
         let id = self.receive_into(&mut packet.buffer, &mut packet.handles)?;
         packet.id = Some(id);
@@ -113,6 +115,7 @@ impl Channel {
         }
     }
 
+    #[cfg(feature = "alloc")]
     pub fn call_send(&self, packet: &Packet) -> Result<usize> {
         self.call_send_raw(&packet.buffer, &packet.handles)
     }
@@ -144,6 +147,7 @@ impl Channel {
         (res, packet.buffer_size, packet.handle_count)
     }
 
+    #[cfg(feature = "alloc")]
     pub fn call_receive_into(
         &self,
         id: usize,
@@ -158,6 +162,7 @@ impl Channel {
         )
     }
 
+    #[cfg(feature = "alloc")]
     pub fn call_receive(&self, id: usize, packet: &mut Packet, timeout: Duration) -> Result {
         self.call_receive_into(id, &mut packet.buffer, &mut packet.handles, timeout)
     }
@@ -170,11 +175,13 @@ impl Channel {
         Ok(unsafe { super::Waiter::from_raw(handle) })
     }
 
+    #[cfg(feature = "alloc")]
     pub fn call(&self, packet: &mut Packet, timeout: Duration) -> Result {
         let id = self.call_send(packet)?;
         self.call_receive(id, packet, timeout)
     }
 
+    #[cfg(feature = "alloc")]
     pub fn handle<F, R>(&self, handler: F) -> Result<R>
     where
         F: FnOnce(&mut Packet) -> Result<R>,
@@ -187,6 +194,7 @@ impl Channel {
     }
 }
 
+#[cfg(feature = "alloc")]
 fn receive_into_impl<F, R>(
     mut receiver: F,
     buffer: &mut Vec<u8>,

@@ -2,11 +2,11 @@ use std::{env, error::Error, fs, path::Path, process::Command};
 
 use structopt::StructOpt;
 
-use crate::{H2O_BOOT, H2O_KERNEL, H2O_SYSCALL, H2O_TINIT};
+use crate::{BOOTFS, H2O_BOOT, H2O_KERNEL, H2O_SYSCALL, H2O_TINIT};
 
 #[derive(Debug, StructOpt)]
 pub enum Type {
-    Iso,
+    Img,
 }
 
 #[derive(Debug, StructOpt)]
@@ -36,27 +36,14 @@ impl Dist {
         )?;
 
         // Build h2o_boot
-        {
-            println!("Building h2o_boot");
-
-            let mut cmd = Command::new(&cargo);
-            let cmd = cmd.current_dir(src_root.join(H2O_BOOT)).arg("build");
-            if self.release {
-                cmd.arg("--release");
-            }
-            cmd.status()?.exit_ok()?;
-
-            // Copy the binary to target.
-            let bin_dir = if self.release {
-                Path::new(&target_dir).join("x86_64-unknown-uefi/release")
-            } else {
-                Path::new(&target_dir).join("x86_64-unknown-uefi/debug")
-            };
-            fs::copy(
-                bin_dir.join("h2o_boot.efi"),
-                Path::new(&target_dir).join("BootX64.efi"),
-            )?;
-        }
+        self.build_impl(
+            &cargo,
+            "h2o_boot.efi",
+            "BootX64.efi",
+            src_root.join(H2O_BOOT),
+            &target_dir,
+            "x86_64-unknown-uefi",
+        )?;
 
         // Build the VDSO
         {
@@ -93,54 +80,30 @@ impl Dist {
                 src_root.join(H2O_KERNEL).join("target/vdso"),
             )?;
 
-            fs::File::options()
-                .create(true)
-                .write(true)
-                .truncate(true)
-                .open(cd.join("target/rxx.rs"))?;
+            fs::File::create(cd.join("target/rxx.rs"))?;
         }
 
         // Build h2o_kernel
-        {
-            println!("Building h2o_kernel");
-
-            let mut cmd = Command::new(&cargo);
-            let cmd = cmd.current_dir(src_root.join(H2O_KERNEL)).arg("build");
-            if self.release {
-                cmd.arg("--release");
-            }
-            cmd.status()?.exit_ok()?;
-
-            // Copy the binary to target.
-            let bin_dir = if self.release {
-                Path::new(&target_dir).join("x86_64-h2o-kernel/release")
-            } else {
-                Path::new(&target_dir).join("x86_64-h2o-kernel/debug")
-            };
-            fs::copy(bin_dir.join("h2o"), Path::new(&target_dir).join("KERNEL"))?;
-        }
+        self.build_impl(
+            &cargo,
+            "h2o",
+            "KERNEL",
+            src_root.join(H2O_KERNEL),
+            &target_dir,
+            "x86_64-h2o-kernel",
+        )?;
 
         // Build h2o_tinit
-        {
-            println!("Building h2o_tinit");
+        self.build_impl(
+            &cargo,
+            "tinit",
+            "TINIT",
+            src_root.join(H2O_TINIT),
+            &target_dir,
+            "x86_64-h2o-tinit",
+        )?;
 
-            let mut cmd = Command::new(&cargo);
-            let cmd = cmd.current_dir(src_root.join(H2O_TINIT)).arg("build");
-            if self.release {
-                cmd.arg("--release");
-            }
-            cmd.status()?.exit_ok()?;
-
-            // Copy the binary to target.
-            let bin_dir = if self.release {
-                Path::new(&target_dir).join("x86_64-h2o-tinit/release")
-            } else {
-                Path::new(&target_dir).join("x86_64-h2o-tinit/debug")
-            };
-            fs::copy(bin_dir.join("tinit"), Path::new(&target_dir).join("TINIT"))?;
-        }
-
-        crate::gen::gen_bootfs(Path::new(crate::BOOTFS).join("../BOOT.fs"))?;
+        crate::gen::gen_bootfs(Path::new(BOOTFS).join("../BOOT.fs"))?;
 
         // Generate debug symbols
         println!("Generating debug symbols");
@@ -151,7 +114,7 @@ impl Dist {
             .exit_ok()?;
 
         match &self.ty {
-            Type::Iso => {
+            Type::Img => {
                 // Generate img
                 println!("Generating a hard disk image file");
                 Command::new("sh")
@@ -161,6 +124,35 @@ impl Dist {
                     .exit_ok()?;
             }
         }
+        Ok(())
+    }
+
+    fn build_impl(
+        &self,
+        cargo: &str,
+        src_name: &str,
+        dst_name: &str,
+        src_dir: impl AsRef<Path>,
+        target_dir: &str,
+        target_triple: &str,
+    ) -> Result<(), Box<dyn Error>> {
+        println!("Building {}", dst_name);
+
+        let mut cmd = Command::new(cargo);
+        let cmd = cmd.current_dir(src_dir).arg("build");
+        if self.release {
+            cmd.arg("--release");
+        }
+        cmd.status()?.exit_ok()?;
+        let bin_dir = if self.release {
+            Path::new(target_dir).join(target_triple).join("release")
+        } else {
+            Path::new(target_dir).join(target_triple).join("debug")
+        };
+        fs::copy(
+            bin_dir.join(src_name),
+            Path::new(&target_dir).join(dst_name),
+        )?;
         Ok(())
     }
 }

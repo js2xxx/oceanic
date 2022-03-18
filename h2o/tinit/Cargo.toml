@@ -12,7 +12,7 @@ path = "src/tmain.rs"
 # Local crates
 bootfs = {path = "../../lib/bootfs"}
 heap = {path = "../libs/heap"}
-solvent = {path = "../../lib/h2o_rs", default-features = false, features = ["call"]}
+solvent = {path = "../../lib/h2o_rs", default-features = false, features = ["call", "alloc"]}
 sv-call = {path = "../libs/syscall", default-features = false, features = ["call"]}
 targs = {path = "../libs/targs"}
 # External crates

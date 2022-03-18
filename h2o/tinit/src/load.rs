@@ -46,7 +46,7 @@ impl From<solvent::error::Error> for Error {
     }
 }
 
-fn map_segment(
+fn load_phdr(
     image: &Image,
     space: &Space,
     end: Endianness,
@@ -116,7 +116,7 @@ pub fn load_elf(
     let mut interp = None;
     for seg in file.raw_segments() {
         match seg.p_type(file.endian()) {
-            PT_LOAD => map_segment(&image, space, file.endian(), seg)?,
+            PT_LOAD => load_phdr(&image, space, file.endian(), seg)?,
             PT_GNU_STACK => stack_size = seg.p_memsz(file.endian()) as usize,
             PT_INTERP => {
                 interp = Some(

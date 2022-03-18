@@ -32,7 +32,7 @@
 
 3. 切换到项目的根目录，运行以下命令：
    ```sh
-   cargo xtask dist iso
+   cargo xtask dist img
    ```
 
 4. 运行以下命令以在qemu上运行：

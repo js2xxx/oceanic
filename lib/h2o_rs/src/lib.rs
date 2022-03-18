@@ -12,6 +12,7 @@ pub mod obj;
 pub mod task;
 pub mod time;
 
+#[cfg(feature = "alloc")]
 extern crate alloc;
 
 pub mod prelude {

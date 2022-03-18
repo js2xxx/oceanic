@@ -1,5 +1,8 @@
+#[cfg(feature = "alloc")]
 use alloc::vec::Vec;
-use core::{alloc::Layout, slice};
+use core::alloc::Layout;
+#[cfg(feature = "alloc")]
+use core::slice;
 
 use super::{Flags, PAGE_LAYOUT};
 use crate::{
@@ -63,6 +66,7 @@ impl Phys {
         }
     }
 
+    #[cfg(feature = "alloc")]
     pub fn read(&self, offset: usize, len: usize) -> Result<Vec<u8>> {
         let mut ret = Vec::with_capacity(len);
         // SAFETY: The content is from the object, guaranteed to be valid.
@@ -133,6 +137,7 @@ impl PhysRef {
         self.phys.read_into(offset, buffer)
     }
 
+    #[cfg(feature = "alloc")]
     pub fn read(&self, offset: usize, len: usize) -> Result<Vec<u8>> {
         let mut ret = Vec::with_capacity(len);
         // SAFETY: The content is from the object, guaranteed to be valid.

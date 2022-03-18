@@ -37,7 +37,7 @@ support aarch64 in the future.
 
 3. Change to the project's root directory and run the following command:
    ```sh
-   cargo xtask dist iso
+   cargo xtask dist img
    ```
 
 4. To run the OS with qemu, run the following command:

@@ -6,11 +6,13 @@ version = "0.1.0"
 
 [features]
 call = ["sv-call/call"]
-default = ["stub"]
+default = ["stub", "alloc"]
 stub = ["sv-call/stub"]
+alloc = []
 
 [dependencies]
 # Local crates
 sv-call = {path = "../../h2o/libs/syscall", default-features = false}
 # External crates
 cfg-if = "1.0"
+log = "0.4"
