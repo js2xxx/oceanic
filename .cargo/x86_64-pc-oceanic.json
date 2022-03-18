@@ -19,7 +19,8 @@
             "--build-id",
             "-zmax-page-size=4096",
             "-zseparate-loadable-segments",
-            "--pack-dyn-relocs=relr"
+            "--pack-dyn-relocs=relr",
+            "--pic-veneer"
         ]
     },
     "panic-strategy": "abort",

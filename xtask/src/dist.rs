@@ -2,7 +2,7 @@ use std::{env, error::Error, fs, path::Path, process::Command};
 
 use structopt::StructOpt;
 
-use crate::{BOOTFS, H2O_BOOT, H2O_KERNEL, H2O_SYSCALL, H2O_TINIT};
+use crate::{BOOTFS, H2O_BOOT, H2O_KERNEL, H2O_SYSCALL, H2O_TINIT, OC_LIB};
 
 #[derive(Debug, StructOpt)]
 pub enum Type {
@@ -24,7 +24,7 @@ impl Dist {
             .ancestors()
             .nth(1)
             .unwrap();
-        let target_dir = env::var("CARGO_TARGET_DIR")
+        let target_root = env::var("CARGO_TARGET_DIR")
             .unwrap_or_else(|_| src_root.join("target").to_string_lossy().to_string());
 
         // Generate syscall stubs
@@ -41,8 +41,8 @@ impl Dist {
             "h2o_boot.efi",
             "BootX64.efi",
             src_root.join(H2O_BOOT),
-            &target_dir,
-            "x86_64-unknown-uefi",
+            Path::new(&target_root).join("x86_64-unknown-uefi"),
+            &target_root,
         )?;
 
         // Build the VDSO
@@ -74,7 +74,7 @@ impl Dist {
             .exit_ok()?;
 
             // Copy the binary to target.
-            let bin_dir = Path::new(&target_dir).join("x86_64-pc-oceanic/release");
+            let bin_dir = Path::new(&target_root).join("x86_64-pc-oceanic/release");
             fs::copy(
                 bin_dir.join("libsv_call.so"),
                 src_root.join(H2O_KERNEL).join("target/vdso"),
@@ -89,8 +89,8 @@ impl Dist {
             "h2o",
             "KERNEL",
             src_root.join(H2O_KERNEL),
-            &target_dir,
-            "x86_64-h2o-kernel",
+            Path::new(&target_root).join("x86_64-h2o-kernel"),
+            &target_root,
         )?;
 
         // Build h2o_tinit
@@ -99,9 +99,11 @@ impl Dist {
             "tinit",
             "TINIT",
             src_root.join(H2O_TINIT),
-            &target_dir,
-            "x86_64-h2o-tinit",
+            Path::new(&target_root).join("x86_64-h2o-tinit"),
+            &target_root,
         )?;
+
+        self.build_lib(&cargo, &src_root, &target_root)?;
 
         crate::gen::gen_bootfs(Path::new(BOOTFS).join("../BOOT.fs"))?;
 
@@ -127,14 +129,36 @@ impl Dist {
         Ok(())
     }
 
+    fn build_lib(
+        &self,
+        cargo: &str,
+        src_root: impl AsRef<Path>,
+        target_root: &str,
+    ) -> Result<(), Box<dyn Error>> {
+        let src_root = src_root.as_ref().join(OC_LIB);
+        let bin_dir = Path::new(target_root).join("x86_64-pc-oceanic");
+        let dst_root = Path::new(target_root).join("bootfs/lib");
+
+        self.build_impl(
+            cargo,
+            "libldso.so",
+            "ld-oceanic.so",
+            src_root.join("libc/ldso"),
+            &bin_dir,
+            &dst_root,
+        )?;
+
+        Ok(())
+    }
+
     fn build_impl(
         &self,
         cargo: &str,
         src_name: &str,
         dst_name: &str,
         src_dir: impl AsRef<Path>,
-        target_dir: &str,
-        target_triple: &str,
+        bin_dir: impl AsRef<Path>,
+        target_dir: impl AsRef<Path>,
     ) -> Result<(), Box<dyn Error>> {
         println!("Building {}", dst_name);
 
@@ -145,14 +169,11 @@ impl Dist {
         }
         cmd.status()?.exit_ok()?;
         let bin_dir = if self.release {
-            Path::new(target_dir).join(target_triple).join("release")
+            bin_dir.as_ref().join("release")
         } else {
-            Path::new(target_dir).join(target_triple).join("debug")
+            bin_dir.as_ref().join("debug")
         };
-        fs::copy(
-            bin_dir.join(src_name),
-            Path::new(&target_dir).join(dst_name),
-        )?;
+        fs::copy(bin_dir.join(src_name), target_dir.as_ref().join(dst_name))?;
         Ok(())
     }
 }

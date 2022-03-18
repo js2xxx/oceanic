@@ -7,7 +7,7 @@ use object::{
         self,
         elf::{ElfFile64, ProgramHeader},
     },
-    Endianness, Object,
+    Endianness, Object, ObjectKind,
 };
 use solvent::prelude::{Flags, Phys, PhysRef, Space, PAGE_MASK, PAGE_SIZE};
 use sv_call::task::DEFAULT_STACK_SIZE;
@@ -51,7 +51,8 @@ fn load_phdr(
     space: &Space,
     end: Endianness,
     seg: &impl ProgramHeader<Endian = object::Endianness>,
-) -> Result<(), Error> {
+    kind: ObjectKind,
+) -> Result<usize, Error> {
     let msize = seg.p_memsz(end).into() as usize;
     let fsize = seg.p_filesz(end).into() as usize;
     let offset = seg.p_offset(end).into() as usize;
@@ -87,10 +88,14 @@ fn load_phdr(
         flags
     };
 
-    space.map_ref(Some(address), data_phys, flags)?;
+    let address = match kind {
+        ObjectKind::Dynamic => None,
+        _ => Some(address),
+    };
+    let base = space.map_ref(address, data_phys, flags)?.as_mut_ptr() as usize;
 
     if msize > fsize {
-        let address = address + fsize;
+        let address = base + fsize;
         let len = msize - fsize;
 
         let layout =
@@ -98,7 +103,7 @@ fn load_phdr(
         let mem = Phys::allocate(layout, flags)?;
         space.map(Some(address), mem, 0, len, flags)?;
     }
-    Ok(())
+    Ok(base)
 }
 
 pub fn load_elf(
@@ -110,14 +115,27 @@ pub fn load_elf(
     let file = ElfFile64::<'_, Endianness, _>::parse(image.data)?;
 
     let mut entry = file.entry() as usize;
-    log::debug!("File type: {:?}", file.kind());
+    let kind = file.kind();
 
     let mut stack_size = DEFAULT_STACK_SIZE;
     let mut interp = None;
     for seg in file.raw_segments() {
         match seg.p_type(file.endian()) {
-            PT_LOAD => load_phdr(&image, space, file.endian(), seg)?,
-            PT_GNU_STACK => stack_size = seg.p_memsz(file.endian()) as usize,
+            PT_LOAD => {
+                let base = load_phdr(&image, space, file.endian(), seg, kind)?;
+                let fbase = seg.p_offset(file.endian()) as usize;
+                let fend = fbase + seg.p_filesz(file.endian()) as usize;
+                if kind == ObjectKind::Dynamic && (fbase..fend).contains(&entry) {
+                    let voff = seg.p_vaddr(file.endian()) as usize - fbase;
+                    entry = entry + base - voff;
+                }
+            }
+            PT_GNU_STACK => {
+                let ss = seg.p_memsz(file.endian()) as usize;
+                if ss > 0 {
+                    stack_size = ss;
+                }
+            }
             PT_INTERP => {
                 interp = Some(
                     CStr::from_bytes_with_nul(

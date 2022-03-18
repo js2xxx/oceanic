@@ -1,0 +1,14 @@
+[package]
+edition = "2021"
+name = "ldso"
+version = "0.1.0"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+# Local crates
+solvent = {path = "../../h2o_rs", default-features = false, features = ["stub"]}
+# External crates
+log = "0.4"
+object = {version = "0.28", default-features = false, features = ["elf"]}
