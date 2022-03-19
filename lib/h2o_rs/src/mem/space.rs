@@ -63,6 +63,25 @@ impl Space {
         self.map(addr, phys, phys_offset, len, flags)
     }
 
+    pub fn map_vdso(&self, vdso: Phys) -> Result<NonNull<u8>> {
+        self.map(
+            None,
+            vdso,
+            0,
+            0,
+            Flags::READABLE | Flags::EXECUTABLE | Flags::USER_ACCESS,
+        )
+        .map(NonNull::as_non_null_ptr)
+    }
+
+    pub fn get(&self, ptr: NonNull<u8>) -> Result<(usize, Flags)> {
+        let mut flags = Flags::empty();
+        // SAFETY: We don't move the ownership of the handle.
+        let phys = unsafe { sv_call::sv_mem_get(unsafe { self.raw() }, ptr.as_ptr(), &mut flags) }
+            .into_res()?;
+        Ok((phys.try_into()?, flags))
+    }
+
     /// # Safety
     ///
     /// The pointer must be allocated from this space and must not be used

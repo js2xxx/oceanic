@@ -1,6 +1,6 @@
 use core::{
     mem,
-    ptr::{null, null_mut},
+    ptr::{null, null_mut, NonNull},
     time::Duration,
 };
 
@@ -41,8 +41,8 @@ impl Task {
     pub fn exec(
         name: Option<&str>,
         space: Space,
-        entry: *mut u8,
-        stack: *mut u8,
+        entry: NonNull<u8>,
+        stack: NonNull<u8>,
         init_chan: Option<Channel>,
         arg2: u64,
     ) -> Result<Self> {
@@ -51,8 +51,8 @@ impl Task {
             name: name.map_or(null(), |name| name.as_ptr()),
             name_len: name.map_or(0, |name| name.len()),
             space: Space::into_raw(space),
-            entry,
-            stack,
+            entry: entry.as_ptr(),
+            stack: stack.as_ptr(),
             init_chan: init_chan.map_or(Handle::NULL, Channel::into_raw),
             arg: arg2,
         };
@@ -63,11 +63,13 @@ impl Task {
 
     pub fn try_join(self) -> core::result::Result<usize, (Error, Self)> {
         // SAFETY: We don't move the ownership of the handle...
-        match unsafe { sv_call::sv_task_join(unsafe { self.raw() }).into_res() } {
-            Ok(retval) => {
+        let mut ret = Default::default();
+        let res = unsafe { sv_call::sv_task_join(unsafe { self.raw() }, &mut ret).into_res() };
+        match res {
+            Ok(()) => {
                 // ...unless the operation is successful.
                 mem::forget(self);
-                Ok(retval as usize)
+                Ok(ret)
             }
             Err(err) => Err((err, self)),
         }

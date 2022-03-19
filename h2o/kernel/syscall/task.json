@@ -58,11 +58,15 @@
     },
     {
         "name": "sv_task_join",
-        "returns": "usize",
+        "returns": "()",
         "args": [
             {
                 "name": "hdl",
                 "ty": "Handle"
+            },
+            {
+                "name": "retval",
+                "ty": "*mut usize"
             }
         ]
     },

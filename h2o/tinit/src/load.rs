@@ -1,4 +1,4 @@
-use core::alloc::Layout;
+use core::{alloc::Layout, ptr::NonNull};
 
 use bootfs::parse::Directory;
 use object::{
@@ -9,8 +9,10 @@ use object::{
     },
     Endianness, Object, ObjectKind,
 };
-use solvent::prelude::{Flags, Phys, PhysRef, Space, PAGE_MASK, PAGE_SIZE};
+use solvent::prelude::{Flags, Phys, PhysRef, Space, PAGE_LAYOUT, PAGE_MASK, PAGE_SIZE};
 use sv_call::task::DEFAULT_STACK_SIZE;
+
+const STACK_PROTECTOR_SIZE: usize = PAGE_SIZE;
 
 use crate::c_str::CStr;
 
@@ -46,8 +48,22 @@ impl From<solvent::error::Error> for Error {
     }
 }
 
+fn flags(seg_flags: u32) -> Flags {
+    let mut flags = Flags::USER_ACCESS;
+    if seg_flags & PF_R != 0 {
+        flags |= Flags::READABLE;
+    }
+    if seg_flags & PF_W != 0 {
+        flags |= Flags::WRITABLE;
+    }
+    if seg_flags & PF_X != 0 {
+        flags |= Flags::EXECUTABLE;
+    }
+    flags
+}
+
 fn load_phdr(
-    image: &Image,
+    image: &PhysRef,
     space: &Space,
     end: Endianness,
     seg: &impl ProgramHeader<Endian = object::Endianness>,
@@ -69,24 +85,10 @@ fn load_phdr(
     let msize = mend - offset;
 
     let data_phys = image
-        .phys
         .dup_sub(offset, fsize)
         .ok_or(Error::Solvent(solvent::error::Error::ERANGE))?;
 
-    let flags = {
-        let seg_flags = seg.p_flags(end);
-        let mut flags = Flags::USER_ACCESS;
-        if seg_flags & PF_R != 0 {
-            flags |= Flags::READABLE;
-        }
-        if seg_flags & PF_W != 0 {
-            flags |= Flags::WRITABLE;
-        }
-        if seg_flags & PF_X != 0 {
-            flags |= Flags::EXECUTABLE;
-        }
-        flags
-    };
+    let flags = flags(seg.p_flags(end));
 
     let address = match kind {
         ObjectKind::Dynamic => None,
@@ -106,28 +108,30 @@ fn load_phdr(
     Ok(base)
 }
 
-pub fn load_elf(
+fn load_seg(
     image: Image,
     bootfs: Directory,
     bootfs_phys: &PhysRef,
     space: &Space,
-) -> Result<(usize, usize), Error> {
+) -> Result<(NonNull<u8>, usize, Flags), Error> {
     let file = ElfFile64::<'_, Endianness, _>::parse(image.data)?;
 
     let mut entry = file.entry() as usize;
     let kind = file.kind();
 
-    let mut stack_size = DEFAULT_STACK_SIZE;
+    let (mut stack_size, mut stack_flags) = (
+        DEFAULT_STACK_SIZE,
+        Flags::READABLE | Flags::WRITABLE | Flags::USER_ACCESS,
+    );
     let mut interp = None;
     for seg in file.raw_segments() {
         match seg.p_type(file.endian()) {
             PT_LOAD => {
-                let base = load_phdr(&image, space, file.endian(), seg, kind)?;
+                let base = load_phdr(&image.phys, space, file.endian(), seg, kind)?;
                 let fbase = seg.p_offset(file.endian()) as usize;
                 let fend = fbase + seg.p_filesz(file.endian()) as usize;
                 if kind == ObjectKind::Dynamic && (fbase..fend).contains(&entry) {
-                    let voff = seg.p_vaddr(file.endian()) as usize - fbase;
-                    entry = entry + base - voff;
+                    entry = entry + base - fbase;
                 }
             }
             PT_GNU_STACK => {
@@ -135,6 +139,7 @@ pub fn load_elf(
                 if ss > 0 {
                     stack_size = ss;
                 }
+                stack_flags = flags(seg.p_flags(file.endian()));
             }
             PT_INTERP => {
                 interp = Some(
@@ -149,6 +154,8 @@ pub fn load_elf(
         }
     }
 
+    let mut entry = NonNull::new(entry as *mut u8).ok_or(solvent::error::Error::EINVAL)?;
+
     if let Some(interp) = interp {
         use solvent::error::Error;
         let data = bootfs
@@ -157,13 +164,46 @@ pub fn load_elf(
             .inspect_err(|_| log::error!("Failed to find the interpreter for the executable"))?;
 
         let phys = crate::sub_phys(data, bootfs, bootfs_phys)?;
-        (entry, _) = load_elf(
+        let (e, ss, sf) = load_seg(
             unsafe { Image::new(data, phys).ok_or(Error::ENOENT) }?,
             bootfs,
             bootfs_phys,
             space,
         )?;
-    }
+        entry = e;
+        stack_size = stack_size.max(ss);
+        stack_flags |= sf;
+    };
 
-    Ok((entry, stack_size))
+    Ok((entry, stack_size, stack_flags))
+}
+
+pub fn load_elf(
+    image: Image,
+    bootfs: Directory,
+    bootfs_phys: &PhysRef,
+    space: &Space,
+) -> Result<(NonNull<u8>, NonNull<u8>), Error> {
+    let (entry, stack_size, stack_flags) = load_seg(image, bootfs, bootfs_phys, space)?;
+
+    let stack = {
+        let stack_layout =
+            Layout::from_size_align(stack_size + STACK_PROTECTOR_SIZE * 2, PAGE_LAYOUT.align())
+                .map_err(solvent::error::Error::from)?;
+        let stack_phys = Phys::allocate(stack_layout, stack_flags)?;
+        let stack_ptr = space.map(None, stack_phys, 0, stack_layout.size(), stack_flags)?;
+
+        let base = stack_ptr.as_non_null_ptr();
+        let actual_end =
+            unsafe { NonNull::new_unchecked(base.as_ptr().add(stack_size + STACK_PROTECTOR_SIZE)) };
+
+        let prefix = NonNull::slice_from_raw_parts(base, STACK_PROTECTOR_SIZE);
+        let suffix = NonNull::slice_from_raw_parts(actual_end, STACK_PROTECTOR_SIZE);
+        unsafe { space.reprotect(prefix, Flags::USER_ACCESS) }?;
+        unsafe { space.reprotect(suffix, Flags::USER_ACCESS) }?;
+
+        actual_end
+    };
+
+    Ok((entry, stack))
 }

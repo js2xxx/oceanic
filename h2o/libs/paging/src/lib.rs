@@ -120,7 +120,7 @@ pub fn reprotect(
     let mut rem_info = info.clone();
     while !rem_info.virt.is_empty() {
         let phys = query(root_table, rem_info.virt.start, rem_info.id_off)
-            .unwrap_or_else(|_| PAddr::new(0));
+            .map_or_else(|_| PAddr::new(0), |(phys, _)| phys);
         let level = Level::fit_all(&rem_info.virt, phys);
 
         match inner::modify_page(
@@ -142,7 +142,7 @@ pub fn reprotect(
     Ok(())
 }
 
-pub fn query(root_table: &Table, virt: LAddr, id_off: usize) -> Result<PAddr, Error> {
+pub fn query(root_table: &Table, virt: LAddr, id_off: usize) -> Result<(PAddr, Attr), Error> {
     inner::get_page(root_table, virt, id_off)
 }
 
@@ -163,7 +163,8 @@ pub fn unmaps(
     inner::check(&virt, None)?;
 
     while !virt.is_empty() {
-        let phys = query(root_table, virt.start, id_off).unwrap_or_else(|_| PAddr::new(0));
+        let phys =
+            query(root_table, virt.start, id_off).map_or_else(|_| PAddr::new(0), |(phys, _)| phys);
         let level = Level::fit_all(&virt, phys);
 
         let _ = inner::drop_page(root_table, virt.start, level, id_off, allocator);

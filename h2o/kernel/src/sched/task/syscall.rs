@@ -173,14 +173,15 @@ fn task_new(
 }
 
 #[syscall]
-fn task_join(hdl: Handle) -> Result<usize> {
+fn task_join(hdl: Handle, retval: UserPtr<Out, usize>) -> Result {
     hdl.check_null()?;
 
     SCHED.with_current(|cur| {
         let handles = cur.space().handles();
-        { handles.get::<Tid>(hdl) }
+        let val = { handles.get::<Tid>(hdl) }
             .map(|tid| tid.ret_cell().lock().ok_or(Error::ENOENT))?
-            .inspect(|_| drop(handles.remove::<Tid>(hdl)))
+            .inspect(|_| drop(handles.remove::<Tid>(hdl)))?;
+        unsafe { retval.write(val) }
     })
 }
 

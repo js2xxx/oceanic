@@ -1,10 +1,12 @@
 mod chan;
+#[cfg(feature = "alloc")]
+mod packet;
 
 use core::time::Duration;
 
 pub use self::chan::Channel;
 #[cfg(feature = "alloc")]
-pub use self::chan::Packet;
+pub use self::packet::*;
 use crate::{error::Result, obj::Object};
 
 #[repr(transparent)]

@@ -312,7 +312,7 @@ impl List {
                 }
                 // SAFETY: The pointer is allocated from the arena.
                 Some(cur) => unsafe { cur.as_ref().next },
-                None => break Err(sv_call::Error::ERANGE),
+                None => break Err(sv_call::Error::ENOENT),
             }
         }
     }

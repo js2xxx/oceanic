@@ -79,6 +79,8 @@ extern "C" fn tmain(init_chan: sv_call::Handle) {
         targs
     };
 
+    let vdso_phys = unsafe { Phys::from_raw(packet.handles[HandleIndex::Vdso as usize]) };
+
     let bootfs_phys = unsafe { Phys::from_raw(packet.handles[HandleIndex::Bootfs as usize]) }
         .into_ref(targs.bootfs_size);
     let bootfs = map_bootfs(&bootfs_phys);
@@ -94,10 +96,28 @@ extern "C" fn tmain(init_chan: sv_call::Handle) {
     };
 
     let space = Space::new();
-    let (entry, stack_size) =
+    let (entry, stack) =
         load::load_elf(bin, bootfs, &bootfs_phys, &space).expect("Failed to load test_bin");
 
-    ::log::debug!("{:#x} {:#x}", entry, stack_size);
+    let vdso_base = space
+        .map_vdso(Phys::clone(&vdso_phys))
+        .expect("Failed to load VDSO");
+    ::log::debug!("{:?} {:?}", entry, stack);
+
+    let (_me, child) = Channel::new();
+
+    let task = Task::exec(
+        Some("PROGMGR"),
+        space,
+        entry,
+        stack,
+        Some(child),
+        vdso_base.as_ptr() as u64,
+    )
+    .expect("Failed to create the task");
+
+    let retval = task.join().expect("Failed to join the task");
+    ::log::debug!("{} {:?}", retval, Error::try_from_retval(retval));
 
     ::log::debug!("Reaching end of TINIT");
 }

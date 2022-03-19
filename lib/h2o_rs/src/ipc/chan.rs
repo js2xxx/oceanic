@@ -4,15 +4,9 @@ use core::{mem::MaybeUninit, time::Duration};
 
 use sv_call::ipc::RawPacket;
 
-use crate::{error::*, obj::Object};
-
 #[cfg(feature = "alloc")]
-#[derive(Debug, Default)]
-pub struct Packet {
-    pub id: Option<usize>,
-    pub buffer: Vec<u8>,
-    pub handles: Vec<sv_call::Handle>,
-}
+use super::Packet;
+use crate::{error::*, obj::Object};
 
 #[repr(transparent)]
 pub struct Channel(sv_call::Handle);

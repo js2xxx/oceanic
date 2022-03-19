@@ -58,6 +58,10 @@ impl Error {
     pub fn into_retval(self) -> usize {
         Err::<(), _>(self).encode()
     }
+
+    pub fn try_from_retval(retval: usize) -> Option<Self> {
+        Self::try_decode(retval)
+    }
 }
 
 impl Debug for Error {
@@ -191,5 +195,5 @@ const CUSTOM_DESC: &[&str] = &[
     "Timed out",
     "Pointer unaligned",
     "Object type mismatch",
-    "Function not supported"
+    "Function not supported",
 ];

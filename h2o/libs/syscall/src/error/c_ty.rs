@@ -25,6 +25,12 @@ impl Status {
     }
 }
 
+impl Default for Status {
+    fn default() -> Self {
+        Status(Error::OK)
+    }
+}
+
 #[derive(Clone, Copy)]
 #[repr(C)]
 pub union StatusOrHandle {
@@ -71,5 +77,11 @@ impl StatusOrValue {
     #[inline]
     pub fn into_res(self) -> Result<u64> {
         SerdeReg::decode(self.encode())
+    }
+}
+
+impl Default for StatusOrValue {
+    fn default() -> Self {
+        StatusOrValue { value: 0 }
     }
 }

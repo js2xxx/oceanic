@@ -47,14 +47,20 @@ unsafe fn join(normal: Handle, fault: Handle) {
     sv_obj_wait(normal, u64::MAX, false, SIG_READ)
         .into_res()
         .expect("Failed to wait for the task");
-    let ret = sv_task_join(normal);
-    assert_eq!(ret.into_res(), Ok(12345));
+
+    let mut ret = Default::default();
+    sv_task_join(normal, &mut ret)
+        .into_res()
+        .expect("Failed to join the task");
+    assert_eq!(ret, 12345);
 
     sv_obj_wait(fault, u64::MAX, false, SIG_READ)
         .into_res()
         .expect("Failed to wait for the task");
-    let ret = sv_task_join(fault);
-    assert_eq!(ret.into_res(), Err(Error::EFAULT));
+    sv_task_join(fault, &mut ret)
+        .into_res()
+        .expect("Failed to join the task");
+    assert_eq!(Error::try_from_retval(ret), Some(Error::EFAULT));
 }
 
 unsafe fn sleep() {
@@ -177,8 +183,11 @@ unsafe fn debug_excep(task: Handle, st: Handle) {
     sv_obj_wait(task, u64::MAX, false, SIG_READ)
         .into_res()
         .expect("Failed to wait for the task");
-    let ret = sv_task_join(task);
-    assert_eq!(ret.into_res(), Err(Error::EFAULT));
+    let mut ret = Default::default();
+    sv_task_join(task, &mut ret)
+        .into_res()
+        .expect("Failed to join the task");
+    assert_eq!(Error::try_from_retval(ret), Some(Error::EFAULT));
 }
 
 unsafe fn suspend(task: Handle) {
@@ -210,8 +219,11 @@ unsafe fn kill(task: Handle) {
     sv_obj_wait(task, u64::MAX, false, SIG_READ)
         .into_res()
         .expect("Failed to wait for the task");
-    let ret = sv_task_join(task);
-    assert_eq!(ret.into_res(), Err(Error::EKILLED));
+    let mut ret = Default::default();
+    sv_task_join(task, &mut ret)
+        .into_res()
+        .expect("Failed to join the task");
+    assert_eq!(Error::try_from_retval(ret), Some(Error::EKILLED));
 }
 
 unsafe fn ctl(task: Handle) {

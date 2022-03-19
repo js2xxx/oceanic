@@ -76,6 +76,24 @@
         ]
     },
     {
+        "name": "sv_mem_get",
+        "returns": "usize",
+        "args": [
+            {
+                "name": "space",
+                "ty": "Handle"
+            },
+            {
+                "name": "ptr",
+                "ty": "*mut u8"
+            },
+            {
+                "name": "flags",
+                "ty": "*mut Flags"
+            }
+        ]
+    },
+    {
         "name": "sv_mem_reprot",
         "returns": "()",
         "args": [

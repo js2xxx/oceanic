@@ -179,7 +179,7 @@ impl Space {
         }
 
         let (len, set_vdso) = if Arsc::ptr_eq(&phys, &VDSO) {
-            if flags != Flags::READABLE | Flags::EXECUTABLE {
+            if flags != VDSO.flags() {
                 return Err(sv_call::Error::EACCES);
             }
 
@@ -244,7 +244,7 @@ impl Space {
     }
 
     /// Get the mapped physical address of the specified pointer.
-    pub fn get(&self, ptr: NonNull<u8>) -> sv_call::Result<paging::PAddr> {
+    pub fn get(&self, ptr: NonNull<u8>, flags: &mut Flags) -> sv_call::Result<paging::PAddr> {
         self.canary.assert();
 
         let vdso_size = VDSO.layout().pad_to_align().size();
@@ -254,7 +254,16 @@ impl Space {
             return Err(sv_call::Error::EACCES);
         }
 
-        self.arch.query(LAddr::from(ptr)).map_err(paging_error)
+        let virt = LAddr::from(ptr);
+        PREEMPT.scope(|| {
+            let map = self.map.lock();
+            let (phys, f) = match map.get_contained(&virt.val()) {
+                Some(_) => self.arch.query(LAddr::from(ptr)).map_err(paging_error),
+                None => Err(sv_call::Error::ENOENT),
+            }?;
+            *flags = f;
+            Ok(phys)
+        })
     }
 
     /// Modify the access flags of an address range.
@@ -330,7 +339,7 @@ impl Space {
 
         let flags = Flags::READABLE | Flags::WRITABLE | Flags::USER_ACCESS;
         let ptr = self.allocate(layout, flags)?;
-        let base = unsafe { ptr.as_non_null_ptr() };
+        let base = ptr.as_non_null_ptr();
         let actual_end =
             unsafe { NonNull::new_unchecked(base.as_ptr().add(paging::PAGE_SIZE * (cnt + 1))) };
 

@@ -162,7 +162,8 @@ pub unsafe fn test(stack: (*mut u8, *mut u8, Handle)) {
             .into_res()
             .expect("Failed to drop the event in master");
 
-        sv_task_join(other)
+        let mut retval = Default::default();
+        sv_task_join(other, &mut retval)
             .into_res()
             .expect("Failed to join the task");
     }

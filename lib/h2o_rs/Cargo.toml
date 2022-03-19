@@ -5,10 +5,10 @@ name = "solvent"
 version = "0.1.0"
 
 [features]
+alloc = []
 call = ["sv-call/call"]
 default = ["stub", "alloc"]
 stub = ["sv-call/stub"]
-alloc = []
 
 [dependencies]
 # Local crates

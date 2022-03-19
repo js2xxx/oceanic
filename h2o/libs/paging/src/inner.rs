@@ -183,7 +183,7 @@ pub(crate) fn modify_page(
     }
 }
 
-pub(crate) fn get_page(root_table: &Table, virt: LAddr, id_off: usize) -> Result<PAddr, Error> {
+pub(crate) fn get_page(root_table: &Table, virt: LAddr, id_off: usize) -> Result<(PAddr, Attr), Error> {
     let mut table: NonNull<Table> = NonNull::from(root_table);
     let mut lvl = Level::P4;
     loop {
@@ -191,7 +191,8 @@ pub(crate) fn get_page(root_table: &Table, virt: LAddr, id_off: usize) -> Result
 
         if item.is_leaf(lvl) {
             let offset = virt.val() & !lvl.addr_mask() as usize;
-            break Ok(PAddr::new(*item.get(lvl).0 | offset));
+            let (base, attr) = item.get(lvl);
+            break Ok((PAddr::new(*base | offset), attr));
         }
 
         table = item

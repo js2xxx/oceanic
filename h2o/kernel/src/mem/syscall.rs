@@ -123,6 +123,30 @@ fn mem_map(space: Handle, mi: UserPtr<In, MapInfo>) -> Result<*mut u8> {
 }
 
 #[syscall]
+fn mem_get(space: Handle, ptr: UserPtr<In, u8>, flags: UserPtr<Out, Flags>) -> Result<usize> {
+    ptr.check()?;
+    let ptr = NonNull::new(ptr.as_ptr()).ok_or(Error::EINVAL)?;
+    let mut f = Flags::empty();
+    unsafe {
+        if space == Handle::NULL {
+            space::with_current(|cur| cur.get(ptr, &mut f))
+        } else {
+            SCHED.with_current(|cur| {
+                cur.space()
+                    .handles()
+                    .get::<Arsc<TaskSpace>>(space)?
+                    .mem()
+                    .get(ptr, &mut f)
+            })
+        }
+    }
+    .and_then(|addr| {
+        unsafe { flags.write(f)? };
+        Ok(*addr)
+    })
+}
+
+#[syscall]
 fn mem_reprot(space: Handle, ptr: *mut u8, len: usize, flags: Flags) -> Result {
     let flags = check_flags(flags)?;
     unsafe {
