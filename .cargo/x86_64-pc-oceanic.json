@@ -12,8 +12,6 @@
     "executables": true,
     "position-independent-executables": true,
     "static-position-independent-executables": true,
-    "linker-flavor": "ld.lld",
-    "linker": "rust-lld",
     "pre-link-args": {
         "ld.lld": [
             "--build-id",
@@ -21,6 +19,14 @@
             "-zseparate-loadable-segments",
             "--pack-dyn-relocs=relr",
             "--pic-veneer"
+        ],
+        "gcc": [
+            "-Wl,--build-id",
+            "-zmax-page-size=4096",
+            "-zpack-relative-relocs",
+            "-zcombreloc",
+            "-fpic",
+            "-m64"
         ]
     },
     "panic-strategy": "abort",

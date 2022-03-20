@@ -1,8 +1,8 @@
-use std::{env, error::Error, fs, path::Path, process::Command};
+use std::{env, error::Error, ffi::OsString, fs, path::Path, process::Command};
 
 use structopt::StructOpt;
 
-use crate::{BOOTFS, H2O_BOOT, H2O_KERNEL, H2O_SYSCALL, H2O_TINIT, OC_LIB};
+use crate::{BOOTFS, DEBUG_DIR, H2O_BOOT, H2O_KERNEL, H2O_SYSCALL, H2O_TINIT, OC_LIB};
 
 #[derive(Debug, StructOpt)]
 pub enum Type {
@@ -20,10 +20,7 @@ pub struct Dist {
 impl Dist {
     pub fn build(self) -> Result<(), Box<dyn Error>> {
         let cargo = env::var("CARGO").unwrap_or_else(|_| "cargo".to_string());
-        let src_root = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .ancestors()
-            .nth(1)
-            .unwrap();
+        let src_root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
         let target_root = env::var("CARGO_TARGET_DIR")
             .unwrap_or_else(|_| src_root.join("target").to_string_lossy().to_string());
 
@@ -107,14 +104,6 @@ impl Dist {
 
         crate::gen::gen_bootfs(Path::new(BOOTFS).join("../BOOT.fs"))?;
 
-        // Generate debug symbols
-        println!("Generating debug symbols");
-        Command::new("sh")
-            .current_dir(src_root)
-            .arg("scripts/gendbg.sh")
-            .status()?
-            .exit_ok()?;
-
         match &self.ty {
             Type::Img => {
                 // Generate img
@@ -154,7 +143,7 @@ impl Dist {
     fn build_impl(
         &self,
         cargo: &str,
-        src_name: &str,
+        bin_name: &str,
         dst_name: &str,
         src_dir: impl AsRef<Path>,
         bin_dir: impl AsRef<Path>,
@@ -173,7 +162,55 @@ impl Dist {
         } else {
             bin_dir.as_ref().join("debug")
         };
-        fs::copy(bin_dir.join(src_name), target_dir.as_ref().join(dst_name))?;
+        fs::copy(bin_dir.join(bin_name), target_dir.as_ref().join(dst_name))?;
+        self.gen_debug(dst_name, target_dir, DEBUG_DIR)?;
+        Ok(())
+    }
+
+    fn gen_debug(
+        &self,
+        target_name: &str,
+        target_dir: impl AsRef<Path>,
+        dbg_dir: impl AsRef<Path>,
+    ) -> Result<(), Box<dyn Error>> {
+        let target_path = target_dir.as_ref().join(target_name);
+        {
+            let mut sym_name = OsString::from(target_name);
+            sym_name.push(".sym");
+            Command::new("llvm-objcopy")
+                .arg("--only-keep-debug")
+                .arg(&target_path)
+                .arg(dbg_dir.as_ref().join(sym_name))
+                .status()?;
+            Command::new("llvm-objcopy")
+                .arg("--strip-debug")
+                .arg(&target_path)
+                .status()?;
+        }
+        {
+            let mut asm_name = OsString::from(target_name);
+            asm_name.push(".asm");
+            fs::write(
+                dbg_dir.as_ref().join(asm_name),
+                Command::new("ndisasm")
+                    .arg(&target_path)
+                    .arg("-b 64")
+                    .output()?
+                    .stdout,
+            )?;
+        }
+        {
+            let mut txt_name = OsString::from(target_name);
+            txt_name.push(".txt");
+            fs::write(
+                dbg_dir.as_ref().join(txt_name),
+                Command::new("llvm-objdump")
+                    .arg("-x")
+                    .arg(&target_path)
+                    .output()?
+                    .stdout,
+            )?;
+        }
         Ok(())
     }
 }
