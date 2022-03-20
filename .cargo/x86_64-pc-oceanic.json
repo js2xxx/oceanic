@@ -12,6 +12,7 @@
     "executables": true,
     "position-independent-executables": true,
     "static-position-independent-executables": true,
+    "linker-flavor": "ld.lld",
     "pre-link-args": {
         "ld.lld": [
             "--build-id",

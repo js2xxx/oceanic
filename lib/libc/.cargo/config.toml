@@ -8,7 +8,7 @@ build-std-features = ["compiler-builtins-mem"]
 [profile.dev]
 incremental = true
 lto = 'thin'
-opt-level = 2
+opt-level = 1
 panic = 'abort'
 
 [profile.release]
