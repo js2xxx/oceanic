@@ -11,5 +11,6 @@ crate-type = ["cdylib"]
 iter_ex = {path = "../../../h2o/libs/iter_ex"}
 solvent = {path = "../../h2o_rs", default-features = false, features = ["stub"]}
 # External crates
+cstr_core = "0.2"
 log = "0.4"
 object = {version = "0.28", default-features = false, features = ["elf"]}

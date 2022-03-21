@@ -4,10 +4,13 @@ use core::{
     sync::atomic::{AtomicU32, Ordering::*},
 };
 
+use cstr_core::CStr;
 use iter_ex::PointerIterator;
 use solvent::prelude::*;
 
 use crate::{elf::*, load_address, vdso_map};
+
+type E = Endianness;
 
 static mut SELF: MaybeUninit<Dso> = MaybeUninit::uninit();
 static mut VDSO: MaybeUninit<Dso> = MaybeUninit::uninit();
@@ -18,17 +21,23 @@ pub struct Dso {
     base: usize,
     name: &'static str,
     is_dyn: bool,
+    endian: E,
+    dyn_offset: usize,
 
-    phdr: PointerIterator<ProgramHeader64<Endianness>>,
+    phdr: PointerIterator<ProgramHeader64<E>>,
 
     loads_start: usize,
     loads_end: usize,
 
-    dyn_start: usize,
-    dyn_end: usize,
-
     relro_start: usize,
     relro_end: usize,
+
+    syms_offset: usize,
+    strs_offset: usize,
+    got_offset: usize,
+    gnu_hash_offset: usize,
+
+    so_name: &'static CStr,
 }
 
 impl Dso {
@@ -66,14 +75,15 @@ fn next_id() -> u32 {
 /// The caller must ensure that the mapping for the DSO is initialized.
 unsafe fn init_mapped(dso: &mut Dso) {
     // SAFETY: The mapping is already initialized.
-    let header = unsafe { ptr::read(dso.base as *const FileHeader64<Endianness>) };
+    let header = unsafe { ptr::read(dso.base as *const FileHeader64<E>) };
     assert!(header.e_ident.magic == ELFMAG);
-    let endian = if header.e_ident.data == ELFDATA2MSB {
-        Endianness::Big
+    let e = if header.e_ident.data == ELFDATA2MSB {
+        E::Big
     } else {
-        Endianness::Little
+        E::Little
     };
-    dso.is_dyn = match header.e_type.get(endian) {
+    dso.endian = e;
+    dso.is_dyn = match header.e_type.get(e) {
         ET_DYN => true,
         ET_EXEC => false,
         _ => unimplemented!(),
@@ -83,24 +93,21 @@ unsafe fn init_mapped(dso: &mut Dso) {
     let mut loads_end = 0;
 
     dso.phdr = PointerIterator::new(
-        dso.ptr::<ProgramHeader64<Endianness>>(header.e_phoff.get(endian) as usize),
-        header.e_phnum.get(endian) as usize,
-        header.e_phentsize.get(endian) as usize,
+        dso.ptr::<ProgramHeader64<E>>(header.e_phoff.get(e) as usize),
+        header.e_phnum.get(e) as usize,
+        header.e_phentsize.get(e) as usize,
     );
     for phdr in dso.phdr {
         // SAFETY: The mapping is already initialized.
         let phdr = unsafe { ptr::read(phdr) };
-        let offset = phdr.p_vaddr.get(endian) as usize;
-        let len = phdr.p_memsz.get(endian) as usize;
-        match phdr.p_type.get(endian) {
+        let offset = phdr.p_vaddr.get(e) as usize;
+        let len = phdr.p_memsz.get(e) as usize;
+        match phdr.p_type.get(e) {
             PT_LOAD => {
                 loads_start = loads_start.min(offset);
                 loads_end = loads_end.max(offset + len);
             }
-            PT_DYNAMIC => {
-                dso.dyn_start = offset;
-                dso.dyn_end = offset + len;
-            }
+            PT_DYNAMIC => dso.dyn_offset = offset,
             PT_GNU_RELRO => {
                 dso.relro_start = offset;
                 dso.relro_end = offset + len;
@@ -113,6 +120,28 @@ unsafe fn init_mapped(dso: &mut Dso) {
     dso.loads_end = (loads_end + PAGE_MASK) & !PAGE_MASK;
 
     dso.id = next_id();
+    decode_dyn(dso);
+}
+
+unsafe fn decode_dyn(dso: &mut Dso) {
+    let e = dso.endian;
+
+    let mut dyn_ptr = dso.ptr::<Dyn64<E>>(dso.dyn_offset);
+    loop {
+        let dynamic = ptr::read(dyn_ptr);
+        let tag = dynamic.d_tag.get(e) as u32;
+        let val = dynamic.d_val.get(e) as usize;
+        match tag {
+            DT_NULL => break,
+            DT_SYMTAB => dso.syms_offset = val,
+            DT_STRTAB => dso.strs_offset = val,
+            DT_PLTGOT => dso.got_offset = val,
+            DT_GNU_HASH => dso.gnu_hash_offset = val,
+            DT_SONAME => dso.so_name = CStr::from_ptr(dso.ptr(val)),
+            _ => {}
+        }
+        dyn_ptr = dyn_ptr.add(1);
+    }
 }
 
 pub fn init() {

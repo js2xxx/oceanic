@@ -15,7 +15,6 @@
 #![feature(toowned_clone_into)]
 #![feature(vec_into_raw_parts)]
 
-mod c_str;
 mod load;
 mod log;
 mod mem;

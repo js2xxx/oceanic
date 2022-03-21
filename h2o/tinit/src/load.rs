@@ -1,6 +1,7 @@
 use core::{alloc::Layout, ptr::NonNull};
 
 use bootfs::parse::Directory;
+use cstr_core::CStr;
 use object::{
     elf::{PF_R, PF_W, PF_X, PT_GNU_STACK, PT_INTERP, PT_LOAD},
     read::{
@@ -13,8 +14,6 @@ use solvent::prelude::{Flags, Phys, PhysRef, Space, PAGE_LAYOUT, PAGE_MASK, PAGE
 use sv_call::task::DEFAULT_STACK_SIZE;
 
 const STACK_PROTECTOR_SIZE: usize = PAGE_SIZE;
-
-use crate::c_str::CStr;
 
 pub struct Image<'a> {
     data: &'a [u8],
