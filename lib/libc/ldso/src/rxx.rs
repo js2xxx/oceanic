@@ -102,7 +102,7 @@ unsafe extern "C" fn dl_start(init_chan: Handle, vdso_map: usize) -> DlReturn {
     let mut dynamic = dynamic() as *mut Dyn64<Endianness>;
     let (mut rel, mut crel) = (None, None);
     let (mut rela, mut crela) = (None, None);
-    let (mut relr, mut crelr) = (None, None);
+    let (mut relr, mut szrelr) = (None, None);
 
     while (*dynamic).d_tag.get(endian) != DT_NULL.into() {
         let d_tag = (*dynamic).d_tag.get(endian) as u32;
@@ -113,7 +113,7 @@ unsafe extern "C" fn dl_start(init_chan: Handle, vdso_map: usize) -> DlReturn {
             DT_RELA => rela = Some((base as *mut u8).add(d_val)),
             DT_RELACOUNT => crela = Some(d_val),
             DT_RELR => relr = Some((base as *mut u8).add(d_val)),
-            DT_RELRSZ => crelr = Some(d_val),
+            DT_RELRSZ => szrelr = Some(d_val),
             _ => {}
         }
         dynamic = dynamic.add(1);
@@ -138,8 +138,8 @@ unsafe extern "C" fn dl_start(init_chan: Handle, vdso_map: usize) -> DlReturn {
         }
     }
 
-    if let (Some(relr), Some(len)) = (relr, crelr) {
-        apply_relr(base.cast(), relr.cast(), len);
+    if let (Some(relr), Some(size)) = (relr, szrelr) {
+        apply_relr(base.cast(), relr.cast(), size);
     }
 
     atomic::fence(SeqCst);

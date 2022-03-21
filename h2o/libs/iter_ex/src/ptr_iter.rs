@@ -20,6 +20,10 @@ impl<T> PointerIterator<T> {
             _t: PhantomData,
         }
     }
+
+    pub fn new_size(ptr: *mut T, size: usize, step: usize) -> Self {
+        Self::new(ptr, size / step, step)
+    }
 }
 
 impl<T> Iterator for PointerIterator<T> {
