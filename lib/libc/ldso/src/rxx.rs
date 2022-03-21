@@ -1,9 +1,11 @@
-use core::sync::atomic::{self, Ordering::SeqCst};
+use core::{
+    mem::MaybeUninit,
+    sync::atomic::{self, Ordering::SeqCst},
+};
 
-use object::{elf::*, Endianness};
-use solvent::prelude::Handle;
+use solvent::prelude::{Channel, Handle, Object};
 
-use crate::{elf::apply_relr, DT_RELR, DT_RELRSZ};
+use crate::elf::*;
 
 #[panic_handler]
 fn rust_begin_unwind(info: &core::panic::PanicInfo) -> ! {
@@ -24,31 +26,54 @@ fn rust_oom(layout: core::alloc::Layout) -> ! {
     }
 }
 
-static mut BASE: usize = 0;
 pub fn load_address() -> usize {
-    unsafe { BASE }
+    let mut ret: usize;
+    unsafe {
+        core::arch::asm!(
+            "
+        .weak   __ehdr_start
+        .hidden __ehdr_start
+        lea {}, [rip + __ehdr_start]",
+            out(reg) ret
+        );
+    }
+    ret
 }
 
-static mut DYN: usize = 0;
 pub fn dynamic() -> usize {
-    unsafe { DYN }
+    let mut ret: usize;
+    unsafe {
+        core::arch::asm!(
+            "
+        .weak   _DYNAMIC
+        .hidden _DYNAMIC
+        lea {}, [rip + _DYNAMIC]",
+            out(reg) ret
+        );
+    }
+    ret
+}
+
+static mut _VDSO_MAP: usize = 0;
+pub fn vdso_map() -> usize {
+    unsafe { _VDSO_MAP }
+}
+
+static mut _INIT_CHANNEL: MaybeUninit<Channel> = MaybeUninit::uninit();
+pub fn init_channel() -> &'static Channel {
+    unsafe { _INIT_CHANNEL.assume_init_ref() }
 }
 
 #[no_mangle]
 #[naked]
-pub unsafe extern "C" fn _start() -> ! {
+unsafe extern "C" fn _start() -> ! {
     core::arch::asm!(
         "
-        .weak   __ehdr_start
-        .hidden __ehdr_start
-        .weak   _DYNAMIC
-        .hidden _DYNAMIC
-
         and rsp, ~0xF
         xor rbp, rbp
-        lea rdx, [rip + __ehdr_start]
-        lea rcx, [rip + _DYNAMIC]
+        
         call {dl_start}
+
         mov rdi, rax
         push rbp
         jmp rdx",
@@ -63,15 +88,10 @@ pub struct DlReturn {
     pub entry: usize,
 }
 
-unsafe extern "C" fn dl_start(
-    init_chan: Handle,
-    vdso_map: *mut u8,
-    base_addr: usize,
-    dynamic_addr: usize,
-) -> DlReturn {
+unsafe extern "C" fn dl_start(init_chan: Handle, vdso_map: usize) -> DlReturn {
     assert!(init_chan != Handle::NULL);
 
-    let base = base_addr as *mut FileHeader64<Endianness>;
+    let base = load_address() as *mut FileHeader64<Endianness>;
     assert!((*base).e_ident.magic == ELFMAG);
     let endian = if (*base).e_ident.data == ELFDATA2MSB {
         Endianness::Big
@@ -79,7 +99,7 @@ unsafe extern "C" fn dl_start(
         Endianness::Little
     };
 
-    let mut dynamic = dynamic_addr as *mut Dyn64<Endianness>;
+    let mut dynamic = dynamic() as *mut Dyn64<Endianness>;
     let (mut rel, mut crel) = (None, None);
     let (mut rela, mut crela) = (None, None);
     let (mut relr, mut crelr) = (None, None);
@@ -123,8 +143,8 @@ unsafe extern "C" fn dl_start(
     }
 
     atomic::fence(SeqCst);
+    _INIT_CHANNEL.write(Channel::from_raw(init_chan));
+    _VDSO_MAP = vdso_map;
 
-    BASE = base_addr;
-    DYN = dynamic_addr;
-    crate::dl_main(init_chan, vdso_map)
+    crate::dl_main()
 }

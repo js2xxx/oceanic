@@ -8,6 +8,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 # Local crates
+iter_ex = {path = "../../../h2o/libs/iter_ex"}
 solvent = {path = "../../h2o_rs", default-features = false, features = ["stub"]}
 # External crates
 log = "0.4"

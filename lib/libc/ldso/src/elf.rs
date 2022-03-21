@@ -1,5 +1,15 @@
 use core::mem;
 
+pub use object::{elf::*, Endianness};
+
+pub const DT_RELR: u32 = 36;
+pub const DT_RELRSZ: u32 = 35;
+pub const DT_RELRENT: u32 = 37;
+
+/// # Safety
+///
+/// `base` must contains a valid reference to a statically mapped ELF structure
+/// and `relr` must be the RELR entry in its dynamic section.
 #[inline(always)]
 pub unsafe fn apply_relr(base: *mut u8, relr: *const usize, len: usize) {
     let len = len / mem::size_of::<usize>();

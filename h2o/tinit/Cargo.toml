@@ -10,7 +10,7 @@ path = "src/tmain.rs"
 
 [dependencies]
 # Local crates
-bootfs = {path = "../../lib/bootfs"}
+bootfs = {path = "../../lib/bootfs", default-features = false}
 heap = {path = "../libs/heap"}
 solvent = {path = "../../lib/h2o_rs", default-features = false, features = ["call", "alloc"]}
 sv-call = {path = "../libs/syscall", default-features = false, features = ["call"]}

@@ -1,4 +1,4 @@
-use core::marker::PhantomData;
+use core::{marker::PhantomData, ptr::null_mut};
 
 #[derive(Debug, Clone, Copy)]
 pub struct PointerIterator<T> {
@@ -52,5 +52,16 @@ impl<'a, T: Copy> IntoIterator for &'a PointerIterator<T> {
 
     fn into_iter(self) -> Self::IntoIter {
         *self
+    }
+}
+
+impl<T> Default for PointerIterator<T> {
+    fn default() -> Self {
+        Self {
+            ptr: null_mut(),
+            len: 0,
+            step: 1,
+            _t: PhantomData,
+        }
     }
 }
