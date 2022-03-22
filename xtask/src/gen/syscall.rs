@@ -15,7 +15,7 @@ pub struct SyscallArg {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SyscallFn {
-    name: String,
+    pub name: String,
     returns: String,
     args: Vec<SyscallArg>,
 }
