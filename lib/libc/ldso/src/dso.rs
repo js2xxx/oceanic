@@ -60,10 +60,9 @@ pub struct Dso {
     name: &'static str,
 
     segments: &'static [ProgramHeader],
-    sections: &'static [SectionHeader],
     dynamic: &'static [Dyn],
 
-    relocate: Once,
+    relocate: Once<Result>,
 }
 
 impl Dso {
@@ -78,24 +77,19 @@ impl Dso {
 
         let base = DsoBase::new(base, header.e_type);
 
-        let (segments, sections) = unsafe {
+        // Sections are not loaded by default, so it can't be used at runtime.
+        let segments = unsafe {
             assert_eq!(header.e_phentsize as usize, mem::size_of::<ProgramHeader>());
-            assert_eq!(header.e_shentsize as usize, mem::size_of::<SectionHeader>());
-            (
-                slice::from_raw_parts(
-                    base.ptr::<ProgramHeader>(header.e_phoff as usize),
-                    header.e_phnum as usize,
-                ),
-                slice::from_raw_parts(
-                    base.ptr::<SectionHeader>(header.e_shoff as usize),
-                    header.e_shnum as usize,
-                ),
+
+            slice::from_raw_parts(
+                base.ptr::<ProgramHeader>(header.e_phoff as usize),
+                header.e_phnum as usize,
             )
         };
 
         let dynamic = segments
             .iter()
-            .find(|seg| seg.p_type == ET_DYN.into())
+            .find(|seg| seg.p_type == PT_DYNAMIC)
             .and_then(|seg| unsafe {
                 let size = mem::size_of::<Dyn>();
                 slice::from_raw_parts(
@@ -112,7 +106,6 @@ impl Dso {
             base,
             name,
             segments,
-            sections,
             dynamic: dynamic.unwrap_or(&[]),
             relocate: Once::new(),
         }
@@ -129,43 +122,20 @@ impl Dso {
         self.segments.get(index)
     }
 
-    pub fn section(&self, index: usize) -> Option<&SectionHeader> {
-        self.sections.get(index)
-    }
-
-    pub fn section_by_addr(&self, addr: *mut u8) -> Option<&SectionHeader> {
-        self.sections.iter().find(|section| {
-            let base = self.base.ptr(section.sh_addr as usize);
-            let end = self.base.ptr((section.sh_addr + section.sh_size) as usize);
-            base <= addr && addr <= end
-        })
-    }
-
-    unsafe fn section_data<T>(&self, section: &SectionHeader) -> &[T] {
-        assert_eq!(section.sh_entsize as usize, mem::size_of::<T>());
-        slice::from_raw_parts(
-            self.base.ptr(section.sh_addr as usize),
-            section.sh_size as usize / mem::size_of::<T>(),
-        )
-    }
-
     fn dyn_val(&self, tag: u64) -> Option<usize> {
         self.dynamic
             .iter()
             .find_map(|d| (d.d_tag == tag).then(|| d.d_val as usize))
     }
 
-    unsafe fn section_by_dyn<T>(&self, tag: u64) -> Option<&[T]> {
-        self.dyn_val(tag)
-            .and_then(|offset| self.section_by_addr(self.base.ptr(offset)))
-            .map(|section| self.section_data(section))
+    unsafe fn dyn_ptr<T>(&self, tag: u64) -> Option<*mut T> {
+        self.dyn_val(tag).map(|offset| self.base.ptr(offset))
     }
 
-    unsafe fn slice_by_dyn<T>(&self, tag_offset: u64, tag_size: u64) -> Option<&[T]> {
-        self.dyn_val(tag_offset).and_then(|offset| {
-            self.dyn_val(tag_size).map(|size| unsafe {
-                slice::from_raw_parts(self.base.ptr(offset), size / mem::size_of::<T>())
-            })
+    unsafe fn dyn_slice<T>(&self, tag_offset: u64, tag_size: u64) -> Option<&[T]> {
+        self.dyn_ptr(tag_offset).and_then(|ptr| {
+            self.dyn_val(tag_size)
+                .map(|size| unsafe { slice::from_raw_parts(ptr, size / mem::size_of::<T>()) })
         })
     }
 }
@@ -244,30 +214,30 @@ impl DsoList {
         None
     }
 
-    pub fn relocate(&self) -> Result<()> {
+    pub fn relocate(&self) -> Result {
         let mut cursor = self.head;
         while let Some(ptr) = cursor {
             let dso = unsafe { ptr.as_ref() };
 
-            dso.relocate.call_once(|| {
+            let ret = *dso.relocate.call_once(|| {
                 if dso.base.get() != load_address() {
                     if let Some((offset, size)) = dso.dyn_val(DT_RELR).zip(dso.dyn_val(DT_RELRSZ)) {
                         unsafe { apply_relr(dso.base.ptr(0), dso.base.ptr(offset), size) }
                     }
                 }
 
-                let symbols = unsafe { dso.section_by_dyn::<Sym>(DT_SYMTAB) }.unwrap_or(&[]);
-                let strings = unsafe { dso.section_by_dyn::<i8>(DT_STRTAB) }.unwrap_or(&[]);
+                let symbols = unsafe { dso.dyn_ptr::<Sym>(DT_SYMTAB) }.ok_or(Error::ENOENT)?;
+                let strings = unsafe { dso.dyn_ptr::<i8>(DT_STRTAB) }.ok_or(Error::ENOENT)?;
 
-                let rel = unsafe { dso.slice_by_dyn::<Rel>(DT_REL, DT_RELSZ) }.unwrap_or(&[]);
-                let rela = unsafe { dso.slice_by_dyn::<Rela>(DT_RELA, DT_RELASZ) }.unwrap_or(&[]);
+                let rel = unsafe { dso.dyn_slice::<Rel>(DT_REL, DT_RELSZ) }.unwrap_or(&[]);
+                let rela = unsafe { dso.dyn_slice::<Rela>(DT_RELA, DT_RELASZ) }.unwrap_or(&[]);
 
                 for reloc in Reloc::from_iter(rel.iter(), rela.iter()) {
                     let reloc_ptr = dso.base.ptr(reloc.offset);
 
-                    let sym = symbols[reloc.sym_index];
+                    let sym = unsafe { ptr::read(symbols.add(reloc.sym_index)) };
                     let def = if reloc.sym_index != 0 {
-                        let name = unsafe { CStr::from_ptr(&strings[sym.st_name as usize]) };
+                        let name = unsafe { CStr::from_ptr(strings.add(sym.st_name as usize)) };
                         if st_type(sym.st_info) == STT_SECTION {
                             Some((&*dso, sym))
                         } else {
@@ -302,7 +272,10 @@ impl DsoList {
                         }
                     }
                 }
+
+                Ok(())
             });
+            ret?;
 
             cursor = unsafe { (*dso.link.get()).next };
         }
