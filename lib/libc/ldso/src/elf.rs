@@ -1,12 +1,17 @@
 use core::mem;
 
-pub use object::{elf::*, Endianness};
+pub use goblin::elf64::{
+    dynamic::*, gnu_hash::*, header::*, program_header::*, reloc::*, section_header::*, sym::*,
+    Note,
+};
 
-pub const DT_RELR: u32 = 36;
-pub const DT_RELRSZ: u32 = 35;
-pub const DT_RELRENT: u32 = 37;
+pub const PT_NUM: u32 = 10;
 
-pub const DT_NUM: u32 = 38;
+pub const DT_RELR: u64 = 36;
+pub const DT_RELRSZ: u64 = 35;
+pub const DT_RELRENT: u64 = 37;
+
+pub const DT_NUM: u64 = 38;
 
 /// # Safety
 ///

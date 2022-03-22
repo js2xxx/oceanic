@@ -12,5 +12,6 @@ iter_ex = {path = "../../../h2o/libs/iter_ex"}
 solvent = {path = "../../h2o_rs", default-features = false, features = ["stub"]}
 # External crates
 cstr_core = "0.2"
+goblin = {version = "0.4", default-features = false, features = ["elf64"]}
 log = "0.4"
-object = {version = "0.28", default-features = false, features = ["elf"]}
+spin = {version = "0.9", features = ["use_ticket_mutex"]}

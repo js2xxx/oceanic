@@ -183,7 +183,11 @@ pub(crate) fn modify_page(
     }
 }
 
-pub(crate) fn get_page(root_table: &Table, virt: LAddr, id_off: usize) -> Result<(PAddr, Attr), Error> {
+pub(crate) fn get_page(
+    root_table: &Table,
+    virt: LAddr,
+    id_off: usize,
+) -> Result<(PAddr, Attr), Error> {
     let mut table: NonNull<Table> = NonNull::from(root_table);
     let mut lvl = Level::P4;
     loop {
