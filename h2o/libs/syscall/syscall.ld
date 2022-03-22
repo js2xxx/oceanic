@@ -1,20 +1,18 @@
 SECTIONS
 {
-    .note.gnu.build-id  : { *(.note.gnu.build-id) }
+    . = SIZEOF_HEADERS;
+    .note.gnu.build-id  : { *(.note.gnu.build-id) } :note
 
-    .hash       : { *(.hash) } :text
-    .gnu.hash   : { *(.gnu.hash) }
-    .dynsym     : { *(.dynsym) }
-    .dynstr     : { *(.dynstr) }
-    .text       : { *(.text*) }
-    .dynamic    : { *(.dynamic*) }
+    .text       : { *(.text*) }     :load
+    .dynamic    : { *(.dynamic*) }  :load :dynamic
 
     /DISCARD/ : { *(.comment*) }
 }
 
 PHDRS
 {
-    text PT_LOAD FLAGS(5);
+    phdr PT_PHDR PHDRS FLAGS(4);
+    load PT_LOAD FILEHDR FLAGS(5);
     dynamic PT_DYNAMIC FLAGS(4);
     note PT_NOTE FLAGS(4);
 }

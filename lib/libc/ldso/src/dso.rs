@@ -12,7 +12,7 @@ use spin::Once;
 
 use crate::{elf::*, load_address, vdso_map};
 
-static mut SELF: MaybeUninit<Dso> = MaybeUninit::uninit();
+static mut LDSO: MaybeUninit<Dso> = MaybeUninit::uninit();
 static mut VDSO: MaybeUninit<Dso> = MaybeUninit::uninit();
 
 #[derive(Debug, Copy, Clone)]
@@ -61,6 +61,7 @@ pub struct Dso {
 
     segments: &'static [ProgramHeader],
     dynamic: &'static [Dyn],
+    gnu_hash: GnuHash<'static>,
 
     relocate: Once<Result>,
 }
@@ -69,7 +70,7 @@ impl Dso {
     /// # Safety
     ///
     /// The caller must ensure that the mapping for the DSO is initialized.
-    unsafe fn new_static(base: usize, name: &'static str) -> Dso {
+    unsafe fn new_static(base: usize, name: &'static str) -> Result<Dso> {
         // SAFETY: The mapping is already initialized.
         let header = unsafe { ptr::read(base as *const Header) };
         assert_eq!(&header.e_ident[..SELFMAG], ELFMAG);
@@ -98,17 +99,34 @@ impl Dso {
                 )
                 .split(|d| d.d_tag == DT_NULL)
                 .next()
-            });
+            })
+            .ok_or(Error::ENOEXEC)?;
 
-        Dso {
+        let gnu_hash = {
+            let (gnu_hash, symt_len) = Self::gnu_hash_data(dynamic, &base).ok_or(Error::ENOENT)?;
+            let sym = unsafe {
+                let ptr = base.ptr(
+                    dynamic
+                        .iter()
+                        .find(|d| d.d_tag == DT_SYMTAB)
+                        .map(|d| d.d_val as usize)
+                        .expect("Failed to find symbol table"),
+                );
+                slice::from_raw_parts(ptr, symt_len)
+            };
+            GnuHash::from_raw_table(gnu_hash, sym).map_err(|_| Error::ENOEXEC)?
+        };
+
+        Ok(Dso {
             link: Default::default(),
             id: Self::next_id(),
             base,
             name,
             segments,
-            dynamic: dynamic.unwrap_or(&[]),
+            dynamic,
+            gnu_hash,
             relocate: Once::new(),
-        }
+        })
     }
 
     fn next_id() -> u32 {
@@ -120,6 +138,41 @@ impl Dso {
 impl Dso {
     pub fn segment(&self, index: usize) -> Option<&ProgramHeader> {
         self.segments.get(index)
+    }
+
+    fn gnu_hash_data<'a>(dynamic: &'a [Dyn], base: &DsoBase) -> Option<(&'a [u8], usize)> {
+        let offset = dynamic
+            .iter()
+            .find_map(|d| (d.d_tag == DT_GNU_HASH).then(|| d.d_val as usize))?;
+        let base = base.ptr::<u8>(offset);
+        let mut ptr = base;
+
+        unsafe {
+            let [bucket_count, sym_base, bloom_count, _] = ptr::read(ptr.cast::<[u32; 4]>());
+            ptr = ptr.add(4 * mem::size_of::<u32>());
+
+            // bloom_filters: [u64; bloom_count]
+            ptr = ptr.add(bloom_count as usize * mem::size_of::<u64>());
+
+            let buckets = slice::from_raw_parts(ptr.cast::<u32>(), bucket_count as usize);
+            let mut ptr = ptr
+                .add(bucket_count as usize * mem::size_of::<u32>())
+                .cast::<u32>();
+
+            let mut max_sym = buckets.iter().max().copied().unwrap();
+            ptr = ptr.add((max_sym - sym_base) as usize);
+
+            loop {
+                let value = *ptr;
+                max_sym += 1;
+                ptr = ptr.add(1);
+                if value & 1 != 0 {
+                    let len = ptr.cast::<u8>().offset_from(base) as usize;
+                    let data = slice::from_raw_parts(base, len);
+                    break Some((data, max_sym as usize));
+                }
+            }
+        }
     }
 
     fn dyn_val(&self, tag: u64) -> Option<usize> {
@@ -239,11 +292,11 @@ impl DsoList {
                     let def = if reloc.sym_index != 0 {
                         let name = unsafe { CStr::from_ptr(strings.add(sym.st_name as usize)) };
                         if st_type(sym.st_info) == STT_SECTION {
-                            Some((&*dso, sym))
+                            Some((dso, sym))
                         } else {
                             self.find_symbol(
                                 name,
-                                (reloc.ty == R_X86_64_COPY).then(|| &*dso),
+                                (reloc.ty == R_X86_64_COPY).then(|| dso),
                                 reloc.ty == R_X86_64_JUMP_SLOT,
                             )
                         }
@@ -285,8 +338,9 @@ impl DsoList {
 
 pub fn init() {
     let list = unsafe {
-        let ldso = SELF.write(Dso::new_static(load_address(), "libc.so"));
-        let vdso = VDSO.write(Dso::new_static(vdso_map(), "<VDSO>"));
+        let ldso =
+            LDSO.write(Dso::new_static(load_address(), "libc.so").expect("Failed to init LDSO"));
+        let vdso = VDSO.write(Dso::new_static(vdso_map(), "<VDSO>").expect("Failed to init VDSO"));
         DsoList::new(ldso, vdso)
     };
     list.relocate().expect("Failed to relocate objects");
