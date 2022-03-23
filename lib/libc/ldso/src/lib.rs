@@ -16,15 +16,15 @@ pub use self::rxx::{dynamic, init_channel, load_address, vdso_map};
 
 fn dl_main() -> rxx::DlReturn {
     dso::init();
-    
-    unsafe {
-        *(0x12345 as *mut u8) = 0;
-    }
 
     let mut boot = Default::default();
     init_channel()
         .receive(&mut boot)
         .expect("Failed to receive boot message");
+    
+    unsafe {
+        *(0x12345 as *mut u8) = 0;
+    }
 
     todo!()
 }

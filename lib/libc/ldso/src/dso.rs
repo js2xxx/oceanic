@@ -1,5 +1,6 @@
 use core::{
     cell::UnsafeCell,
+    marker::PhantomData,
     mem::{self, MaybeUninit},
     ptr::{self, NonNull},
     slice,
@@ -102,20 +103,26 @@ impl Dso {
             })
             .ok_or(Error::ENOEXEC)?;
 
-        let gnu_hash = {
-            let (gnu_hash, symt_len) = Self::gnu_hash_data(dynamic, &base).ok_or(Error::ENOENT)?;
-            let sym = unsafe {
-                let ptr = base.ptr(
-                    dynamic
-                        .iter()
-                        .find(|d| d.d_tag == DT_SYMTAB)
-                        .map(|d| d.d_val as usize)
-                        .expect("Failed to find symbol table"),
-                );
-                slice::from_raw_parts(ptr, symt_len)
-            };
-            GnuHash::from_raw_table(gnu_hash, sym).map_err(|_| Error::ENOEXEC)?
-        };
+        let gnu_hash = base.ptr(
+            dynamic
+                .iter()
+                .find_map(|d| (d.d_tag == DT_GNU_HASH).then(|| d.d_val as usize))
+                .expect("Failed to find GNU hash table"),
+        );
+        let syms = base.ptr(
+            dynamic
+                .iter()
+                .find_map(|d| (d.d_tag == DT_SYMTAB).then(|| d.d_val as usize))
+                .expect("Failed to find symbol table"),
+        );
+        let strs = base.ptr(
+            dynamic
+                .iter()
+                .find_map(|d| (d.d_tag == DT_STRTAB).then(|| d.d_val as usize))
+                .expect("Failed to find symbol table"),
+        );
+
+        let gnu_hash = GnuHash::parse(gnu_hash, syms, strs);
 
         Ok(Dso {
             link: Default::default(),
@@ -138,41 +145,6 @@ impl Dso {
 impl Dso {
     pub fn segment(&self, index: usize) -> Option<&ProgramHeader> {
         self.segments.get(index)
-    }
-
-    fn gnu_hash_data<'a>(dynamic: &'a [Dyn], base: &DsoBase) -> Option<(&'a [u8], usize)> {
-        let offset = dynamic
-            .iter()
-            .find_map(|d| (d.d_tag == DT_GNU_HASH).then(|| d.d_val as usize))?;
-        let base = base.ptr::<u8>(offset);
-        let mut ptr = base;
-
-        unsafe {
-            let [bucket_count, sym_base, bloom_count, _] = ptr::read(ptr.cast::<[u32; 4]>());
-            ptr = ptr.add(4 * mem::size_of::<u32>());
-
-            // bloom_filters: [u64; bloom_count]
-            ptr = ptr.add(bloom_count as usize * mem::size_of::<u64>());
-
-            let buckets = slice::from_raw_parts(ptr.cast::<u32>(), bucket_count as usize);
-            let mut ptr = ptr
-                .add(bucket_count as usize * mem::size_of::<u32>())
-                .cast::<u32>();
-
-            let mut max_sym = buckets.iter().max().copied().unwrap();
-            ptr = ptr.add((max_sym - sym_base) as usize);
-
-            loop {
-                let value = *ptr;
-                max_sym += 1;
-                ptr = ptr.add(1);
-                if value & 1 != 0 {
-                    let len = ptr.cast::<u8>().offset_from(base) as usize;
-                    let data = slice::from_raw_parts(base, len);
-                    break Some((data, max_sym as usize));
-                }
-            }
-        }
     }
 
     fn dyn_val(&self, tag: u64) -> Option<usize> {
@@ -248,30 +220,71 @@ impl DsoList {
         }
     }
 
+    fn iter(&self) -> DsoIter {
+        DsoIter {
+            cur: self.head,
+            _marker: PhantomData,
+        }
+    }
+
     pub fn find_symbol(
         &self,
         name: &CStr,
         except: Option<&Dso>,
         needs_def: bool,
     ) -> Option<(&Dso, Sym)> {
-        let mut cursor = self.head;
-        while let Some(ptr) = cursor {
-            let dso = unsafe { ptr.as_ref() };
+        fn check_type(st_type: u8) -> bool {
+            st_type == STT_NOTYPE
+                || st_type == STT_COMMON
+                || st_type == STT_FUNC
+                || st_type == STT_OBJECT
+                || st_type == STT_TLS
+        }
+        fn check_bind(st_bind: u8) -> bool {
+            st_bind == STB_GLOBAL || st_bind == STB_WEAK || st_bind == STB_GNU_UNIQUE
+        }
 
-            if !matches!(except, Some(except) if ptr::eq(except, dso)) {
-                unimplemented!("find_symbol")
+        fn check_sym(sym: &Sym, needs_def: bool) -> bool {
+            let (ty, bind) = (st_type(sym.st_info), st_bind(sym.st_info));
+            // Needs an actual definition
+            !(sym.st_shndx == 0 && (needs_def || ty == STT_TLS))
+                && !(sym.st_value == 0 && ty != STT_TLS)
+                && check_type(ty)
+                && check_bind(bind)
+        }
+
+        let ghash = GnuHash::hash(name.to_bytes());
+        let mut ret = None;
+
+        for dso in self.iter() {
+            if matches!(except, Some(except) if ptr::eq(except, dso)) {
+                continue;
             }
 
-            cursor = unsafe { (*dso.link.get()).next };
+            let sym = match dso.gnu_hash.get_hashed(name, ghash) {
+                Some(sym) => sym,
+                None => continue,
+            };
+
+            let bind = st_bind(sym.st_info);
+            if !check_sym(sym, needs_def) {
+                continue;
+            }
+
+            if ret.is_some() && bind == STB_WEAK {
+                continue;
+            }
+
+            ret = Some((dso, *sym));
+            if bind == STB_GLOBAL {
+                break;
+            }
         }
-        None
+        ret
     }
 
     pub fn relocate(&self) -> Result {
-        let mut cursor = self.head;
-        while let Some(ptr) = cursor {
-            let dso = unsafe { ptr.as_ref() };
-
+        for dso in self.iter() {
             let ret = *dso.relocate.call_once(|| {
                 if dso.base.get() != load_address() {
                     if let Some((offset, size)) = dso.dyn_val(DT_RELR).zip(dso.dyn_val(DT_RELRSZ)) {
@@ -279,8 +292,8 @@ impl DsoList {
                     }
                 }
 
-                let symbols = unsafe { dso.dyn_ptr::<Sym>(DT_SYMTAB) }.ok_or(Error::ENOENT)?;
-                let strings = unsafe { dso.dyn_ptr::<i8>(DT_STRTAB) }.ok_or(Error::ENOENT)?;
+                let symbols = dso.gnu_hash.symbols();
+                let strings = dso.gnu_hash.string_base();
 
                 let rel = unsafe { dso.dyn_slice::<Rel>(DT_REL, DT_RELSZ) }.unwrap_or(&[]);
                 let rela = unsafe { dso.dyn_slice::<Rela>(DT_RELA, DT_RELASZ) }.unwrap_or(&[]);
@@ -288,14 +301,13 @@ impl DsoList {
                 for reloc in Reloc::from_iter(rel.iter(), rela.iter()) {
                     let reloc_ptr = dso.base.ptr(reloc.offset);
 
-                    let sym = unsafe { ptr::read(symbols.add(reloc.sym_index)) };
+                    let sym = symbols[reloc.sym_index];
                     let def = if reloc.sym_index != 0 {
-                        let name = unsafe { CStr::from_ptr(strings.add(sym.st_name as usize)) };
                         if st_type(sym.st_info) == STT_SECTION {
                             Some((dso, sym))
                         } else {
                             self.find_symbol(
-                                name,
+                                unsafe { CStr::from_ptr(strings.add(sym.st_name as usize)) },
                                 (reloc.ty == R_X86_64_COPY).then(|| dso),
                                 reloc.ty == R_X86_64_JUMP_SLOT,
                             )
@@ -329,10 +341,27 @@ impl DsoList {
                 Ok(())
             });
             ret?;
-
-            cursor = unsafe { (*dso.link.get()).next };
         }
         Ok(())
+    }
+}
+
+#[derive(Clone, Copy)]
+struct DsoIter<'a> {
+    cur: Option<NonNull<Dso>>,
+    _marker: PhantomData<&'a [Dso]>,
+}
+
+impl<'a> Iterator for DsoIter<'a> {
+    type Item = &'a Dso;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.cur.map(|cur| unsafe {
+            // Need an unbound lifetime to get 'a
+            let ret = &*cur.as_ptr();
+            self.cur = (*ret.link.get()).next;
+            ret
+        })
     }
 }
 
