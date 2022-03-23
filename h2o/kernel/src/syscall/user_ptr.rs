@@ -202,8 +202,9 @@ fn check_ptr(ptr: *mut u8, size: usize, align: usize) -> Result<()> {
     let is_in_range =
         minfo::USER_BASE <= ptr as usize && (ptr as usize).saturating_add(size) <= minfo::USER_END;
     let is_aligned = (ptr as usize) & (align - 1) == 0;
-    if !is_in_range {
-        Err(sv_call::Error::ERANGE)
+    // TODO: Decide whether to check the validity of pointers of empty slices.
+    if !is_in_range && size > 0 {
+        Err(sv_call::Error::EPERM)
     } else if !is_aligned {
         Err(sv_call::Error::EALIGN)
     } else {

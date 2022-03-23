@@ -16,10 +16,11 @@
 #![feature(vec_into_raw_parts)]
 
 mod load;
-mod log;
 mod mem;
 mod rxx;
 mod test;
+
+use alloc::vec;
 
 use bootfs::parse::Directory;
 use solvent::prelude::*;
@@ -62,8 +63,8 @@ fn map_bootfs(phys: &PhysRef) -> Directory<'static> {
 
 #[no_mangle]
 extern "C" fn tmain(init_chan: sv_call::Handle) {
-    log::init(::log::Level::Debug);
-    ::log::info!("Starting initialization");
+    dbglog::init(log::Level::Debug);
+    log::info!("Starting initialization");
     mem::init();
 
     unsafe { test::test_syscall() };
@@ -101,9 +102,16 @@ extern "C" fn tmain(init_chan: sv_call::Handle) {
     let vdso_base = space
         .map_vdso(Phys::clone(&vdso_phys))
         .expect("Failed to load VDSO");
-    ::log::debug!("{:?} {:?}", entry, stack);
+    log::debug!("{:?} {:?}", entry, stack);
 
-    let (_me, child) = Channel::new();
+    let (me, child) = Channel::new();
+
+    me.send(&Packet {
+        buffer: vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+        handles: vec![],
+        ..Default::default()
+    })
+    .expect("Failed to send packet");
 
     let task = Task::exec(
         Some("PROGMGR"),
@@ -115,8 +123,10 @@ extern "C" fn tmain(init_chan: sv_call::Handle) {
     )
     .expect("Failed to create the task");
 
-    let retval = task.join().expect("Failed to join the task");
-    ::log::debug!("{} {:?}", retval, Error::try_from_retval(retval));
+    log::debug!("Waiting for the task");
 
-    ::log::debug!("Reaching end of TINIT");
+    let retval = task.join().expect("Failed to join the task");
+    log::debug!("{} {:?}", retval, Error::try_from_retval(retval));
+
+    log::debug!("Reaching end of TINIT");
 }

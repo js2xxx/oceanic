@@ -12,19 +12,26 @@ pub mod elf;
 mod imp_alloc;
 pub mod rxx;
 
+use core::mem;
+
 pub use self::rxx::{dynamic, init_channel, load_address, vdso_map};
 
 fn dl_main() -> rxx::DlReturn {
-    dso::init();
+    let list = dso::init().expect("Failed to initialize the DSO list");
+    dbglog::init(log::Level::Debug);
+
+    log::debug!("dl_main started");
 
     let mut boot = Default::default();
     init_channel()
         .receive(&mut boot)
         .expect("Failed to receive boot message");
-    
-    unsafe {
-        *(0x12345 as *mut u8) = 0;
-    }
+    assert_eq!(&boot.buffer, &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
 
-    todo!()
+    log::debug!("Reaching end of the dynamic linker");
+
+    mem::forget(list);
+    loop {
+        unsafe { core::arch::asm!("pause") }
+    }
 }

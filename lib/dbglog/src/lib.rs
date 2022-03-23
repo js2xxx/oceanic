@@ -1,3 +1,5 @@
+#![no_std]
+
 static LOGGER: Logger = Logger;
 
 struct Logger;

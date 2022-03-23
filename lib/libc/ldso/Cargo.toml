@@ -8,6 +8,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 # Local crates
+dbglog = {path = "../../dbglog"}
 iter_ex = {path = "../../../h2o/libs/iter_ex"}
 solvent = {path = "../../h2o_rs"}
 # External crates

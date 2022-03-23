@@ -1,0 +1,14 @@
+[package]
+edition = "2021"
+name = "dbglog"
+version = "0.1.0"
+
+[features]
+call = ["sv-call/call"]
+default = ["sv-call/default"]
+
+[dependencies]
+# Local crates
+sv-call = {path = "../../h2o/libs/syscall", default-features = false}
+# External crates
+log = "0.4"

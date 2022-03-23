@@ -54,15 +54,19 @@ impl Phys {
     }
 
     pub fn read_into(&self, offset: usize, buffer: &mut [u8]) -> Result {
-        unsafe {
-            sv_call::sv_phys_read(
-                // SAFETY: We don't move the ownership of the handle.
-                unsafe { self.raw() },
-                offset,
-                buffer.len(),
-                buffer.as_mut_ptr(),
-            )
-            .into_res()
+        if !buffer.is_empty() {
+            unsafe {
+                sv_call::sv_phys_read(
+                    // SAFETY: We don't move the ownership of the handle.
+                    unsafe { self.raw() },
+                    offset,
+                    buffer.len(),
+                    buffer.as_mut_ptr(),
+                )
+                .into_res()
+            }
+        } else {
+            Ok(())
         }
     }
 
@@ -82,9 +86,13 @@ impl Phys {
     ///
     /// The caller must guarantee the memory safety of sharing the object.
     pub unsafe fn write(&self, offset: usize, buffer: &[u8]) -> Result {
-        // SAFETY: We don't move the ownership of the handle.
-        sv_call::sv_phys_write(unsafe { self.raw() }, offset, buffer.len(), buffer.as_ptr())
-            .into_res()
+        if !buffer.is_empty() {
+            // SAFETY: We don't move the ownership of the handle.
+            sv_call::sv_phys_write(unsafe { self.raw() }, offset, buffer.len(), buffer.as_ptr())
+                .into_res()
+        } else {
+            Ok(())
+        }
     }
 }
 

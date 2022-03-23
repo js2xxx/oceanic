@@ -61,53 +61,62 @@ fn flags(seg_flags: u32) -> Flags {
     flags
 }
 
-fn load_phdr(
+fn load_seg(
     image: &PhysRef,
     space: &Space,
-    end: Endianness,
+    e: Endianness,
     seg: &impl ProgramHeader<Endian = object::Endianness>,
     kind: ObjectKind,
 ) -> Result<usize, Error> {
-    let msize = seg.p_memsz(end).into() as usize;
-    let fsize = seg.p_filesz(end).into() as usize;
-    let offset = seg.p_offset(end).into() as usize;
-    let address = seg.p_vaddr(end).into() as usize;
+    let msize = seg.p_memsz(e).into() as usize;
+    let fsize = seg.p_filesz(e).into() as usize;
+    let offset = seg.p_offset(e).into() as usize;
+    let address = seg.p_vaddr(e).into() as usize;
 
     if offset & PAGE_MASK != address & PAGE_MASK {
         return Err(Error::Solvent(solvent::error::Error::EALIGN));
     }
-    let fend = (offset + fsize).next_multiple_of(PAGE_SIZE);
+    let fend = (offset + fsize) & !PAGE_MASK;
+    let cend = offset + fsize;
     let mend = (offset + msize).next_multiple_of(PAGE_SIZE);
     let offset = offset & !PAGE_MASK;
     let address = address & !PAGE_MASK;
     let fsize = fend - offset;
-    let msize = mend - offset;
+    let csize = cend - fend;
+    let asize = mend.saturating_sub(fend);
 
     let data_phys = image
         .dup_sub(offset, fsize)
         .ok_or(Error::Solvent(solvent::error::Error::ERANGE))?;
 
-    let flags = flags(seg.p_flags(end));
+    let flags = flags(seg.p_flags(e));
 
-    let address = match kind {
-        ObjectKind::Dynamic => None,
-        _ => Some(address),
+    let base = match kind {
+        ObjectKind::Dynamic if fsize == 0 => None,
+        ObjectKind::Dynamic => Some(space.map_ref(None, data_phys, flags)?.as_mut_ptr() as usize),
+        _ if fsize == 0 => Some(address),
+        _ => Some(space.map_ref(Some(address), data_phys, flags)?.as_mut_ptr() as usize),
     };
-    let base = space.map_ref(address, data_phys, flags)?.as_mut_ptr() as usize;
 
-    if msize > fsize {
-        let address = base + fsize;
-        let len = msize - fsize;
+    let base = if asize > 0 {
+        let address = base.map(|base| base + fsize);
 
         let layout =
-            Layout::from_size_align(len, PAGE_SIZE).map_err(solvent::error::Error::from)?;
-        let mem = Phys::allocate(layout, flags)?;
-        space.map(Some(address), mem, 0, len, flags)?;
-    }
-    Ok(base)
+            Layout::from_size_align(asize, PAGE_SIZE).map_err(solvent::error::Error::from)?;
+        let mem = Phys::allocate(layout, flags | Flags::WRITABLE | Flags::ZEROED)?;
+
+        let cdata = image.read(fend, csize)?;
+        unsafe { mem.write(0, &cdata) }?;
+
+        let abase = space.map(address, mem, 0, asize, flags)?.as_mut_ptr() as usize;
+        Some(abase - fsize)
+    } else {
+        base
+    };
+    Ok(base.expect("Null segment"))
 }
 
-fn load_seg(
+fn load_segs(
     image: Image,
     bootfs: Directory,
     bootfs_phys: &PhysRef,
@@ -125,8 +134,8 @@ fn load_seg(
     let mut interp = None;
     for seg in file.raw_segments() {
         match seg.p_type(file.endian()) {
-            PT_LOAD => {
-                let base = load_phdr(&image.phys, space, file.endian(), seg, kind)?;
+            PT_LOAD if seg.p_memsz(file.endian()) > 0 => {
+                let base = load_seg(&image.phys, space, file.endian(), seg, kind)?;
                 let fbase = seg.p_offset(file.endian()) as usize;
                 let fend = fbase + seg.p_filesz(file.endian()) as usize;
                 if kind == ObjectKind::Dynamic && (fbase..fend).contains(&entry) {
@@ -163,7 +172,7 @@ fn load_seg(
             .inspect_err(|_| log::error!("Failed to find the interpreter for the executable"))?;
 
         let phys = crate::sub_phys(data, bootfs, bootfs_phys)?;
-        let (e, ss, sf) = load_seg(
+        let (e, ss, sf) = load_segs(
             unsafe { Image::new(data, phys).ok_or(Error::ENOENT) }?,
             bootfs,
             bootfs_phys,
@@ -183,7 +192,7 @@ pub fn load_elf(
     bootfs_phys: &PhysRef,
     space: &Space,
 ) -> Result<(NonNull<u8>, NonNull<u8>), Error> {
-    let (entry, stack_size, stack_flags) = load_seg(image, bootfs, bootfs_phys, space)?;
+    let (entry, stack_size, stack_flags) = load_segs(image, bootfs, bootfs_phys, space)?;
 
     let stack = {
         let stack_layout =

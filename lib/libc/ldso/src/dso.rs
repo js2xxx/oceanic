@@ -4,7 +4,7 @@ use core::{
     mem::{self, MaybeUninit},
     ptr::{self, NonNull},
     slice,
-    sync::atomic::{AtomicU32, Ordering::*},
+    sync::atomic::{self, AtomicU32, Ordering::*},
 };
 
 use cstr_core::CStr;
@@ -64,7 +64,7 @@ pub struct Dso {
     dynamic: &'static [Dyn],
     gnu_hash: GnuHash<'static>,
 
-    relocate: Once<Result>,
+    relocate: Once,
 }
 
 impl Dso {
@@ -107,19 +107,19 @@ impl Dso {
             dynamic
                 .iter()
                 .find_map(|d| (d.d_tag == DT_GNU_HASH).then(|| d.d_val as usize))
-                .expect("Failed to find GNU hash table"),
+                .ok_or(Error::ENOEXEC)?,
         );
         let syms = base.ptr(
             dynamic
                 .iter()
                 .find_map(|d| (d.d_tag == DT_SYMTAB).then(|| d.d_val as usize))
-                .expect("Failed to find symbol table"),
+                .ok_or(Error::ENOEXEC)?,
         );
         let strs = base.ptr(
             dynamic
                 .iter()
                 .find_map(|d| (d.d_tag == DT_STRTAB).then(|| d.d_val as usize))
-                .expect("Failed to find symbol table"),
+                .ok_or(Error::ENOEXEC)?,
         );
 
         let gnu_hash = GnuHash::parse(gnu_hash, syms, strs);
@@ -170,15 +170,6 @@ struct Reloc {
     addend: usize,
     ty: u32,
     sym_index: usize,
-}
-
-impl Reloc {
-    fn from_iter<'a>(
-        rel: impl Iterator<Item = &'a Rel> + 'a,
-        rela: impl Iterator<Item = &'a Rela> + 'a,
-    ) -> impl Iterator<Item = Reloc> + 'a {
-        rel.map(Self::from).chain(rela.map(Self::from))
-    }
 }
 
 impl From<&Rel> for Reloc {
@@ -283,9 +274,47 @@ impl DsoList {
         ret
     }
 
-    pub fn relocate(&self) -> Result {
+    fn relocate_impl(&self, dso: &Dso, symbols: &[Sym], strings: *const i8, reloc: Reloc) -> bool {
+        let reloc_ptr = dso.base.ptr(reloc.offset);
+
+        let sym = symbols[reloc.sym_index];
+        let def = if reloc.sym_index != 0 {
+            if st_type(sym.st_info) == STT_SECTION {
+                Some((dso, sym))
+            } else {
+                self.find_symbol(
+                    unsafe { CStr::from_ptr(strings.add(sym.st_name as usize)) },
+                    (reloc.ty == R_X86_64_COPY).then(|| dso),
+                    reloc.ty == R_X86_64_JUMP_SLOT,
+                )
+            }
+        } else {
+            None
+        };
+        let sym_val = def.as_ref().map_or(ptr::null_mut(), |(dso, sym)| {
+            dso.base.ptr(sym.st_value as usize)
+        });
+
+        unsafe {
+            match reloc.ty {
+                R_X86_64_NONE => return true,
+                R_X86_64_64 | R_X86_64_GLOB_DAT | R_X86_64_JUMP_SLOT => {
+                    *reloc_ptr = sym_val as usize + reloc.addend
+                }
+                R_X86_64_RELATIVE => *reloc_ptr = dso.base.get() + reloc.addend,
+                R_X86_64_COPY => {
+                    (reloc_ptr as *mut u8).copy_from_nonoverlapping(sym_val, sym.st_size as usize);
+                }
+                R_X86_64_PC32 => *reloc_ptr = sym_val as usize + reloc.addend - reloc_ptr as usize,
+                _ => unimplemented!("relocate other types"),
+            }
+        }
+        false
+    }
+
+    pub fn relocate(&self) {
         for dso in self.iter() {
-            let ret = *dso.relocate.call_once(|| {
+            dso.relocate.call_once(|| {
                 if dso.base.get() != load_address() {
                     if let Some((offset, size)) = dso.dyn_val(DT_RELR).zip(dso.dyn_val(DT_RELRSZ)) {
                         unsafe { apply_relr(dso.base.ptr(0), dso.base.ptr(offset), size) }
@@ -298,51 +327,13 @@ impl DsoList {
                 let rel = unsafe { dso.dyn_slice::<Rel>(DT_REL, DT_RELSZ) }.unwrap_or(&[]);
                 let rela = unsafe { dso.dyn_slice::<Rela>(DT_RELA, DT_RELASZ) }.unwrap_or(&[]);
 
-                for reloc in Reloc::from_iter(rel.iter(), rela.iter()) {
-                    let reloc_ptr = dso.base.ptr(reloc.offset);
-
-                    let sym = symbols[reloc.sym_index];
-                    let def = if reloc.sym_index != 0 {
-                        if st_type(sym.st_info) == STT_SECTION {
-                            Some((dso, sym))
-                        } else {
-                            self.find_symbol(
-                                unsafe { CStr::from_ptr(strings.add(sym.st_name as usize)) },
-                                (reloc.ty == R_X86_64_COPY).then(|| dso),
-                                reloc.ty == R_X86_64_JUMP_SLOT,
-                            )
-                        }
-                    } else {
-                        None
-                    };
-                    let sym_val = def.as_ref().map_or(ptr::null_mut(), |(dso, sym)| {
-                        dso.base.ptr(sym.st_value as usize)
-                    });
-
-                    unsafe {
-                        match reloc.ty {
-                            R_X86_64_NONE => break,
-                            R_X86_64_64 | R_X86_64_GLOB_DAT | R_X86_64_JUMP_SLOT => {
-                                *reloc_ptr = sym_val as usize + reloc.addend
-                            }
-                            R_X86_64_RELATIVE => *reloc_ptr = dso.base.get() + reloc.addend,
-                            R_X86_64_COPY => {
-                                (reloc_ptr as *mut u8)
-                                    .copy_from_nonoverlapping(sym_val, sym.st_size as usize);
-                            }
-                            R_X86_64_PC32 => {
-                                *reloc_ptr = sym_val as usize + reloc.addend - reloc_ptr as usize
-                            }
-                            _ => unimplemented!("relocate other types"),
-                        }
+                for reloc in { rel.iter().map(Reloc::from) }.chain(rela.iter().map(Reloc::from)) {
+                    if self.relocate_impl(dso, symbols, strings, reloc) {
+                        break;
                     }
                 }
-
-                Ok(())
             });
-            ret?;
         }
-        Ok(())
     }
 }
 
@@ -365,12 +356,13 @@ impl<'a> Iterator for DsoIter<'a> {
     }
 }
 
-pub fn init() {
+pub fn init() -> Result<DsoList> {
     let list = unsafe {
-        let ldso =
-            LDSO.write(Dso::new_static(load_address(), "libc.so").expect("Failed to init LDSO"));
-        let vdso = VDSO.write(Dso::new_static(vdso_map(), "<VDSO>").expect("Failed to init VDSO"));
+        let ldso = LDSO.write(Dso::new_static(load_address(), "libc.so")?);
+        let vdso = VDSO.write(Dso::new_static(vdso_map(), "<VDSO>")?);
         DsoList::new(ldso, vdso)
     };
-    list.relocate().expect("Failed to relocate objects");
+    list.relocate();
+    atomic::fence(SeqCst);
+    Ok(list)
 }
