@@ -116,13 +116,42 @@ fn load_seg(
     Ok(base.expect("Null segment"))
 }
 
-fn load_segs(
-    image: Image,
-    bootfs: Directory,
+fn load_segs<'a>(
+    mut image: Image<'a>,
+    bootfs: Directory<'a>,
     bootfs_phys: &PhysRef,
     space: &Space,
 ) -> Result<(NonNull<u8>, usize, Flags), Error> {
-    let file = ElfFile64::<'_, Endianness, _>::parse(image.data)?;
+    let file = loop {
+        let file = ElfFile64::<'a, Endianness, _>::parse(image.data)?;
+
+        match file
+            .raw_segments()
+            .iter()
+            .find(|seg| seg.p_type(file.endian()) == PT_INTERP)
+        {
+            Some(interp) => {
+                use solvent::error::Error as SvError;
+                let interp = CStr::from_bytes_with_nul(
+                    interp
+                        .data(file.endian(), file.data())
+                        .map_err(|_| SvError::EBUFFER)?,
+                )
+                .map_err(|_| SvError::EBUFFER)?;
+
+                let data = bootfs
+                    .find(interp.to_bytes(), b'/')
+                    .ok_or(SvError::ENOENT)
+                    .inspect_err(|_| {
+                        log::error!("Failed to find the interpreter for the executable")
+                    })?;
+
+                let phys = crate::sub_phys(data, bootfs, bootfs_phys)?;
+                image = unsafe { Image::new(data, phys).ok_or(SvError::ENOENT) }?;
+            }
+            None => break file,
+        }
+    };
 
     let mut entry = file.entry() as usize;
     let kind = file.kind();
@@ -131,7 +160,6 @@ fn load_segs(
         DEFAULT_STACK_SIZE,
         Flags::READABLE | Flags::WRITABLE | Flags::USER_ACCESS,
     );
-    let mut interp = None;
     for seg in file.raw_segments() {
         match seg.p_type(file.endian()) {
             PT_LOAD if seg.p_memsz(file.endian()) > 0 => {
@@ -149,40 +177,11 @@ fn load_segs(
                 }
                 stack_flags = flags(seg.p_flags(file.endian()));
             }
-            PT_INTERP => {
-                interp = Some(
-                    CStr::from_bytes_with_nul(
-                        seg.data(file.endian(), file.data())
-                            .expect("Index out of bounds"),
-                    )
-                    .expect("Not a valid cstring"),
-                )
-            }
             _ => {}
         }
     }
 
-    let mut entry = NonNull::new(entry as *mut u8).ok_or(solvent::error::Error::EINVAL)?;
-
-    if let Some(interp) = interp {
-        use solvent::error::Error;
-        let data = bootfs
-            .find(interp.to_bytes(), b'/')
-            .ok_or(Error::ENOENT)
-            .inspect_err(|_| log::error!("Failed to find the interpreter for the executable"))?;
-
-        let phys = crate::sub_phys(data, bootfs, bootfs_phys)?;
-        let (e, ss, sf) = load_segs(
-            unsafe { Image::new(data, phys).ok_or(Error::ENOENT) }?,
-            bootfs,
-            bootfs_phys,
-            space,
-        )?;
-        entry = e;
-        stack_size = stack_size.max(ss);
-        stack_flags |= sf;
-    };
-
+    let entry = NonNull::new(entry as *mut u8).ok_or(solvent::error::Error::EINVAL)?;
     Ok((entry, stack_size, stack_flags))
 }
 
