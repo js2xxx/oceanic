@@ -1,6 +1,6 @@
 use core::ptr::NonNull;
 
-use super::{Flags, Phys, PhysRef};
+use super::{Flags, Phys};
 use crate::{error::Result, obj::Object};
 
 #[repr(transparent)]
@@ -53,14 +53,8 @@ impl Space {
         }
     }
 
-    pub fn map_ref(
-        &self,
-        addr: Option<usize>,
-        phys_ref: PhysRef,
-        flags: Flags,
-    ) -> Result<NonNull<[u8]>> {
-        let len = phys_ref.len();
-        let phys = phys_ref.into_inner();
+    pub fn map_phys(&self, addr: Option<usize>, phys: Phys, flags: Flags) -> Result<NonNull<[u8]>> {
+        let len = phys.len();
         self.map(addr, phys, 0, len, flags)
     }
 

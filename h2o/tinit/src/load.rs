@@ -10,7 +10,7 @@ use object::{
     },
     Endianness, Object, ObjectKind,
 };
-use solvent::prelude::{Flags, Phys, PhysRef, Space, PAGE_LAYOUT, PAGE_MASK, PAGE_SIZE};
+use solvent::prelude::{Flags, Phys, Space, PAGE_LAYOUT, PAGE_MASK, PAGE_SIZE};
 use sv_call::task::DEFAULT_STACK_SIZE;
 
 const STACK_PROTECTOR_SIZE: usize = PAGE_SIZE;
@@ -18,14 +18,14 @@ const STACK_PROTECTOR_SIZE: usize = PAGE_SIZE;
 #[derive(Clone)]
 pub struct Image<'a> {
     data: &'a [u8],
-    phys: PhysRef,
+    phys: Phys,
 }
 
 impl<'a> Image<'a> {
     /// # Safety
     ///
     /// `data` must be the mapped memory location corresponding to `phys`.
-    pub unsafe fn new(data: &'a [u8], phys: PhysRef) -> Option<Self> {
+    pub unsafe fn new(data: &'a [u8], phys: Phys) -> Option<Self> {
         (data.len().next_multiple_of(PAGE_SIZE) == phys.len()).then(|| Image { data, phys })
     }
 }
@@ -63,7 +63,7 @@ fn flags(seg_flags: u32) -> Flags {
 }
 
 fn load_seg(
-    image: &PhysRef,
+    image: &Phys,
     space: &Space,
     e: Endianness,
     seg: &impl ProgramHeader<Endian = object::Endianness>,
@@ -91,13 +91,13 @@ fn load_seg(
     let base = match kind {
         ObjectKind::Dynamic if fsize == 0 => None,
         ObjectKind::Dynamic => {
-            let data = image.create_sub(offset, fsize)?.into_ref();
-            Some(space.map_ref(None, data, flags)?.as_mut_ptr() as usize)
+            let data = image.create_sub(offset, fsize)?;
+            Some(space.map_phys(None, data, flags)?.as_mut_ptr() as usize)
         }
         _ if fsize == 0 => Some(address),
         _ => {
-            let data = image.create_sub(offset, fsize)?.into_ref();
-            Some(space.map_ref(Some(address), data, flags)?.as_mut_ptr() as usize)
+            let data = image.create_sub(offset, fsize)?;
+            Some(space.map_phys(Some(address), data, flags)?.as_mut_ptr() as usize)
         }
     };
 
@@ -122,7 +122,7 @@ fn load_seg(
 fn load_segs<'a>(
     mut image: Image<'a>,
     bootfs: Directory<'a>,
-    bootfs_phys: &PhysRef,
+    bootfs_phys: &Phys,
     space: &Space,
 ) -> Result<(NonNull<u8>, usize, Flags), Error> {
     let file = loop {
@@ -191,7 +191,7 @@ fn load_segs<'a>(
 pub fn load_elf(
     image: Image,
     bootfs: Directory,
-    bootfs_phys: &PhysRef,
+    bootfs_phys: &Phys,
     space: &Space,
 ) -> Result<(NonNull<u8>, NonNull<u8>), Error> {
     let (entry, stack_size, stack_flags) = load_segs(image, bootfs, bootfs_phys, space)?;

@@ -5,10 +5,7 @@ use core::alloc::Layout;
 
 pub use sv_call::mem::Flags;
 
-pub use self::{
-    phys::{Phys, PhysRef},
-    space::Space,
-};
+pub use self::{phys::Phys, space::Space};
 
 cfg_if::cfg_if! { if #[cfg(target_arch = "x86_64")] {
 

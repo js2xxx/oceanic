@@ -43,18 +43,16 @@ fn offset_sub<T>(slice: &[T], parent: &[T]) -> Option<usize> {
     })
 }
 
-fn sub_phys(bin_data: &[u8], bootfs: Directory, bootfs_phys: &PhysRef) -> Result<PhysRef> {
+fn sub_phys(bin_data: &[u8], bootfs: Directory, bootfs_phys: &Phys) -> Result<Phys> {
     let offset = offset_sub(bin_data, bootfs.image()).ok_or(Error::ERANGE)?;
-    bootfs_phys
-        .create_sub(offset, bin_data.len().next_multiple_of(PAGE_SIZE))
-        .map(Phys::into_ref)
+    bootfs_phys.create_sub(offset, bin_data.len().next_multiple_of(PAGE_SIZE))
 }
 
-fn map_bootfs(phys: &PhysRef) -> Directory<'static> {
+fn map_bootfs(phys: &Phys) -> Directory<'static> {
     let ptr = Space::current()
-        .map_ref(
+        .map_phys(
             None,
-            PhysRef::clone(phys),
+            Phys::clone(phys),
             Flags::READABLE | Flags::EXECUTABLE | Flags::USER_ACCESS,
         )
         .expect("Failed to map boot FS");
@@ -82,7 +80,7 @@ extern "C" fn tmain(init_chan: sv_call::Handle) {
     let vdso_phys = unsafe { Phys::from_raw(packet.handles[HandleIndex::Vdso as usize]) };
 
     let bootfs_phys =
-        unsafe { Phys::from_raw(packet.handles[HandleIndex::Bootfs as usize]) }.into_ref();
+        unsafe { Phys::from_raw(packet.handles[HandleIndex::Bootfs as usize]) };
     let bootfs = map_bootfs(&bootfs_phys);
 
     let bin = {

@@ -41,7 +41,7 @@ unsafe impl GlobalAlloc for DlAlloc {
             let size = (next_end - end).next_multiple_of(PAGE_SIZE);
             let layout = unsafe { Layout::from_size_align_unchecked(size, PAGE_SIZE) };
             let res = Phys::allocate(layout, flags)
-                .and_then(|phys| Space::current().map_ref(Some(end), phys.into_ref(), flags));
+                .and_then(|phys| Space::current().map_phys(Some(end), phys, flags));
             let next_end = match res {
                 Ok(mut ptr) => unsafe { ptr.as_mut().as_mut_ptr_range().end as usize },
                 Err(_) => handle_alloc_error(layout),
