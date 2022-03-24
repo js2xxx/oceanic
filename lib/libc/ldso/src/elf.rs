@@ -150,7 +150,9 @@ impl<'a> GnuHash<'a> {
     }
 
     pub fn get_hashed(&self, name: &CStr, hash: u32) -> Option<&'a Sym> {
-        self.maybe_contains(hash).then(|| self.lookup(name, hash)).flatten()
+        self.maybe_contains(hash)
+            .then(|| self.lookup(name, hash))
+            .flatten()
     }
 
     pub fn get(&self, name: &CStr) -> Option<&'a Sym> {

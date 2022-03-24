@@ -18,6 +18,16 @@
         ]
     },
     {
+        "name": "sv_phys_size",
+        "returns": "usize",
+        "args": [
+            {
+                "name": "hdl",
+                "ty": "Handle"
+            }
+        ]
+    },
+    {
         "name": "sv_phys_read",
         "returns": "()",
         "args": [
@@ -58,6 +68,24 @@
             {
                 "name": "buffer",
                 "ty": "*const u8"
+            }
+        ]
+    },
+    {
+        "name": "sv_phys_sub",
+        "returns": "Handle",
+        "args": [
+            {
+                "name": "hdl",
+                "ty": "Handle"
+            },
+            {
+                "name": "offset",
+                "ty": "usize"
+            },
+            {
+                "name": "len",
+                "ty": "usize"
             }
         ]
     },

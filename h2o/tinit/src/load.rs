@@ -15,6 +15,7 @@ use sv_call::task::DEFAULT_STACK_SIZE;
 
 const STACK_PROTECTOR_SIZE: usize = PAGE_SIZE;
 
+#[derive(Clone)]
 pub struct Image<'a> {
     data: &'a [u8],
     phys: PhysRef,
@@ -25,7 +26,7 @@ impl<'a> Image<'a> {
     ///
     /// `data` must be the mapped memory location corresponding to `phys`.
     pub unsafe fn new(data: &'a [u8], phys: PhysRef) -> Option<Self> {
-        (data.len() == phys.len()).then(|| Image { data, phys })
+        (data.len().next_multiple_of(PAGE_SIZE) == phys.len()).then(|| Image { data, phys })
     }
 }
 
@@ -85,17 +86,19 @@ fn load_seg(
     let csize = cend - fend;
     let asize = mend.saturating_sub(fend);
 
-    let data_phys = image
-        .dup_sub(offset, fsize)
-        .ok_or(Error::Solvent(solvent::error::Error::ERANGE))?;
-
     let flags = flags(seg.p_flags(e));
 
     let base = match kind {
         ObjectKind::Dynamic if fsize == 0 => None,
-        ObjectKind::Dynamic => Some(space.map_ref(None, data_phys, flags)?.as_mut_ptr() as usize),
+        ObjectKind::Dynamic => {
+            let data = image.create_sub(offset, fsize)?.into_ref();
+            Some(space.map_ref(None, data, flags)?.as_mut_ptr() as usize)
+        }
         _ if fsize == 0 => Some(address),
-        _ => Some(space.map_ref(Some(address), data_phys, flags)?.as_mut_ptr() as usize),
+        _ => {
+            let data = image.create_sub(offset, fsize)?.into_ref();
+            Some(space.map_ref(Some(address), data, flags)?.as_mut_ptr() as usize)
+        }
     };
 
     let base = if asize > 0 {

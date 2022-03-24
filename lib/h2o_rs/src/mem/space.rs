@@ -59,8 +59,9 @@ impl Space {
         phys_ref: PhysRef,
         flags: Flags,
     ) -> Result<NonNull<[u8]>> {
-        let (phys, phys_offset, len) = phys_ref.into_parts();
-        self.map(addr, phys, phys_offset, len, flags)
+        let len = phys_ref.len();
+        let phys = phys_ref.into_inner();
+        self.map(addr, phys, 0, len, flags)
     }
 
     pub fn map_vdso(&self, vdso: Phys) -> Result<NonNull<u8>> {

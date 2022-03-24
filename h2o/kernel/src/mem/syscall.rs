@@ -10,7 +10,10 @@ use sv_call::{
 use super::space::{self, Flags};
 use crate::{
     dev::Resource,
-    sched::{task::Space as TaskSpace, Arsc, PREEMPT, SCHED},
+    sched::{
+        task::{Space as TaskSpace, VDSO},
+        Arsc, PREEMPT, SCHED,
+    },
     syscall::{In, Out, UserPtr},
 };
 
@@ -36,14 +39,19 @@ fn phys_alloc(size: usize, align: usize, flags: Flags) -> Result<Handle> {
     SCHED.with_current(|cur| cur.space().handles().insert_shared(phys))
 }
 
-fn phys_rw_check<T: crate::syscall::Type>(
-    hdl: Handle,
-    offset: usize,
-    len: usize,
-    buffer: UserPtr<T, u8>,
-) -> Result<space::Phys> {
+#[syscall]
+fn phys_size(hdl: Handle) -> Result<usize> {
     hdl.check_null()?;
-    buffer.check_slice(len)?;
+    SCHED.with_current(|cur| {
+        cur.space()
+            .handles()
+            .get::<space::Phys>(hdl)
+            .map(|phys| phys.len())
+    })
+}
+
+fn phys_rw_check(hdl: Handle, offset: usize, len: usize) -> Result<space::Phys> {
+    hdl.check_null()?;
     let offset_end = offset.wrapping_add(len);
     if offset_end < offset {
         return Err(Error::ERANGE);
@@ -62,7 +70,8 @@ fn phys_rw_check<T: crate::syscall::Type>(
 
 #[syscall]
 fn phys_read(hdl: Handle, offset: usize, len: usize, buffer: UserPtr<Out, u8>) -> Result {
-    let phys = phys_rw_check(hdl, offset, len, buffer)?;
+    buffer.check_slice(len)?;
+    let phys = phys_rw_check(hdl, offset, len)?;
     if !phys.flags().contains(Flags::READABLE) {
         return Err(Error::EPERM);
     }
@@ -78,7 +87,8 @@ fn phys_read(hdl: Handle, offset: usize, len: usize, buffer: UserPtr<Out, u8>) -
 
 #[syscall]
 fn phys_write(hdl: Handle, offset: usize, len: usize, buffer: UserPtr<In, u8>) -> Result {
-    let phys = phys_rw_check(hdl, offset, len, buffer)?;
+    buffer.check_slice(len)?;
+    let phys = phys_rw_check(hdl, offset, len)?;
     if !phys.flags().contains(Flags::WRITABLE) {
         return Err(Error::EPERM);
     }
@@ -89,6 +99,17 @@ fn phys_write(hdl: Handle, offset: usize, len: usize, buffer: UserPtr<In, u8>) -
         }
     }
     Ok(())
+}
+
+#[syscall]
+fn phys_sub(hdl: Handle, offset: usize, len: usize) -> Result<Handle> {
+    let phys = phys_rw_check(hdl, offset, len)?;
+    if phys == *VDSO {
+        return Err(Error::EACCES);
+    }
+
+    let sub = phys.create_sub(offset, len)?;
+    SCHED.with_current(|cur| cur.space().handles().insert_shared(sub))
 }
 
 #[syscall]

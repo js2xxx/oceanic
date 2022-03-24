@@ -46,8 +46,8 @@ fn offset_sub<T>(slice: &[T], parent: &[T]) -> Option<usize> {
 fn sub_phys(bin_data: &[u8], bootfs: Directory, bootfs_phys: &PhysRef) -> Result<PhysRef> {
     let offset = offset_sub(bin_data, bootfs.image()).ok_or(Error::ERANGE)?;
     bootfs_phys
-        .dup_sub(offset, bin_data.len())
-        .ok_or(Error::ERANGE)
+        .create_sub(offset, bin_data.len().next_multiple_of(PAGE_SIZE))
+        .map(Phys::into_ref)
 }
 
 fn map_bootfs(phys: &PhysRef) -> Directory<'static> {
@@ -81,8 +81,8 @@ extern "C" fn tmain(init_chan: sv_call::Handle) {
 
     let vdso_phys = unsafe { Phys::from_raw(packet.handles[HandleIndex::Vdso as usize]) };
 
-    let bootfs_phys = unsafe { Phys::from_raw(packet.handles[HandleIndex::Bootfs as usize]) }
-        .into_ref(targs.bootfs_size);
+    let bootfs_phys =
+        unsafe { Phys::from_raw(packet.handles[HandleIndex::Bootfs as usize]) }.into_ref();
     let bootfs = map_bootfs(&bootfs_phys);
 
     let bin = {

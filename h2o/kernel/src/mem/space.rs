@@ -116,7 +116,7 @@ impl Space {
         self.ty
     }
 
-    /// Shorthand for `PhysRef::allocate` + `Space::map`.
+    /// Shorthand for `Phys::allocate` + `Space::map`.
     pub fn allocate(&self, layout: Layout, flags: Flags) -> sv_call::Result<NonNull<[u8]>> {
         self.canary.assert();
 
