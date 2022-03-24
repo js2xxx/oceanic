@@ -14,7 +14,6 @@ use spin::Mutex;
 use crate::{
     cpu::arch::apic::{lapic, DelivMode, Polarity, TriggerMode},
     mem::space::{self, Flags, Phys},
-    sched::Arsc,
 };
 
 const LEGACY_IRQ: Range<u32> = 0..16;
@@ -181,13 +180,7 @@ impl Ioapic {
         )
         .expect("Failed to acquire memory for I/O APIC");
         let addr = space::KRL
-            .map(
-                None,
-                Arsc::clone(&phys),
-                0,
-                phys.layout().size(),
-                phys.flags(),
-            )
+            .map(None, Phys::clone(&phys), 0, phys.len(), phys.flags())
             .expect("Failed to allocate memory");
         let base_ptr = addr.cast::<u32>();
         let mut ioapic = Ioapic {

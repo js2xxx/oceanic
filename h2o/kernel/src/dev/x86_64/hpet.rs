@@ -66,13 +66,7 @@ impl Hpet {
         )
         .map_err(|_| "Failed to acquire memory for HPET")?;
         let addr = space::KRL
-            .map(
-                None,
-                Arsc::clone(&phys),
-                0,
-                phys.layout().size(),
-                phys.flags(),
-            )
+            .map(None, Phys::clone(&phys), 0, phys.len(), phys.flags())
             .expect("Failed to allocate memory");
         let base_ptr = addr.cast::<HpetReg>();
 

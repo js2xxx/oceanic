@@ -41,7 +41,7 @@ fn phys_rw_check<T: crate::syscall::Type>(
     offset: usize,
     len: usize,
     buffer: UserPtr<T, u8>,
-) -> Result<Arsc<space::Phys>> {
+) -> Result<space::Phys> {
     hdl.check_null()?;
     buffer.check_slice(len)?;
     let offset_end = offset.wrapping_add(len);
@@ -51,10 +51,10 @@ fn phys_rw_check<T: crate::syscall::Type>(
     let phys = SCHED.with_current(|cur| {
         cur.space()
             .handles()
-            .get::<Arsc<space::Phys>>(hdl)
-            .map(|obj| Arsc::clone(obj))
+            .get::<space::Phys>(hdl)
+            .map(|obj| space::Phys::clone(obj))
     })?;
-    if offset_end > phys.layout().size() {
+    if offset_end > phys.len() {
         return Err(Error::ERANGE);
     }
     Ok(phys)
@@ -98,8 +98,8 @@ fn mem_map(space: Handle, mi: UserPtr<In, MapInfo>) -> Result<*mut u8> {
     let phys = SCHED.with_current(|cur| {
         cur.space()
             .handles()
-            .remove::<Arsc<space::Phys>>(mi.phys)
-            .and_then(|obj| Ok(Arsc::clone(obj.downcast_ref::<Arsc<space::Phys>>()?)))
+            .remove::<space::Phys>(mi.phys)
+            .and_then(|obj| Ok(space::Phys::clone(obj.downcast_ref::<space::Phys>()?)))
     })?;
     let op = |space: &Arsc<space::Space>| {
         let offset = if mi.map_addr {

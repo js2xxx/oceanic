@@ -88,7 +88,7 @@ pub struct Space {
 
     /// The general allocator.
     pub(super) range: Range<usize>,
-    map: Mutex<RangeMap<usize, Arsc<Phys>>>,
+    map: Mutex<RangeMap<usize, Phys>>,
 
     vdso: Mutex<Option<LAddr>>,
 }
@@ -116,16 +116,16 @@ impl Space {
         self.ty
     }
 
-    /// Shorthand for `Phys::allocate` + `Space::map`.
+    /// Shorthand for `PhysRef::allocate` + `Space::map`.
     pub fn allocate(&self, layout: Layout, flags: Flags) -> sv_call::Result<NonNull<[u8]>> {
         self.canary.assert();
 
         let phys = Phys::allocate(layout, flags)?;
-        let layout = phys.layout();
+        let len = phys.len();
 
-        self.map(None, phys, 0, layout.size(), flags).map(|addr| {
+        self.map(None, phys, 0, len, flags).map(|addr| {
             let ptr = unsafe { NonNull::new_unchecked(*addr) };
-            NonNull::slice_from_raw_parts(ptr, layout.size())
+            NonNull::slice_from_raw_parts(ptr, len)
         })
     }
 
@@ -133,7 +133,7 @@ impl Space {
     pub fn map_addr(
         &self,
         virt: Range<LAddr>,
-        phys: Option<Arsc<Phys>>,
+        phys: Option<Phys>,
         flags: Flags,
     ) -> sv_call::Result {
         self.canary.assert();
@@ -160,7 +160,7 @@ impl Space {
     pub fn map(
         &self,
         offset: Option<usize>,
-        phys: Arsc<Phys>,
+        phys: Phys,
         phys_offset: usize,
         len: usize,
         flags: Flags,
@@ -178,7 +178,7 @@ impl Space {
             return Err(sv_call::Error::EALIGN);
         }
 
-        let (len, set_vdso) = if Arsc::ptr_eq(&phys, &VDSO) {
+        let (len, set_vdso) = if phys == *VDSO {
             if flags != VDSO.flags() {
                 return Err(sv_call::Error::EACCES);
             }
@@ -191,13 +191,13 @@ impl Space {
                 return Err(sv_call::Error::EACCES);
             }
 
-            (phys.layout().pad_to_align().size(), true)
+            (phys.len(), true)
         } else {
             (len, false)
         };
 
         let phys_offset_end = phys_offset.wrapping_add(len);
-        if !(phys_offset < phys_offset_end && phys_offset_end <= phys.layout().size()) {
+        if !(phys_offset < phys_offset_end && phys_offset_end <= phys.len()) {
             return Err(sv_call::Error::ERANGE);
         }
 
@@ -247,7 +247,7 @@ impl Space {
     pub fn get(&self, ptr: NonNull<u8>, flags: &mut Flags) -> sv_call::Result<paging::PAddr> {
         self.canary.assert();
 
-        let vdso_size = VDSO.layout().pad_to_align().size();
+        let vdso_size = VDSO.len();
         if PREEMPT.scope(|| *self.vdso.lock()).map_or(false, |base| {
             *base <= ptr.as_ptr() && ptr.as_ptr() < *LAddr::from(base.val() + vdso_size)
         }) {
@@ -275,7 +275,7 @@ impl Space {
     pub unsafe fn reprotect(&self, mut ptr: NonNull<[u8]>, flags: Flags) -> sv_call::Result {
         self.canary.assert();
 
-        let vdso_size = VDSO.layout().pad_to_align().size();
+        let vdso_size = VDSO.len();
         if PREEMPT.scope(|| *self.vdso.lock()).map_or(false, |base| {
             *base <= ptr.as_mut_ptr() && ptr.as_mut_ptr() < *LAddr::from(base.val() + vdso_size)
         }) {

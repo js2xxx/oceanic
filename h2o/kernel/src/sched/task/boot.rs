@@ -10,7 +10,7 @@ use crate::{
 };
 
 static VDSO_DATA: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/target/vdso"));
-pub static VDSO: Azy<Arsc<Phys>> = Azy::new(|| {
+pub static VDSO: Azy<Phys> = Azy::new(|| {
     let vdso_layout = Layout::from_size_align(VDSO_DATA.len(), paging::PAGE_LAYOUT.align())
         .expect("Failed to get the layout of VDSO");
     let vdso_mem = Phys::allocate(
@@ -24,7 +24,7 @@ pub static VDSO: Azy<Arsc<Phys>> = Azy::new(|| {
     }
     vdso_mem
 });
-pub static BOOTFS: Azy<Arsc<Phys>> = Azy::new(|| {
+pub static BOOTFS: Azy<Phys> = Azy::new(|| {
     let layout = Layout::from_size_align(crate::kargs().bootfs_len, paging::PAGE_LAYOUT.align())
         .expect("Failed to get the layout of boot FS");
     Phys::new(
@@ -77,7 +77,7 @@ pub fn setup() {
     unsafe {
         objects
             .insert_impl(
-                hdl::Ref::try_new_shared(Arsc::clone(&VDSO), noevent.clone())
+                hdl::Ref::try_new_shared(Phys::clone(&VDSO), noevent.clone())
                     .expect("Failed to create VDSO reference")
                     .coerce_unchecked(),
             )
@@ -85,7 +85,7 @@ pub fn setup() {
 
         objects
             .insert_impl(
-                hdl::Ref::try_new_shared(Arsc::clone(&BOOTFS), noevent)
+                hdl::Ref::try_new_shared(Phys::clone(&BOOTFS), noevent)
                     .expect("Failed to create boot FS reference")
                     .coerce_unchecked(),
             )

@@ -11,10 +11,7 @@ use raw_cpuid::CpuId;
 use spin::RwLock;
 
 use super::intr::def::ApicVec;
-use crate::{
-    mem::space::{self, Flags, Phys},
-    sched::Arsc,
-};
+use crate::mem::space::{self, Flags, Phys};
 
 pub static LAPIC_ID: RwLock<BTreeMap<usize, u32>> = RwLock::new(BTreeMap::new());
 static LAPIC_BASE: Azy<usize> = Azy::new(|| {
@@ -25,13 +22,7 @@ static LAPIC_BASE: Azy<usize> = Azy::new(|| {
     )
     .expect("Failed to acquire LAPIC base");
     space::KRL
-        .map(
-            None,
-            Arsc::clone(&phys),
-            0,
-            phys.layout().size(),
-            phys.flags(),
-        )
+        .map(None, Phys::clone(&phys), 0, phys.len(), phys.flags())
         .expect("Failed to allocate memory")
         .val()
 });
