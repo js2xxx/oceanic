@@ -15,6 +15,7 @@ dbglog = {path = "../../lib/dbglog", default-features = false, features = ["call
 heap = {path = "../libs/heap"}
 solvent = {path = "../../lib/h2o_rs", default-features = false, features = ["call", "alloc"]}
 sv-call = {path = "../libs/syscall", default-features = false, features = ["call"]}
+svrt = {path = "../../lib/svrt", default-features = false, features = ["call"]}
 targs = {path = "../libs/targs"}
 # External crates
 cstr_core = "0.2"

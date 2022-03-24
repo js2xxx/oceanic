@@ -111,7 +111,7 @@ fn load_seg(
         let cdata = image.read(fend, csize)?;
         unsafe { mem.write(0, &cdata) }?;
 
-        let abase = space.map(address, mem, 0, asize, flags)?.as_mut_ptr() as usize;
+        let abase = space.map_phys(address, mem, flags)?.as_mut_ptr() as usize;
         Some(abase - fsize)
     } else {
         base

@@ -5,7 +5,7 @@ use core::{mem::MaybeUninit, time::Duration};
 use sv_call::ipc::RawPacket;
 
 #[cfg(feature = "alloc")]
-use super::Packet;
+use super::{Packet, PacketTyped};
 use crate::{error::*, obj::Object};
 
 #[repr(transparent)]
@@ -47,8 +47,14 @@ impl Channel {
     }
 
     #[cfg(feature = "alloc")]
-    pub fn send(&self, packet: &Packet) -> Result {
+    pub fn send_packet(&self, packet: &mut Packet) -> Result {
         self.send_raw(packet.id, &packet.buffer, &packet.handles)
+            .map(|_| *packet = Default::default())
+    }
+
+    #[cfg(feature = "alloc")]
+    pub fn send<T: PacketTyped>(&self, packet: T) -> Result {
+        self.send_packet(&mut packet.into_packet())
     }
 
     pub fn receive_raw(
@@ -84,10 +90,31 @@ impl Channel {
     }
 
     #[cfg(feature = "alloc")]
-    pub fn receive(&self, packet: &mut Packet) -> Result {
+    pub fn receive_packet(&self, packet: &mut Packet) -> Result {
         let id = self.receive_into(&mut packet.buffer, &mut packet.handles)?;
         packet.id = Some(id);
         Ok(())
+    }
+
+    #[cfg(feature = "alloc")]
+    pub fn try_receive<T: PacketTyped>(
+        &self,
+    ) -> Result<core::result::Result<T, (T::TryFromError, Packet)>> {
+        let mut packet = Default::default();
+        self.receive_packet(&mut packet)?;
+        match T::try_from_packet(&mut packet) {
+            Ok(packet) => Ok(Ok(packet)),
+            Err(err) => Ok(Err((err, packet))),
+        }
+    }
+
+    /// Warning: If the type of the received packet is not the requested type,
+    /// then the packet will be discarded!
+    #[cfg(feature = "alloc")]
+    pub fn receive<T: PacketTyped>(&self) -> Result<T> {
+        let mut packet = Default::default();
+        self.receive_packet(&mut packet)?;
+        T::try_from_packet(&mut packet).map_err(Into::into)
     }
 
     pub fn call_send_raw(&self, buffer: &[u8], handles: &[sv_call::Handle]) -> Result<usize> {
@@ -181,9 +208,9 @@ impl Channel {
         F: FnOnce(&mut Packet) -> Result<R>,
     {
         let mut packet = Packet::default();
-        self.receive(&mut packet)?;
+        self.receive_packet(&mut packet)?;
         let ret = handler(&mut packet)?;
-        self.send(&packet)?;
+        self.send_packet(&mut packet)?;
         Ok(ret)
     }
 }

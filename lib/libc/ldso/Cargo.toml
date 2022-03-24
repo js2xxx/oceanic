@@ -11,6 +11,7 @@ crate-type = ["cdylib"]
 dbglog = {path = "../../dbglog"}
 iter_ex = {path = "../../../h2o/libs/iter_ex"}
 solvent = {path = "../../h2o_rs"}
+svrt = {path = "../../svrt"}
 # External crates
 cstr_core = "0.2"
 goblin = {version = "0.4", default-features = false, features = ["elf64"]}

@@ -24,6 +24,7 @@ use alloc::vec;
 
 use bootfs::parse::Directory;
 use solvent::prelude::*;
+use svrt::{HandleInfo, HandleType, StartupArgs};
 use targs::{HandleIndex, Targs};
 
 extern crate alloc;
@@ -69,9 +70,9 @@ extern "C" fn tmain(init_chan: sv_call::Handle) {
 
     let init_chan = unsafe { Channel::from_raw(init_chan) };
     let mut packet = Default::default();
-    { init_chan.receive(&mut packet) }.expect("Failed to receive the initial packet");
+    { init_chan.receive_packet(&mut packet) }.expect("Failed to receive the initial packet");
 
-    let targs = {
+    let _targs = {
         let mut targs = Targs::default();
         plain::copy_from_bytes(&mut targs, &packet.buffer).expect("Failed to get TINIT args");
         targs
@@ -79,8 +80,7 @@ extern "C" fn tmain(init_chan: sv_call::Handle) {
 
     let vdso_phys = unsafe { Phys::from_raw(packet.handles[HandleIndex::Vdso as usize]) };
 
-    let bootfs_phys =
-        unsafe { Phys::from_raw(packet.handles[HandleIndex::Bootfs as usize]) };
+    let bootfs_phys = unsafe { Phys::from_raw(packet.handles[HandleIndex::Bootfs as usize]) };
     let bootfs = map_bootfs(&bootfs_phys);
 
     let bin = {
@@ -95,7 +95,7 @@ extern "C" fn tmain(init_chan: sv_call::Handle) {
 
     let space = Space::new();
     let (entry, stack) =
-        load::load_elf(bin, bootfs, &bootfs_phys, &space).expect("Failed to load test_bin");
+        load::load_elf(bin.clone(), bootfs, &bootfs_phys, &space).expect("Failed to load test_bin");
 
     let vdso_base = space
         .map_vdso(Phys::clone(&vdso_phys))
@@ -104,12 +104,18 @@ extern "C" fn tmain(init_chan: sv_call::Handle) {
 
     let (me, child) = Channel::new();
 
-    me.send(&Packet {
-        buffer: vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
-        handles: vec![],
-        ..Default::default()
-    })
-    .expect("Failed to send packet");
+    let startup_args = StartupArgs {
+        handles: [(
+            HandleInfo::new().with_handle_type(HandleType::VdsoPhys),
+            Phys::into_raw(vdso_phys),
+        )]
+        .into_iter()
+        .collect(),
+        args: vec![],
+        envs: vec![],
+    };
+
+    me.send(startup_args).expect("Failed to send packet");
 
     let task = Task::exec(
         Some("PROGMGR"),

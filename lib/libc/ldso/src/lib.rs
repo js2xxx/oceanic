@@ -14,6 +14,9 @@ pub mod rxx;
 
 use core::mem;
 
+use solvent::prelude::{Object, Phys};
+use svrt::{HandleInfo, HandleType, StartupArgs};
+
 pub use self::rxx::{dynamic, init_channel, load_address, vdso_map};
 
 fn dl_main() -> rxx::DlReturn {
@@ -22,15 +25,22 @@ fn dl_main() -> rxx::DlReturn {
 
     log::debug!("dl_main started");
 
-    let mut boot = Default::default();
-    init_channel()
-        .receive(&mut boot)
+    let mut startup_args = init_channel()
+        .receive::<StartupArgs>()
         .expect("Failed to receive boot message");
-    assert_eq!(&boot.buffer, &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+
+    let handle = startup_args
+        .handles
+        .remove(&HandleInfo::new().with_handle_type(HandleType::VdsoPhys))
+        .expect("Failed to get VDSO physical object");
+    let vdso = unsafe { Phys::from_raw(handle) };
+
+    log::debug!("{:?}", unsafe { vdso.raw() });
 
     log::debug!("Reaching end of the dynamic linker");
 
     mem::forget(list);
+    mem::forget(vdso);
     loop {
         unsafe { core::arch::asm!("pause") }
     }
