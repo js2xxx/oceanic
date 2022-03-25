@@ -69,7 +69,7 @@ impl Space {
     pub fn child(&self, hdl: sv_call::Handle, need_feature: Feature) -> sv_call::Result<Tid> {
         super::PREEMPT.scope(|| {
             self.handles().get::<Tid>(hdl).and_then(|obj| {
-                if obj.feature().lock().contains(need_feature) {
+                if obj.features().contains(need_feature) {
                     Ok(Tid::clone(obj))
                 } else {
                     Err(sv_call::Error::EPERM)

@@ -136,7 +136,7 @@ mod syscall {
             .space()
             .handles()
             .get::<Arc<Interrupt>>(hdl)?;
-        if !intr.feature().lock().contains(Feature::WAIT) {
+        if !intr.features().contains(Feature::WAIT) {
             return Err(Error::EPERM);
         }
 

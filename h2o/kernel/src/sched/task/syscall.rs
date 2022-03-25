@@ -319,7 +319,7 @@ fn task_debug(hdl: Handle, op: u32, addr: usize, data: UserPtr<InOut, u8>, len: 
         cur.space()
             .handles()
             .get::<SuspendToken>(hdl)
-            .map(|st| (*st.feature().lock(), Arsc::clone(&st.slot)))
+            .map(|st| (st.features(), Arsc::clone(&st.slot)))
     })?;
 
     let mut task = loop {

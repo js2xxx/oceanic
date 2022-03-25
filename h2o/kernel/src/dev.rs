@@ -49,7 +49,7 @@ mod syscall {
     fn pio_acq(res: Handle, base: u16, size: u16) -> Result {
         SCHED.with_current(|cur| {
             let res = cur.space().handles().get::<Arc<Resource<u16>>>(res)?;
-            if !{ res.feature().lock() }.contains(Feature::READ | Feature::WRITE) {
+            if !{ res.features() }.contains(Feature::READ | Feature::WRITE) {
                 return Err(Error::EPERM);
             }
             if res.magic_eq(pio_resource())

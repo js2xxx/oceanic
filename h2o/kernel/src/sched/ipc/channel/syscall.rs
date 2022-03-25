@@ -52,7 +52,7 @@ where
     SCHED.with_current(|cur| {
         let map = cur.space().handles();
         let channel = map.get::<Channel>(hdl)?;
-        if !channel.feature().lock().contains(Feature::WRITE) {
+        if !channel.features().contains(Feature::WRITE) {
             return Err(Error::EPERM);
         }
         let objects = unsafe { map.send(handles, channel) }?;
@@ -118,7 +118,7 @@ fn chan_recv(hdl: Handle, packet_ptr: UserPtr<InOut, RawPacket>) -> Result {
     let res = SCHED.with_current(|cur| {
         let map = cur.space().handles();
         let channel = map.get::<Channel>(hdl)?;
-        if !channel.feature().lock().contains(Feature::READ) {
+        if !channel.features().contains(Feature::READ) {
             return Err(Error::EPERM);
         }
 
@@ -149,7 +149,7 @@ fn chan_crecv(
 
     let call_event = SCHED.with_current(|cur| {
         let channel = cur.space().handles().get::<Channel>(hdl)?;
-        if !{ channel.feature().lock() }.contains(Feature::WAIT | Feature::READ) {
+        if !{ channel.features() }.contains(Feature::WAIT | Feature::READ) {
             return Err(Error::EPERM);
         }
         Ok(channel.call_event(id)? as _)
@@ -167,7 +167,7 @@ fn chan_crecv(
         let map = cur.space().handles();
 
         let channel = map.get::<Channel>(hdl)?;
-        if !channel.feature().lock().contains(Feature::READ) {
+        if !channel.features().contains(Feature::READ) {
             return Err(Error::EPERM);
         }
 
@@ -190,7 +190,7 @@ fn chan_crecv(
 fn chan_acrecv(hdl: Handle, id: usize, wake_all: bool) -> Result<Handle> {
     SCHED.with_current(|cur| {
         let chan = cur.space().handles().get::<Channel>(hdl)?;
-        if !{ chan.feature().lock() }.contains(Feature::READ | Feature::WAIT) {
+        if !{ chan.features() }.contains(Feature::READ | Feature::WAIT) {
             return Err(Error::EPERM);
         }
         let event = chan.call_event(id)? as _;

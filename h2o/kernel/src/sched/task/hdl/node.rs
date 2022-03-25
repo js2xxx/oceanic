@@ -7,10 +7,10 @@ use core::{
     mem,
     ops::Deref,
     ptr::NonNull,
+    sync::atomic::{AtomicU64, Ordering::SeqCst},
 };
 
 use archop::Azy;
-use spin::Mutex;
 use sv_call::{Feature, Result};
 
 use super::{DefaultFeature, Object};
@@ -50,14 +50,14 @@ impl<T: ?Sized> Ref<T> {
         let event = event.unwrap_or(Weak::<crate::sched::BasicEvent>::new() as _);
         Ok(Ref {
             obj: Arsc::try_new(Object {
-                feat: Mutex::new({
+                feat: AtomicU64::new({
                     let mut feat = feat;
                     if event.strong_count() > 0 {
                         feat |= Feature::WAIT;
                     } else if feat.contains(Feature::WAIT) {
                         return Err(sv_call::Error::EPERM);
                     }
-                    feat
+                    feat.bits()
                 }),
                 event,
                 data,
@@ -97,8 +97,8 @@ impl<T: ?Sized> Ref<T> {
     }
 
     #[inline]
-    pub fn feature(&self) -> &Mutex<Feature> {
-        &self.obj.feat
+    pub fn features(&self) -> Feature {
+        Feature::from_bits_truncate(self.obj.feat.load(SeqCst))
     }
 }
 
@@ -159,7 +159,7 @@ impl Ref {
     }
 
     pub fn try_clone(&self) -> Result<Ref> {
-        let feat = self.feature().lock();
+        let feat = self.features();
         if feat.contains(Feature::SEND | Feature::SYNC) {
             // SAFETY: The underlying object is `send` and `sync`.
             Ok(unsafe { self.clone_unchecked() })
@@ -170,7 +170,7 @@ impl Ref {
 
     #[inline]
     pub fn is_send(&self) -> bool {
-        self.feature().lock().contains(Feature::SEND)
+        self.features().contains(Feature::SEND)
     }
 }
 

@@ -92,7 +92,7 @@ mod syscall {
     ) -> Result<Handle> {
         SCHED.with_current(|cur| {
             let res = cur.space().handles().get::<Arc<Resource<T>>>(hdl)?;
-            if !res.feature().lock().contains(Feature::SYNC) {
+            if !res.features().contains(Feature::SYNC) {
                 return Err(Error::EPERM);
             }
             let sub = res.allocate(base..(base + size)).ok_or(Error::ENOMEM)?;
