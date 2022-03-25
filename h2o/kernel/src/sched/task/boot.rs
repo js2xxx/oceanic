@@ -23,9 +23,8 @@ pub static VDSO: Azy<(Flags, Phys)> = Azy::new(|| {
     (flags, vdso_mem)
 });
 pub static BOOTFS: Azy<(Flags, Phys)> = Azy::new(|| {
-    let flags = Flags::READABLE | Flags::WRITABLE | Flags::EXECUTABLE | Flags::USER_ACCESS;
     (
-        flags,
+        Flags::READABLE | Flags::EXECUTABLE | Flags::USER_ACCESS,
         Phys::new(
             crate::kargs().bootfs_phys,
             crate::kargs().bootfs_len.round_up_bit(paging::PAGE_SHIFT),

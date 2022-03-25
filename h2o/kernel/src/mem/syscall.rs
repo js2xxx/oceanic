@@ -1,5 +1,5 @@
 use alloc::sync::Arc;
-use core::{ ptr::NonNull, slice};
+use core::{ptr::NonNull, slice};
 
 use bitop_ex::BitOpEx;
 use sv_call::{
@@ -55,7 +55,7 @@ fn phys_size(hdl: Handle) -> Result<usize> {
     })
 }
 
-fn phys(hdl: Handle, offset: usize, len: usize) -> Result<(Feature, space::Phys)> {
+fn phys_check(hdl: Handle, offset: usize, len: usize) -> Result<(Feature, space::Phys)> {
     hdl.check_null()?;
     let offset_end = offset.wrapping_add(len);
     if offset_end < offset {
@@ -76,7 +76,10 @@ fn phys(hdl: Handle, offset: usize, len: usize) -> Result<(Feature, space::Phys)
 #[syscall]
 fn phys_read(hdl: Handle, offset: usize, len: usize, buffer: UserPtr<Out, u8>) -> Result {
     buffer.check_slice(len)?;
-    let (feat, phys) = phys(hdl, offset, len)?;
+    let (feat, phys) = phys_check(hdl, offset, len)?;
+    if phys == VDSO.1 {
+        return Err(Error::EACCES);
+    }
     if !feat.contains(Feature::READ) {
         return Err(Error::EPERM);
     }
@@ -93,7 +96,10 @@ fn phys_read(hdl: Handle, offset: usize, len: usize, buffer: UserPtr<Out, u8>) -
 #[syscall]
 fn phys_write(hdl: Handle, offset: usize, len: usize, buffer: UserPtr<In, u8>) -> Result {
     buffer.check_slice(len)?;
-    let (feat, phys) = phys(hdl, offset, len)?;
+    let (feat, phys) = phys_check(hdl, offset, len)?;
+    if phys == VDSO.1 {
+        return Err(Error::EACCES);
+    }
     if !feat.contains(Feature::WRITE) {
         return Err(Error::EPERM);
     }
@@ -107,14 +113,21 @@ fn phys_write(hdl: Handle, offset: usize, len: usize, buffer: UserPtr<In, u8>) -
 }
 
 #[syscall]
-fn phys_sub(hdl: Handle, offset: usize, len: usize) -> Result<Handle> {
-    let (feat, phys) = phys(hdl, offset, len)?;
+fn phys_sub(hdl: Handle, offset: usize, len: usize, copy: bool) -> Result<Handle> {
+    let (feat, phys) = phys_check(hdl, offset, len)?;
     if phys == VDSO.1 {
         return Err(Error::EACCES);
     }
 
-    let sub = phys.create_sub(offset, len)?;
-    SCHED.with_current(|cur| unsafe { cur.space().handles().insert_unchecked(sub, feat, None) })
+    let sub = phys.create_sub(offset, len, copy)?;
+    SCHED.with_current(|cur| {
+        let handles = cur.space().handles();
+        if copy {
+            handles.insert(sub, None)
+        } else {
+            unsafe { handles.insert_unchecked(sub, feat, None) }
+        }
+    })
 }
 
 #[syscall]
@@ -229,9 +242,7 @@ fn mem_info(info: UserPtr<Out, MemInfo>) -> Result {
 
 #[syscall]
 fn phys_acq(res: Handle, addr: usize, size: usize) -> Result<Handle> {
-    if addr.contains_bit(paging::PAGE_MASK)
-        || size.contains_bit(paging::PAGE_MASK)
-    {
+    if addr.contains_bit(paging::PAGE_MASK) || size.contains_bit(paging::PAGE_MASK) {
         return Err(Error::EINVAL);
     }
 

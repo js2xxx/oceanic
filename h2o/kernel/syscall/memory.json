@@ -82,6 +82,10 @@
             {
                 "name": "len",
                 "ty": "usize"
+            },
+            {
+                "name": "copy",
+                "ty": "bool"
             }
         ]
     },

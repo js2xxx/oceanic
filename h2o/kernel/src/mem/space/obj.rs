@@ -91,19 +91,29 @@ impl Phys {
         self.len == 0
     }
 
-    pub fn create_sub(&self, offset: usize, len: usize) -> sv_call::Result<Self> {
+    pub fn create_sub(&self, offset: usize, len: usize, copy: bool) -> sv_call::Result<Self> {
         if offset.contains_bit(PAGE_SHIFT) || len.contains_bit(PAGE_SHIFT) {
             return Err(sv_call::Error::EALIGN);
         }
 
-        let offset = self.offset.wrapping_add(offset);
-        let end = offset.wrapping_add(len);
-        if self.offset <= offset && offset < end && end <= self.offset + self.len {
-            Ok(Phys {
-                offset,
-                len,
-                inner: Arsc::clone(&self.inner),
-            })
+        let new_offset = self.offset.wrapping_add(offset);
+        let end = new_offset.wrapping_add(len);
+        if self.offset <= new_offset && new_offset < end && end <= self.offset + self.len {
+            if copy {
+                let child = Self::allocate(len, true)?;
+                let dst = child.raw_ptr();
+                unsafe {
+                    let src = self.raw_ptr().add(offset);
+                    dst.copy_from_nonoverlapping(src, len);
+                }
+                Ok(child)
+            } else {
+                Ok(Phys {
+                    offset: new_offset,
+                    len,
+                    inner: Arsc::clone(&self.inner),
+                })
+            }
         } else {
             Err(sv_call::Error::ERANGE)
         }

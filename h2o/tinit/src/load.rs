@@ -92,13 +92,13 @@ fn load_seg(
     let base = match kind {
         ObjectKind::Dynamic if fsize == 0 => None,
         ObjectKind::Dynamic => {
-            let data = image.create_sub(offset, fsize)?;
+            let data = image.create_sub(offset, fsize, true)?;
             let address = map_base.map(|base| base + address);
             Some(space.map_phys(address, data, flags)?.as_mut_ptr() as usize)
         }
         _ if fsize == 0 => Some(address),
         _ => {
-            let data = image.create_sub(offset, fsize)?;
+            let data = image.create_sub(offset, fsize, true)?;
             Some(space.map_phys(Some(address), data, flags)?.as_mut_ptr() as usize)
         }
     };

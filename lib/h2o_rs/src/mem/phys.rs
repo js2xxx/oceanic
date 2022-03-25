@@ -104,10 +104,10 @@ impl Phys {
         }
     }
 
-    pub fn create_sub(&self, offset: usize, len: usize) -> Result<Self> {
+    pub fn create_sub(&self, offset: usize, len: usize, copy: bool) -> Result<Self> {
         if len > 0 {
-            let handle =
-                unsafe { sv_call::sv_phys_sub(unsafe { self.raw() }, offset, len) }.into_res()?;
+            let handle = unsafe { sv_call::sv_phys_sub(unsafe { self.raw() }, offset, len, copy) }
+                .into_res()?;
             Ok(Phys { len, inner: handle })
         } else {
             Err(Error::ERANGE)

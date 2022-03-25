@@ -30,7 +30,7 @@ pub struct Object<T: ?Sized> {
 
 impl<U: ?Sized, T: ?Sized + CoerceUnsized<U> + Unsize<U>> CoerceUnsized<Object<U>> for Object<T> {}
 
-pub unsafe trait DefaultFeature: Any {
+pub unsafe trait DefaultFeature: Any + Send {
     fn default_features() -> Feature;
 }
 
@@ -116,7 +116,7 @@ impl HandleMap {
     }
 
     #[inline]
-    pub fn insert<T: DefaultFeature + Any>(
+    pub fn insert<T: DefaultFeature>(
         &self,
         data: T,
         event: Option<Weak<dyn Event>>,

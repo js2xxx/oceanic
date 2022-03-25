@@ -46,7 +46,7 @@ fn offset_sub<T>(slice: &[T], parent: &[T]) -> Option<usize> {
 
 fn sub_phys(bin_data: &[u8], bootfs: Directory, bootfs_phys: &Phys) -> Result<Phys> {
     let offset = offset_sub(bin_data, bootfs.image()).ok_or(Error::ERANGE)?;
-    bootfs_phys.create_sub(offset, bin_data.len().next_multiple_of(PAGE_SIZE))
+    bootfs_phys.create_sub(offset, bin_data.len().next_multiple_of(PAGE_SIZE), false)
 }
 
 fn map_bootfs(phys: &Phys) -> Directory<'static> {
@@ -103,6 +103,12 @@ extern "C" fn tmain(init_chan: sv_call::Handle) {
     log::debug!("{:?} {:?}", entry, stack);
 
     let (me, child) = Channel::new();
+    let child = child
+        .reduce_features(Feature::SEND | Feature::READ)
+        .expect("Failed to reduce features for read");
+    let me = me
+        .reduce_features(Feature::SEND | Feature::WRITE)
+        .expect("Failed to reduce features for write");
 
     let startup_args = StartupArgs {
         handles: [

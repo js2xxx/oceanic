@@ -71,7 +71,7 @@ impl<T: Ord + Copy> Drop for Resource<T> {
     }
 }
 
-unsafe impl<T: Ord + Copy + Any> DefaultFeature for Arc<Resource<T>> {
+unsafe impl<T: Ord + Copy + Send + Sync + Any> DefaultFeature for Arc<Resource<T>> {
     fn default_features() -> Feature {
         Feature::SEND | Feature::SYNC | Feature::READ | Feature::WRITE
     }
