@@ -1,16 +1,13 @@
 use alloc::sync::Arc;
-use core::{alloc::Layout, ptr::NonNull, slice};
+use core::{ ptr::NonNull, slice};
 
 use bitop_ex::BitOpEx;
 use sv_call::{
-    mem::{MapInfo, MemInfo},
+    mem::{Flags, MapInfo, MemInfo},
     *,
 };
 
-use super::{
-    flags_to_features,
-    space::{self, Flags},
-};
+use super::space;
 use crate::{
     dev::Resource,
     sched::{
@@ -20,13 +17,6 @@ use crate::{
     syscall::{In, Out, UserPtr},
 };
 
-fn check_layout(size: usize, align: usize) -> Result<Layout> {
-    if size.contains_bit(paging::PAGE_MASK) || !align.is_power_of_two() {
-        return Err(Error::EINVAL);
-    }
-    Layout::from_size_align(size, align).map_err(Error::from)
-}
-
 fn check_flags(flags: Flags) -> Result<Flags> {
     if !flags.contains(Flags::USER_ACCESS) {
         return Err(Error::EPERM);
@@ -34,15 +24,24 @@ fn check_flags(flags: Flags) -> Result<Flags> {
     Ok(flags)
 }
 
+fn features_to_flags(feat: Feature) -> Flags {
+    let mut flags = Flags::USER_ACCESS;
+    if feat.contains(Feature::READ) {
+        flags |= Flags::READABLE;
+    }
+    if feat.contains(Feature::WRITE) {
+        flags |= Flags::WRITABLE;
+    }
+    if feat.contains(Feature::EXECUTE) {
+        flags |= Flags::EXECUTABLE;
+    }
+    flags
+}
+
 #[syscall]
-fn phys_alloc(size: usize, align: usize, flags: Flags) -> Result<Handle> {
-    let layout = check_layout(size, align)?;
-    let flags = check_flags(flags)?;
-    let phys = PREEMPT.scope(|| space::Phys::allocate(layout, flags))?;
-    SCHED.with_current(|cur| {
-        let feat = flags_to_features(flags);
-        unsafe { cur.space().handles().insert_unchecked(phys, feat, None) }
-    })
+fn phys_alloc(size: usize, zeroed: bool) -> Result<Handle> {
+    let phys = PREEMPT.scope(|| space::Phys::allocate(size, zeroed))?;
+    SCHED.with_current(|cur| unsafe { cur.space().handles().insert(phys, None) })
 }
 
 #[syscall]
@@ -56,29 +55,29 @@ fn phys_size(hdl: Handle) -> Result<usize> {
     })
 }
 
-fn phys_rw_check(hdl: Handle, offset: usize, len: usize) -> Result<space::Phys> {
+fn phys(hdl: Handle, offset: usize, len: usize) -> Result<(Feature, space::Phys)> {
     hdl.check_null()?;
     let offset_end = offset.wrapping_add(len);
     if offset_end < offset {
         return Err(Error::ERANGE);
     }
-    let phys = SCHED.with_current(|cur| {
+    let (feat, phys) = SCHED.with_current(|cur| {
         cur.space()
             .handles()
             .get::<space::Phys>(hdl)
-            .map(|obj| space::Phys::clone(obj))
+            .map(|obj| (obj.features(), space::Phys::clone(obj)))
     })?;
     if offset_end > phys.len() {
         return Err(Error::ERANGE);
     }
-    Ok(phys)
+    Ok((feat, phys))
 }
 
 #[syscall]
 fn phys_read(hdl: Handle, offset: usize, len: usize, buffer: UserPtr<Out, u8>) -> Result {
     buffer.check_slice(len)?;
-    let phys = phys_rw_check(hdl, offset, len)?;
-    if !phys.flags().contains(Flags::READABLE) {
+    let (feat, phys) = phys(hdl, offset, len)?;
+    if !feat.contains(Feature::READ) {
         return Err(Error::EPERM);
     }
     if len > 0 {
@@ -94,8 +93,8 @@ fn phys_read(hdl: Handle, offset: usize, len: usize, buffer: UserPtr<Out, u8>) -
 #[syscall]
 fn phys_write(hdl: Handle, offset: usize, len: usize, buffer: UserPtr<In, u8>) -> Result {
     buffer.check_slice(len)?;
-    let phys = phys_rw_check(hdl, offset, len)?;
-    if !phys.flags().contains(Flags::WRITABLE) {
+    let (feat, phys) = phys(hdl, offset, len)?;
+    if !feat.contains(Feature::WRITE) {
         return Err(Error::EPERM);
     }
     if len > 0 {
@@ -109,27 +108,25 @@ fn phys_write(hdl: Handle, offset: usize, len: usize, buffer: UserPtr<In, u8>) -
 
 #[syscall]
 fn phys_sub(hdl: Handle, offset: usize, len: usize) -> Result<Handle> {
-    let phys = phys_rw_check(hdl, offset, len)?;
-    if phys == *VDSO {
+    let (feat, phys) = phys(hdl, offset, len)?;
+    if phys == VDSO.1 {
         return Err(Error::EACCES);
     }
 
     let sub = phys.create_sub(offset, len)?;
-    SCHED.with_current(|cur| {
-        let feat = flags_to_features(phys.flags());
-        unsafe { cur.space().handles().insert_unchecked(sub, feat, None) }
-    })
+    SCHED.with_current(|cur| unsafe { cur.space().handles().insert_unchecked(sub, feat, None) })
 }
 
 #[syscall]
 fn mem_map(space: Handle, mi: UserPtr<In, MapInfo>) -> Result<*mut u8> {
     let mi = unsafe { mi.read() }?;
     let flags = check_flags(mi.flags)?;
-    let phys = SCHED.with_current(|cur| {
-        cur.space()
-            .handles()
-            .remove::<space::Phys>(mi.phys)
-            .and_then(|obj| Ok(space::Phys::clone(obj.downcast_ref::<space::Phys>()?)))
+    let (feat, phys) = SCHED.with_current(|cur| {
+        let obj = cur.space().handles().remove::<space::Phys>(mi.phys)?;
+        Ok((
+            obj.features(),
+            space::Phys::clone(obj.downcast_ref::<space::Phys>()?),
+        ))
     })?;
     let op = |space: &Arsc<space::Space>| {
         let offset = if mi.map_addr {
@@ -141,6 +138,9 @@ fn mem_map(space: Handle, mi: UserPtr<In, MapInfo>) -> Result<*mut u8> {
         } else {
             None
         };
+        if flags & !features_to_flags(feat) != Flags::empty() {
+            return Err(Error::EPERM);
+        }
         space
             .map(offset, phys, mi.phys_offset, mi.len, flags)
             .map(|addr| *addr)
@@ -228,15 +228,12 @@ fn mem_info(info: UserPtr<Out, MemInfo>) -> Result {
 }
 
 #[syscall]
-fn phys_acq(res: Handle, addr: usize, size: usize, align: usize, flags: Flags) -> Result<Handle> {
+fn phys_acq(res: Handle, addr: usize, size: usize) -> Result<Handle> {
     if addr.contains_bit(paging::PAGE_MASK)
         || size.contains_bit(paging::PAGE_MASK)
-        || !align.is_power_of_two()
-        || align.contains_bit(paging::PAGE_MASK)
     {
         return Err(Error::EINVAL);
     }
-    let flags = check_flags(flags)?;
 
     SCHED.with_current(|cur| {
         let res = cur.space().handles().get::<Arc<Resource<usize>>>(res)?;
@@ -244,11 +241,8 @@ fn phys_acq(res: Handle, addr: usize, size: usize, align: usize, flags: Flags) -
             && res.range().start <= addr
             && addr + size <= res.range().end
         {
-            let align = paging::PAGE_LAYOUT.align();
-            let layout = unsafe { Layout::from_size_align(size, align) }?;
-            let phys = space::Phys::new(paging::PAddr::new(addr), layout, flags);
-            let feat = flags_to_features(flags);
-            unsafe { cur.space().handles().insert_unchecked(phys, feat, None) }
+            let phys = space::Phys::new(paging::PAddr::new(addr), size)?;
+            unsafe { cur.space().handles().insert(phys, None) }
         } else {
             Err(Error::EPERM)
         }

@@ -6,7 +6,7 @@ use core::arch::asm;
 
 use archop::{msr, Azy};
 use modular_bitfield::prelude::*;
-use paging::{LAddr, PAddr, PAGE_LAYOUT};
+use paging::{LAddr, PAddr, PAGE_SIZE};
 use raw_cpuid::CpuId;
 use spin::RwLock;
 
@@ -15,14 +15,16 @@ use crate::mem::space::{self, Flags, Phys};
 
 pub static LAPIC_ID: RwLock<BTreeMap<usize, u32>> = RwLock::new(BTreeMap::new());
 static LAPIC_BASE: Azy<usize> = Azy::new(|| {
-    let phys = Phys::new(
-        PAddr::new(0xFEE00000),
-        PAGE_LAYOUT,
-        Flags::READABLE | Flags::WRITABLE | Flags::UNCACHED,
-    )
-    .expect("Failed to acquire LAPIC base");
+    let phys =
+        Phys::new(PAddr::new(0xFEE00000), PAGE_SIZE).expect("Failed to acquire LAPIC base");
     space::KRL
-        .map(None, Phys::clone(&phys), 0, phys.len(), phys.flags())
+        .map(
+            None,
+            Phys::clone(&phys),
+            0,
+            phys.len(),
+            Flags::READABLE | Flags::WRITABLE | Flags::UNCACHED,
+        )
         .expect("Failed to allocate memory")
         .val()
 });

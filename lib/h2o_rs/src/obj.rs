@@ -1,6 +1,6 @@
 use core::{mem, time::Duration};
 
-pub use sv_call::Handle;
+pub use sv_call::{Feature, Handle};
 
 use crate::error::Result;
 

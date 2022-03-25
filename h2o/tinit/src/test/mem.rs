@@ -5,7 +5,7 @@ use sv_call::{
 
 pub unsafe fn test() {
     let flags = Flags::READABLE | Flags::WRITABLE | Flags::USER_ACCESS;
-    let phys = sv_phys_alloc(4096, 4096, flags)
+    let phys = sv_phys_alloc(4096, false)
         .into_res()
         .expect("Failed to allocate physical object");
 

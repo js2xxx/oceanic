@@ -8,7 +8,7 @@ use acpi::platform::interrupt::{
 use archop::Azy;
 use collection_ex::RangeMap;
 use modular_bitfield::prelude::*;
-use paging::{PAddr, PAGE_LAYOUT};
+use paging::{PAddr, PAGE_SIZE};
 use spin::Mutex;
 
 use crate::{
@@ -173,14 +173,16 @@ impl Ioapic {
             address: paddr,
             global_system_interrupt_base: gsi_base,
         } = node;
-        let phys = Phys::new(
-            PAddr::new(*paddr as usize),
-            PAGE_LAYOUT,
-            Flags::READABLE | Flags::WRITABLE | Flags::UNCACHED,
-        )
-        .expect("Failed to acquire memory for I/O APIC");
+        let phys = Phys::new(PAddr::new(*paddr as usize), PAGE_SIZE)
+            .expect("Failed to acquire memory for I/O APIC");
         let addr = space::KRL
-            .map(None, Phys::clone(&phys), 0, phys.len(), phys.flags())
+            .map(
+                None,
+                Phys::clone(&phys),
+                0,
+                phys.len(),
+                Flags::READABLE | Flags::WRITABLE | Flags::UNCACHED,
+            )
             .expect("Failed to allocate memory");
         let base_ptr = addr.cast::<u32>();
         let mut ioapic = Ioapic {

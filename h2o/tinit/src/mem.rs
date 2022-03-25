@@ -7,7 +7,7 @@ unsafe fn alloc_pages(n: usize) -> Option<NonNull<[heap::Page]>> {
         Flags::READABLE | Flags::WRITABLE | Flags::EXECUTABLE | Flags::USER_ACCESS
     };
     let (layout, _) = Layout::new::<heap::Page>().repeat(n).ok()?;
-    let phys = solvent::mem::Phys::allocate(layout, flags).ok()?;
+    let phys = solvent::mem::Phys::allocate(layout.size(), false).ok()?;
     let ptr = solvent::mem::Space::current()
         .map(None, phys, 0, layout.size(), flags)
         .ok()?;

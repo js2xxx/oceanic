@@ -8,7 +8,6 @@ use core::{alloc::Allocator, ptr::NonNull, sync::atomic::AtomicUsize};
 
 use archop::Azy;
 use iter_ex::PtrIter;
-use sv_call::{mem::Flags, Feature};
 
 pub use self::arena::Arena;
 use crate::{dev::Resource, kargs};
@@ -70,35 +69,4 @@ pub fn alloc_system_stack() -> sv_call::Result<NonNull<u8>> {
 #[inline]
 pub fn init() {
     Azy::force(&MEM_RESOURCE);
-}
-
-pub fn flags_to_features(flags: Flags) -> Feature {
-    let mut feat = Feature::SEND | Feature::SYNC;
-    if flags.contains(Flags::READABLE) {
-        feat |= Feature::READ
-    }
-    if flags.contains(Flags::WRITABLE) {
-        feat |= Feature::WRITE
-    }
-    if flags.contains(Flags::EXECUTABLE) {
-        feat |= Feature::EXECUTE
-    }
-    feat
-}
-
-pub fn features_to_flags(feat: Feature, user: bool) -> Flags {
-    let mut flags = Flags::empty();
-    if user {
-        flags |= Flags::USER_ACCESS;
-    }
-    if feat.contains(Feature::READ) {
-        flags |= Flags::READABLE;
-    }
-    if feat.contains(Feature::WRITE) {
-        flags |= Flags::WRITABLE;
-    }
-    if feat.contains(Feature::EXECUTE) {
-        flags |= Flags::EXECUTABLE;
-    }
-    flags
 }

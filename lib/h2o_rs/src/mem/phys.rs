@@ -1,10 +1,9 @@
 #[cfg(feature = "alloc")]
 use alloc::vec::Vec;
-use core::alloc::Layout;
 #[cfg(feature = "alloc")]
 use core::slice;
 
-use super::{Flags, PAGE_LAYOUT};
+use super::PAGE_SIZE;
 use crate::{
     dev::MemRes,
     error::{Error, Result},
@@ -33,34 +32,26 @@ crate::impl_obj!(@CLONE, Phys);
 crate::impl_obj!(@DROP, Phys);
 
 impl Phys {
-    pub fn allocate(layout: Layout, flags: Flags) -> Result<Self> {
-        let layout = layout.align_to(PAGE_LAYOUT.align())?.pad_to_align();
-        let handle =
-            unsafe { sv_call::sv_phys_alloc(layout.size(), layout.align(), flags) }.into_res()?;
-        Ok(Phys {
-            len: layout.size(),
-            inner: handle,
-        })
+    pub fn allocate(size: usize, zeroed: bool) -> Result<Self> {
+        let len = size.next_multiple_of(PAGE_SIZE);
+        let inner = unsafe { sv_call::sv_phys_alloc(len, zeroed) }.into_res()?;
+        // SAFETY: The handle is freshly allocated.
+        Ok(Phys { len, inner })
     }
 
-    pub fn acquire(res: &MemRes, addr: usize, layout: Layout, flags: Flags) -> Result<Self> {
-        let layout = layout.align_to(PAGE_LAYOUT.align())?.pad_to_align();
-        let handle = unsafe {
+    pub fn acquire(res: &MemRes, addr: usize, size: usize) -> Result<Self> {
+        let len = size.next_multiple_of(PAGE_SIZE);
+        let inner = unsafe {
             sv_call::sv_phys_acq(
                 // SAFETY: We don't move the ownership of the memory resource handle.
                 unsafe { res.raw() },
                 addr,
-                layout.size(),
-                layout.align(),
-                flags,
+                len,
             )
             .into_res()?
         };
         // SAFETY: The handle is freshly allocated.
-        Ok(Phys {
-            len: layout.size(),
-            inner: handle,
-        })
+        Ok(Phys { len, inner })
     }
 
     pub fn len(&self) -> usize {

@@ -8,12 +8,8 @@
                 "ty": "usize"
             },
             {
-                "name": "align",
-                "ty": "usize"
-            },
-            {
-                "name": "flags",
-                "ty": "Flags"
+                "name": "zeroed",
+                "ty": "bool"
             }
         ]
     },

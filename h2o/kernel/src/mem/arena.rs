@@ -40,7 +40,7 @@ impl<T> Arena<T> {
             .expect("Layout error");
         debug_assert!(off >= 16);
         let ptr = KRL
-            .allocate(layout, Flags::READABLE | Flags::WRITABLE)
+            .allocate(layout.size(), Flags::READABLE | Flags::WRITABLE, false)
             .expect("Failed to allocate memory");
 
         let (base, end) = unsafe {

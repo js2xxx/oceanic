@@ -1,4 +1,4 @@
-use core::{alloc::Layout, ptr::NonNull};
+use core::ptr::NonNull;
 
 use bootfs::parse::Directory;
 use cstr_core::CStr;
@@ -10,7 +10,7 @@ use object::{
     },
     Endianness, Object, ObjectKind,
 };
-use solvent::prelude::{Flags, Phys, Space, PAGE_LAYOUT, PAGE_MASK, PAGE_SIZE};
+use solvent::prelude::{Flags, Phys, Space, PAGE_MASK, PAGE_SIZE};
 use sv_call::task::DEFAULT_STACK_SIZE;
 
 const STACK_PROTECTOR_SIZE: usize = PAGE_SIZE;
@@ -106,9 +106,7 @@ fn load_seg(
     let base = if asize > 0 {
         let address = base.map(|base| base + fsize);
 
-        let layout =
-            Layout::from_size_align(asize, PAGE_SIZE).map_err(solvent::error::Error::from)?;
-        let mem = Phys::allocate(layout, flags | Flags::WRITABLE | Flags::ZEROED)?;
+        let mem = Phys::allocate(asize, true)?;
 
         let cdata = image.read(fend, csize)?;
         unsafe { mem.write(0, &cdata) }?;
@@ -207,11 +205,9 @@ pub fn load_elf(
     let (entry, stack_size, stack_flags) = load_segs(image, bootfs, bootfs_phys, space)?;
 
     let stack = {
-        let stack_layout =
-            Layout::from_size_align(stack_size + STACK_PROTECTOR_SIZE * 2, PAGE_LAYOUT.align())
-                .map_err(solvent::error::Error::from)?;
-        let stack_phys = Phys::allocate(stack_layout, stack_flags)?;
-        let stack_ptr = space.map(None, stack_phys, 0, stack_layout.size(), stack_flags)?;
+        let size = stack_size + STACK_PROTECTOR_SIZE * 2;
+        let stack_phys = Phys::allocate(size, true)?;
+        let stack_ptr = space.map(None, stack_phys, 0, size, stack_flags)?;
 
         let base = stack_ptr.as_non_null_ptr();
         let actual_end =

@@ -14,7 +14,6 @@ cfg_if::cfg_if! {
 }
 
 use core::{
-    alloc::Layout,
     mem,
     ops::{Add, Range},
     ptr::NonNull,
@@ -24,7 +23,7 @@ use archop::Azy;
 use bitop_ex::BitOpEx;
 use canary::Canary;
 use collection_ex::RangeMap;
-use paging::{LAddr, PAddr, PAGE_LAYOUT, PAGE_MASK};
+use paging::{LAddr, PAddr, PAGE_MASK};
 use spin::Mutex;
 pub use sv_call::mem::Flags;
 
@@ -117,10 +116,15 @@ impl Space {
     }
 
     /// Shorthand for `Phys::allocate` + `Space::map`.
-    pub fn allocate(&self, layout: Layout, flags: Flags) -> sv_call::Result<NonNull<[u8]>> {
+    pub fn allocate(
+        &self,
+        size: usize,
+        flags: Flags,
+        zeroed: bool,
+    ) -> sv_call::Result<NonNull<[u8]>> {
         self.canary.assert();
 
-        let phys = Phys::allocate(layout, flags)?;
+        let phys = Phys::allocate(size, zeroed)?;
         let len = phys.len();
 
         self.map(None, phys, 0, len, flags).map(|addr| {
@@ -150,10 +154,9 @@ impl Space {
             .ok_or(sv_call::Error::ERANGE)?;
         let phys = match phys {
             Some(phys) => phys,
-            None => Phys::allocate(Layout::from_size_align(len, PAGE_LAYOUT.align())?, flags)?,
+            None => Phys::allocate(len, true)?,
         };
-        self.map(Some(offset), phys, 0, len, flags & !Flags::ZEROED)
-            .map(|_| {})
+        self.map(Some(offset), phys, 0, len, flags).map(|_| {})
     }
 
     /// Map a physical memory to a virtual address.
@@ -167,10 +170,6 @@ impl Space {
     ) -> sv_call::Result<LAddr> {
         self.canary.assert();
 
-        if flags & !phys.flags() != Flags::empty() || flags.contains(Flags::ZEROED) {
-            return Err(sv_call::Error::EPERM);
-        }
-
         if matches!(offset, Some(offset) if offset & PAGE_MASK != 0) {
             return Err(sv_call::Error::EALIGN);
         }
@@ -178,8 +177,8 @@ impl Space {
             return Err(sv_call::Error::EALIGN);
         }
 
-        let (len, set_vdso) = if phys == *VDSO {
-            if flags != VDSO.flags() {
+        let (len, set_vdso) = if phys == VDSO.1 {
+            if flags != VDSO.0 {
                 return Err(sv_call::Error::EACCES);
             }
 
@@ -247,7 +246,7 @@ impl Space {
     pub fn get(&self, ptr: NonNull<u8>, flags: &mut Flags) -> sv_call::Result<paging::PAddr> {
         self.canary.assert();
 
-        let vdso_size = VDSO.len();
+        let vdso_size = VDSO.1.len();
         if PREEMPT.scope(|| *self.vdso.lock()).map_or(false, |base| {
             *base <= ptr.as_ptr() && ptr.as_ptr() < *LAddr::from(base.val() + vdso_size)
         }) {
@@ -275,7 +274,7 @@ impl Space {
     pub unsafe fn reprotect(&self, mut ptr: NonNull<[u8]>, flags: Flags) -> sv_call::Result {
         self.canary.assert();
 
-        let vdso_size = VDSO.len();
+        let vdso_size = VDSO.1.len();
         if PREEMPT.scope(|| *self.vdso.lock()).map_or(false, |base| {
             *base <= ptr.as_mut_ptr() && ptr.as_mut_ptr() < *LAddr::from(base.val() + vdso_size)
         }) {
@@ -335,10 +334,9 @@ impl Space {
         self.canary.assert();
 
         let cnt = size.div_ceil_bit(paging::PAGE_SHIFT);
-        let (layout, _) = paging::PAGE_LAYOUT.repeat(cnt + 2)?;
 
         let flags = Flags::READABLE | Flags::WRITABLE | Flags::USER_ACCESS;
-        let ptr = self.allocate(layout, flags)?;
+        let ptr = self.allocate(paging::PAGE_SIZE * (cnt + 2), flags, false)?;
         let base = ptr.as_non_null_ptr();
         let actual_end =
             unsafe { NonNull::new_unchecked(base.as_ptr().add(paging::PAGE_SIZE * (cnt + 1))) };
