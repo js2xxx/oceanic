@@ -142,7 +142,7 @@ pub fn from_elf(
 
     crate::sched::SCHED.with_current(|cur| {
         let event = Arc::downgrade(&ret.tid().event) as _;
-        cur.space().handles().insert_event(ret.tid().clone(), event)
+        cur.space().handles().insert(ret.tid().clone(), Some(event))
     })?;
     Ok(ret)
 }

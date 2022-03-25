@@ -5,7 +5,10 @@ use targs::Targs;
 
 use super::*;
 use crate::{
-    mem::space::{Flags, Phys},
+    mem::{
+        flags_to_features,
+        space::{Flags, Phys},
+    },
     sched::SCHED,
 };
 
@@ -37,7 +40,6 @@ pub static BOOTFS: Azy<Phys> = Azy::new(|| {
 
 pub fn setup() {
     let mut objects = hdl::List::new();
-    let noevent = alloc::sync::Weak::<crate::sched::BasicEvent>::new();
 
     // The sequence of kernel objects must match the one defined in
     // `targs::HandleIndex`.
@@ -45,7 +47,7 @@ pub fn setup() {
         let mem_res = Arc::clone(crate::dev::mem_resource());
         let res = unsafe {
             objects.insert_impl(
-                hdl::Ref::try_new(mem_res, noevent.clone())
+                hdl::Ref::try_new(mem_res, None)
                     .expect("Failed to create memory resource")
                     .coerce_unchecked(),
             )
@@ -56,7 +58,7 @@ pub fn setup() {
         let pio_res = Arc::clone(crate::dev::pio_resource());
         let res = unsafe {
             objects.insert_impl(
-                hdl::Ref::try_new(pio_res, noevent.clone())
+                hdl::Ref::try_new(pio_res, None)
                     .expect("Failed to create port I/O resource")
                     .coerce_unchecked(),
             )
@@ -67,7 +69,7 @@ pub fn setup() {
         let gsi_res = Arc::clone(crate::dev::gsi_resource());
         let res = unsafe {
             objects.insert_impl(
-                hdl::Ref::try_new(gsi_res, noevent.clone())
+                hdl::Ref::try_new(gsi_res, None)
                     .expect("Failed to create GSI resource")
                     .coerce_unchecked(),
             )
@@ -77,17 +79,25 @@ pub fn setup() {
     unsafe {
         objects
             .insert_impl(
-                hdl::Ref::try_new_shared(Phys::clone(&VDSO), noevent.clone())
-                    .expect("Failed to create VDSO reference")
-                    .coerce_unchecked(),
+                hdl::Ref::try_new_unchecked(
+                    Phys::clone(&VDSO),
+                    flags_to_features(VDSO.flags()),
+                    None,
+                )
+                .expect("Failed to create VDSO reference")
+                .coerce_unchecked(),
             )
             .expect("Failed to insert VDSO");
 
         objects
             .insert_impl(
-                hdl::Ref::try_new_shared(Phys::clone(&BOOTFS), noevent)
-                    .expect("Failed to create boot FS reference")
-                    .coerce_unchecked(),
+                hdl::Ref::try_new_unchecked(
+                    Phys::clone(&BOOTFS),
+                    flags_to_features(VDSO.flags()),
+                    None,
+                )
+                .expect("Failed to create boot FS reference")
+                .coerce_unchecked(),
             )
             .expect("Failed to insert boot FS");
     }
@@ -104,7 +114,7 @@ pub fn setup() {
     let (me, chan) = Channel::new();
     let event = Arc::downgrade(chan.event()) as _;
     let chan = unsafe {
-        hdl::Ref::try_new(chan, event)
+        hdl::Ref::try_new(chan, Some(event))
             .expect("Failed to create channel")
             .coerce_unchecked()
     };

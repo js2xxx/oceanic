@@ -14,7 +14,7 @@ use spin::Mutex;
 use sv_call::{Feature, Result};
 
 pub use self::node::{List, Ptr, Ref, MAX_HANDLE_COUNT};
-use crate::sched::{ipc::Channel, BasicEvent, Event, PREEMPT};
+use crate::sched::{ipc::Channel, Event, PREEMPT};
 
 #[bitfield]
 struct Value {
@@ -30,6 +30,10 @@ pub struct Object<T: ?Sized> {
 }
 
 impl<U: ?Sized, T: ?Sized + CoerceUnsized<U> + Unsize<U>> CoerceUnsized<Object<U>> for Object<T> {}
+
+pub unsafe trait DefaultFeature: Any {
+    fn default_features() -> Feature;
+}
 
 #[derive(Debug)]
 pub struct HandleMap {
@@ -104,7 +108,7 @@ impl HandleMap {
         &self,
         data: T,
         feat: Feature,
-        event: Weak<dyn Event>,
+        event: Option<Weak<dyn Event>>,
     ) -> Result<sv_call::Handle> {
         // SAFETY: The safety condition is guaranteed by the caller.
         let value = unsafe { Ref::try_new_unchecked(data, feat, event) }?;
@@ -113,35 +117,12 @@ impl HandleMap {
     }
 
     #[inline]
-    pub fn insert_event<T: Send + Any>(
+    pub fn insert<T: DefaultFeature + Any>(
         &self,
         data: T,
-        event: Weak<dyn Event>,
+        event: Option<Weak<dyn Event>>,
     ) -> Result<sv_call::Handle> {
-        let value = Ref::try_new(data, event)?;
-        // SAFETY: data is `Send`.
-        unsafe { self.insert_ref(value.coerce_unchecked()) }
-    }
-
-    #[inline]
-    pub fn insert_event_shared<T: Send + Sync + Any>(
-        &self,
-        data: T,
-        event: Weak<dyn Event>,
-    ) -> Result<sv_call::Handle> {
-        let value = Ref::try_new_shared(data, event)?;
-        // SAFETY: data is `Send`.
-        unsafe { self.insert_ref(value.coerce_unchecked()) }
-    }
-
-    #[inline]
-    pub fn insert<T: Send + Any>(&self, data: T) -> Result<sv_call::Handle> {
-        self.insert_event(data, Weak::<BasicEvent>::new() as _)
-    }
-
-    #[inline]
-    pub fn insert_shared<T: Send + Sync + Any>(&self, data: T) -> Result<sv_call::Handle> {
-        self.insert_event_shared(data, Weak::<BasicEvent>::new() as _)
+        unsafe { self.insert_unchecked(data, T::default_features(), event) }
     }
 
     /// # Safety

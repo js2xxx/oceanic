@@ -11,9 +11,9 @@ use core::{
 
 use archop::Azy;
 use spin::Mutex;
-use sv_call::{Result, Feature};
+use sv_call::{Feature, Result};
 
-use super::Object;
+use super::{DefaultFeature, Object};
 use crate::{
     mem::Arena,
     sched::{Arsc, Event, PREEMPT},
@@ -42,11 +42,12 @@ impl<T: ?Sized> Ref<T> {
     pub unsafe fn try_new_unchecked(
         data: T,
         feat: Feature,
-        event: Weak<dyn Event>,
+        event: Option<Weak<dyn Event>>,
     ) -> sv_call::Result<Self>
     where
         T: Sized,
     {
+        let event = event.unwrap_or(Weak::<crate::sched::BasicEvent>::new());
         Ok(Ref {
             obj: Arsc::try_new(Object {
                 feat: Mutex::new({
@@ -101,13 +102,13 @@ impl<T: ?Sized> Ref<T> {
     }
 }
 
-impl<T: ?Sized + Send> Ref<T> {
+impl<T> Ref<T> {
     #[inline]
-    pub fn try_new(data: T, event: Weak<dyn Event>) -> sv_call::Result<Self>
+    pub fn try_new(data: T, event: Option<Weak<dyn Event>>) -> sv_call::Result<Self>
     where
-        T: Sized,
+        T: DefaultFeature,
     {
-        unsafe { Self::try_new_unchecked(data, Feature::SEND, event) }
+        unsafe { Self::try_new_unchecked(data, T::default_features(), event) }
     }
 }
 
@@ -118,16 +119,6 @@ impl<T: ?Sized + Send> Deref for Ref<T> {
     fn deref(&self) -> &Self::Target {
         // SAFETY: It's `Send`.
         unsafe { self.deref_unchecked() }
-    }
-}
-
-impl<T: ?Sized + Send + Sync> Ref<T> {
-    #[inline]
-    pub fn try_new_shared(data: T, event: Weak<dyn Event>) -> sv_call::Result<Self>
-    where
-        T: Sized,
-    {
-        unsafe { Self::try_new_unchecked(data, Feature::SEND | Feature::SYNC, event) }
     }
 }
 

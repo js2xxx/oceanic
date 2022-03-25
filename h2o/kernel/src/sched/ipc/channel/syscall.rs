@@ -19,11 +19,11 @@ fn chan_new(p1: UserPtr<Out, Handle>, p2: UserPtr<Out, Handle>) -> Result {
     SCHED.with_current(|cur| {
         let (c1, c2) = Channel::new();
         let map = cur.space().handles();
+        let e1 = Arc::downgrade(&c1.me.event) as _;
+        let e2 = Arc::downgrade(&c2.me.event) as _;
+        let h1 = map.insert(c1, Some(e1))?;
+        let h2 = map.insert(c2, Some(e2))?;
         unsafe {
-            let e1 = Arc::downgrade(&c1.me.event) as _;
-            let e2 = Arc::downgrade(&c2.me.event) as _;
-            let h1 = map.insert_unchecked(c1, Feature::SEND, e1)?;
-            let h2 = map.insert_unchecked(c2, Feature::SEND, e2)?;
             p1.write(h1)?;
             p2.write(h2)
         }
@@ -181,6 +181,6 @@ fn chan_acrecv(hdl: Handle, id: usize, wake_all: bool) -> Result<Handle> {
         let event = chan.call_event(id)? as _;
 
         let blocker = crate::sched::Blocker::new(&event, wake_all, SIG_READ);
-        cur.space().handles().insert(blocker)
+        cur.space().handles().insert(blocker, None)
     })
 }

@@ -1,4 +1,9 @@
-use super::{hdl::HandleMap, Tid};
+use sv_call::Feature;
+
+use super::{
+    hdl::{DefaultFeature, HandleMap},
+    Tid,
+};
 use crate::{
     mem,
     sched::{
@@ -63,5 +68,11 @@ impl Space {
 
     pub fn child(&self, hdl: sv_call::Handle) -> sv_call::Result<Tid> {
         super::PREEMPT.scope(|| self.handles().get::<Tid>(hdl).map(|w| Tid::clone(w)))
+    }
+}
+
+unsafe impl DefaultFeature for Arsc<Space> {
+    fn default_features() -> Feature {
+        Feature::SEND | Feature::SYNC | Feature::READ | Feature::WRITE
     }
 }

@@ -5,7 +5,7 @@ use paging::LAddr;
 use spin::Mutex;
 use sv_call::*;
 
-use super::{Blocked, RunningState, Signal, Space, Tid};
+use super::{hdl::DefaultFeature, Blocked, RunningState, Signal, Space, Tid};
 use crate::{
     cpu::time::Instant,
     sched::{imp::MIN_TIME_GRAN, Arsc, PREEMPT, SCHED},
@@ -38,6 +38,12 @@ impl Drop for SuspendToken {
     }
 }
 
+unsafe impl DefaultFeature for SuspendToken {
+    fn default_features() -> Feature {
+        Feature::SEND | Feature::READ | Feature::WRITE
+    }
+}
+
 #[syscall]
 fn task_exit(retval: usize) -> Result {
     SCHED.exit_current(retval);
@@ -66,7 +72,7 @@ fn task_sleep(ms: u32) -> Result {
 fn space_new() -> Result<Handle> {
     SCHED.with_current(|cur| {
         let space = Space::new(cur.tid().ty())?;
-        cur.space().handles().insert_shared(space)
+        cur.space().handles().insert(space, None)
     })
 }
 
@@ -165,7 +171,7 @@ fn task_new(
         }
     };
     SCHED.with_current(|cur| {
-        let st_h = cur.space().handles().insert(st_data)?;
+        let st_h = cur.space().handles().insert(st_data, None)?;
         unsafe { st.write(st_h) }
     })?;
 
@@ -217,7 +223,7 @@ fn task_ctl(hdl: Handle, op: u32, data: UserPtr<InOut, Handle>) -> Result {
                 }
             })?;
 
-            let out = super::PREEMPT.scope(|| cur.handles().insert(st))?;
+            let out = super::PREEMPT.scope(|| cur.handles().insert(st, None))?;
             unsafe { data.out().write(out)? };
 
             Ok(())
@@ -321,11 +327,9 @@ fn task_debug(hdl: Handle, op: u32, addr: usize, data: UserPtr<InOut, u8>, len: 
                 Err(Error::EBUFFER)
             } else {
                 let hdl = SCHED.with_current(|cur| {
-                    create_excep_chan(&task).and_then(|chan| unsafe {
+                    create_excep_chan(&task).and_then(|chan| {
                         let event = Arc::downgrade(chan.event()) as _;
-                        cur.space()
-                            .handles()
-                            .insert_unchecked(chan, Feature::SEND, event)
+                        cur.space().handles().insert(chan, Some(event))
                     })
                 })?;
 

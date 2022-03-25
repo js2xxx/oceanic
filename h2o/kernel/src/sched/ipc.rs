@@ -189,7 +189,7 @@ mod syscall {
             let event = obj.event().upgrade().ok_or(Error::EPERM)?;
 
             let blocker = Blocker::new(&event, wake_all, signal);
-            cur.space().handles().insert(blocker)
+            cur.space().handles().insert(blocker, None)
         })
     }
 

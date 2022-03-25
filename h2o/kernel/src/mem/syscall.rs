@@ -7,7 +7,10 @@ use sv_call::{
     *,
 };
 
-use super::space::{self, Flags};
+use super::{
+    flags_to_features,
+    space::{self, Flags},
+};
 use crate::{
     dev::Resource,
     sched::{
@@ -36,7 +39,10 @@ fn phys_alloc(size: usize, align: usize, flags: Flags) -> Result<Handle> {
     let layout = check_layout(size, align)?;
     let flags = check_flags(flags)?;
     let phys = PREEMPT.scope(|| space::Phys::allocate(layout, flags))?;
-    SCHED.with_current(|cur| cur.space().handles().insert_shared(phys))
+    SCHED.with_current(|cur| {
+        let feat = flags_to_features(flags);
+        unsafe { cur.space().handles().insert_unchecked(phys, feat, None) }
+    })
 }
 
 #[syscall]
@@ -109,7 +115,10 @@ fn phys_sub(hdl: Handle, offset: usize, len: usize) -> Result<Handle> {
     }
 
     let sub = phys.create_sub(offset, len)?;
-    SCHED.with_current(|cur| cur.space().handles().insert_shared(sub))
+    SCHED.with_current(|cur| {
+        let feat = flags_to_features(phys.flags());
+        unsafe { cur.space().handles().insert_unchecked(sub, feat, None) }
+    })
 }
 
 #[syscall]
@@ -238,7 +247,8 @@ fn phys_acq(res: Handle, addr: usize, size: usize, align: usize, flags: Flags) -
             let align = paging::PAGE_LAYOUT.align();
             let layout = unsafe { Layout::from_size_align(size, align) }?;
             let phys = space::Phys::new(paging::PAddr::new(addr), layout, flags);
-            cur.space().handles().insert_shared(phys)
+            let feat = flags_to_features(flags);
+            unsafe { cur.space().handles().insert_unchecked(phys, feat, None) }
         } else {
             Err(Error::EPERM)
         }
