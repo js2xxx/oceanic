@@ -106,11 +106,10 @@ fn exec(
     let init = exec_inner(cur, name, None, None, space, init_chan, starter)?;
     super::SCHED.with_current(|cur| {
         let event = Arc::downgrade(&init.tid().event) as _;
-        let handle = unsafe {
-            cur.space()
-                .handles()
-                .insert_event(init.tid().clone(), event)
-        }?;
+        let handle = cur
+            .space()
+            .handles()
+            .insert(init.tid().clone(), Some(event))?;
         Ok((init, handle))
     })
 }
@@ -135,11 +134,12 @@ fn create(name: Option<String>, space: Arsc<Space>) -> sv_call::Result<(Init, sv
 
     let init = Init::new(tid, space, kstack, ext_frame);
 
-    let handle = super::SCHED.with_current(|cur| {
+    super::SCHED.with_current(|cur| {
         let event = Arc::downgrade(&init.tid().event) as _;
-        cur.space()
+        let handle = cur
+            .space()
             .handles()
-            .insert_event(init.tid().clone(), event)
-    })?;
-    Ok((init, handle))
+            .insert(init.tid().clone(), Some(event))?;
+        Ok((init, handle))
+    })
 }

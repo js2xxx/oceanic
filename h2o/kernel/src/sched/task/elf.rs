@@ -48,8 +48,7 @@ fn load_prog(
         let virt = LAddr::from(vstart)..LAddr::from(vend);
         log::trace!("Mapping {:?}", virt);
         let cnt = fsize.div_ceil_bit(paging::PAGE_SHIFT);
-        let (layout, _) = paging::PAGE_LAYOUT.repeat(cnt)?;
-        let phys = Phys::new(phys, layout, flags)?;
+        let phys = Phys::new(phys, paging::PAGE_SIZE * cnt)?;
         unsafe { space.map_addr(virt, Some(phys), flags) }?;
     }
 
@@ -58,7 +57,7 @@ fn load_prog(
 
         let virt = LAddr::from(vend)..LAddr::from(vend + extra);
         log::trace!("Allocating {:?}", virt);
-        unsafe { space.map_addr(virt, None, flags | Flags::ZEROED) }?;
+        unsafe { space.map_addr(virt, None, flags) }?;
     }
 
     Ok(())
@@ -142,7 +141,7 @@ pub fn from_elf(
 
     crate::sched::SCHED.with_current(|cur| {
         let event = Arc::downgrade(&ret.tid().event) as _;
-        cur.space().handles().insert_event(ret.tid().clone(), event)
+        cur.space().handles().insert(ret.tid().clone(), Some(event))
     })?;
     Ok(ret)
 }

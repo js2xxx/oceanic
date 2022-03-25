@@ -10,24 +10,25 @@ use core::{
 };
 
 use archop::Azy;
-use sv_call::Result;
+use sv_call::{Feature, Result};
 
-use super::Object;
+use super::{DefaultFeature, Object};
 use crate::{
     mem::Arena,
     sched::{Arsc, Event, PREEMPT},
 };
 
-pub const MAX_HANDLE_COUNT: usize = 1 << 18;
+pub const MAX_HANDLE_COUNT: usize = 1 << 16;
 
 pub(super) static HR_ARENA: Azy<Arena<Ref>> = Azy::new(|| Arena::new(MAX_HANDLE_COUNT));
 
 #[derive(Debug)]
 pub struct Ref<T: ?Sized = dyn Any> {
-    obj: Arsc<Object<T>>,
+    _marker: PhantomPinned,
     next: Option<Ptr>,
     prev: Option<Ptr>,
-    _marker: PhantomPinned,
+    feat: Feature,
+    obj: Arsc<Object<T>>,
 }
 pub type Ptr = NonNull<Ref>;
 
@@ -40,23 +41,22 @@ impl<T: ?Sized> Ref<T> {
     /// `sync`.
     pub unsafe fn try_new_unchecked(
         data: T,
-        send: bool,
-        sync: bool,
-        event: Weak<dyn Event>,
+        feat: Feature,
+        event: Option<Weak<dyn Event>>,
     ) -> sv_call::Result<Self>
     where
         T: Sized,
     {
+        let event = event.unwrap_or(Weak::<crate::sched::BasicEvent>::new() as _);
+        if event.strong_count() == 0 && feat.contains(Feature::WAIT) {
+            return Err(sv_call::Error::EPERM);
+        }
         Ok(Ref {
-            obj: Arsc::try_new(Object {
-                send,
-                sync,
-                event,
-                data,
-            })?,
+            _marker: PhantomPinned,
             next: None,
             prev: None,
-            _marker: PhantomPinned,
+            feat,
+            obj: Arsc::try_new(Object { event, data })?,
         })
     }
 
@@ -68,10 +68,11 @@ impl<T: ?Sized> Ref<T> {
         T: Sized + Any,
     {
         Ref {
-            obj: self.obj,
+            _marker: PhantomPinned,
             next: None,
             prev: None,
-            _marker: PhantomPinned,
+            feat: self.feat,
+            obj: self.obj,
         }
     }
 
@@ -87,35 +88,20 @@ impl<T: ?Sized> Ref<T> {
     pub fn event(&self) -> &Weak<dyn Event> {
         &self.obj.event
     }
+
+    #[inline]
+    pub fn features(&self) -> Feature {
+        self.feat
+    }
 }
 
-impl<T: ?Sized + Send> Ref<T> {
+impl<T> Ref<T> {
     #[inline]
-    pub fn try_new(data: T, event: Weak<dyn Event>) -> sv_call::Result<Self>
+    pub fn try_new(data: T, event: Option<Weak<dyn Event>>) -> sv_call::Result<Self>
     where
-        T: Sized,
+        T: DefaultFeature,
     {
-        unsafe { Self::try_new_unchecked(data, true, false, event) }
-    }
-
-    #[inline]
-    pub fn raw(&self) -> &Arsc<Object<T>> {
-        &self.obj
-    }
-
-    #[inline]
-    pub fn into_raw(self) -> Arsc<Object<T>> {
-        self.obj
-    }
-
-    #[inline]
-    pub fn from_raw(obj: Arsc<Object<T>>) -> Self {
-        Self {
-            obj,
-            next: None,
-            prev: None,
-            _marker: PhantomPinned,
-        }
+        unsafe { Self::try_new_unchecked(data, T::default_features(), event) }
     }
 }
 
@@ -129,24 +115,15 @@ impl<T: ?Sized + Send> Deref for Ref<T> {
     }
 }
 
-impl<T: ?Sized + Send + Sync> Ref<T> {
-    #[inline]
-    pub fn try_new_shared(data: T, event: Weak<dyn Event>) -> sv_call::Result<Self>
-    where
-        T: Sized,
-    {
-        unsafe { Self::try_new_unchecked(data, true, true, event) }
-    }
-}
-
 impl<T: ?Sized + Send + Sync> Clone for Ref<T> {
     #[inline]
     fn clone(&self) -> Self {
         Self {
-            obj: Arsc::clone(&self.obj),
+            _marker: PhantomPinned,
             next: None,
             prev: None,
-            _marker: PhantomPinned,
+            feat: self.feat,
+            obj: Arsc::clone(&self.obj),
         }
     }
 }
@@ -167,16 +144,18 @@ impl Ref {
     #[inline]
     #[must_use = "Don't make useless clonings"]
     pub unsafe fn clone_unchecked(&self) -> Ref {
-        Self {
-            obj: Arsc::clone(&self.obj),
+        Ref {
+            _marker: PhantomPinned,
             next: None,
             prev: None,
-            _marker: PhantomPinned,
+            feat: self.feat,
+            obj: Arsc::clone(&self.obj),
         }
     }
 
     pub fn try_clone(&self) -> Result<Ref> {
-        if self.obj.send && self.obj.sync {
+        let feat = self.features();
+        if feat.contains(Feature::SEND | Feature::SYNC) {
             // SAFETY: The underlying object is `send` and `sync`.
             Ok(unsafe { self.clone_unchecked() })
         } else {
@@ -186,7 +165,16 @@ impl Ref {
 
     #[inline]
     pub fn is_send(&self) -> bool {
-        self.obj.send
+        self.features().contains(Feature::SEND)
+    }
+
+    pub fn set_features(&mut self, feat: Feature) -> Result {
+        if feat & !self.feat == Feature::empty() {
+            self.feat = feat;
+            Ok(())
+        } else {
+            Err(sv_call::Error::EPERM)
+        }
     }
 }
 

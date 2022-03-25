@@ -11,7 +11,7 @@ use core::{
 use archop::Azy;
 use modular_bitfield::prelude::*;
 use spin::Mutex;
-use sv_call::Result;
+use sv_call::{Feature, Result};
 
 pub use self::node::{List, Ptr, Ref, MAX_HANDLE_COUNT};
 use crate::sched::{ipc::Channel, Event, PREEMPT};
@@ -24,13 +24,15 @@ struct Value {
 
 #[derive(Debug)]
 pub struct Object<T: ?Sized> {
-    send: bool,
-    sync: bool,
     event: Weak<dyn Event>,
     data: T,
 }
 
 impl<U: ?Sized, T: ?Sized + CoerceUnsized<U> + Unsize<U>> CoerceUnsized<Object<U>> for Object<T> {}
+
+pub unsafe trait DefaultFeature: Any {
+    fn default_features() -> Feature;
+}
 
 #[derive(Debug)]
 pub struct HandleMap {
@@ -58,17 +60,12 @@ impl HandleMap {
 
     #[inline]
     pub fn get<T: Send + Any>(&self, handle: sv_call::Handle) -> Result<&Ref<T>> {
-        // SAFETY: The type is `Send`.
-        unsafe { self.get_unchecked(handle) }
-    }
-
-    /// # Safety
-    ///
-    /// The caller must ensure that the list belongs to the current task if the
-    /// expected type is not [`Send`].
-    #[inline]
-    pub unsafe fn get_unchecked<T: Any>(&self, handle: sv_call::Handle) -> Result<&Ref<T>> {
         self.decode(handle)
+            .and_then(|ptr| {
+                unsafe { ptr.as_ref().is_send() }
+                    .then(|| ptr)
+                    .ok_or(sv_call::Error::EPERM)
+            })
             .and_then(|ptr| unsafe { ptr.as_ref().downcast_ref::<T>() })
     }
 
@@ -109,46 +106,22 @@ impl HandleMap {
     pub unsafe fn insert_unchecked<T: 'static>(
         &self,
         data: T,
-        send: bool,
-        sync: bool,
-        event: Weak<dyn Event>,
+        feat: Feature,
+        event: Option<Weak<dyn Event>>,
     ) -> Result<sv_call::Handle> {
         // SAFETY: The safety condition is guaranteed by the caller.
-        let value = unsafe { Ref::try_new_unchecked(data, send, sync, event) }?;
+        let value = unsafe { Ref::try_new_unchecked(data, feat, event) }?;
         // SAFETY: The safety condition is guaranteed by the caller.
         unsafe { self.insert_ref(value.coerce_unchecked()) }
     }
 
     #[inline]
-    pub fn insert_event<T: Send + Any>(
+    pub fn insert<T: DefaultFeature + Any>(
         &self,
         data: T,
-        event: Weak<dyn Event>,
+        event: Option<Weak<dyn Event>>,
     ) -> Result<sv_call::Handle> {
-        let value = Ref::try_new(data, event)?;
-        // SAFETY: data is `Send`.
-        unsafe { self.insert_ref(value.coerce_unchecked()) }
-    }
-
-    #[inline]
-    pub fn insert_event_shared<T: Send + Sync + Any>(
-        &self,
-        data: T,
-        event: Weak<dyn Event>,
-    ) -> Result<sv_call::Handle> {
-        let value = Ref::try_new_shared(data, event)?;
-        // SAFETY: data is `Send`.
-        unsafe { self.insert_ref(value.coerce_unchecked()) }
-    }
-
-    #[inline]
-    pub fn insert<T: Send + Any>(&self, data: T) -> Result<sv_call::Handle> {
-        self.insert_event(data, Weak::<crate::sched::BasicEvent>::new() as _)
-    }
-
-    #[inline]
-    pub fn insert_shared<T: Send + Sync + Any>(&self, data: T) -> Result<sv_call::Handle> {
-        self.insert_event_shared(data, Weak::<crate::sched::BasicEvent>::new() as _)
+        unsafe { self.insert_unchecked(data, T::default_features(), event) }
     }
 
     /// # Safety
@@ -216,12 +189,26 @@ pub(super) fn init() {
 mod syscall {
     use sv_call::*;
 
-    use crate::sched::SCHED;
+    use crate::{
+        sched::SCHED,
+        syscall::{InOut, UserPtr},
+    };
 
     #[syscall]
     fn obj_clone(hdl: Handle) -> Result<Handle> {
         hdl.check_null()?;
         SCHED.with_current(|cur| cur.space().handles().clone_ref(hdl))
+    }
+
+    #[syscall]
+    fn obj_feat(hdl_ptr: UserPtr<InOut, Handle>, feat: Feature) -> Result {
+        let old = unsafe { hdl_ptr.r#in().read() }?;
+        old.check_null()?;
+        let mut obj = SCHED.with_current(|cur| unsafe { cur.space().handles().remove_ref(old) })?;
+        let ret = obj.set_features(feat);
+        let new = SCHED.with_current(|cur| unsafe { cur.space().handles().insert_ref(obj) })?;
+        unsafe { hdl_ptr.out().write(new) }?;
+        ret
     }
 
     #[syscall]

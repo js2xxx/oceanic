@@ -2,34 +2,24 @@ use alloc::alloc::Global;
 use core::alloc::{Allocator, Layout};
 
 use bitop_ex::BitOpEx;
-use paging::{LAddr, PAddr, PAGE_SHIFT};
+use paging::{LAddr, PAddr, PAGE_SHIFT, PAGE_SIZE};
+use sv_call::Feature;
 
-use super::Flags;
-use crate::sched::Arsc;
+use crate::sched::{task::hdl::DefaultFeature, Arsc};
 
 #[derive(Debug)]
 struct PhysInner {
     from_allocator: bool,
     base: PAddr,
-    layout: Layout,
-    flags: Flags,
+    size: usize,
 }
 
 impl PhysInner {
-    unsafe fn new_manual(
-        from_allocator: bool,
-        base: PAddr,
-        layout: Layout,
-        flags: Flags,
-    ) -> PhysInner {
-        let layout = layout
-            .align_to(paging::PAGE_LAYOUT.align())
-            .expect("Unalignable layout");
+    unsafe fn new_manual(from_allocator: bool, base: PAddr, size: usize) -> PhysInner {
         PhysInner {
             from_allocator,
             base,
-            layout,
-            flags,
+            size,
         }
     }
 }
@@ -38,7 +28,9 @@ impl Drop for PhysInner {
     fn drop(&mut self) {
         if self.from_allocator {
             let ptr = unsafe { self.base.to_laddr(minfo::ID_OFFSET).as_non_null_unchecked() };
-            unsafe { Global.deallocate(ptr, self.layout) };
+            let layout =
+                unsafe { Layout::from_size_align_unchecked(self.size, PAGE_SIZE) }.pad_to_align();
+            unsafe { Global.deallocate(ptr, layout) };
         }
     }
 }
@@ -47,7 +39,6 @@ impl Drop for PhysInner {
 pub struct Phys {
     offset: usize,
     len: usize,
-    flags: Flags,
     inner: Arsc<PhysInner>,
 }
 
@@ -55,8 +46,7 @@ impl From<Arsc<PhysInner>> for Phys {
     fn from(inner: Arsc<PhysInner>) -> Self {
         Phys {
             offset: 0,
-            len: inner.layout.size(),
-            flags: inner.flags,
+            len: inner.size,
             inner,
         }
     }
@@ -64,8 +54,8 @@ impl From<Arsc<PhysInner>> for Phys {
 
 impl Phys {
     #[inline]
-    pub fn new(base: PAddr, layout: Layout, flags: Flags) -> sv_call::Result<Self> {
-        unsafe { Arsc::try_new(PhysInner::new_manual(false, base, layout, flags)) }
+    pub fn new(base: PAddr, size: usize) -> sv_call::Result<Self> {
+        unsafe { Arsc::try_new(PhysInner::new_manual(false, base, size)) }
             .map_err(sv_call::Error::from)
             .map(Self::from)
     }
@@ -73,10 +63,10 @@ impl Phys {
     /// # Errors
     ///
     /// Returns error if the heap memory is exhausted.
-    pub fn allocate(layout: Layout, flags: Flags) -> sv_call::Result<Self> {
+    pub fn allocate(size: usize, zeroed: bool) -> sv_call::Result<Self> {
         let mut inner = Arsc::try_new_uninit()?;
-        let layout = layout.align_to(paging::PAGE_LAYOUT.align())?.pad_to_align();
-        let mem = if flags.contains(Flags::ZEROED) {
+        let layout = unsafe { Layout::from_size_align_unchecked(size, PAGE_SIZE) }.pad_to_align();
+        let mem = if zeroed {
             Global.allocate_zeroed(layout)
         } else {
             Global.allocate(layout)
@@ -85,8 +75,7 @@ impl Phys {
             Arsc::get_mut_unchecked(&mut inner).write(PhysInner::new_manual(
                 true,
                 LAddr::from(ptr).to_paddr(minfo::ID_OFFSET),
-                layout,
-                flags,
+                size,
             ));
             Arsc::assume_init(inner)
         })
@@ -102,10 +91,6 @@ impl Phys {
         self.len == 0
     }
 
-    pub fn flags(&self) -> Flags {
-        self.flags
-    }
-
     pub fn create_sub(&self, offset: usize, len: usize) -> sv_call::Result<Self> {
         if offset.contains_bit(PAGE_SHIFT) || len.contains_bit(PAGE_SHIFT) {
             return Err(sv_call::Error::EALIGN);
@@ -117,7 +102,6 @@ impl Phys {
             Ok(Phys {
                 offset,
                 len,
-                flags: self.flags,
                 inner: Arsc::clone(&self.inner),
             })
         } else {
@@ -139,5 +123,11 @@ impl PartialEq for Phys {
         self.offset == other.offset
             && self.len == other.len
             && Arsc::ptr_eq(&self.inner, &other.inner)
+    }
+}
+
+unsafe impl DefaultFeature for Phys {
+    fn default_features() -> Feature {
+        Feature::SEND | Feature::SYNC | Feature::READ | Feature::WRITE | Feature::EXECUTE
     }
 }

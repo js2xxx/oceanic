@@ -2,8 +2,9 @@ use core::{hash::BuildHasherDefault, num::NonZeroU32, ops::Deref};
 
 use archop::Azy;
 use collection_ex::{CHashMap, FnvHasher, IdAllocator};
+use sv_call::Feature;
 
-use super::TaskInfo;
+use super::{hdl::DefaultFeature, TaskInfo};
 use crate::sched::{Arsc, PREEMPT};
 
 pub const NR_TASKS: usize = 65536;
@@ -40,6 +41,12 @@ impl PartialEq for Tid {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
         self.raw == other.raw && Arsc::ptr_eq(&self.ti, &other.ti)
+    }
+}
+
+unsafe impl DefaultFeature for Tid {
+    fn default_features() -> Feature {
+        Feature::SEND | Feature::EXECUTE | Feature::WAIT
     }
 }
 

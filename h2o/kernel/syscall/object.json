@@ -10,6 +10,20 @@
         ]
     },
     {
+        "name": "sv_obj_feat",
+        "returns": "()",
+        "args": [
+            {
+                "name": "hdl",
+                "ty": "*mut Handle"
+            },
+            {
+                "name": "feat",
+                "ty": "Feature"
+            }
+        ]
+    },
+    {
         "name": "sv_obj_drop",
         "returns": "()",
         "args": [

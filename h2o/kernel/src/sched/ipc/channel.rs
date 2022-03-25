@@ -12,9 +12,13 @@ use core::{
 use bytes::Bytes;
 use crossbeam_queue::SegQueue;
 use spin::Mutex;
+use sv_call::Feature;
 
 use super::{Event, SIG_READ};
-use crate::sched::{task::hdl, BasicEvent, PREEMPT, SCHED};
+use crate::sched::{
+    task::hdl::{self, DefaultFeature},
+    BasicEvent, PREEMPT, SCHED,
+};
 
 const MAX_QUEUE_SIZE: usize = 2048;
 
@@ -247,5 +251,11 @@ impl Channel {
         }
         Self::get_packet(&mut caller.get_mut().head, buffer_cap, handle_cap)
             .inspect(|_| drop(caller.remove()))
+    }
+}
+
+unsafe impl DefaultFeature for Channel {
+    fn default_features() -> Feature {
+        Feature::SEND | Feature::READ | Feature::WRITE | Feature::WAIT
     }
 }

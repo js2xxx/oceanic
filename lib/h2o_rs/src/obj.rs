@@ -1,6 +1,6 @@
 use core::{mem, time::Duration};
 
-pub use sv_call::Handle;
+pub use sv_call::{Feature, Handle};
 
 use crate::error::Result;
 
@@ -67,6 +67,16 @@ pub trait Object {
             unsafe { sv_call::sv_obj_await(unsafe { self.raw() }, wake_all, signal).into_res()? };
         // SAFETY: The handle is freshly allocated.
         Ok(unsafe { Object::from_raw(handle) })
+    }
+
+    fn reduce_features(self, features: Feature) -> Result<Self>
+    where
+        Self: Sized,
+    {
+        let mut handle = Self::into_raw(self);
+        unsafe { sv_call::sv_obj_feat(&mut handle, features) }.into_res()?;
+        // SAFETY: The handle is freshly allocated.
+        Ok(unsafe { Self::from_raw(handle) })
     }
 }
 

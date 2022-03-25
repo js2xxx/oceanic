@@ -105,10 +105,16 @@ extern "C" fn tmain(init_chan: sv_call::Handle) {
     let (me, child) = Channel::new();
 
     let startup_args = StartupArgs {
-        handles: [(
-            HandleInfo::new().with_handle_type(HandleType::VdsoPhys),
-            Phys::into_raw(vdso_phys),
-        )]
+        handles: [
+            (
+                HandleInfo::new().with_handle_type(HandleType::VdsoPhys),
+                Phys::into_raw(vdso_phys),
+            ),
+            (
+                HandleInfo::new().with_handle_type(HandleType::ProgramPhys),
+                Phys::into_raw(bin.phys),
+            ),
+        ]
         .into_iter()
         .collect(),
         args: vec![],

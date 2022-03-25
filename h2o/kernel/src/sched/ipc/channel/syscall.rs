@@ -19,11 +19,11 @@ fn chan_new(p1: UserPtr<Out, Handle>, p2: UserPtr<Out, Handle>) -> Result {
     SCHED.with_current(|cur| {
         let (c1, c2) = Channel::new();
         let map = cur.space().handles();
+        let e1 = Arc::downgrade(&c1.me.event) as _;
+        let e2 = Arc::downgrade(&c2.me.event) as _;
+        let h1 = map.insert(c1, Some(e1))?;
+        let h2 = map.insert(c2, Some(e2))?;
         unsafe {
-            let e1 = Arc::downgrade(&c1.me.event) as _;
-            let e2 = Arc::downgrade(&c2.me.event) as _;
-            let h1 = map.insert_unchecked(c1, true, false, e1)?;
-            let h2 = map.insert_unchecked(c2, true, false, e2)?;
             p1.write(h1)?;
             p2.write(h2)
         }
@@ -52,6 +52,9 @@ where
     SCHED.with_current(|cur| {
         let map = cur.space().handles();
         let channel = map.get::<Channel>(hdl)?;
+        if !channel.features().contains(Feature::WRITE) {
+            return Err(Error::EPERM);
+        }
         let objects = unsafe { map.send(handles, channel) }?;
         let mut packet = Packet::new(packet.id, objects, buffer);
         send(channel, &mut packet)
@@ -115,6 +118,9 @@ fn chan_recv(hdl: Handle, packet_ptr: UserPtr<InOut, RawPacket>) -> Result {
     let res = SCHED.with_current(|cur| {
         let map = cur.space().handles();
         let channel = map.get::<Channel>(hdl)?;
+        if !channel.features().contains(Feature::READ) {
+            return Err(Error::EPERM);
+        }
 
         raw.buffer_size = raw.buffer_cap;
         raw.handle_count = raw.handle_cap;
@@ -143,6 +149,9 @@ fn chan_crecv(
 
     let call_event = SCHED.with_current(|cur| {
         let channel = cur.space().handles().get::<Channel>(hdl)?;
+        if !{ channel.features() }.contains(Feature::WAIT | Feature::READ) {
+            return Err(Error::EPERM);
+        }
         Ok(channel.call_event(id)? as _)
     })?;
     let blocker = if timeout_us == 0 {
@@ -158,6 +167,9 @@ fn chan_crecv(
         let map = cur.space().handles();
 
         let channel = map.get::<Channel>(hdl)?;
+        if !channel.features().contains(Feature::READ) {
+            return Err(Error::EPERM);
+        }
 
         raw.buffer_size = raw.buffer_cap;
         raw.handle_count = raw.handle_cap;
@@ -178,9 +190,12 @@ fn chan_crecv(
 fn chan_acrecv(hdl: Handle, id: usize, wake_all: bool) -> Result<Handle> {
     SCHED.with_current(|cur| {
         let chan = cur.space().handles().get::<Channel>(hdl)?;
+        if !{ chan.features() }.contains(Feature::READ | Feature::WAIT) {
+            return Err(Error::EPERM);
+        }
         let event = chan.call_event(id)? as _;
 
         let blocker = crate::sched::Blocker::new(&event, wake_all, SIG_READ);
-        cur.space().handles().insert(blocker)
+        cur.space().handles().insert(blocker, None)
     })
 }

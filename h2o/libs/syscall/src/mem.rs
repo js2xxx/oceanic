@@ -11,7 +11,6 @@ bitflags! {
         const WRITABLE    = 1 << 2;
         const EXECUTABLE  = 1 << 3;
         const UNCACHED    = 1 << 4;
-        const ZEROED      = 1 << 10;
     }
 }
 

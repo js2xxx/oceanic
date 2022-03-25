@@ -65,8 +65,9 @@ impl Kstack {
     pub fn new(entry: Option<Entry>, ty: super::Type) -> Self {
         let ptr = space::KRL
             .allocate(
-                Layout::new::<KstackData>(),
+                Layout::new::<KstackData>().size(),
                 Flags::READABLE | Flags::WRITABLE,
+                false,
             )
             .expect("Failed to allocate kernel stack");
         unsafe {

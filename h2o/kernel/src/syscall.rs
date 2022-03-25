@@ -44,7 +44,13 @@ mod syscall {
 
     #[syscall]
     fn int_new(value: u64) -> Result<Handle> {
-        SCHED.with_current(|cur| cur.space().handles().insert_shared(value))
+        SCHED.with_current(|cur| unsafe {
+            cur.space().handles().insert_unchecked(
+                value,
+                Feature::SEND | Feature::SYNC | Feature::READ,
+                None,
+            )
+        })
     }
 
     #[syscall]

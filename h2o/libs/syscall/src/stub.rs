@@ -5,7 +5,7 @@ use crate::{
     mem::{Flags, MapInfo, MemInfo},
     res::IntrConfig,
     task::ExecInfo,
-    Handle,
+    Feature, Handle,
 };
 
 #[cfg(feature = "stub")]

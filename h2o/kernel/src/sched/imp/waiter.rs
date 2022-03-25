@@ -2,11 +2,12 @@ use alloc::sync::{Arc, Weak};
 use core::{fmt::Debug, time::Duration};
 
 use spin::Mutex;
+use sv_call::Feature;
 
 use super::PREEMPT;
 use crate::{
     cpu::arch::apic::TriggerMode,
-    sched::{wait::WaitObject, Event, Waiter, WaiterData},
+    sched::{task::hdl::DefaultFeature, wait::WaitObject, Event, Waiter, WaiterData},
 };
 
 #[derive(Debug)]
@@ -71,5 +72,11 @@ impl Waiter for Blocker {
         PREEMPT.scope(|| *self.status.lock() = (true, signal));
         let num = if self.wake_all { usize::MAX } else { 1 };
         self.wo.notify(num, false);
+    }
+}
+
+unsafe impl DefaultFeature for Arc<Blocker> {
+    fn default_features() -> sv_call::Feature {
+        Feature::SEND | Feature::WAIT
     }
 }
