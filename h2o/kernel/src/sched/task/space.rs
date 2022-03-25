@@ -66,8 +66,16 @@ impl Space {
         let _ = self.futexes.remove_if(&key, |futex| futex.is_empty());
     }
 
-    pub fn child(&self, hdl: sv_call::Handle) -> sv_call::Result<Tid> {
-        super::PREEMPT.scope(|| self.handles().get::<Tid>(hdl).map(|w| Tid::clone(w)))
+    pub fn child(&self, hdl: sv_call::Handle, need_feature: Feature) -> sv_call::Result<Tid> {
+        super::PREEMPT.scope(|| {
+            self.handles().get::<Tid>(hdl).and_then(|obj| {
+                if obj.feature().lock().contains(need_feature) {
+                    Ok(Tid::clone(obj))
+                } else {
+                    Err(sv_call::Error::EPERM)
+                }
+            })
+        })
     }
 }
 

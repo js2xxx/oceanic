@@ -136,6 +136,9 @@ mod syscall {
             .space()
             .handles()
             .get::<Arc<Interrupt>>(hdl)?;
+        if !intr.feature().lock().contains(Feature::WAIT) {
+            return Err(Error::EPERM);
+        }
 
         let blocker = crate::sched::Blocker::new(&(Arc::clone(intr) as _), false, SIG_GENERIC);
         blocker.wait(pree, time::from_us(timeout_us))?;

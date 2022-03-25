@@ -170,6 +170,9 @@ mod syscall {
         let cur = unsafe { (*SCHED.current()).as_ref().ok_or(Error::ESRCH) }?;
 
         let obj = unsafe { cur.space().handles().decode(hdl)?.as_ref() };
+        if !obj.feature().lock().contains(Feature::WAIT) {
+            return Err(Error::EPERM);
+        }
         let event = obj.event().upgrade().ok_or(Error::EPERM)?;
 
         let blocker = Blocker::new(&event, wake_all, signal);
@@ -186,6 +189,9 @@ mod syscall {
     fn obj_await(hdl: Handle, wake_all: bool, signal: usize) -> Result<Handle> {
         SCHED.with_current(|cur| {
             let obj = unsafe { cur.space().handles().decode(hdl)?.as_ref() };
+            if !obj.feature().lock().contains(Feature::WAIT) {
+                return Err(Error::EPERM);
+            }
             let event = obj.event().upgrade().ok_or(Error::EPERM)?;
 
             let blocker = Blocker::new(&event, wake_all, signal);

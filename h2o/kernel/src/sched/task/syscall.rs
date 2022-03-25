@@ -199,7 +199,7 @@ fn task_ctl(hdl: Handle, op: u32, data: UserPtr<InOut, Handle>) -> Result {
 
     match op {
         task::TASK_CTL_KILL => {
-            let child = cur.child(hdl)?;
+            let child = cur.child(hdl, Feature::EXECUTE)?;
             child.with_signal(|sig| *sig = Some(Signal::Kill));
 
             Ok(())
@@ -207,7 +207,7 @@ fn task_ctl(hdl: Handle, op: u32, data: UserPtr<InOut, Handle>) -> Result {
         task::TASK_CTL_SUSPEND => {
             data.out().check()?;
 
-            let child = cur.child(hdl)?;
+            let child = cur.child(hdl, Feature::EXECUTE)?;
 
             let st = SuspendToken {
                 slot: Arsc::try_new(Mutex::new(None))?,
@@ -232,7 +232,16 @@ fn task_ctl(hdl: Handle, op: u32, data: UserPtr<InOut, Handle>) -> Result {
     }
 }
 
-fn read_regs(task: &Blocked, addr: usize, data: UserPtr<Out, u8>, len: usize) -> Result<()> {
+fn read_regs(
+    task: &Blocked,
+    feat: Feature,
+    addr: usize,
+    data: UserPtr<Out, u8>,
+    len: usize,
+) -> Result<()> {
+    if !feat.contains(Feature::READ) {
+        return Err(Error::EPERM);
+    }
     match addr {
         task::TASK_DBGADDR_GPR => {
             if len < task::ctx::GPR_SIZE {
@@ -253,7 +262,16 @@ fn read_regs(task: &Blocked, addr: usize, data: UserPtr<Out, u8>, len: usize) ->
     }
 }
 
-fn write_regs(task: &mut Blocked, addr: usize, data: UserPtr<In, u8>, len: usize) -> Result<()> {
+fn write_regs(
+    task: &mut Blocked,
+    feat: Feature,
+    addr: usize,
+    data: UserPtr<In, u8>,
+    len: usize,
+) -> Result<()> {
+    if !feat.contains(Feature::WRITE) {
+        return Err(Error::EPERM);
+    }
     match addr {
         task::TASK_DBGADDR_GPR => {
             if len < sv_call::task::ctx::GPR_SIZE {
@@ -276,7 +294,10 @@ fn write_regs(task: &mut Blocked, addr: usize, data: UserPtr<In, u8>, len: usize
     }
 }
 
-fn create_excep_chan(task: &Blocked) -> Result<crate::sched::ipc::Channel> {
+fn create_excep_chan(task: &Blocked, feat: Feature) -> Result<crate::sched::ipc::Channel> {
+    if !feat.contains(Feature::READ) {
+        return Err(Error::EPERM);
+    }
     let slot = task.tid().excep_chan();
     let chan = match slot.lock() {
         mut g if g.is_none() => {
@@ -294,11 +315,11 @@ fn task_debug(hdl: Handle, op: u32, addr: usize, data: UserPtr<InOut, u8>, len: 
     hdl.check_null()?;
     data.check_slice(len)?;
 
-    let slot = SCHED.with_current(|cur| {
+    let (feat, slot) = SCHED.with_current(|cur| {
         cur.space()
             .handles()
             .get::<SuspendToken>(hdl)
-            .map(|st| Arsc::clone(&st.slot))
+            .map(|st| (*st.feature().lock(), Arsc::clone(&st.slot)))
     })?;
 
     let mut task = loop {
@@ -309,16 +330,22 @@ fn task_debug(hdl: Handle, op: u32, addr: usize, data: UserPtr<InOut, u8>, len: 
     };
 
     let ret = match op {
-        task::TASK_DBG_READ_REG => read_regs(&task, addr, data.out(), len),
-        task::TASK_DBG_WRITE_REG => write_regs(&mut task, addr, data.r#in(), len),
+        task::TASK_DBG_READ_REG => read_regs(&task, feat, addr, data.out(), len),
+        task::TASK_DBG_WRITE_REG => write_regs(&mut task, feat, addr, data.r#in(), len),
         task::TASK_DBG_READ_MEM => unsafe {
             crate::mem::space::with(task.space().mem(), |_| {
+                if !feat.contains(Feature::READ) {
+                    return Err(Error::EPERM);
+                }
                 let slice = slice::from_raw_parts(addr as *mut u8, len);
                 data.out().write_slice(slice)
             })
         },
         task::TASK_DBG_WRITE_MEM => unsafe {
             crate::mem::space::with(task.space().mem(), |_| {
+                if !feat.contains(Feature::WRITE) {
+                    return Err(Error::EPERM);
+                }
                 data.r#in().read_slice(addr as *mut u8, len)
             })
         },
@@ -327,7 +354,7 @@ fn task_debug(hdl: Handle, op: u32, addr: usize, data: UserPtr<InOut, u8>, len: 
                 Err(Error::EBUFFER)
             } else {
                 let hdl = SCHED.with_current(|cur| {
-                    create_excep_chan(&task).and_then(|chan| {
+                    create_excep_chan(&task, feat).and_then(|chan| {
                         let event = Arc::downgrade(chan.event()) as _;
                         cur.space().handles().insert(chan, Some(event))
                     })

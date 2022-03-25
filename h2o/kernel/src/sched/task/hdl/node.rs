@@ -47,7 +47,7 @@ impl<T: ?Sized> Ref<T> {
     where
         T: Sized,
     {
-        let event = event.unwrap_or(Weak::<crate::sched::BasicEvent>::new());
+        let event = event.unwrap_or(Weak::<crate::sched::BasicEvent>::new() as _);
         Ok(Ref {
             obj: Arsc::try_new(Object {
                 feat: Mutex::new({

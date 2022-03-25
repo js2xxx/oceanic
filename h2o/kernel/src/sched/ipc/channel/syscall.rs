@@ -52,6 +52,9 @@ where
     SCHED.with_current(|cur| {
         let map = cur.space().handles();
         let channel = map.get::<Channel>(hdl)?;
+        if !channel.feature().lock().contains(Feature::WRITE) {
+            return Err(Error::EPERM);
+        }
         let objects = unsafe { map.send(handles, channel) }?;
         let mut packet = Packet::new(packet.id, objects, buffer);
         send(channel, &mut packet)
@@ -115,6 +118,9 @@ fn chan_recv(hdl: Handle, packet_ptr: UserPtr<InOut, RawPacket>) -> Result {
     let res = SCHED.with_current(|cur| {
         let map = cur.space().handles();
         let channel = map.get::<Channel>(hdl)?;
+        if !channel.feature().lock().contains(Feature::READ) {
+            return Err(Error::EPERM);
+        }
 
         raw.buffer_size = raw.buffer_cap;
         raw.handle_count = raw.handle_cap;
@@ -143,6 +149,9 @@ fn chan_crecv(
 
     let call_event = SCHED.with_current(|cur| {
         let channel = cur.space().handles().get::<Channel>(hdl)?;
+        if !{ channel.feature().lock() }.contains(Feature::WAIT | Feature::READ) {
+            return Err(Error::EPERM);
+        }
         Ok(channel.call_event(id)? as _)
     })?;
     let blocker = if timeout_us == 0 {
@@ -158,6 +167,9 @@ fn chan_crecv(
         let map = cur.space().handles();
 
         let channel = map.get::<Channel>(hdl)?;
+        if !channel.feature().lock().contains(Feature::READ) {
+            return Err(Error::EPERM);
+        }
 
         raw.buffer_size = raw.buffer_cap;
         raw.handle_count = raw.handle_cap;
@@ -178,6 +190,9 @@ fn chan_crecv(
 fn chan_acrecv(hdl: Handle, id: usize, wake_all: bool) -> Result<Handle> {
     SCHED.with_current(|cur| {
         let chan = cur.space().handles().get::<Channel>(hdl)?;
+        if !{ chan.feature().lock() }.contains(Feature::READ | Feature::WAIT) {
+            return Err(Error::EPERM);
+        }
         let event = chan.call_event(id)? as _;
 
         let blocker = crate::sched::Blocker::new(&event, wake_all, SIG_READ);

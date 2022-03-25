@@ -46,7 +46,7 @@ impl PartialEq for Tid {
 
 unsafe impl DefaultFeature for Tid {
     fn default_features() -> Feature {
-        Feature::SEND
+        Feature::SEND | Feature::EXECUTE
     }
 }
 
