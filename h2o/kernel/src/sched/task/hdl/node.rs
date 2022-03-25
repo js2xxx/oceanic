@@ -167,6 +167,15 @@ impl Ref {
     pub fn is_send(&self) -> bool {
         self.features().contains(Feature::SEND)
     }
+
+    pub fn set_features(&mut self, feat: Feature) -> Result {
+        if feat & !self.feat == Feature::empty() {
+            self.feat = feat;
+            Ok(())
+        } else {
+            Err(sv_call::Error::EPERM)
+        }
+    }
 }
 
 pub struct List {

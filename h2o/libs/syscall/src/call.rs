@@ -13,7 +13,7 @@ use crate::{
     mem::{Flags, MapInfo, MemInfo},
     res::IntrConfig,
     task::ExecInfo,
-    Handle, SerdeReg,
+    Feature, Handle, SerdeReg,
 };
 
 #[cfg(all(not(feature = "stub"), feature = "call"))]

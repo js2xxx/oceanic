@@ -68,6 +68,16 @@ pub trait Object {
         // SAFETY: The handle is freshly allocated.
         Ok(unsafe { Object::from_raw(handle) })
     }
+
+    fn reduce_features(self, features: Feature) -> Result<Self>
+    where
+        Self: Sized,
+    {
+        let mut handle = Self::into_raw(self);
+        unsafe { sv_call::sv_obj_feat(&mut handle, features) }.into_res()?;
+        // SAFETY: The handle is freshly allocated.
+        Ok(unsafe { Self::from_raw(handle) })
+    }
 }
 
 #[macro_export]

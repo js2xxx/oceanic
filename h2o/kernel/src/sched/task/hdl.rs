@@ -189,12 +189,26 @@ pub(super) fn init() {
 mod syscall {
     use sv_call::*;
 
-    use crate::sched::SCHED;
+    use crate::{
+        sched::SCHED,
+        syscall::{InOut, UserPtr},
+    };
 
     #[syscall]
     fn obj_clone(hdl: Handle) -> Result<Handle> {
         hdl.check_null()?;
         SCHED.with_current(|cur| cur.space().handles().clone_ref(hdl))
+    }
+
+    #[syscall]
+    fn obj_feat(hdl_ptr: UserPtr<InOut, Handle>, feat: Feature) -> Result {
+        let old = unsafe { hdl_ptr.r#in().read() }?;
+        old.check_null()?;
+        let mut obj = SCHED.with_current(|cur| unsafe { cur.space().handles().remove_ref(old) })?;
+        let ret = obj.set_features(feat);
+        let new = SCHED.with_current(|cur| unsafe { cur.space().handles().insert_ref(obj) })?;
+        unsafe { hdl_ptr.out().write(new) }?;
+        ret
     }
 
     #[syscall]
