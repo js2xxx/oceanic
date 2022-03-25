@@ -5,7 +5,7 @@ use core::{
     any::Any,
     marker::{PhantomData, Unsize},
     ops::CoerceUnsized,
-    ptr::NonNull, sync::atomic::AtomicU64,
+    ptr::NonNull,
 };
 
 use archop::Azy;
@@ -24,7 +24,6 @@ struct Value {
 
 #[derive(Debug)]
 pub struct Object<T: ?Sized> {
-    feat: AtomicU64,
     event: Weak<dyn Event>,
     data: T,
 }

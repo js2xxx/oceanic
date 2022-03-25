@@ -7,7 +7,6 @@ use core::{
     mem,
     ops::Deref,
     ptr::NonNull,
-    sync::atomic::{AtomicU64, Ordering::SeqCst},
 };
 
 use archop::Azy;
@@ -19,16 +18,17 @@ use crate::{
     sched::{Arsc, Event, PREEMPT},
 };
 
-pub const MAX_HANDLE_COUNT: usize = 1 << 18;
+pub const MAX_HANDLE_COUNT: usize = 1 << 16;
 
 pub(super) static HR_ARENA: Azy<Arena<Ref>> = Azy::new(|| Arena::new(MAX_HANDLE_COUNT));
 
 #[derive(Debug)]
 pub struct Ref<T: ?Sized = dyn Any> {
-    obj: Arsc<Object<T>>,
+    _marker: PhantomPinned,
     next: Option<Ptr>,
     prev: Option<Ptr>,
-    _marker: PhantomPinned,
+    feat: Feature,
+    obj: Arsc<Object<T>>,
 }
 pub type Ptr = NonNull<Ref>;
 
@@ -48,23 +48,15 @@ impl<T: ?Sized> Ref<T> {
         T: Sized,
     {
         let event = event.unwrap_or(Weak::<crate::sched::BasicEvent>::new() as _);
+        if event.strong_count() == 0 && feat.contains(Feature::WAIT) {
+            return Err(sv_call::Error::EPERM);
+        }
         Ok(Ref {
-            obj: Arsc::try_new(Object {
-                feat: AtomicU64::new({
-                    let mut feat = feat;
-                    if event.strong_count() > 0 {
-                        feat |= Feature::WAIT;
-                    } else if feat.contains(Feature::WAIT) {
-                        return Err(sv_call::Error::EPERM);
-                    }
-                    feat.bits()
-                }),
-                event,
-                data,
-            })?,
+            _marker: PhantomPinned,
             next: None,
             prev: None,
-            _marker: PhantomPinned,
+            feat,
+            obj: Arsc::try_new(Object { event, data })?,
         })
     }
 
@@ -76,10 +68,11 @@ impl<T: ?Sized> Ref<T> {
         T: Sized + Any,
     {
         Ref {
-            obj: self.obj,
+            _marker: PhantomPinned,
             next: None,
             prev: None,
-            _marker: PhantomPinned,
+            feat: self.feat,
+            obj: self.obj,
         }
     }
 
@@ -98,7 +91,7 @@ impl<T: ?Sized> Ref<T> {
 
     #[inline]
     pub fn features(&self) -> Feature {
-        Feature::from_bits_truncate(self.obj.feat.load(SeqCst))
+        self.feat
     }
 }
 
@@ -126,10 +119,11 @@ impl<T: ?Sized + Send + Sync> Clone for Ref<T> {
     #[inline]
     fn clone(&self) -> Self {
         Self {
-            obj: Arsc::clone(&self.obj),
+            _marker: PhantomPinned,
             next: None,
             prev: None,
-            _marker: PhantomPinned,
+            feat: self.feat,
+            obj: Arsc::clone(&self.obj),
         }
     }
 }
@@ -150,11 +144,12 @@ impl Ref {
     #[inline]
     #[must_use = "Don't make useless clonings"]
     pub unsafe fn clone_unchecked(&self) -> Ref {
-        Self {
-            obj: Arsc::clone(&self.obj),
+        Ref {
+            _marker: PhantomPinned,
             next: None,
             prev: None,
-            _marker: PhantomPinned,
+            feat: self.feat,
+            obj: Arsc::clone(&self.obj),
         }
     }
 
