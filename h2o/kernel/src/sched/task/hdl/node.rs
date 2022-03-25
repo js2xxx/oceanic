@@ -10,7 +10,8 @@ use core::{
 };
 
 use archop::Azy;
-use sv_call::Result;
+use spin::Mutex;
+use sv_call::{Result, Feature};
 
 use super::Object;
 use crate::{
@@ -40,8 +41,7 @@ impl<T: ?Sized> Ref<T> {
     /// `sync`.
     pub unsafe fn try_new_unchecked(
         data: T,
-        send: bool,
-        sync: bool,
+        feat: Feature,
         event: Weak<dyn Event>,
     ) -> sv_call::Result<Self>
     where
@@ -49,8 +49,15 @@ impl<T: ?Sized> Ref<T> {
     {
         Ok(Ref {
             obj: Arsc::try_new(Object {
-                send,
-                sync,
+                feat: Mutex::new({
+                    let mut feat = feat;
+                    if event.strong_count() > 0 {
+                        feat |= Feature::WAIT;
+                    } else if feat.contains(Feature::WAIT) {
+                        return Err(sv_call::Error::EPERM);
+                    }
+                    feat
+                }),
                 event,
                 data,
             })?,
@@ -87,6 +94,11 @@ impl<T: ?Sized> Ref<T> {
     pub fn event(&self) -> &Weak<dyn Event> {
         &self.obj.event
     }
+
+    #[inline]
+    pub fn feature(&self) -> &Mutex<Feature> {
+        &self.obj.feat
+    }
 }
 
 impl<T: ?Sized + Send> Ref<T> {
@@ -95,27 +107,7 @@ impl<T: ?Sized + Send> Ref<T> {
     where
         T: Sized,
     {
-        unsafe { Self::try_new_unchecked(data, true, false, event) }
-    }
-
-    #[inline]
-    pub fn raw(&self) -> &Arsc<Object<T>> {
-        &self.obj
-    }
-
-    #[inline]
-    pub fn into_raw(self) -> Arsc<Object<T>> {
-        self.obj
-    }
-
-    #[inline]
-    pub fn from_raw(obj: Arsc<Object<T>>) -> Self {
-        Self {
-            obj,
-            next: None,
-            prev: None,
-            _marker: PhantomPinned,
-        }
+        unsafe { Self::try_new_unchecked(data, Feature::SEND, event) }
     }
 }
 
@@ -135,7 +127,7 @@ impl<T: ?Sized + Send + Sync> Ref<T> {
     where
         T: Sized,
     {
-        unsafe { Self::try_new_unchecked(data, true, true, event) }
+        unsafe { Self::try_new_unchecked(data, Feature::SEND | Feature::SYNC, event) }
     }
 }
 
@@ -176,7 +168,8 @@ impl Ref {
     }
 
     pub fn try_clone(&self) -> Result<Ref> {
-        if self.obj.send && self.obj.sync {
+        let feat = self.feature().lock();
+        if feat.contains(Feature::SEND | Feature::SYNC) {
             // SAFETY: The underlying object is `send` and `sync`.
             Ok(unsafe { self.clone_unchecked() })
         } else {
@@ -186,7 +179,7 @@ impl Ref {
 
     #[inline]
     pub fn is_send(&self) -> bool {
-        self.obj.send
+        self.feature().lock().contains(Feature::SEND)
     }
 }
 

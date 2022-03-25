@@ -11,10 +11,10 @@ use core::{
 use archop::Azy;
 use modular_bitfield::prelude::*;
 use spin::Mutex;
-use sv_call::Result;
+use sv_call::{Feature, Result};
 
 pub use self::node::{List, Ptr, Ref, MAX_HANDLE_COUNT};
-use crate::sched::{ipc::Channel, Event, PREEMPT};
+use crate::sched::{ipc::Channel, BasicEvent, Event, PREEMPT};
 
 #[bitfield]
 struct Value {
@@ -24,8 +24,7 @@ struct Value {
 
 #[derive(Debug)]
 pub struct Object<T: ?Sized> {
-    send: bool,
-    sync: bool,
+    feat: Mutex<Feature>,
     event: Weak<dyn Event>,
     data: T,
 }
@@ -58,17 +57,12 @@ impl HandleMap {
 
     #[inline]
     pub fn get<T: Send + Any>(&self, handle: sv_call::Handle) -> Result<&Ref<T>> {
-        // SAFETY: The type is `Send`.
-        unsafe { self.get_unchecked(handle) }
-    }
-
-    /// # Safety
-    ///
-    /// The caller must ensure that the list belongs to the current task if the
-    /// expected type is not [`Send`].
-    #[inline]
-    pub unsafe fn get_unchecked<T: Any>(&self, handle: sv_call::Handle) -> Result<&Ref<T>> {
         self.decode(handle)
+            .and_then(|ptr| {
+                unsafe { ptr.as_ref().is_send() }
+                    .then(|| ptr)
+                    .ok_or(sv_call::Error::EPERM)
+            })
             .and_then(|ptr| unsafe { ptr.as_ref().downcast_ref::<T>() })
     }
 
@@ -109,12 +103,11 @@ impl HandleMap {
     pub unsafe fn insert_unchecked<T: 'static>(
         &self,
         data: T,
-        send: bool,
-        sync: bool,
+        feat: Feature,
         event: Weak<dyn Event>,
     ) -> Result<sv_call::Handle> {
         // SAFETY: The safety condition is guaranteed by the caller.
-        let value = unsafe { Ref::try_new_unchecked(data, send, sync, event) }?;
+        let value = unsafe { Ref::try_new_unchecked(data, feat, event) }?;
         // SAFETY: The safety condition is guaranteed by the caller.
         unsafe { self.insert_ref(value.coerce_unchecked()) }
     }
@@ -143,12 +136,12 @@ impl HandleMap {
 
     #[inline]
     pub fn insert<T: Send + Any>(&self, data: T) -> Result<sv_call::Handle> {
-        self.insert_event(data, Weak::<crate::sched::BasicEvent>::new() as _)
+        self.insert_event(data, Weak::<BasicEvent>::new() as _)
     }
 
     #[inline]
     pub fn insert_shared<T: Send + Sync + Any>(&self, data: T) -> Result<sv_call::Handle> {
-        self.insert_event_shared(data, Weak::<crate::sched::BasicEvent>::new() as _)
+        self.insert_event_shared(data, Weak::<BasicEvent>::new() as _)
     }
 
     /// # Safety

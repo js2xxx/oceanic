@@ -17,8 +17,8 @@ const STACK_PROTECTOR_SIZE: usize = PAGE_SIZE;
 
 #[derive(Clone)]
 pub struct Image<'a> {
-    data: &'a [u8],
-    phys: Phys,
+    pub data: &'a [u8],
+    pub phys: Phys,
 }
 
 impl<'a> Image<'a> {
@@ -68,6 +68,7 @@ fn load_seg(
     e: Endianness,
     seg: &impl ProgramHeader<Endian = object::Endianness>,
     kind: ObjectKind,
+    map_base: &mut Option<usize>,
 ) -> Result<usize, Error> {
     let msize = seg.p_memsz(e).into() as usize;
     let fsize = seg.p_filesz(e).into() as usize;
@@ -92,7 +93,8 @@ fn load_seg(
         ObjectKind::Dynamic if fsize == 0 => None,
         ObjectKind::Dynamic => {
             let data = image.create_sub(offset, fsize)?;
-            Some(space.map_phys(None, data, flags)?.as_mut_ptr() as usize)
+            let address = map_base.map(|base| base + address);
+            Some(space.map_phys(address, data, flags)?.as_mut_ptr() as usize)
         }
         _ if fsize == 0 => Some(address),
         _ => {
@@ -116,6 +118,10 @@ fn load_seg(
     } else {
         base
     };
+
+    if map_base.is_none() {
+        *map_base = base;
+    }
     Ok(base.expect("Null segment"))
 }
 
@@ -125,6 +131,7 @@ fn load_segs<'a>(
     bootfs_phys: &Phys,
     space: &Space,
 ) -> Result<(NonNull<u8>, usize, Flags), Error> {
+    let mut found_interp = false;
     let file = loop {
         let file = ElfFile64::<'a, Endianness, _>::parse(image.data)?;
 
@@ -151,10 +158,12 @@ fn load_segs<'a>(
 
                 let phys = crate::sub_phys(data, bootfs, bootfs_phys)?;
                 image = unsafe { Image::new(data, phys).ok_or(SvError::ENOENT) }?;
+                found_interp = true;
             }
             None => break file,
         }
     };
+    assert!(found_interp, "Executables cannot be directly executed");
 
     let mut entry = file.entry() as usize;
     let kind = file.kind();
@@ -163,10 +172,11 @@ fn load_segs<'a>(
         DEFAULT_STACK_SIZE,
         Flags::READABLE | Flags::WRITABLE | Flags::USER_ACCESS,
     );
+    let mut map_base = None;
     for seg in file.raw_segments() {
         match seg.p_type(file.endian()) {
             PT_LOAD if seg.p_memsz(file.endian()) > 0 => {
-                let base = load_seg(&image.phys, space, file.endian(), seg, kind)?;
+                let base = load_seg(&image.phys, space, file.endian(), seg, kind, &mut map_base)?;
                 let fbase = seg.p_offset(file.endian()) as usize;
                 let fend = fbase + seg.p_filesz(file.endian()) as usize;
                 if kind == ObjectKind::Dynamic && (fbase..fend).contains(&entry) {

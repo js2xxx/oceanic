@@ -325,7 +325,7 @@ fn task_debug(hdl: Handle, op: u32, addr: usize, data: UserPtr<InOut, u8>, len: 
                         let event = Arc::downgrade(chan.event()) as _;
                         cur.space()
                             .handles()
-                            .insert_unchecked(chan, true, false, event)
+                            .insert_unchecked(chan, Feature::SEND, event)
                     })
                 })?;
 
