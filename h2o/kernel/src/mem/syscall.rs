@@ -118,6 +118,9 @@ fn phys_sub(hdl: Handle, offset: usize, len: usize, copy: bool) -> Result<Handle
     if phys == VDSO.1 {
         return Err(Error::EACCES);
     }
+    if !feat.contains(Feature::READ) {
+        return Err(Error::EPERM);
+    }
 
     let sub = phys.create_sub(offset, len, copy)?;
     SCHED.with_current(|cur| {
@@ -134,12 +137,8 @@ fn phys_sub(hdl: Handle, offset: usize, len: usize, copy: bool) -> Result<Handle
 fn mem_map(space: Handle, mi: UserPtr<In, MapInfo>) -> Result<*mut u8> {
     let mi = unsafe { mi.read() }?;
     let flags = check_flags(mi.flags)?;
-    let (feat, phys) = SCHED.with_current(|cur| {
-        let obj = cur.space().handles().remove::<space::Phys>(mi.phys)?;
-        Ok((
-            obj.features(),
-            space::Phys::clone(obj.downcast_ref::<space::Phys>()?),
-        ))
+    let phys = SCHED.with_current(|cur| {
+        cur.space().handles().remove::<space::Phys>(mi.phys)
     })?;
     let op = |space: &Arsc<space::Space>| {
         let offset = if mi.map_addr {
@@ -151,11 +150,11 @@ fn mem_map(space: Handle, mi: UserPtr<In, MapInfo>) -> Result<*mut u8> {
         } else {
             None
         };
-        if flags & !features_to_flags(feat) != Flags::empty() {
+        if flags & !features_to_flags(phys.features()) != Flags::empty() {
             return Err(Error::EPERM);
         }
         space
-            .map(offset, phys, mi.phys_offset, mi.len, flags)
+            .map(offset, space::Phys::clone(&phys), mi.phys_offset, mi.len, flags)
             .map(|addr| *addr)
     };
     if space == Handle::NULL {

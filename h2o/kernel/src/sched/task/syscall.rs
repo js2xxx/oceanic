@@ -106,15 +106,16 @@ fn task_exec(ci: UserPtr<In, task::ExecInfo>) -> Result<Handle> {
         if ci.space == Handle::NULL {
             Ok((init_chan, Arsc::clone(cur.space())))
         } else {
-            handles
-                .remove::<Arsc<Space>>(ci.space)?
-                .downcast_ref::<Arsc<Space>>()
-                .map(|space| (init_chan, Arsc::clone(space)))
+            let space = handles.remove::<Arsc<Space>>(ci.space)?;
+            Ok((
+                init_chan,
+                Arsc::clone(&space),
+            ))
         }
     })?;
 
     let init_chan = match init_chan {
-        Some(obj) => PREEMPT.scope(|| unsafe { space.handles().insert_ref(obj) })?,
+        Some(obj) => PREEMPT.scope(|| space.handles().insert_ref(obj))?,
         None => Handle::NULL,
     };
 
@@ -148,9 +149,8 @@ fn task_new(
         SCHED.with_current(|cur| {
             cur.space()
                 .handles()
-                .remove::<Arsc<Space>>(space)?
-                .downcast_ref::<Arsc<Space>>()
-                .map(|space| Arsc::clone(space))
+                .remove::<Arsc<Space>>(space)
+                .map(|space| Arsc::clone(&space))
         })?
     };
     let mut sus_slot = Arsc::try_new_uninit()?;

@@ -54,53 +54,34 @@ pub fn setup() {
     // `targs::HandleIndex`.
     {
         let mem_res = Arc::clone(crate::dev::mem_resource());
-        let res = unsafe {
-            objects.insert_impl(
-                hdl::Ref::try_new(mem_res, None)
-                    .expect("Failed to create memory resource")
-                    .coerce_unchecked(),
-            )
-        };
+        let res = objects
+            .insert(hdl::Ref::try_new(mem_res, None).expect("Failed to create memory resource"));
         res.expect("Failed to insert memory resource");
     }
     {
         let pio_res = Arc::clone(crate::dev::pio_resource());
-        let res = unsafe {
-            objects.insert_impl(
-                hdl::Ref::try_new(pio_res, None)
-                    .expect("Failed to create port I/O resource")
-                    .coerce_unchecked(),
-            )
-        };
+        let res = objects
+            .insert(hdl::Ref::try_new(pio_res, None).expect("Failed to create port I/O resource"));
         res.expect("Failed to insert port I/O resource");
     }
     {
         let gsi_res = Arc::clone(crate::dev::gsi_resource());
-        let res = unsafe {
-            objects.insert_impl(
-                hdl::Ref::try_new(gsi_res, None)
-                    .expect("Failed to create GSI resource")
-                    .coerce_unchecked(),
-            )
-        };
+        let res = objects
+            .insert(hdl::Ref::try_new(gsi_res, None).expect("Failed to create GSI resource"));
         res.expect("Failed to insert GSI resource");
     }
     unsafe {
-        objects
-            .insert_impl(
-                hdl::Ref::try_new_unchecked(Phys::clone(&VDSO.1), flags_to_feat(VDSO.0), None)
-                    .expect("Failed to create VDSO reference")
-                    .coerce_unchecked(),
-            )
-            .expect("Failed to insert VDSO");
+        let res = objects.insert(
+            hdl::Ref::try_new_unchecked(Phys::clone(&VDSO.1), flags_to_feat(VDSO.0), None)
+                .expect("Failed to create VDSO reference"),
+        );
+        res.expect("Failed to insert VDSO");
 
-        objects
-            .insert_impl(
-                hdl::Ref::try_new_unchecked(Phys::clone(&BOOTFS.1), flags_to_feat(BOOTFS.0), None)
-                    .expect("Failed to create boot FS reference")
-                    .coerce_unchecked(),
-            )
-            .expect("Failed to insert boot FS");
+        let res = objects.insert(
+            hdl::Ref::try_new_unchecked(Phys::clone(&BOOTFS.1), flags_to_feat(BOOTFS.0), None)
+                .expect("Failed to create boot FS reference"),
+        );
+        res.expect("Failed to insert boot FS");
     }
 
     let buf = {
@@ -114,11 +95,7 @@ pub fn setup() {
 
     let (me, chan) = Channel::new();
     let event = Arc::downgrade(chan.event()) as _;
-    let chan = unsafe {
-        hdl::Ref::try_new(chan, Some(event))
-            .expect("Failed to create channel")
-            .coerce_unchecked()
-    };
+    let chan = unsafe { hdl::Ref::try_new(chan, Some(event)).expect("Failed to create channel") };
     me.send(&mut crate::sched::ipc::Packet::new(0, objects, &buf))
         .expect("Failed to send message");
     let image = unsafe {

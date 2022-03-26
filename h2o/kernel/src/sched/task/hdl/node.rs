@@ -3,9 +3,9 @@ use core::{
     any::Any,
     fmt,
     iter::FusedIterator,
-    marker::{PhantomData, PhantomPinned},
+    marker::{PhantomData, PhantomPinned, Unsize},
     mem,
-    ops::Deref,
+    ops::{CoerceUnsized, Deref},
     ptr::NonNull,
 };
 
@@ -34,6 +34,8 @@ pub type Ptr = NonNull<Ref>;
 
 unsafe impl<T: ?Sized> Send for Ref<T> {}
 
+impl<T: ?Sized + Unsize<U>, U: ?Sized> CoerceUnsized<Ref<U>> for Ref<T> {}
+
 impl<T: ?Sized> Ref<T> {
     /// # Safety
     ///
@@ -60,20 +62,12 @@ impl<T: ?Sized> Ref<T> {
         })
     }
 
-    /// # Safety
-    ///
-    /// The caller must ensure that `self` is not inserted in any handle list.
-    pub unsafe fn coerce_unchecked(self) -> Ref
+    #[inline]
+    pub fn try_new(data: T, event: Option<Weak<dyn Event>>) -> sv_call::Result<Self>
     where
-        T: Sized + Any,
+        T: DefaultFeature + Sized,
     {
-        Ref {
-            _marker: PhantomPinned,
-            next: None,
-            prev: None,
-            feat: self.feat,
-            obj: self.obj,
-        }
+        unsafe { Self::try_new_unchecked(data, T::default_features(), event) }
     }
 
     /// # Safety
@@ -93,15 +87,14 @@ impl<T: ?Sized> Ref<T> {
     pub fn features(&self) -> Feature {
         self.feat
     }
-}
 
-impl<T> Ref<T> {
-    #[inline]
-    pub fn try_new(data: T, event: Option<Weak<dyn Event>>) -> sv_call::Result<Self>
-    where
-        T: DefaultFeature,
-    {
-        unsafe { Self::try_new_unchecked(data, T::default_features(), event) }
+    pub fn set_features(&mut self, feat: Feature) -> Result {
+        if feat & !self.feat == Feature::empty() {
+            self.feat = feat;
+            Ok(())
+        } else {
+            Err(sv_call::Error::EPERM)
+        }
     }
 }
 
@@ -115,25 +108,36 @@ impl<T: ?Sized + Send> Deref for Ref<T> {
     }
 }
 
-impl<T: ?Sized + Send + Sync> Clone for Ref<T> {
-    #[inline]
-    fn clone(&self) -> Self {
-        Self {
-            _marker: PhantomPinned,
-            next: None,
-            prev: None,
-            feat: self.feat,
-            obj: Arsc::clone(&self.obj),
-        }
-    }
-}
-
 impl Ref {
+    #[inline]
+    pub fn is<T: Any>(&self) -> bool {
+        self.obj.data.is::<T>()
+    }
+
     pub fn downcast_ref<T: Any>(&self) -> Result<&Ref<T>> {
-        if self.obj.data.is::<T>() {
+        if self.is::<T>() {
             Ok(unsafe { &*(self as *const Ref as *const Ref<T>) })
         } else {
             Err(sv_call::Error::ETYPE)
+        }
+    }
+
+    pub fn downcast<T: Any>(self) -> core::result::Result<Ref<T>, Self> {
+        match self.obj.downcast() {
+            Ok(obj) => Ok(Ref {
+                _marker: PhantomPinned,
+                next: None,
+                prev: None,
+                feat: self.feat,
+                obj,
+            }),
+            Err(obj) => Err(Ref {
+                _marker: PhantomPinned,
+                next: None,
+                prev: None,
+                feat: self.feat,
+                obj,
+            }),
         }
     }
 
@@ -143,7 +147,7 @@ impl Ref {
     /// not to be moved to another task if its not [`Send`] or [`Sync`].
     #[inline]
     #[must_use = "Don't make useless clonings"]
-    pub unsafe fn clone_unchecked(&self) -> Ref {
+    unsafe fn clone_unchecked(&self) -> Ref {
         Ref {
             _marker: PhantomPinned,
             next: None,
@@ -158,20 +162,6 @@ impl Ref {
         if feat.contains(Feature::SEND | Feature::SYNC) {
             // SAFETY: The underlying object is `send` and `sync`.
             Ok(unsafe { self.clone_unchecked() })
-        } else {
-            Err(sv_call::Error::EPERM)
-        }
-    }
-
-    #[inline]
-    pub fn is_send(&self) -> bool {
-        self.features().contains(Feature::SEND)
-    }
-
-    pub fn set_features(&mut self, feat: Feature) -> Result {
-        if feat & !self.feat == Feature::empty() {
-            self.feat = feat;
-            Ok(())
         } else {
             Err(sv_call::Error::EPERM)
         }
@@ -262,26 +252,19 @@ impl List {
 }
 
 impl List {
-    /// # Safety
-    ///
-    /// The caller must ensure that `value` comes from the current task if its
-    /// not [`Send`].
-    pub unsafe fn insert_impl(&mut self, value: Ref) -> Result<Ptr> {
+    pub fn insert(&mut self, value: Ref) -> Result<Ptr> {
         let link = HR_ARENA.allocate()?;
         // SAFETY: The pointer is allocated from the arena.
         unsafe { link.as_ptr().write(value) };
 
-        self.insert_node(link);
+        // SAFETY: The node is freshly allocated.
+        unsafe { self.insert_node(link) };
         self.len += 1;
 
         Ok(link)
     }
 
-    /// # Safety
-    ///
-    /// The caller must ensure that the list belongs to the current task if
-    /// `link` is not [`Send`].
-    pub(super) unsafe fn remove_impl(&mut self, link: Ptr) -> Result<Ref> {
+    pub fn remove(&mut self, link: Ptr) -> Result<Ref> {
         let mut cur = self.head;
         loop {
             cur = match cur {
@@ -393,7 +376,7 @@ impl fmt::Debug for List {
 impl Drop for List {
     fn drop(&mut self) {
         while let Some(head) = self.head {
-            let _ = unsafe { self.remove_impl(head) };
+            let _ = self.remove(head);
         }
     }
 }

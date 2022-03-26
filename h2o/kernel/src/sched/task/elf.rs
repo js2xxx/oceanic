@@ -116,7 +116,7 @@ pub fn from_elf(
         })?;
 
     let space = super::Space::new(Type::User)?;
-    let init_chan = unsafe { space.handles().insert_ref(init_chan) }?;
+    let init_chan = space.handles().insert_ref(init_chan)?;
 
     let (entry, stack_size) = load_elf(space.mem(), &file, image)?;
     let stack = space.mem().init_stack(stack_size)?;

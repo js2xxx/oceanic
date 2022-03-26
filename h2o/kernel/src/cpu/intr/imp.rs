@@ -155,7 +155,6 @@ mod syscall {
         hdl.check_null()?;
         SCHED.with_current(|cur| {
             let intr = cur.space().handles().remove::<Arc<Interrupt>>(hdl)?;
-            let intr = intr.downcast_ref::<Arc<Interrupt>>()?;
             intr.cancel();
             MANAGER.register(intr.gsi, None)?;
             Ok(())
