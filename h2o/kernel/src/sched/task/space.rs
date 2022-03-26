@@ -70,7 +70,7 @@ impl Space {
         super::PREEMPT.scope(|| {
             self.handles().get::<Tid>(hdl).and_then(|obj| {
                 if obj.features().contains(need_feature) {
-                    Ok(Tid::clone(obj))
+                    Ok(Tid::clone(&obj))
                 } else {
                     Err(sv_call::Error::EPERM)
                 }

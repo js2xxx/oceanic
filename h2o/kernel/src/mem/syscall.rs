@@ -65,7 +65,7 @@ fn phys_check(hdl: Handle, offset: usize, len: usize) -> Result<(Feature, space:
         cur.space()
             .handles()
             .get::<space::Phys>(hdl)
-            .map(|obj| (obj.features(), space::Phys::clone(obj)))
+            .map(|obj| (obj.features(), space::Phys::clone(&obj)))
     })?;
     if offset_end > phys.len() {
         return Err(Error::ERANGE);

@@ -1,7 +1,7 @@
 mod node;
 
 use alloc::sync::Weak;
-use core::{any::Any, marker::Unsize, ops::CoerceUnsized, ptr::NonNull};
+use core::{any::Any, marker::Unsize, ops::CoerceUnsized, pin::Pin, ptr::NonNull};
 
 use archop::Azy;
 use modular_bitfield::prelude::*;
@@ -44,7 +44,7 @@ impl HandleMap {
         }
     }
 
-    pub fn decode(&self, handle: sv_call::Handle) -> Result<Ptr> {
+    fn decode(&self, handle: sv_call::Handle) -> Result<Ptr> {
         let value = handle.raw() ^ self.mix;
         let value = Value::from_bytes(value.to_ne_bytes());
         let _ = value.gen();
@@ -53,20 +53,7 @@ impl HandleMap {
             .and_then(node::decode)
     }
 
-    #[inline]
-    pub fn get<T: Send + Any>(&self, handle: sv_call::Handle) -> Result<&Ref<T>> {
-        self.decode(handle)
-            .and_then(|ptr| unsafe { ptr.as_ref().downcast_ref::<T>() })
-    }
-
-    #[inline]
-    pub fn clone_ref(&self, handle: sv_call::Handle) -> Result<sv_call::Handle> {
-        let old_ptr = self.decode(handle)?;
-        let new = unsafe { old_ptr.as_ref() }.try_clone()?;
-        self.insert_ref(new)
-    }
-
-    pub fn encode(&self, value: Ptr) -> Result<sv_call::Handle> {
+    fn encode(&self, value: Ptr) -> Result<sv_call::Handle> {
         let index =
             node::encode(value).and_then(|index| u32::try_from(index).map_err(Into::into))?;
         let value = Value::new()
@@ -76,6 +63,30 @@ impl HandleMap {
         Ok(sv_call::Handle::new(
             u32::from_ne_bytes(value.into_bytes()) ^ self.mix,
         ))
+    }
+
+    #[inline]
+    pub fn get_ref(&self, handle: sv_call::Handle) -> Result<Pin<&Ref>> {
+        self.decode(handle)
+            // SAFETY: Dereference within the available range and the 
+            // reference is at a fixed address.
+            .map(|ptr| unsafe { Pin::new_unchecked(ptr.as_ref()) })
+    }
+
+    #[inline]
+    pub fn get<T: Send + Any>(&self, handle: sv_call::Handle) -> Result<Pin<&Ref<T>>> {
+        self.decode(handle)
+            // SAFETY: Dereference within the available range.
+            .and_then(|ptr| unsafe { ptr.as_ref().downcast_ref::<T>() })
+            // SAFETY: The reference is at a fixed address.
+            .map(|obj| unsafe { Pin::new_unchecked(obj) })
+    }
+
+    #[inline]
+    pub fn clone_ref(&self, handle: sv_call::Handle) -> Result<sv_call::Handle> {
+        let old_ptr = self.decode(handle)?;
+        let new = unsafe { old_ptr.as_ref() }.try_clone()?;
+        self.insert_ref(new)
     }
 
     #[inline]
