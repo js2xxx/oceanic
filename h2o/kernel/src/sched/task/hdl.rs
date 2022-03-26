@@ -1,7 +1,7 @@
 mod node;
 
 use alloc::sync::Weak;
-use core::{any::Any, marker::Unsize, ops::CoerceUnsized, pin::Pin, ptr::NonNull};
+use core::{any::Any, pin::Pin, ptr::NonNull};
 
 use archop::Azy;
 use modular_bitfield::prelude::*;
@@ -16,14 +16,6 @@ struct Value {
     gen: B14,
     index: B18,
 }
-
-#[derive(Debug)]
-pub struct Object<T: ?Sized> {
-    event: Weak<dyn Event>,
-    pub data: T,
-}
-
-impl<T: ?Sized + CoerceUnsized<U> + Unsize<U>, U: ?Sized> CoerceUnsized<Object<U>> for Object<T> {}
 
 pub unsafe trait DefaultFeature: Any + Send {
     fn default_features() -> Feature;

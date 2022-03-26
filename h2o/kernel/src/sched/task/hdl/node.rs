@@ -12,7 +12,7 @@ use core::{
 use archop::Azy;
 use sv_call::{Feature, Result};
 
-use super::{DefaultFeature, Object};
+use super::DefaultFeature;
 use crate::{
     mem::Arena,
     sched::{Arsc, Event, PREEMPT},
@@ -27,8 +27,9 @@ pub struct Ref<T: ?Sized = dyn Any> {
     _marker: PhantomPinned,
     next: Option<Ptr>,
     prev: Option<Ptr>,
+    event: Weak<dyn Event>,
     feat: Feature,
-    obj: Arsc<Object<T>>,
+    obj: Arsc<T>,
 }
 pub type Ptr = NonNull<Ref>;
 
@@ -57,8 +58,9 @@ impl<T: ?Sized> Ref<T> {
             _marker: PhantomPinned,
             next: None,
             prev: None,
+            event,
             feat,
-            obj: Arsc::try_new(Object { event, data })?,
+            obj: Arsc::try_new(data)?,
         })
     }
 
@@ -75,12 +77,12 @@ impl<T: ?Sized> Ref<T> {
     /// The caller must ensure that `self` is owned by the current task if its
     /// not [`Send`].
     pub unsafe fn deref_unchecked(&self) -> &T {
-        &self.obj.data
+        &self.obj
     }
 
     #[inline]
     pub fn event(&self) -> &Weak<dyn Event> {
-        &self.obj.event
+        &self.event
     }
 
     #[inline]
@@ -111,7 +113,7 @@ impl<T: ?Sized + Send> Deref for Ref<T> {
 impl Ref {
     #[inline]
     pub fn is<T: Any>(&self) -> bool {
-        self.obj.data.is::<T>()
+        self.obj.is::<T>()
     }
 
     pub fn downcast_ref<T: Any>(&self) -> Result<&Ref<T>> {
@@ -128,6 +130,7 @@ impl Ref {
                 _marker: PhantomPinned,
                 next: None,
                 prev: None,
+                event: self.event,
                 feat: self.feat,
                 obj,
             }),
@@ -135,6 +138,7 @@ impl Ref {
                 _marker: PhantomPinned,
                 next: None,
                 prev: None,
+                event: self.event,
                 feat: self.feat,
                 obj,
             }),
@@ -152,6 +156,7 @@ impl Ref {
             _marker: PhantomPinned,
             next: None,
             prev: None,
+            event: Weak::clone(&self.event),
             feat: self.feat,
             obj: Arsc::clone(&self.obj),
         }

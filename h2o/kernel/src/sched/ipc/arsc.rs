@@ -10,8 +10,6 @@ use core::{
     sync::atomic::{self, AtomicUsize, Ordering::*},
 };
 
-use crate::sched::task::hdl::Object;
-
 const REF_COUNT_MAX: usize = isize::MAX as usize;
 #[cfg(target_pointer_width = "64")]
 const REF_COUNT_SATURATED: usize = 0xC000_0000_0000_0000;
@@ -165,11 +163,11 @@ impl<T, A: Allocator> Arsc<T, A> {
     }
 }
 
-impl<A: Allocator> Arsc<Object<dyn Any>, A> {
-    pub fn downcast<T: Any>(self) -> core::result::Result<Arsc<Object<T>, A>, Self> {
-        if (*self).data.is::<T>() {
+impl<A: Allocator> Arsc<dyn Any, A> {
+    pub fn downcast<T: Any>(self) -> core::result::Result<Arsc<T, A>, Self> {
+        if (*self).is::<T>() {
             unsafe {
-                let inner = self.inner.cast::<ArscInner<Object<T>, A>>();
+                let inner = self.inner.cast::<ArscInner<T, A>>();
                 mem::forget(self);
                 Ok(Arsc::from_inner(inner))
             }

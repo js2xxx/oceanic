@@ -15,8 +15,7 @@ use crate::mem::space::{self, Flags, Phys};
 
 pub static LAPIC_ID: RwLock<BTreeMap<usize, u32>> = RwLock::new(BTreeMap::new());
 static LAPIC_BASE: Azy<usize> = Azy::new(|| {
-    let phys =
-        Phys::new(PAddr::new(0xFEE00000), PAGE_SIZE).expect("Failed to acquire LAPIC base");
+    let phys = Phys::new(PAddr::new(0xFEE00000), PAGE_SIZE).expect("Failed to acquire LAPIC base");
     space::KRL
         .map(
             None,

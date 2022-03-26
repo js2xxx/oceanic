@@ -137,9 +137,7 @@ fn phys_sub(hdl: Handle, offset: usize, len: usize, copy: bool) -> Result<Handle
 fn mem_map(space: Handle, mi: UserPtr<In, MapInfo>) -> Result<*mut u8> {
     let mi = unsafe { mi.read() }?;
     let flags = check_flags(mi.flags)?;
-    let phys = SCHED.with_current(|cur| {
-        cur.space().handles().remove::<space::Phys>(mi.phys)
-    })?;
+    let phys = SCHED.with_current(|cur| cur.space().handles().remove::<space::Phys>(mi.phys))?;
     let op = |space: &Arsc<space::Space>| {
         let offset = if mi.map_addr {
             Some(
@@ -154,7 +152,13 @@ fn mem_map(space: Handle, mi: UserPtr<In, MapInfo>) -> Result<*mut u8> {
             return Err(Error::EPERM);
         }
         space
-            .map(offset, space::Phys::clone(&phys), mi.phys_offset, mi.len, flags)
+            .map(
+                offset,
+                space::Phys::clone(&phys),
+                mi.phys_offset,
+                mi.len,
+                flags,
+            )
             .map(|addr| *addr)
     };
     if space == Handle::NULL {
