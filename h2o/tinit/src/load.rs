@@ -10,10 +10,11 @@ use object::{
     },
     Endianness, Object, ObjectKind,
 };
-use solvent::prelude::{Flags, Phys, Virt, PAGE_MASK, PAGE_SIZE};
+use solvent::prelude::{Error as SError, Flags, Phys, Virt, PAGE_LAYOUT, PAGE_MASK, PAGE_SIZE};
 use sv_call::task::DEFAULT_STACK_SIZE;
 
 const STACK_PROTECTOR_SIZE: usize = PAGE_SIZE;
+const STACK_PROTECTOR_LAYOUT: Layout = PAGE_LAYOUT;
 
 #[derive(Clone)]
 pub struct Image<'a> {
@@ -33,7 +34,7 @@ impl<'a> Image<'a> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Error {
     Parse(read::Error),
-    Solvent(solvent::error::Error),
+    Solvent(SError),
 }
 
 impl From<read::Error> for Error {
@@ -42,8 +43,8 @@ impl From<read::Error> for Error {
     }
 }
 
-impl From<solvent::error::Error> for Error {
-    fn from(err: solvent::error::Error) -> Self {
+impl From<SError> for Error {
+    fn from(err: SError) -> Self {
         Error::Solvent(err)
     }
 }
@@ -75,7 +76,7 @@ fn load_seg(
     let address = seg.p_vaddr(e).into() as usize;
 
     if offset & PAGE_MASK != address & PAGE_MASK {
-        return Err(Error::Solvent(solvent::error::Error::EALIGN));
+        return Err(Error::Solvent(SError::EALIGN));
     }
     let fend = (offset + fsize) & !PAGE_MASK;
     let cend = offset + fsize;
@@ -135,7 +136,7 @@ fn load_segs<'a>(
             .find(|seg| seg.p_type(file.endian()) == PT_INTERP)
         {
             Some(interp) => {
-                use solvent::error::Error as SvError;
+                use SError as SvError;
                 let interp = CStr::from_bytes_with_nul(
                     interp
                         .data(file.endian(), file.data())
@@ -165,25 +166,28 @@ fn load_segs<'a>(
         _ => unimplemented!(),
     };
 
-    let (min, max) = { file.raw_segments().iter() }.fold((usize::MAX, 0), |(min, max), seg| {
-        (
-            min.min(seg.p_vaddr(file.endian()) as usize),
-            max.max((seg.p_vaddr(file.endian()) + seg.p_memsz(file.endian())) as usize),
-        )
-    });
-    let layout = unsafe { Layout::from_size_align_unchecked(max - min, PAGE_SIZE).pad_to_align() };
-    let virt = if is_dynamic {
-        root.allocate(None, layout)?
-    } else {
-        let base = root.base().as_ptr() as usize;
-        let offset = min
-            .checked_sub(base)
-            .ok_or(Error::Solvent(solvent::error::Error::ERANGE))?;
-        root.allocate(Some(offset), layout)?
+    let virt = {
+        let (min, max) = { file.raw_segments().iter() }.fold((usize::MAX, 0), |(min, max), seg| {
+            (
+                min.min(seg.p_vaddr(file.endian()) as usize),
+                max.max((seg.p_vaddr(file.endian()) + seg.p_memsz(file.endian())) as usize),
+            )
+        });
+        let layout = unsafe { Virt::page_aligned(max - min) };
+        if is_dynamic {
+            root.allocate(None, layout)?
+        } else {
+            let base = root.base().as_ptr() as usize;
+            let offset = min
+                .checked_sub(base)
+                .ok_or(Error::Solvent(SError::ERANGE))?;
+            root.allocate(Some(offset), layout)?
+        }
     };
 
     let base = virt.base().as_ptr() as usize;
     let entry = file.entry() as usize + if is_dynamic { base } else { 0 };
+    let entry = NonNull::new(entry as *mut u8).ok_or(SError::EINVAL)?;
 
     let (mut stack_size, mut stack_flags) = (
         DEFAULT_STACK_SIZE,
@@ -212,7 +216,6 @@ fn load_segs<'a>(
         }
     }
 
-    let entry = NonNull::new(entry as *mut u8).ok_or(solvent::error::Error::EINVAL)?;
     Ok((entry, stack_size, stack_flags))
 }
 
@@ -225,17 +228,19 @@ pub fn load_elf(
     let (entry, stack_size, stack_flags) = load_segs(image, bootfs, bootfs_phys, root)?;
 
     let stack = {
-        let size = stack_size + STACK_PROTECTOR_SIZE * 2;
+        let layout = unsafe { Virt::page_aligned(stack_size) };
+        let (alloc_layout, _) = layout
+            .extend(STACK_PROTECTOR_LAYOUT)
+            .and_then(|(layout, _)| layout.extend(STACK_PROTECTOR_LAYOUT))
+            .map_err(SError::from)?;
 
-        let virt = root.allocate(None, unsafe {
-            Layout::from_size_align_unchecked(size, PAGE_SIZE)
-        })?;
+        let virt = root.allocate(None, alloc_layout)?;
         let stack_phys = Phys::allocate(stack_size, true)?;
         let stack_ptr = virt.map(
-            Some(PAGE_SIZE),
+            Some(STACK_PROTECTOR_SIZE),
             stack_phys,
             0,
-            unsafe { Layout::from_size_align_unchecked(stack_size, PAGE_SIZE) },
+            layout,
             stack_flags,
         )?;
 

@@ -1,159 +1,20 @@
 use alloc::{
-    alloc::Global,
     collections::BTreeMap,
     sync::{Arc, Weak},
 };
-use core::{
-    alloc::{Allocator, Layout},
-    mem,
-    ops::Range,
-};
+use core::{alloc::Layout, mem, ops::Range};
 
 use bitop_ex::BitOpEx;
 use paging::{LAddr, PAddr, PAGE_SHIFT, PAGE_SIZE};
 use spin::Mutex;
-use sv_call::{mem::Flags, Feature, Result};
+use sv_call::{mem::Flags, Error, Feature, Result};
 
-use super::{paging_error, ty_to_range, Space};
+use super::{paging_error, ty_to_range, Phys, Space};
 use crate::sched::{
-    task::{self, hdl::DefaultFeature, VDSO},
-    Arsc, PREEMPT,
+    task,
+    task::{hdl::DefaultFeature, VDSO},
+    PREEMPT,
 };
-
-#[derive(Debug)]
-struct PhysInner {
-    from_allocator: bool,
-    base: PAddr,
-    size: usize,
-}
-
-impl PhysInner {
-    unsafe fn new_manual(from_allocator: bool, base: PAddr, size: usize) -> PhysInner {
-        PhysInner {
-            from_allocator,
-            base,
-            size,
-        }
-    }
-}
-
-impl Drop for PhysInner {
-    fn drop(&mut self) {
-        if self.from_allocator {
-            let ptr = unsafe { self.base.to_laddr(minfo::ID_OFFSET).as_non_null_unchecked() };
-            let layout =
-                unsafe { Layout::from_size_align_unchecked(self.size, PAGE_SIZE) }.pad_to_align();
-            unsafe { Global.deallocate(ptr, layout) };
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct Phys {
-    offset: usize,
-    len: usize,
-    inner: Arsc<PhysInner>,
-}
-
-impl From<Arsc<PhysInner>> for Phys {
-    fn from(inner: Arsc<PhysInner>) -> Self {
-        Phys {
-            offset: 0,
-            len: inner.size,
-            inner,
-        }
-    }
-}
-
-impl Phys {
-    #[inline]
-    pub fn new(base: PAddr, size: usize) -> sv_call::Result<Self> {
-        unsafe { Arsc::try_new(PhysInner::new_manual(false, base, size)) }
-            .map_err(sv_call::Error::from)
-            .map(Self::from)
-    }
-
-    /// # Errors
-    ///
-    /// Returns error if the heap memory is exhausted.
-    pub fn allocate(size: usize, zeroed: bool) -> sv_call::Result<Self> {
-        let mut inner = Arsc::try_new_uninit()?;
-        let layout = unsafe { Layout::from_size_align_unchecked(size, PAGE_SIZE) }.pad_to_align();
-        let mem = if zeroed {
-            Global.allocate_zeroed(layout)
-        } else {
-            Global.allocate(layout)
-        };
-        mem.map(|ptr| unsafe {
-            Arsc::get_mut_unchecked(&mut inner).write(PhysInner::new_manual(
-                true,
-                LAddr::from(ptr).to_paddr(minfo::ID_OFFSET),
-                size,
-            ));
-            Arsc::assume_init(inner)
-        })
-        .map_err(sv_call::Error::from)
-        .map(Self::from)
-    }
-
-    pub fn len(&self) -> usize {
-        self.len
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.len == 0
-    }
-
-    pub fn create_sub(&self, offset: usize, len: usize, copy: bool) -> sv_call::Result<Self> {
-        if offset.contains_bit(PAGE_SHIFT) || len.contains_bit(PAGE_SHIFT) {
-            return Err(sv_call::Error::EALIGN);
-        }
-
-        let new_offset = self.offset.wrapping_add(offset);
-        let end = new_offset.wrapping_add(len);
-        if self.offset <= new_offset && new_offset < end && end <= self.offset + self.len {
-            if copy {
-                let child = Self::allocate(len, true)?;
-                let dst = child.raw_ptr();
-                unsafe {
-                    let src = self.raw_ptr().add(offset);
-                    dst.copy_from_nonoverlapping(src, len);
-                }
-                Ok(child)
-            } else {
-                Ok(Phys {
-                    offset: new_offset,
-                    len,
-                    inner: Arsc::clone(&self.inner),
-                })
-            }
-        } else {
-            Err(sv_call::Error::ERANGE)
-        }
-    }
-
-    pub fn base(&self) -> PAddr {
-        PAddr::new(*self.inner.base + self.offset)
-    }
-
-    pub fn raw_ptr(&self) -> *mut u8 {
-        unsafe { self.inner.base.to_laddr(minfo::ID_OFFSET).add(self.offset) }
-    }
-}
-
-impl PartialEq for Phys {
-    fn eq(&self, other: &Self) -> bool {
-        self.offset == other.offset
-            && self.len == other.len
-            && Arsc::ptr_eq(&self.inner, &other.inner)
-    }
-}
-
-unsafe impl DefaultFeature for Phys {
-    fn default_features() -> Feature {
-        Feature::SEND | Feature::SYNC | Feature::READ | Feature::WRITE | Feature::EXECUTE
-    }
-}
 
 #[derive(Debug)]
 pub(super) enum Child {
@@ -235,14 +96,14 @@ impl Virt {
         Ok(ret)
     }
 
-    pub fn destroy(&self) -> sv_call::Result {
+    pub fn destroy(&self) -> Result {
         if let Some(space) = self.space.upgrade() {
             let _pree = PREEMPT.lock();
             let vdso = *space.vdso.lock();
             let children = self.children.lock();
 
             if { children.iter() }.any(|(&base, child)| !check_vdso(vdso, base, child.end(base))) {
-                return Err(sv_call::Error::EACCES);
+                return Err(Error::EACCES);
             }
         }
         if let Some(parent) = self.parent.upgrade() {
@@ -266,27 +127,27 @@ impl Virt {
                 || layout.align() != PAGE_SIZE
                 || flags != VDSO.0)
         {
-            return Err(sv_call::Error::EACCES);
+            return Err(Error::EACCES);
         }
 
         let layout = check_layout(layout)?;
         if phys_offset.contains_bit(PAGE_SHIFT) {
-            return Err(sv_call::Error::EALIGN);
+            return Err(Error::EALIGN);
         }
         let phys_end = phys_offset.wrapping_add(layout.size());
         if !(phys_offset < phys_end && phys_end <= phys.len()) {
-            return Err(sv_call::Error::ERANGE);
+            return Err(Error::ERANGE);
         }
 
         let _pree = PREEMPT.lock();
         let mut children = self.children.lock();
-        let space = self.space.upgrade().ok_or(sv_call::Error::EKILLED)?;
+        let space = self.space.upgrade().ok_or(Error::EKILLED)?;
 
         let set_vdso = phys == VDSO.1;
         if set_vdso {
             check_set_vdso(&space.vdso, phys_offset, layout, flags)?;
             if self as *const _ != Arc::as_ptr(&space.root) {
-                return Err(sv_call::Error::EACCES);
+                return Err(Error::EACCES);
             }
         }
         let virt = find_range(&children, &self.range, offset, layout)?;
@@ -306,17 +167,17 @@ impl Virt {
         Ok(base)
     }
 
-    pub fn reprotect(&self, base: LAddr, len: usize, flags: Flags) -> sv_call::Result {
+    pub fn reprotect(&self, base: LAddr, len: usize, flags: Flags) -> Result {
         let start = base;
         let end = LAddr::from(base.val() + len);
 
         if !(self.range.start <= start && end <= self.range.end) {
-            return Err(sv_call::Error::ERANGE);
+            return Err(Error::ERANGE);
         }
 
         let _pree = PREEMPT.lock();
         let children = self.children.lock();
-        let space = self.space.upgrade().ok_or(sv_call::Error::EKILLED)?;
+        let space = self.space.upgrade().ok_or(Error::EKILLED)?;
 
         let vdso = { *space.vdso.lock() };
         for (&base, child) in children
@@ -325,15 +186,15 @@ impl Virt {
         {
             let child_end = child.end(base);
             if !(start <= base && child_end <= end) {
-                return Err(sv_call::Error::ERANGE);
+                return Err(Error::ERANGE);
             }
             if !check_vdso(vdso, base, child_end) {
-                return Err(sv_call::Error::EACCES);
+                return Err(Error::EACCES);
             }
             match child {
-                Child::Virt(_) => return Err(sv_call::Error::EINVAL),
+                Child::Virt(_) => return Err(Error::EINVAL),
                 Child::Phys(_, f, _) if flags.intersects(!*f) => {
-                    return Err(sv_call::Error::EPERM);
+                    return Err(Error::EPERM);
                 }
                 _ => {}
             }
@@ -349,17 +210,17 @@ impl Virt {
         Ok(())
     }
 
-    pub fn unmap(&self, base: LAddr, len: usize, drop_child: bool) -> sv_call::Result {
+    pub fn unmap(&self, base: LAddr, len: usize, drop_child: bool) -> Result {
         let start = base;
         let end = LAddr::from(base.val() + len);
 
         if !(self.range.start <= start && end <= self.range.end) {
-            return Err(sv_call::Error::ERANGE);
+            return Err(Error::ERANGE);
         }
 
         let _pree = PREEMPT.lock();
         let mut children = self.children.lock();
-        let space = self.space.upgrade().ok_or(sv_call::Error::EKILLED)?;
+        let space = self.space.upgrade().ok_or(Error::EKILLED)?;
 
         let vdso = { *space.vdso.lock() };
         for (&base, child) in children
@@ -368,13 +229,13 @@ impl Virt {
         {
             let child_end = child.end(base);
             if !(start <= base && child_end <= end) {
-                return Err(sv_call::Error::ERANGE);
+                return Err(Error::ERANGE);
             }
             if !check_vdso(vdso, base, child_end) {
-                return Err(sv_call::Error::EACCES);
+                return Err(Error::EACCES);
             }
             if matches!(child, Child::Virt(_) if !drop_child) {
-                return Err(sv_call::Error::EPERM);
+                return Err(Error::EPERM);
             }
         }
 
@@ -438,10 +299,10 @@ impl Ord for Virt {
 
 fn check_layout(layout: Layout) -> Result<Layout> {
     if layout.size() == 0 {
-        return Err(sv_call::Error::ERANGE);
+        return Err(Error::ERANGE);
     }
     if layout.align() < PAGE_SIZE {
-        return Err(sv_call::Error::EALIGN);
+        return Err(Error::EALIGN);
     }
     Ok(layout.pad_to_align())
 }
@@ -451,21 +312,21 @@ fn check_set_vdso(
     phys_offset: usize,
     layout: Layout,
     flags: Flags,
-) -> sv_call::Result {
+) -> Result {
     if PREEMPT.scope(|| vdso.lock().is_some()) {
-        return Err(sv_call::Error::EACCES);
+        return Err(Error::EACCES);
     }
 
     if phys_offset != 0 {
-        return Err(sv_call::Error::EACCES);
+        return Err(Error::EACCES);
     }
 
     if layout.size() != VDSO.1.len() || layout.align() != PAGE_SIZE {
-        return Err(sv_call::Error::EACCES);
+        return Err(Error::EACCES);
     }
 
     if flags != VDSO.0 {
-        return Err(sv_call::Error::EACCES);
+        return Err(Error::EACCES);
     }
 
     Ok(())
@@ -494,25 +355,21 @@ fn find_range(
             let base = LAddr::from(
                 { range.start.val() }
                     .checked_add(offset)
-                    .ok_or(sv_call::Error::ERANGE)?,
+                    .ok_or(Error::ERANGE)?,
             );
-            let end = LAddr::from(
-                base.val()
-                    .checked_add(layout.size())
-                    .ok_or(sv_call::Error::ERANGE)?,
-            );
+            let end = LAddr::from(base.val().checked_add(layout.size()).ok_or(Error::ERANGE)?);
             if base.val().contains_bit(PAGE_SHIFT) {
-                return Err(sv_call::Error::EALIGN);
+                return Err(Error::EALIGN);
             }
             if !(range.start <= base && end <= range.end) {
-                return Err(sv_call::Error::ERANGE);
+                return Err(Error::ERANGE);
             }
             if !check_alloc(map, base..end) {
-                return Err(sv_call::Error::EEXIST);
+                return Err(Error::EEXIST);
             }
             base
         }
-        None => find_alloc(map, range, layout).ok_or(sv_call::Error::ENOMEM)?,
+        None => find_alloc(map, range, layout).ok_or(Error::ENOMEM)?,
     };
 
     Ok(base..LAddr::from(base.val() + layout.size()))

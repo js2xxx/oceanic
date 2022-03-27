@@ -3,7 +3,8 @@
 //! This module is responsible for managing system memory and address space in a
 //! higher level, especially for large objects like APIC.
 
-mod obj;
+mod phys;
+mod virt;
 
 cfg_if::cfg_if! {
     if #[cfg(target_arch = "x86_64")] {
@@ -25,7 +26,7 @@ use paging::LAddr;
 use spin::Mutex;
 pub use sv_call::mem::Flags;
 
-pub use self::{arch::init_pgc, obj::*};
+pub use self::{arch::init_pgc, phys::*, virt::*};
 use crate::sched::{task, PREEMPT};
 
 type ArchSpace = arch::Space;
@@ -102,7 +103,7 @@ impl Deref for Space {
     }
 }
 
-pub fn allocate(size: usize, flags: Flags, zeroed: bool) -> sv_call::Result<NonNull<[u8]>> {
+pub(crate) fn allocate(size: usize, flags: Flags, zeroed: bool) -> sv_call::Result<NonNull<[u8]>> {
     let phys = Phys::allocate(size, zeroed)?;
     let len = phys.len();
 
@@ -120,7 +121,7 @@ pub(crate) unsafe fn reprotect_unchecked(ptr: NonNull<[u8]>, flags: Flags) ->sv_
     KRL.arch.reprotect(base..end, flags).map_err(paging_error)
 }
 
-pub unsafe fn unmap(ptr: NonNull<u8>) -> sv_call::Result {
+pub(crate) unsafe fn unmap(ptr: NonNull<u8>) -> sv_call::Result {
     let base = LAddr::from(ptr);
     let ret = PREEMPT.scope(|| KRL.root.children.lock().remove(&base));
     ret.map_or(Err(sv_call::Error::ENOENT), |child| {

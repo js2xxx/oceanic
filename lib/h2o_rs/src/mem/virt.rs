@@ -49,6 +49,13 @@ impl Virt {
             .expect("Failed to get the base of the virt")
     }
 
+    /// # Safety
+    ///
+    /// The caller must ensure that `size < usize::MAX - PAGE_SIZE - 1`.
+    pub unsafe fn page_aligned(size: usize) -> Layout {
+        Layout::from_size_align_unchecked(size, PAGE_SIZE)
+    }
+
     pub fn map(
         &self,
         offset: Option<usize>,
@@ -82,13 +89,7 @@ impl Virt {
         flags: Flags,
     ) -> Result<NonNull<[u8]>> {
         let len = phys.len();
-        self.map(
-            offset,
-            phys,
-            0,
-            unsafe { Layout::from_size_align_unchecked(len, PAGE_SIZE) },
-            flags,
-        )
+        self.map(offset, phys, 0, unsafe { Self::page_aligned(len) }, flags)
     }
 
     pub fn map_vdso(&self, vdso: Phys) -> Result<NonNull<[u8]>> {
@@ -97,7 +98,7 @@ impl Virt {
             None,
             vdso,
             0,
-            unsafe { Layout::from_size_align_unchecked(len, PAGE_SIZE) },
+            unsafe { Self::page_aligned(len) },
             Flags::READABLE | Flags::EXECUTABLE | Flags::USER_ACCESS,
         )
     }
