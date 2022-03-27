@@ -10,7 +10,7 @@ use core::{array::TryFromSliceError, mem};
 
 pub use c_ty::*;
 use cstr_core::{CStr, CString};
-use solvent::prelude::{Error, Handle, Packet, PacketTyped};
+use solvent::prelude::{Error, Handle, Object, Packet, PacketTyped, Virt, Phys};
 
 #[derive(Debug)]
 pub enum TryFromError {
@@ -47,6 +47,22 @@ pub struct StartupArgs {
     pub handles: BTreeMap<HandleInfo, Handle>,
     pub args: Vec<CString>,
     pub envs: Vec<CString>,
+}
+
+impl StartupArgs {
+    pub fn root_virt(&mut self) -> Option<Virt> {
+        let handle = self
+            .handles
+            .remove(&HandleInfo::new().with_handle_type(HandleType::RootVirt))?;
+        Some(unsafe { Virt::from_raw(handle) })
+    }
+
+    pub fn vdso_phys(&mut self) -> Option<Phys> {
+        let handle = self
+            .handles
+            .remove(&HandleInfo::new().with_handle_type(HandleType::VdsoPhys))?;
+        Some(unsafe { Phys::from_raw(handle) })
+    }
 }
 
 impl PacketTyped for StartupArgs {

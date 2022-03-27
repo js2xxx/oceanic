@@ -69,9 +69,10 @@ impl Kstack {
             false,
         )
         .expect("Failed to allocate kernel stack");
-        space::KRL
-            .reprotect(LAddr::from(ptr), PAGE_SIZE, Flags::READABLE)
-            .expect("Failed to set padding");
+        unsafe {
+            let pad = NonNull::slice_from_raw_parts(ptr.as_non_null_ptr(), PAGE_SIZE);
+            space::reprotect_unchecked(pad, Flags::READABLE).expect("Failed to set padding");
+        }
 
         let mut kstack = ptr.cast::<KstackData>();
         let kframe_ptr = unsafe {

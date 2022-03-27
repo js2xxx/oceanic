@@ -172,7 +172,15 @@ fn load_segs<'a>(
         )
     });
     let layout = unsafe { Layout::from_size_align_unchecked(max - min, PAGE_SIZE).pad_to_align() };
-    let virt = root.allocate(is_dynamic.then(|| min), layout)?;
+    let virt = if is_dynamic {
+        root.allocate(None, layout)?
+    } else {
+        let base = root.base().as_ptr() as usize;
+        let offset = min
+            .checked_sub(base)
+            .ok_or(Error::Solvent(solvent::error::Error::ERANGE))?;
+        root.allocate(Some(offset), layout)?
+    };
 
     let base = virt.base().as_ptr() as usize;
     let entry = file.entry() as usize + if is_dynamic { base } else { 0 };

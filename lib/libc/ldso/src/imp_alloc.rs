@@ -100,6 +100,6 @@ unsafe impl GlobalAlloc for DlAlloc2 {
     }
 }
 
-pub unsafe fn init(root_virt: Handle) {
-    ROOT_VIRT = Some(Virt::from_raw(root_virt));
+pub unsafe fn init(root_virt: Virt) {
+    ROOT_VIRT = Some(root_virt);
 }

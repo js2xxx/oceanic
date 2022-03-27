@@ -493,17 +493,18 @@ fn find_range(
                     .checked_add(offset)
                     .ok_or(sv_call::Error::ERANGE)?,
             );
-            let end = base.val().wrapping_add(layout.size());
-            if base.val() >= end {
-                return Err(sv_call::Error::ENOMEM);
-            }
+            let end = LAddr::from(
+                base.val()
+                    .checked_add(layout.size())
+                    .ok_or(sv_call::Error::ERANGE)?,
+            );
             if base.val().contains_bit(PAGE_SHIFT) {
                 return Err(sv_call::Error::EALIGN);
             }
-            if !(range.start <= base && LAddr::from(end) <= range.end) {
+            if !(range.start <= base && end <= range.end) {
                 return Err(sv_call::Error::ERANGE);
             }
-            if !check_alloc(children, base..LAddr::from(end)) {
+            if !check_alloc(children, base..end) {
                 return Err(sv_call::Error::EEXIST);
             }
             base
@@ -519,9 +520,10 @@ fn check_alloc(map: &ChildMap, request: Range<LAddr>) -> bool {
     !matches!(prev, Some((&base, prev)) if prev.end(base) > request.start)
 }
 
+const MAX_COUNT_MASK: usize = 0xff;
 #[inline]
 fn find_alloc(map: &ChildMap, range: &Range<LAddr>, layout: Layout) -> Option<LAddr> {
-    let (ret, cnt) = try_find_alloc(map, range, layout, rand());
+    let (ret, cnt) = try_find_alloc(map, range, layout, rand() & MAX_COUNT_MASK);
     ret.or_else(|| try_find_alloc(map, range, layout, rand() % cnt).0)
 }
 
@@ -534,25 +536,25 @@ fn try_find_alloc(
     map: &ChildMap,
     range: &Range<LAddr>,
     layout: Layout,
-    rand_n: usize,
+    mut rand_n: usize,
 ) -> (Option<LAddr>, usize) {
     let mut cnt = 0;
-    let mut ret = None;
     let bit = layout.align().msb();
-    gaps(map, range, |gap| {
+    let ret = gaps(map, range, |gap| {
         let (base, end) = (gap.start.val(), gap.end.val());
         let base = base.round_up_bit(bit);
         let end = end.round_down_bit(bit);
         if layout.size() <= end - base {
-            ret = Some(LAddr::from(base));
-            if cnt == rand_n {
-                return Some(());
+            let n = ((end - base - layout.size()) >> bit) + 1;
+            cnt += n;
+            if rand_n < n {
+                return Some(LAddr::from(base + (rand_n << bit)));
             }
-            cnt += 1;
+            rand_n -= n;
         }
         None
     });
-    (ret.filter(|_| cnt == rand_n), cnt)
+    (ret, cnt)
 }
 
 fn gaps<F, R>(map: &ChildMap, range: &Range<LAddr>, mut func: F) -> Option<R>

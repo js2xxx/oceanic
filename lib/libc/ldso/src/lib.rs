@@ -14,8 +14,8 @@ pub mod rxx;
 
 use core::mem;
 
-use solvent::prelude::{Object, Phys};
-use svrt::{HandleInfo, HandleType, StartupArgs};
+use solvent::prelude::Object;
+use svrt::StartupArgs;
 
 pub use self::rxx::{dynamic, init_channel, load_address, vdso_map};
 
@@ -29,17 +29,9 @@ fn dl_main() -> rxx::DlReturn {
         .receive::<StartupArgs>()
         .expect("Failed to receive boot message");
 
-    let root_virt = startup_args
-        .handles
-        .remove(&HandleInfo::new().with_handle_type(HandleType::RootVirt))
-        .expect("Failed to get root Virt");
-    unsafe { imp_alloc::init(root_virt) };
+    unsafe { imp_alloc::init(startup_args.root_virt().expect("Failed to get root Virt")) };
 
-    let handle = startup_args
-        .handles
-        .remove(&HandleInfo::new().with_handle_type(HandleType::VdsoPhys))
-        .expect("Failed to get VDSO physical object");
-    let vdso = unsafe { Phys::from_raw(handle) };
+    let vdso = startup_args.vdso_phys().expect("Failed to get VDSO");
 
     log::debug!("{:?}", unsafe { vdso.raw() });
 
