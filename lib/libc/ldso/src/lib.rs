@@ -29,6 +29,12 @@ fn dl_main() -> rxx::DlReturn {
         .receive::<StartupArgs>()
         .expect("Failed to receive boot message");
 
+    let root_virt = startup_args
+        .handles
+        .remove(&HandleInfo::new().with_handle_type(HandleType::RootVirt))
+        .expect("Failed to get root Virt");
+    unsafe { imp_alloc::init(root_virt) };
+
     let handle = startup_args
         .handles
         .remove(&HandleInfo::new().with_handle_type(HandleType::VdsoPhys))

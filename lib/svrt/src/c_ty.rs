@@ -36,8 +36,9 @@ impl StartupArgsHeader {
 #[bits = 16]
 pub enum HandleType {
     None = 0,
-    VdsoPhys = 1,
-    ProgramPhys = 2,
+    RootVirt,
+    VdsoPhys,
+    ProgramPhys,
 }
 
 #[derive(Copy, Clone)]

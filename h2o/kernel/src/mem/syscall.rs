@@ -1,9 +1,10 @@
-use alloc::sync::Arc;
-use core::{ptr::NonNull, slice};
+use alloc::sync::{Arc, Weak};
+use core::{alloc::Layout, slice};
 
 use bitop_ex::BitOpEx;
+use paging::LAddr;
 use sv_call::{
-    mem::{Flags, MapInfo, MemInfo},
+    mem::{Flags, MemInfo, VirtMapInfo},
     *,
 };
 
@@ -12,7 +13,7 @@ use crate::{
     dev::Resource,
     sched::{
         task::{Space as TaskSpace, VDSO},
-        Arsc, PREEMPT, SCHED,
+        PREEMPT, SCHED,
     },
     syscall::{In, Out, UserPtr},
 };
@@ -134,100 +135,102 @@ fn phys_sub(hdl: Handle, offset: usize, len: usize, copy: bool) -> Result<Handle
 }
 
 #[syscall]
-fn mem_map(space: Handle, mi: UserPtr<In, MapInfo>) -> Result<*mut u8> {
-    let mi = unsafe { mi.read() }?;
-    let flags = check_flags(mi.flags)?;
-    let phys = SCHED.with_current(|cur| cur.space().handles().remove::<space::Phys>(mi.phys))?;
-    let op = |space: &Arsc<space::Space>| {
-        let offset = if mi.map_addr {
-            Some(
-                mi.addr
-                    .checked_sub(space.range.start)
-                    .ok_or(Error::ERANGE)?,
-            )
-        } else {
-            None
-        };
-        if flags & !features_to_flags(phys.features()) != Flags::empty() {
-            return Err(Error::EPERM);
-        }
-        space
-            .map(
-                offset,
-                space::Phys::clone(&phys),
-                mi.phys_offset,
-                mi.len,
-                flags,
-            )
-            .map(|addr| *addr)
-    };
-    if space == Handle::NULL {
-        space::with_current(op)
-    } else {
-        SCHED.with_current(|cur| op(cur.space().handles().get::<Arsc<TaskSpace>>(space)?.mem()))
-    }
+fn space_new(root_virt: UserPtr<Out, Handle>) -> Result<Handle> {
+    root_virt.check()?;
+    SCHED.with_current(|cur| {
+        let space = TaskSpace::new(cur.tid().ty())?;
+        let virt = Arc::downgrade(space.mem().root());
+        let ret = cur.space().handles().insert(space, None)?;
+        let virt = cur.space().handles().insert(virt, None)?;
+        unsafe { root_virt.write(virt) }?;
+        Ok(ret)
+    })
 }
 
 #[syscall]
-fn mem_get(space: Handle, ptr: UserPtr<In, u8>, flags: UserPtr<Out, Flags>) -> Result<usize> {
-    ptr.check()?;
-    let ptr = NonNull::new(ptr.as_ptr()).ok_or(Error::EINVAL)?;
-    let mut f = Flags::empty();
-    unsafe {
-        if space == Handle::NULL {
-            space::with_current(|cur| cur.get(ptr, &mut f))
-        } else {
-            SCHED.with_current(|cur| {
-                cur.space()
-                    .handles()
-                    .get::<Arsc<TaskSpace>>(space)?
-                    .mem()
-                    .get(ptr, &mut f)
-            })
+fn virt_alloc(hdl: Handle, offset: usize, size: usize, align: usize) -> Result<Handle> {
+    hdl.check_null()?;
+    SCHED.with_current(|cur| {
+        let virt = cur.space().handles().get::<Weak<space::Virt>>(hdl)?;
+        let virt = virt.upgrade().ok_or(Error::EKILLED)?;
+        let sub = virt.allocate(
+            (offset != usize::MAX).then(|| offset),
+            Layout::from_size_align(size, align)?,
+        )?;
+        cur.space().handles().insert(sub, None)
+    })
+}
+
+#[syscall]
+fn virt_info(hdl: Handle, size: UserPtr<Out, usize>) -> Result<*mut u8> {
+    hdl.check_null()?;
+    SCHED.with_current(|cur| {
+        let virt = cur.space().handles().get::<Weak<space::Virt>>(hdl)?;
+        let virt = virt.upgrade().ok_or(Error::EKILLED)?;
+        let base = virt.range().start;
+        if !size.as_ptr().is_null() {
+            unsafe { size.write(virt.len()) }?;
         }
-    }
-    .and_then(|addr| {
-        unsafe { flags.write(f)? };
+        Ok(*base)
+    })
+}
+
+#[syscall]
+fn virt_drop(hdl: Handle) -> Result {
+    hdl.check_null()?;
+    SCHED.with_current(|cur| {
+        let virt = cur.space().handles().remove::<Weak<space::Virt>>(hdl)?;
+        let virt = virt.upgrade().ok_or(Error::EKILLED)?;
+        virt.destroy()
+    })
+}
+
+#[syscall]
+fn virt_map(hdl: Handle, mi: UserPtr<In, VirtMapInfo>) -> Result<*mut u8> {
+    hdl.check_null()?;
+    let mi = unsafe { mi.read() }?;
+    let flags = check_flags(mi.flags)?;
+    SCHED.with_current(|cur| {
+        let virt = cur.space().handles().get::<Weak<space::Virt>>(hdl)?;
+        let virt = virt.upgrade().ok_or(Error::EKILLED)?;
+        let phys = cur.space().handles().remove::<space::Phys>(mi.phys)?;
+        let offset = (mi.offset != usize::MAX).then(|| mi.offset);
+        if flags.intersects(!features_to_flags(phys.features())) {
+            return Err(Error::EPERM);
+        }
+
+        let addr = virt.map(
+            offset,
+            space::Phys::clone(&phys),
+            mi.phys_offset,
+            space::page_aligned(mi.len),
+            flags,
+        )?;
         Ok(*addr)
     })
 }
 
 #[syscall]
-fn mem_reprot(space: Handle, ptr: *mut u8, len: usize, flags: Flags) -> Result {
+fn virt_reprot(hdl: Handle, base: UserPtr<In, u8>, len: usize, flags: Flags) -> Result {
+    hdl.check_null()?;
+    base.check()?;
     let flags = check_flags(flags)?;
-    unsafe {
-        let ptr = NonNull::new(ptr).ok_or(Error::EINVAL)?;
-        let ptr = NonNull::slice_from_raw_parts(ptr, len);
-        if space == Handle::NULL {
-            space::with_current(|cur| cur.reprotect(ptr, flags))
-        } else {
-            SCHED.with_current(|cur| {
-                cur.space()
-                    .handles()
-                    .get::<Arsc<TaskSpace>>(space)?
-                    .mem()
-                    .reprotect(ptr, flags)
-            })
-        }
-    }
+    SCHED.with_current(|cur| {
+        let virt = cur.space().handles().get::<Weak<space::Virt>>(hdl)?;
+        let virt = virt.upgrade().ok_or(Error::EKILLED)?;
+        virt.reprotect(LAddr::new(base.as_ptr()), len, flags)
+    })
 }
 
 #[syscall]
-fn mem_unmap(space: Handle, ptr: *mut u8) -> Result {
-    unsafe {
-        let ptr = NonNull::new(ptr).ok_or(Error::EINVAL)?;
-        if space == Handle::NULL {
-            space::with_current(|cur| cur.unmap(ptr))
-        } else {
-            SCHED.with_current(|cur| {
-                cur.space()
-                    .handles()
-                    .get::<Arsc<TaskSpace>>(space)?
-                    .mem()
-                    .unmap(ptr)
-            })
-        }
-    }
+fn virt_unmap(hdl: Handle, base: UserPtr<In, u8>, len: usize, drop_child: bool) -> Result {
+    hdl.check_null()?;
+    base.check()?;
+    SCHED.with_current(|cur| {
+        let virt = cur.space().handles().get::<Weak<space::Virt>>(hdl)?;
+        let virt = virt.upgrade().ok_or(Error::EKILLED)?;
+        virt.unmap(LAddr::new(base.as_ptr()), len, drop_child)
+    })
 }
 
 #[syscall]

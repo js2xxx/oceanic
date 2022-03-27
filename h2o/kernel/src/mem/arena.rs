@@ -10,7 +10,7 @@ use core::{
 use static_assertions::const_assert_eq;
 
 use self::atomic::AtomicDoubleU64;
-use crate::mem::space::{Flags, KRL};
+use crate::mem::space::{self, Flags};
 
 #[derive(Clone, Copy)]
 #[repr(align(16))]
@@ -39,8 +39,7 @@ impl<T> Arena<T> {
             .and_then(|layout| layout.repeat(max_count))
             .expect("Layout error");
         debug_assert!(off >= 16);
-        let ptr = KRL
-            .allocate(layout.size(), Flags::READABLE | Flags::WRITABLE, false)
+        let ptr = space::allocate(layout.size(), Flags::READABLE | Flags::WRITABLE, false)
             .expect("Failed to allocate memory");
 
         let (base, end) = unsafe {
@@ -180,7 +179,7 @@ impl<T> Arena<T> {
 impl<T> Drop for Arena<T> {
     #[inline]
     fn drop(&mut self) {
-        let _ = unsafe { KRL.unmap(self.base.cast()) };
+        let _ = unsafe { space::unmap(self.base.cast()) };
     }
 }
 

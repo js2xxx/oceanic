@@ -143,7 +143,7 @@ impl Error {
     declare_error!(ERANGE, 34, "Range not available");
 
     const CUSTOM_OFFSET: i32 = CUSTOM_RANGE.start;
-    declare_error!(EKILLED, 1001, "Task already killed");
+    declare_error!(EKILLED, 1001, "Object already killed");
     declare_error!(EBUFFER, 1002, "Buffer range exceeded");
     declare_error!(ETIME, 1003, "Timed out");
     declare_error!(EALIGN, 1004, "Pointer unaligned");

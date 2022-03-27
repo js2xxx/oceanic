@@ -180,7 +180,7 @@ impl Ioapic {
                 None,
                 Phys::clone(&phys),
                 0,
-                phys.len(),
+                space::page_aligned(phys.len()),
                 Flags::READABLE | Flags::WRITABLE | Flags::UNCACHED,
             )
             .expect("Failed to allocate memory");

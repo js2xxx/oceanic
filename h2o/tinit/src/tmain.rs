@@ -21,6 +21,7 @@ mod rxx;
 mod test;
 
 use alloc::vec;
+use core::mem::MaybeUninit;
 
 use bootfs::parse::Directory;
 use solvent::prelude::*;
@@ -28,6 +29,8 @@ use svrt::{HandleInfo, HandleType, StartupArgs};
 use targs::{HandleIndex, Targs};
 
 extern crate alloc;
+
+static mut ROOT_VIRT: MaybeUninit<Virt> = MaybeUninit::uninit();
 
 fn is_sub<T>(slice: &[T], parent: &[T]) -> bool {
     let range = parent.as_ptr_range();
@@ -49,8 +52,8 @@ fn sub_phys(bin_data: &[u8], bootfs: Directory, bootfs_phys: &Phys) -> Result<Ph
     bootfs_phys.create_sub(offset, bin_data.len().next_multiple_of(PAGE_SIZE), false)
 }
 
-fn map_bootfs(phys: &Phys) -> Directory<'static> {
-    let ptr = Space::current()
+fn map_bootfs(phys: &Phys, root: &Virt) -> Directory<'static> {
+    let ptr = root
         .map_phys(
             None,
             Phys::clone(phys),
@@ -64,24 +67,36 @@ fn map_bootfs(phys: &Phys) -> Directory<'static> {
 extern "C" fn tmain(init_chan: sv_call::Handle) {
     dbglog::init(log::Level::Debug);
     log::info!("Starting initialization");
-    mem::init();
-
-    unsafe { test::test_syscall() };
 
     let init_chan = unsafe { Channel::from_raw(init_chan) };
-    let mut packet = Default::default();
-    { init_chan.receive_packet(&mut packet) }.expect("Failed to receive the initial packet");
+    let mut buffer = [0; core::mem::size_of::<Targs>()];
+    let mut handles = [MaybeUninit::uninit(); HandleIndex::Len as usize];
+    init_chan
+        .receive_raw(&mut buffer, &mut handles)
+        .0
+        .expect("Failed to receive the initial packet");
 
     let _targs = {
         let mut targs = Targs::default();
-        plain::copy_from_bytes(&mut targs, &packet.buffer).expect("Failed to get TINIT args");
+        plain::copy_from_bytes(&mut targs, &buffer).expect("Failed to get TINIT args");
         targs
     };
 
-    let vdso_phys = unsafe { Phys::from_raw(packet.handles[HandleIndex::Vdso as usize]) };
+    let root_virt = unsafe {
+        &*ROOT_VIRT.write(Virt::from_raw(
+            handles[HandleIndex::RootVirt as usize].assume_init(),
+        ))
+    };
 
-    let bootfs_phys = unsafe { Phys::from_raw(packet.handles[HandleIndex::Bootfs as usize]) };
-    let bootfs = map_bootfs(&bootfs_phys);
+    mem::init();
+
+    unsafe { test::test_syscall(root_virt) };
+
+    let vdso_phys = unsafe { Phys::from_raw(handles[HandleIndex::Vdso as usize].assume_init()) };
+
+    let bootfs_phys =
+        unsafe { Phys::from_raw(handles[HandleIndex::Bootfs as usize].assume_init()) };
+    let bootfs = map_bootfs(&bootfs_phys, root_virt);
 
     let bin = {
         let bin_data = bootfs
@@ -93,11 +108,11 @@ extern "C" fn tmain(init_chan: sv_call::Handle) {
         unsafe { load::Image::new(bin_data, bin_phys) }.expect("Failed to create the image")
     };
 
-    let space = Space::new();
+    let (space, virt) = Space::new();
     let (entry, stack) =
-        load::load_elf(bin.clone(), bootfs, &bootfs_phys, &space).expect("Failed to load test_bin");
+        load::load_elf(bin.clone(), bootfs, &bootfs_phys, &virt).expect("Failed to load test_bin");
 
-    let vdso_base = space
+    let vdso_base = virt
         .map_vdso(Phys::clone(&vdso_phys))
         .expect("Failed to load VDSO");
     log::debug!("{:?} {:?}", entry, stack);
@@ -112,6 +127,10 @@ extern "C" fn tmain(init_chan: sv_call::Handle) {
 
     let startup_args = StartupArgs {
         handles: [
+            (
+                HandleInfo::new().with_handle_type(HandleType::RootVirt),
+                Virt::into_raw(virt),
+            ),
             (
                 HandleInfo::new().with_handle_type(HandleType::VdsoPhys),
                 Phys::into_raw(vdso_phys),
@@ -135,7 +154,7 @@ extern "C" fn tmain(init_chan: sv_call::Handle) {
         entry,
         stack,
         Some(child),
-        vdso_base.as_ptr() as u64,
+        vdso_base.as_mut_ptr() as u64,
     )
     .expect("Failed to create the task");
 

@@ -90,47 +90,75 @@
         ]
     },
     {
-        "name": "sv_mem_map",
+        "name": "sv_virt_alloc",
+        "returns": "Handle",
+        "args": [
+            {
+                "name": "hdl",
+                "ty": "Handle"
+            },
+            {
+                "name": "offset",
+                "ty": "usize"
+            },
+            {
+                "name": "size",
+                "ty": "usize"
+            },
+            {
+                "name": "align",
+                "ty": "usize"
+            }
+        ]
+    },
+    {
+        "name": "sv_virt_info",
         "returns": "*mut u8",
         "args": [
             {
-                "name": "space",
+                "name": "hdl",
+                "ty": "Handle"
+            },
+            {
+                "name": "size",
+                "ty": "*mut usize"
+            }
+        ]
+    },
+    {
+        "name": "sv_virt_drop",
+        "returns": "()",
+        "args": [
+            {
+                "name": "hdl",
+                "ty": "Handle"
+            }
+        ]
+    },
+    {
+        "name": "sv_virt_map",
+        "returns": "*mut u8",
+        "args": [
+            {
+                "name": "hdl",
                 "ty": "Handle"
             },
             {
                 "name": "mi",
-                "ty": "*const MapInfo"
+                "ty": "*const VirtMapInfo"
             }
         ]
     },
     {
-        "name": "sv_mem_get",
-        "returns": "usize",
-        "args": [
-            {
-                "name": "space",
-                "ty": "Handle"
-            },
-            {
-                "name": "ptr",
-                "ty": "*mut u8"
-            },
-            {
-                "name": "flags",
-                "ty": "*mut Flags"
-            }
-        ]
-    },
-    {
-        "name": "sv_mem_reprot",
+        "name": "sv_virt_reprot",
         "returns": "()",
         "args": [
             {
-                "name": "space",
+                "name": "hdl",
                 "ty": "Handle"
             },
             {
-                "name": "ptr",
+                "name": "base",
                 "ty": "*mut u8"
             },
             {
@@ -144,16 +172,24 @@
         ]
     },
     {
-        "name": "sv_mem_unmap",
+        "name": "sv_virt_unmap",
         "returns": "()",
         "args": [
             {
-                "name": "space",
+                "name": "hdl",
                 "ty": "Handle"
             },
             {
-                "name": "ptr",
+                "name": "base",
                 "ty": "*mut u8"
+            },
+            {
+                "name": "len",
+                "ty": "usize"
+            },
+            {
+                "name": "drop_child",
+                "ty": "bool"
             }
         ]
     },

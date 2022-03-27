@@ -132,7 +132,7 @@ impl Space {
         )
     }
 
-    #[inline]
+    #[allow(dead_code)]
     pub(in crate::mem) fn query(&self, virt: LAddr) -> Result<(PAddr, Flags), paging::Error> {
         self.canary.assert();
 
@@ -161,6 +161,14 @@ impl Space {
         archop::reg::cr3::write(*self.cr3 as u64);
     }
 }
+
+impl PartialEq for Space {
+    fn eq(&self, other: &Self) -> bool {
+        self.cr3 == other.cr3
+    }
+}
+
+impl Eq for Space {}
 
 struct PageAlloc;
 

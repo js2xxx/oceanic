@@ -83,6 +83,14 @@ pub fn setup() {
         );
         res.expect("Failed to insert boot FS");
     }
+    let space = super::Space::new(Type::User).expect("Failed to create space");
+    {
+        let res = objects.insert(
+            hdl::Ref::try_new(Arc::downgrade(space.mem().root()), None)
+                .expect("Failed to create root virt"),
+        );
+        res.expect("Failed to insert root virt");
+    }
 
     let buf = {
         let targs = Targs {
@@ -104,7 +112,13 @@ pub fn setup() {
             crate::kargs().tinit_len,
         )
     };
-    let tinit = from_elf(image, String::from("TINIT"), crate::cpu::all_mask(), chan)
-        .expect("Failed to initialize TINIT");
+    let tinit = from_elf(
+        image,
+        space,
+        String::from("TINIT"),
+        crate::cpu::all_mask(),
+        chan,
+    )
+    .expect("Failed to initialize TINIT");
     SCHED.unblock(tinit, true);
 }

@@ -1,7 +1,7 @@
 use core::hint;
 
 use super::*;
-use crate::{cpu::Lazy, sched::deque};
+use crate::{cpu::Lazy, mem::space, sched::deque};
 
 /// Context dropper - used for dropping kernel stacks of threads.
 ///
@@ -29,9 +29,7 @@ pub(super) static IDLE: Lazy<Tid> = Lazy::new(|| {
         .unwrap();
 
     let space = super::Space::new_current().expect("Failed to create space");
-    let stack = space
-        .mem()
-        .init_stack(DEFAULT_STACK_SIZE)
+    let stack = space::init_stack(space.mem(), DEFAULT_STACK_SIZE)
         .expect("Failed to initialize stack for IDLE");
 
     let entry = ctx::Entry {

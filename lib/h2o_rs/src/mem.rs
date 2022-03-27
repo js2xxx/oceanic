@@ -1,11 +1,12 @@
 mod phys;
 mod space;
+mod virt;
 
 use core::alloc::Layout;
 
 pub use sv_call::mem::Flags;
 
-pub use self::{phys::Phys, space::Space};
+pub use self::{phys::Phys, space::Space, virt::Virt};
 
 cfg_if::cfg_if! { if #[cfg(target_arch = "x86_64")] {
 

@@ -68,14 +68,6 @@ fn task_sleep(ms: u32) -> Result {
     }
 }
 
-#[syscall]
-fn space_new() -> Result<Handle> {
-    SCHED.with_current(|cur| {
-        let space = Space::new(cur.tid().ty())?;
-        cur.space().handles().insert(space, None)
-    })
-}
-
 fn get_name(ptr: UserPtr<In, u8>, len: usize) -> Result<Option<String>> {
     if !ptr.as_ptr().is_null() {
         let mut buf = Vec::<u8>::with_capacity(len);
