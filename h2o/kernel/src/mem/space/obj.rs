@@ -285,6 +285,9 @@ impl Virt {
         let set_vdso = phys == VDSO.1;
         if set_vdso {
             check_set_vdso(&space.vdso, phys_offset, layout, flags)?;
+            if self as *const _ != Arc::as_ptr(&space.root) {
+                return Err(sv_call::Error::EACCES);
+            }
         }
         let virt = find_range(&children, &self.range, offset, layout)?;
         let base = virt.start;
@@ -481,7 +484,7 @@ fn check_vdso(vdso: Option<LAddr>, base: LAddr, end: LAddr) -> bool {
 }
 
 fn find_range(
-    children: &spin::MutexGuard<BTreeMap<LAddr, Child>>,
+    map: &BTreeMap<LAddr, Child>,
     range: &Range<LAddr>,
     offset: Option<usize>,
     layout: Layout,
@@ -504,12 +507,12 @@ fn find_range(
             if !(range.start <= base && end <= range.end) {
                 return Err(sv_call::Error::ERANGE);
             }
-            if !check_alloc(children, base..end) {
+            if !check_alloc(map, base..end) {
                 return Err(sv_call::Error::EEXIST);
             }
             base
         }
-        None => find_alloc(children, range, layout).ok_or(sv_call::Error::ENOMEM)?,
+        None => find_alloc(map, range, layout).ok_or(sv_call::Error::ENOMEM)?,
     };
 
     Ok(base..LAddr::from(base.val() + layout.size()))
@@ -520,10 +523,11 @@ fn check_alloc(map: &ChildMap, request: Range<LAddr>) -> bool {
     !matches!(prev, Some((&base, prev)) if prev.end(base) > request.start)
 }
 
-const MAX_COUNT_MASK: usize = 0xff;
 #[inline]
 fn find_alloc(map: &ChildMap, range: &Range<LAddr>, layout: Layout) -> Option<LAddr> {
-    let (ret, cnt) = try_find_alloc(map, range, layout, rand() & MAX_COUNT_MASK);
+    const ASLR_BIT: usize = 35;
+    let mask = (1 << ASLR_BIT) - 1;
+    let (ret, cnt) = try_find_alloc(map, range, layout, rand() & mask);
     ret.or_else(|| try_find_alloc(map, range, layout, rand() % cnt).0)
 }
 
