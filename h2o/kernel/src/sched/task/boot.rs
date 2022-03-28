@@ -1,3 +1,4 @@
+use alloc::sync::Weak;
 use core::mem;
 
 use archop::Azy;
@@ -5,9 +6,9 @@ use bitop_ex::BitOpEx;
 use sv_call::Feature;
 use targs::Targs;
 
-use super::*;
+use super::{hdl::DefaultFeature, *};
 use crate::{
-    mem::space::{Flags, Phys},
+    mem::space::{Flags, Phys, Virt},
     sched::SCHED,
 };
 
@@ -84,10 +85,14 @@ pub fn setup() {
         res.expect("Failed to insert boot FS");
     }
     let space = super::Space::new(Type::User).expect("Failed to create space");
-    {
+    unsafe {
         let res = objects.insert(
-            hdl::Ref::try_new(Arc::downgrade(space.mem().root()), None)
-                .expect("Failed to create root virt"),
+            hdl::Ref::try_new_unchecked(
+                Arc::downgrade(space.mem().root()),
+                Weak::<Virt>::default_features() | Feature::SEND,
+                None,
+            )
+            .expect("Failed to create root virt"),
         );
         res.expect("Failed to insert root virt");
     }

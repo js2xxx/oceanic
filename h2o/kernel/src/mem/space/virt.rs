@@ -273,7 +273,7 @@ impl Drop for Virt {
 
 unsafe impl DefaultFeature for Weak<Virt> {
     fn default_features() -> Feature {
-        Feature::SEND | Feature::READ | Feature::WRITE | Feature::EXECUTE
+        Feature::READ | Feature::WRITE | Feature::EXECUTE
     }
 }
 

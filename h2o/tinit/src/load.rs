@@ -129,18 +129,17 @@ fn load_segs<'a>(
     let mut found_interp = false;
     let file = loop {
         let file = ElfFile64::<'a, Endianness, _>::parse(image.data)?;
+        let e = file.endian();
 
         match file
             .raw_segments()
             .iter()
-            .find(|seg| seg.p_type(file.endian()) == PT_INTERP)
+            .find(|seg| seg.p_type(e) == PT_INTERP)
         {
             Some(interp) => {
                 use SError as SvError;
                 let interp = CStr::from_bytes_with_nul(
-                    interp
-                        .data(file.endian(), file.data())
-                        .map_err(|_| SvError::EBUFFER)?,
+                    interp.data(e, file.data()).map_err(|_| SvError::EBUFFER)?,
                 )
                 .map_err(|_| SvError::EBUFFER)?;
 
@@ -159,6 +158,7 @@ fn load_segs<'a>(
         }
     };
     assert!(found_interp, "Executables cannot be directly executed");
+    let e = file.endian();
 
     let is_dynamic = match file.kind() {
         ObjectKind::Dynamic => true,
@@ -169,8 +169,8 @@ fn load_segs<'a>(
     let virt = {
         let (min, max) = { file.raw_segments().iter() }.fold((usize::MAX, 0), |(min, max), seg| {
             (
-                min.min(seg.p_vaddr(file.endian()) as usize),
-                max.max((seg.p_vaddr(file.endian()) + seg.p_memsz(file.endian())) as usize),
+                min.min(seg.p_vaddr(e) as usize),
+                max.max((seg.p_vaddr(e) + seg.p_memsz(e)) as usize),
             )
         });
         let layout = unsafe { Virt::page_aligned(max - min) };
@@ -195,22 +195,22 @@ fn load_segs<'a>(
     );
 
     for seg in file.raw_segments() {
-        match seg.p_type(file.endian()) {
-            PT_LOAD if seg.p_memsz(file.endian()) > 0 => {
+        match seg.p_type(e) {
+            PT_LOAD if seg.p_memsz(e) > 0 => {
                 load_seg(
                     &image.phys,
                     &virt,
-                    file.endian(),
+                    e,
                     seg,
                     if is_dynamic { 0 } else { base },
                 )?;
             }
             PT_GNU_STACK => {
-                let ss = seg.p_memsz(file.endian()) as usize;
+                let ss = seg.p_memsz(e) as usize;
                 if ss > 0 {
                     stack_size = ss;
                 }
-                stack_flags = flags(seg.p_flags(file.endian()));
+                stack_flags = flags(seg.p_flags(e));
             }
             _ => {}
         }

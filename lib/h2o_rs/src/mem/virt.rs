@@ -82,6 +82,8 @@ impl Virt {
         })
     }
 
+    /// Shorthand for mapping a whole phys into the virt.
+    #[inline]
     pub fn map_phys(
         &self,
         offset: Option<usize>,
@@ -92,13 +94,12 @@ impl Virt {
         self.map(offset, phys, 0, unsafe { Self::page_aligned(len) }, flags)
     }
 
+    /// Shorthand for mapping the VDSO into the virt.
+    #[inline]
     pub fn map_vdso(&self, vdso: Phys) -> Result<NonNull<[u8]>> {
-        let len = vdso.len();
-        self.map(
+        self.map_phys(
             None,
             vdso,
-            0,
-            unsafe { Self::page_aligned(len) },
             Flags::READABLE | Flags::EXECUTABLE | Flags::USER_ACCESS,
         )
     }

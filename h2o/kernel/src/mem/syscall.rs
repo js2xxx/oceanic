@@ -12,7 +12,7 @@ use super::space;
 use crate::{
     dev::Resource,
     sched::{
-        task::{Space as TaskSpace, VDSO},
+        task::{hdl::DefaultFeature, Space as TaskSpace, VDSO},
         PREEMPT, SCHED,
     },
     syscall::{In, Out, UserPtr},
@@ -141,8 +141,14 @@ fn space_new(root_virt: UserPtr<Out, Handle>) -> Result<Handle> {
         let space = TaskSpace::new(cur.tid().ty())?;
         let virt = Arc::downgrade(space.mem().root());
         let ret = cur.space().handles().insert(space, None)?;
-        let virt = cur.space().handles().insert(virt, None)?;
-        unsafe { root_virt.write(virt) }?;
+        unsafe {
+            let virt = cur.space().handles().insert_unchecked(
+                virt,
+                Weak::<space::Virt>::default_features() | Feature::SEND,
+                None,
+            )?;
+            root_virt.write(virt)?;
+        }
         Ok(ret)
     })
 }

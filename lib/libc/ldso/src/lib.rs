@@ -14,8 +14,8 @@ pub mod rxx;
 
 use core::mem;
 
-use solvent::prelude::Object;
-use svrt::StartupArgs;
+use solvent::prelude::{Object, Phys};
+use svrt::{HandleInfo, HandleType, StartupArgs};
 
 pub use self::rxx::{dynamic, init_channel, load_address, vdso_map};
 
@@ -25,13 +25,14 @@ fn dl_main() -> rxx::DlReturn {
 
     log::debug!("dl_main started");
 
-    let mut startup_args = init_channel()
+    let startup_args = init_channel()
         .receive::<StartupArgs>()
         .expect("Failed to receive boot message");
 
-    unsafe { imp_alloc::init(startup_args.root_virt().expect("Failed to get root Virt")) };
+    let _args = svrt::init(startup_args).expect("Failed to initialize runtime");
 
-    let vdso = startup_args.vdso_phys().expect("Failed to get VDSO");
+    let vdso = svrt::take_startup_handle(HandleInfo::new().with_handle_type(HandleType::VdsoPhys));
+    let vdso = unsafe { Phys::from_raw(vdso) };
 
     log::debug!("{:?}", unsafe { vdso.raw() });
 

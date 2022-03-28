@@ -9,8 +9,6 @@ use solvent::prelude::*;
 
 const DL_ALLOC_BASE: usize = 0x7F2C_0000_0000;
 
-static mut ROOT_VIRT: Option<Virt> = None;
-
 #[global_allocator]
 static DL_ALLOC: DlAlloc2 = DlAlloc2 {
     buffer: UnsafeCell::new(Buffer([0; BUFFER_SIZE])),
@@ -77,9 +75,9 @@ unsafe impl Sync for DlAlloc2 {}
 
 unsafe impl GlobalAlloc for DlAlloc2 {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        match &ROOT_VIRT {
-            Some(root_virt) => self.inner.alloc(layout, root_virt),
-            None => {
+        match svrt::try_get_root_virt() {
+            Ok(root_virt) => self.inner.alloc(layout, root_virt),
+            Err(_) => {
                 let index = self.buffer_index.get();
                 let i = (*index).next_multiple_of(layout.align());
                 if i + layout.size() >= BUFFER_SIZE {
@@ -94,12 +92,11 @@ unsafe impl GlobalAlloc for DlAlloc2 {
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-        if let Some(ref root_virt) = ROOT_VIRT {
-            self.inner.dealloc(ptr, layout, root_virt);
+        if let Ok(root_virt) = svrt::try_get_root_virt() {
+            let buffer = &*self.buffer.get();
+            if !buffer.0.as_ptr_range().contains(&(ptr as *const _)) {
+                self.inner.dealloc(ptr, layout, root_virt);
+            }
         }
     }
-}
-
-pub unsafe fn init(root_virt: Virt) {
-    ROOT_VIRT = Some(root_virt);
 }

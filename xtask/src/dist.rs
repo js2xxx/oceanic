@@ -1,4 +1,11 @@
-use std::{env, error::Error, ffi::OsString, fs, path::Path, process::Command};
+use std::{
+    env,
+    error::Error,
+    ffi::OsString,
+    fs,
+    path::{Path, PathBuf},
+    process::Command,
+};
 
 use structopt::StructOpt;
 
@@ -23,6 +30,9 @@ impl Dist {
         let src_root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
         let target_root = env::var("CARGO_TARGET_DIR")
             .unwrap_or_else(|_| src_root.join("target").to_string_lossy().to_string());
+
+        fs::create_dir_all(PathBuf::from(&target_root).join("bootfs/lib"))?;
+        fs::create_dir_all(PathBuf::from(&target_root).join("bootfs/bin"))?;
 
         // Generate syscall stubs
         crate::gen::gen_syscall(
