@@ -169,7 +169,7 @@ mod syscall {
         let pree = PREEMPT.lock();
         let cur = unsafe { (*SCHED.current()).as_ref().ok_or(Error::ESRCH) }?;
 
-        let obj = unsafe { cur.space().handles().decode(hdl)?.as_ref() };
+        let obj = cur.space().handles().get_ref(hdl)?;
         if !obj.features().contains(Feature::WAIT) {
             return Err(Error::EPERM);
         }
@@ -188,7 +188,7 @@ mod syscall {
     #[syscall]
     fn obj_await(hdl: Handle, wake_all: bool, signal: usize) -> Result<Handle> {
         SCHED.with_current(|cur| {
-            let obj = unsafe { cur.space().handles().decode(hdl)?.as_ref() };
+            let obj = cur.space().handles().get_ref(hdl)?;
             if !obj.features().contains(Feature::WAIT) {
                 return Err(Error::EPERM);
             }
@@ -207,7 +207,7 @@ mod syscall {
         let blocker = cur.space().handles().get::<Arc<Blocker>>(waiter)?;
         blocker.wait(pree, time::from_us(timeout_us))?;
 
-        let (detach_ret, signal) = Arc::clone(blocker).detach();
+        let (detach_ret, signal) = Arc::clone(&blocker).detach();
         SCHED.with_current(|cur| cur.space().handles().remove::<Arc<Blocker>>(waiter))?;
 
         if !detach_ret {

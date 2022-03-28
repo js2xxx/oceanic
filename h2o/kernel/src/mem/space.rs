@@ -3,7 +3,8 @@
 //! This module is responsible for managing system memory and address space in a
 //! higher level, especially for large objects like APIC.
 
-mod obj;
+mod phys;
+mod virt;
 
 cfg_if::cfg_if! {
     if #[cfg(target_arch = "x86_64")] {
@@ -13,33 +14,28 @@ cfg_if::cfg_if! {
     }
 }
 
+use alloc::sync::{Arc, Weak};
 use core::{
-    mem,
-    ops::{Add, Range},
+    alloc::Layout,
+    ops::{Deref, Range},
     ptr::NonNull,
 };
 
 use archop::Azy;
-use bitop_ex::BitOpEx;
-use canary::Canary;
-use collection_ex::RangeMap;
-use paging::{LAddr, PAddr, PAGE_MASK};
+use paging::LAddr;
 use spin::Mutex;
 pub use sv_call::mem::Flags;
 
-pub use self::{arch::init_pgc, obj::*};
-use crate::sched::{
-    task::{self, VDSO},
-    Arsc, PREEMPT,
-};
+pub use self::{arch::init_pgc, phys::*, virt::*};
+use crate::sched::{task, PREEMPT};
 
 type ArchSpace = arch::Space;
 
-pub static KRL: Azy<Arsc<Space>> =
+pub static KRL: Azy<Arc<Space>> =
     Azy::new(|| Space::try_new(task::Type::Kernel).expect("Failed to create kernel space"));
 
 #[thread_local]
-static mut CURRENT: Option<Arsc<Space>> = None;
+static mut CURRENT: Option<Arc<Space>> = None;
 
 fn paging_error(err: paging::Error) -> sv_call::Error {
     use sv_call::Error;
@@ -69,26 +65,15 @@ fn ty_to_range(ty: task::Type) -> Range<usize> {
     }
 }
 
-/// The structure that represents an address space.
-///
-/// The address space is defined from the concept of the virtual addressing in
-/// CPU. It's arch- specific responsibility to map the virtual address to the
-/// real (physical) address in RAM. This structure is used to allocate & reserve
-/// address space ranges for various requests.
-///
-/// TODO: Support the requests for reserving address ranges.
+#[inline]
+pub fn page_aligned(size: usize) -> Layout {
+    unsafe { Layout::from_size_align_unchecked(size, paging::PAGE_LAYOUT.align()) }
+}
+
 #[derive(Debug)]
 pub struct Space {
-    canary: Canary<Space>,
-    ty: task::Type,
-
-    /// The arch-specific part of the address space.
     arch: ArchSpace,
-
-    /// The general allocator.
-    pub(super) range: Range<usize>,
-    map: Mutex<RangeMap<usize, Phys>>,
-
+    root: Arc<Virt>,
     vdso: Mutex<Option<LAddr>>,
 }
 
@@ -97,272 +82,70 @@ unsafe impl Sync for Space {}
 
 impl Space {
     /// Create a new address space.
-    pub fn try_new(ty: task::Type) -> sv_call::Result<Arsc<Self>> {
-        let range = ty_to_range(ty);
-        Arsc::try_new(Space {
-            canary: Canary::new(),
-            ty,
+    pub fn try_new(ty: task::Type) -> sv_call::Result<Arc<Self>> {
+        Ok(Arc::new_cyclic(|me| Space {
             arch: ArchSpace::new(),
-            range: range.clone(),
-            map: Mutex::new(RangeMap::new(range)),
+            root: Virt::new_root(ty, Weak::clone(me)),
             vdso: Mutex::new(None),
-        })
-        .map_err(sv_call::Error::from)
+        }))
     }
 
-    #[inline]
-    pub fn ty(&self) -> task::Type {
-        self.ty
-    }
-
-    /// Shorthand for `Phys::allocate` + `Space::map`.
-    pub fn allocate(
-        &self,
-        size: usize,
-        flags: Flags,
-        zeroed: bool,
-    ) -> sv_call::Result<NonNull<[u8]>> {
-        self.canary.assert();
-
-        let phys = Phys::allocate(size, zeroed)?;
-        let len = phys.len();
-
-        self.map(None, phys, 0, len, flags).map(|addr| {
-            let ptr = unsafe { NonNull::new_unchecked(*addr) };
-            NonNull::slice_from_raw_parts(ptr, len)
-        })
-    }
-
-    #[inline]
-    pub fn map_addr(
-        &self,
-        virt: Range<LAddr>,
-        phys: Option<Phys>,
-        flags: Flags,
-    ) -> sv_call::Result {
-        self.canary.assert();
-
-        let offset = virt
-            .start
-            .val()
-            .checked_sub(self.range.start)
-            .ok_or(sv_call::Error::ERANGE)?;
-        let len = virt
-            .end
-            .val()
-            .checked_sub(virt.start.val())
-            .ok_or(sv_call::Error::ERANGE)?;
-        let phys = match phys {
-            Some(phys) => phys,
-            None => Phys::allocate(len, true)?,
-        };
-        self.map(Some(offset), phys, 0, len, flags).map(|_| {})
-    }
-
-    /// Map a physical memory to a virtual address.
-    pub fn map(
-        &self,
-        offset: Option<usize>,
-        phys: Phys,
-        phys_offset: usize,
-        len: usize,
-        flags: Flags,
-    ) -> sv_call::Result<LAddr> {
-        self.canary.assert();
-
-        if matches!(offset, Some(offset) if offset & PAGE_MASK != 0) {
-            return Err(sv_call::Error::EALIGN);
-        }
-        if phys_offset & PAGE_MASK != 0 || len & PAGE_MASK != 0 {
-            return Err(sv_call::Error::EALIGN);
-        }
-
-        let (len, set_vdso) = if phys == VDSO.1 {
-            if flags != VDSO.0 {
-                return Err(sv_call::Error::EACCES);
-            }
-
-            if phys_offset != 0 || len != 0 {
-                return Err(sv_call::Error::EACCES);
-            }
-
-            if PREEMPT.scope(|| self.vdso.lock().is_some()) {
-                return Err(sv_call::Error::EACCES);
-            }
-
-            (phys.len(), true)
-        } else {
-            (len, false)
-        };
-
-        let phys_offset_end = phys_offset.wrapping_add(len);
-        if !(phys_offset < phys_offset_end && phys_offset_end <= phys.len()) {
-            return Err(sv_call::Error::ERANGE);
-        }
-
-        let phys_start = PAddr::new(phys.base().add(phys_offset));
-        let arch_map = |range: Range<usize>| {
-            let virt = LAddr::from(range.start)..LAddr::from(range.end);
-            self.arch
-                .maps(virt, phys_start, flags)
-                .map_err(paging_error)
-        };
-
-        let ret = if let Some(offset) = offset {
-            let start = offset.wrapping_add(self.range.start);
-            let end = start.wrapping_add(len);
-            if !(self.range.start <= start && start < end && end <= self.range.end) {
-                return Err(sv_call::Error::ERANGE);
-            }
-
-            PREEMPT.scope(|| {
-                self.map.lock().try_insert_with(
-                    start..end,
-                    || arch_map(start..end).map(|_| (phys, LAddr::from(start))),
-                    sv_call::Error::EBUSY,
-                )
-            })
-        } else {
-            PREEMPT.scope(|| {
-                self.map
-                    .lock()
-                    .allocate_with(
-                        len,
-                        |range| arch_map(range).map(|_| (phys, ())),
-                        sv_call::Error::ENOMEM,
-                    )
-                    .map(|(start, _)| LAddr::from(start))
-            })
-        };
-
-        if let (true, Ok(addr)) = (set_vdso, ret) {
-            PREEMPT.scope(|| *self.vdso.lock() = Some(addr));
-        }
-
-        ret
-    }
-
-    /// Get the mapped physical address of the specified pointer.
-    pub fn get(&self, ptr: NonNull<u8>, flags: &mut Flags) -> sv_call::Result<paging::PAddr> {
-        self.canary.assert();
-
-        let vdso_size = VDSO.1.len();
-        if PREEMPT.scope(|| *self.vdso.lock()).map_or(false, |base| {
-            *base <= ptr.as_ptr() && ptr.as_ptr() < *LAddr::from(base.val() + vdso_size)
-        }) {
-            return Err(sv_call::Error::EACCES);
-        }
-
-        let virt = LAddr::from(ptr);
-        PREEMPT.scope(|| {
-            let map = self.map.lock();
-            let (phys, f) = match map.get_contained(&virt.val()) {
-                Some(_) => self.arch.query(LAddr::from(ptr)).map_err(paging_error),
-                None => Err(sv_call::Error::ENOENT),
-            }?;
-            *flags = f;
-            Ok(phys)
-        })
-    }
-
-    /// Modify the access flags of an address range.
-    ///
-    /// # Safety
-    ///
-    /// The caller must ensure that no pointers or references within the address
-    /// range are present (or will be influenced by the modification).
-    pub unsafe fn reprotect(&self, mut ptr: NonNull<[u8]>, flags: Flags) -> sv_call::Result {
-        self.canary.assert();
-
-        let vdso_size = VDSO.1.len();
-        if PREEMPT.scope(|| *self.vdso.lock()).map_or(false, |base| {
-            *base <= ptr.as_mut_ptr() && ptr.as_mut_ptr() < *LAddr::from(base.val() + vdso_size)
-        }) {
-            return Err(sv_call::Error::EACCES);
-        }
-
-        let virt = {
-            let ptr = ptr.as_mut().as_mut_ptr_range();
-            LAddr::new(ptr.start)..LAddr::new(ptr.end)
-        };
-
-        PREEMPT.scope(|| {
-            let map = self.map.lock();
-            match map.get_contained_range(virt.start.val()..virt.end.val()) {
-                Some(_) => self.arch.reprotect(virt, flags).map_err(paging_error),
-                None => Err(sv_call::Error::ENOENT),
-            }
-        })
-    }
-
-    /// Deallocate an address range in the space without a specific type.
-    ///
-    /// # Safety
-    ///
-    /// The caller must ensure that no more references are pointing at the
-    /// address range to be deallocated.
-    pub unsafe fn unmap(&self, ptr: NonNull<u8>) -> sv_call::Result {
-        self.canary.assert();
-
-        if PREEMPT
-            .scope(|| *self.vdso.lock())
-            .map_or(false, |base| *base == ptr.as_ptr())
-        {
-            return Err(sv_call::Error::EACCES);
-        }
-
-        let ret = PREEMPT.scope(|| self.map.lock().remove(LAddr::from(ptr).val()));
-        ret.map_or(Err(sv_call::Error::ENOENT), |(range, _phys)| {
-            let _ = PREEMPT.scope(|| {
-                self.arch
-                    .unmaps(LAddr::from(range.start)..LAddr::from(range.end))
-            });
-            Ok(())
-        })
-    }
-
-    /// # Safety
-    ///
-    /// The caller must ensure that loading the space is safe and not cause any
-    /// #PF.
-    pub unsafe fn load(&self) {
-        self.canary.assert();
-        self.arch.load()
-    }
-
-    pub fn init_stack(&self, size: usize) -> sv_call::Result<LAddr> {
-        self.canary.assert();
-
-        let cnt = size.div_ceil_bit(paging::PAGE_SHIFT);
-
-        let flags = Flags::READABLE | Flags::WRITABLE | Flags::USER_ACCESS;
-        let ptr = self.allocate(paging::PAGE_SIZE * (cnt + 2), flags, false)?;
-        let base = ptr.as_non_null_ptr();
-        let actual_end =
-            unsafe { NonNull::new_unchecked(base.as_ptr().add(paging::PAGE_SIZE * (cnt + 1))) };
-
-        let prefix = NonNull::slice_from_raw_parts(base, paging::PAGE_SIZE);
-        let suffix = NonNull::slice_from_raw_parts(actual_end, paging::PAGE_SIZE);
-
-        unsafe {
-            self.reprotect(prefix, Flags::READABLE)?;
-            self.reprotect(suffix, Flags::READABLE)?;
-        }
-
-        Ok(LAddr::from(actual_end))
+    pub fn root(&self) -> &Arc<Virt> {
+        &self.root
     }
 }
 
-impl Drop for Space {
-    fn drop(&mut self) {
-        let map = PREEMPT.scope(|| mem::take(&mut *self.map.lock()));
-        for (_, (range, _)) in map {
-            let _ = PREEMPT.scope(|| {
-                self.arch
-                    .unmaps(LAddr::from(range.start)..LAddr::from(range.end))
-            });
-        }
+impl Deref for Space {
+    type Target = Arc<Virt>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.root
     }
+}
+
+pub(crate) fn allocate(size: usize, flags: Flags, zeroed: bool) -> sv_call::Result<NonNull<[u8]>> {
+    let phys = Phys::allocate(size, zeroed)?;
+    let len = phys.len();
+
+    KRL.root
+        .map(None, phys, 0, page_aligned(len), flags)
+        .map(|addr| {
+            let ptr = unsafe { NonNull::new_unchecked(*addr) };
+            NonNull::slice_from_raw_parts(ptr, len)
+        })
+}
+
+pub(crate) unsafe fn reprotect_unchecked(ptr: NonNull<[u8]>, flags: Flags) ->sv_call::Result {
+    let base = LAddr::from(ptr);
+    let end = LAddr::from(base.val() + ptr.len());
+    KRL.arch.reprotect(base..end, flags).map_err(paging_error)
+}
+
+pub(crate) unsafe fn unmap(ptr: NonNull<u8>) -> sv_call::Result {
+    let base = LAddr::from(ptr);
+    let ret = PREEMPT.scope(|| KRL.root.children.lock().remove(&base));
+    ret.map_or(Err(sv_call::Error::ENOENT), |child| {
+        let end = child.end(base);
+        let _ = PREEMPT.scope(|| KRL.arch.unmaps(base..end));
+        Ok(())
+    })
+}
+
+pub fn init_stack(virt: &Arc<Virt>, size: usize) -> sv_call::Result<LAddr> {
+    let flags = Flags::READABLE | Flags::WRITABLE | Flags::USER_ACCESS;
+    let virt = virt.allocate(None, unsafe {
+        Layout::from_size_align_unchecked(paging::PAGE_SIZE * 2 + size, paging::PAGE_SIZE)
+    })?;
+    let phys = Phys::allocate(size, false)?;
+    let ret = virt.upgrade().unwrap().map(
+        Some(paging::PAGE_SIZE),
+        phys,
+        0,
+        unsafe { Layout::from_size_align_unchecked(size, paging::PAGE_SIZE) },
+        flags,
+    )?;
+
+    Ok(LAddr::from(ret.val() + size))
 }
 
 /// Load the kernel space for enery CPU.
@@ -371,8 +154,8 @@ impl Drop for Space {
 ///
 /// The function must be called only once from each application CPU.
 pub unsafe fn init() {
-    let space = Arsc::clone(&KRL);
-    unsafe { space.load() };
+    let space = Arc::clone(&KRL);
+    unsafe { space.arch.load() };
     CURRENT = Some(space);
 }
 
@@ -382,7 +165,7 @@ pub unsafe fn init() {
 ///
 /// The caller must ensure that [`CURRENT`] will not be modified where the
 /// reference is alive.
-pub unsafe fn current<'a>() -> &'a Arsc<Space> {
+pub unsafe fn current<'a>() -> &'a Arc<Space> {
     unsafe { CURRENT.as_ref().expect("No current space available") }
 }
 
@@ -390,7 +173,7 @@ pub unsafe fn current<'a>() -> &'a Arsc<Space> {
 #[inline]
 pub fn with_current<'a, F, R>(func: F) -> R
 where
-    F: FnOnce(&'a Arsc<Space>) -> R,
+    F: FnOnce(&'a Arc<Space>) -> R,
     R: 'a,
 {
     PREEMPT.scope(|| {
@@ -399,12 +182,12 @@ where
     })
 }
 
-pub unsafe fn with<F, R>(space: &Arsc<Space>, func: F) -> R
+pub unsafe fn with<F, R>(space: &Arc<Space>, func: F) -> R
 where
-    F: FnOnce(&Arsc<Space>) -> R,
+    F: FnOnce(&Arc<Space>) -> R,
 {
     PREEMPT.scope(|| {
-        let old = set_current(Arsc::clone(space));
+        let old = set_current(Arc::clone(space));
         let ret = func(space);
         set_current(old);
         ret
@@ -416,10 +199,10 @@ where
 /// # Safety
 ///
 /// The function must be called only from the epilogue of context switching.
-pub unsafe fn set_current(space: Arsc<Space>) -> Arsc<Space> {
+pub unsafe fn set_current(space: Arc<Space>) -> Arc<Space> {
     PREEMPT.scope(|| {
-        if !Arsc::ptr_eq(current(), &space) {
-            space.load();
+        if !Arc::ptr_eq(current(), &space) {
+            space.arch.load();
             CURRENT.replace(space).expect("No current space available")
         } else {
             space

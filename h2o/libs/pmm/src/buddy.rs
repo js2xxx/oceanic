@@ -682,8 +682,6 @@ pub unsafe fn dealloc_pages_exact(n: usize, addr: PAddr) {
 
 /// Parse the memory map acquired from H2O's boot loader.
 ///
-/// TODO: To storage the info of other memory map types.
-///
 /// # Safety
 ///
 /// It'll always be safe **UNLESS** `mmap_ptr` is invalid.

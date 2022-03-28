@@ -3,7 +3,7 @@ use core::alloc::{Allocator, Layout};
 
 use bitop_ex::BitOpEx;
 use paging::{LAddr, PAddr, PAGE_SHIFT, PAGE_SIZE};
-use sv_call::Feature;
+use sv_call::{Feature, Result};
 
 use crate::sched::{task::hdl::DefaultFeature, Arsc};
 
@@ -54,7 +54,7 @@ impl From<Arsc<PhysInner>> for Phys {
 
 impl Phys {
     #[inline]
-    pub fn new(base: PAddr, size: usize) -> sv_call::Result<Self> {
+    pub fn new(base: PAddr, size: usize) -> Result<Self> {
         unsafe { Arsc::try_new(PhysInner::new_manual(false, base, size)) }
             .map_err(sv_call::Error::from)
             .map(Self::from)
@@ -63,7 +63,7 @@ impl Phys {
     /// # Errors
     ///
     /// Returns error if the heap memory is exhausted.
-    pub fn allocate(size: usize, zeroed: bool) -> sv_call::Result<Self> {
+    pub fn allocate(size: usize, zeroed: bool) -> Result<Self> {
         let mut inner = Arsc::try_new_uninit()?;
         let layout = unsafe { Layout::from_size_align_unchecked(size, PAGE_SIZE) }.pad_to_align();
         let mem = if zeroed {
@@ -91,7 +91,7 @@ impl Phys {
         self.len == 0
     }
 
-    pub fn create_sub(&self, offset: usize, len: usize, copy: bool) -> sv_call::Result<Self> {
+    pub fn create_sub(&self, offset: usize, len: usize, copy: bool) -> Result<Self> {
         if offset.contains_bit(PAGE_SHIFT) || len.contains_bit(PAGE_SHIFT) {
             return Err(sv_call::Error::EALIGN);
         }

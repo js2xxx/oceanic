@@ -112,7 +112,7 @@ mod syscall {
         let intr = SCHED.with_current(|cur| {
             let handles = cur.space().handles();
             let res = handles.get::<Arc<Resource<u32>>>(res)?;
-            Interrupt::new(res, gsi, level_triggered)
+            Interrupt::new(&res, gsi, level_triggered)
         })?;
 
         MANAGER.config(gsi, trig_mode, polarity)?;
@@ -140,7 +140,7 @@ mod syscall {
             return Err(Error::EPERM);
         }
 
-        let blocker = crate::sched::Blocker::new(&(Arc::clone(intr) as _), false, SIG_GENERIC);
+        let blocker = crate::sched::Blocker::new(&(Arc::clone(&intr) as _), false, SIG_GENERIC);
         blocker.wait(pree, time::from_us(timeout_us))?;
         if !blocker.detach().0 {
             return Err(Error::ETIME);
@@ -155,7 +155,6 @@ mod syscall {
         hdl.check_null()?;
         SCHED.with_current(|cur| {
             let intr = cur.space().handles().remove::<Arc<Interrupt>>(hdl)?;
-            let intr = intr.downcast_ref::<Arc<Interrupt>>()?;
             intr.cancel();
             MANAGER.register(intr.gsi, None)?;
             Ok(())

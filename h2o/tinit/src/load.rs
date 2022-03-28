@@ -1,4 +1,4 @@
-use core::ptr::NonNull;
+use core::{alloc::Layout, ptr::NonNull};
 
 use bootfs::parse::Directory;
 use cstr_core::CStr;
@@ -10,10 +10,11 @@ use object::{
     },
     Endianness, Object, ObjectKind,
 };
-use solvent::prelude::{Flags, Phys, Space, PAGE_MASK, PAGE_SIZE};
+use solvent::prelude::{Error as SError, Flags, Phys, Virt, PAGE_LAYOUT, PAGE_MASK, PAGE_SIZE};
 use sv_call::task::DEFAULT_STACK_SIZE;
 
 const STACK_PROTECTOR_SIZE: usize = PAGE_SIZE;
+const STACK_PROTECTOR_LAYOUT: Layout = PAGE_LAYOUT;
 
 #[derive(Clone)]
 pub struct Image<'a> {
@@ -33,7 +34,7 @@ impl<'a> Image<'a> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Error {
     Parse(read::Error),
-    Solvent(solvent::error::Error),
+    Solvent(SError),
 }
 
 impl From<read::Error> for Error {
@@ -42,8 +43,8 @@ impl From<read::Error> for Error {
     }
 }
 
-impl From<solvent::error::Error> for Error {
-    fn from(err: solvent::error::Error) -> Self {
+impl From<SError> for Error {
+    fn from(err: SError) -> Self {
         Error::Solvent(err)
     }
 }
@@ -64,19 +65,18 @@ fn flags(seg_flags: u32) -> Flags {
 
 fn load_seg(
     image: &Phys,
-    space: &Space,
+    virt: &Virt,
     e: Endianness,
     seg: &impl ProgramHeader<Endian = object::Endianness>,
-    kind: ObjectKind,
-    map_base: &mut Option<usize>,
-) -> Result<usize, Error> {
+    base: usize,
+) -> Result<(), Error> {
     let msize = seg.p_memsz(e).into() as usize;
     let fsize = seg.p_filesz(e).into() as usize;
     let offset = seg.p_offset(e).into() as usize;
     let address = seg.p_vaddr(e).into() as usize;
 
     if offset & PAGE_MASK != address & PAGE_MASK {
-        return Err(Error::Solvent(solvent::error::Error::EALIGN));
+        return Err(Error::Solvent(SError::EALIGN));
     }
     let fend = (offset + fsize) & !PAGE_MASK;
     let cend = offset + fsize;
@@ -89,61 +89,57 @@ fn load_seg(
 
     let flags = flags(seg.p_flags(e));
 
-    let base = match kind {
-        ObjectKind::Dynamic if fsize == 0 => None,
-        ObjectKind::Dynamic => {
-            let data = image.create_sub(offset, fsize, true)?;
-            let address = map_base.map(|base| base + address);
-            Some(space.map_phys(address, data, flags)?.as_mut_ptr() as usize)
-        }
-        _ if fsize == 0 => Some(address),
-        _ => {
-            let data = image.create_sub(offset, fsize, true)?;
-            Some(space.map_phys(Some(address), data, flags)?.as_mut_ptr() as usize)
-        }
-    };
+    if fsize > 0 {
+        let data = image.create_sub(offset, fsize, true)?;
 
-    let base = if asize > 0 {
-        let address = base.map(|base| base + fsize);
+        log::trace!(
+            "Map {:#x}~{:#x} -> {:#x}",
+            offset,
+            offset + fsize,
+            address - base
+        );
+        virt.map_phys(Some(address - base), data, flags)?;
+    }
+
+    if asize > 0 {
+        let address = address + fsize;
 
         let mem = Phys::allocate(asize, true)?;
 
         let cdata = image.read(fend, csize)?;
         unsafe { mem.write(0, &cdata) }?;
 
-        let abase = space.map_phys(address, mem, flags)?.as_mut_ptr() as usize;
-        Some(abase - fsize)
-    } else {
-        base
-    };
-
-    if map_base.is_none() {
-        *map_base = base;
+        log::trace!(
+            "Alloc {:#x}~{:#x} -> {:#x}",
+            fend,
+            fend + asize,
+            address - base
+        );
+        virt.map_phys(Some(address - base), mem, flags)?;
     }
-    Ok(base.expect("Null segment"))
+    Ok(())
 }
 
 fn load_segs<'a>(
     mut image: Image<'a>,
     bootfs: Directory<'a>,
     bootfs_phys: &Phys,
-    space: &Space,
+    root: &Virt,
 ) -> Result<(NonNull<u8>, usize, Flags), Error> {
     let mut found_interp = false;
     let file = loop {
         let file = ElfFile64::<'a, Endianness, _>::parse(image.data)?;
+        let e = file.endian();
 
         match file
             .raw_segments()
             .iter()
-            .find(|seg| seg.p_type(file.endian()) == PT_INTERP)
+            .find(|seg| seg.p_type(e) == PT_INTERP)
         {
             Some(interp) => {
-                use solvent::error::Error as SvError;
+                use SError as SvError;
                 let interp = CStr::from_bytes_with_nul(
-                    interp
-                        .data(file.endian(), file.data())
-                        .map_err(|_| SvError::EBUFFER)?,
+                    interp.data(e, file.data()).map_err(|_| SvError::EBUFFER)?,
                 )
                 .map_err(|_| SvError::EBUFFER)?;
 
@@ -162,37 +158,64 @@ fn load_segs<'a>(
         }
     };
     assert!(found_interp, "Executables cannot be directly executed");
+    let e = file.endian();
 
-    let mut entry = file.entry() as usize;
-    let kind = file.kind();
+    let is_dynamic = match file.kind() {
+        ObjectKind::Dynamic => true,
+        ObjectKind::Executable => false,
+        _ => unimplemented!(),
+    };
+
+    let virt = {
+        let (min, max) = { file.raw_segments().iter() }.fold((usize::MAX, 0), |(min, max), seg| {
+            (
+                min.min(seg.p_vaddr(e) as usize),
+                max.max((seg.p_vaddr(e) + seg.p_memsz(e)) as usize),
+            )
+        });
+        let layout = unsafe { Virt::page_aligned(max - min) };
+        if is_dynamic {
+            root.allocate(None, layout)?
+        } else {
+            let base = root.base().as_ptr() as usize;
+            let offset = min
+                .checked_sub(base)
+                .ok_or(Error::Solvent(SError::ERANGE))?;
+            root.allocate(Some(offset), layout)?
+        }
+    };
+
+    let base = virt.base().as_ptr() as usize;
+    let entry = file.entry() as usize + if is_dynamic { base } else { 0 };
+    let entry = NonNull::new(entry as *mut u8).ok_or(SError::EINVAL)?;
 
     let (mut stack_size, mut stack_flags) = (
         DEFAULT_STACK_SIZE,
         Flags::READABLE | Flags::WRITABLE | Flags::USER_ACCESS,
     );
-    let mut map_base = None;
+
     for seg in file.raw_segments() {
-        match seg.p_type(file.endian()) {
-            PT_LOAD if seg.p_memsz(file.endian()) > 0 => {
-                let base = load_seg(&image.phys, space, file.endian(), seg, kind, &mut map_base)?;
-                let fbase = seg.p_offset(file.endian()) as usize;
-                let fend = fbase + seg.p_filesz(file.endian()) as usize;
-                if kind == ObjectKind::Dynamic && (fbase..fend).contains(&entry) {
-                    entry = entry + base - fbase;
-                }
+        match seg.p_type(e) {
+            PT_LOAD if seg.p_memsz(e) > 0 => {
+                load_seg(
+                    &image.phys,
+                    &virt,
+                    e,
+                    seg,
+                    if is_dynamic { 0 } else { base },
+                )?;
             }
             PT_GNU_STACK => {
-                let ss = seg.p_memsz(file.endian()) as usize;
+                let ss = seg.p_memsz(e) as usize;
                 if ss > 0 {
                     stack_size = ss;
                 }
-                stack_flags = flags(seg.p_flags(file.endian()));
+                stack_flags = flags(seg.p_flags(e));
             }
             _ => {}
         }
     }
 
-    let entry = NonNull::new(entry as *mut u8).ok_or(solvent::error::Error::EINVAL)?;
     Ok((entry, stack_size, stack_flags))
 }
 
@@ -200,25 +223,29 @@ pub fn load_elf(
     image: Image,
     bootfs: Directory,
     bootfs_phys: &Phys,
-    space: &Space,
+    root: &Virt,
 ) -> Result<(NonNull<u8>, NonNull<u8>), Error> {
-    let (entry, stack_size, stack_flags) = load_segs(image, bootfs, bootfs_phys, space)?;
+    let (entry, stack_size, stack_flags) = load_segs(image, bootfs, bootfs_phys, root)?;
 
     let stack = {
-        let size = stack_size + STACK_PROTECTOR_SIZE * 2;
-        let stack_phys = Phys::allocate(size, true)?;
-        let stack_ptr = space.map(None, stack_phys, 0, size, stack_flags)?;
+        let layout = unsafe { Virt::page_aligned(stack_size) };
+        let (alloc_layout, _) = layout
+            .extend(STACK_PROTECTOR_LAYOUT)
+            .and_then(|(layout, _)| layout.extend(STACK_PROTECTOR_LAYOUT))
+            .map_err(SError::from)?;
+
+        let virt = root.allocate(None, alloc_layout)?;
+        let stack_phys = Phys::allocate(stack_size, true)?;
+        let stack_ptr = virt.map(
+            Some(STACK_PROTECTOR_SIZE),
+            stack_phys,
+            0,
+            layout,
+            stack_flags,
+        )?;
 
         let base = stack_ptr.as_non_null_ptr();
-        let actual_end =
-            unsafe { NonNull::new_unchecked(base.as_ptr().add(stack_size + STACK_PROTECTOR_SIZE)) };
-
-        let prefix = NonNull::slice_from_raw_parts(base, STACK_PROTECTOR_SIZE);
-        let suffix = NonNull::slice_from_raw_parts(actual_end, STACK_PROTECTOR_SIZE);
-        unsafe { space.reprotect(prefix, Flags::USER_ACCESS) }?;
-        unsafe { space.reprotect(suffix, Flags::USER_ACCESS) }?;
-
-        actual_end
+        unsafe { NonNull::new_unchecked(base.as_ptr().add(stack_size)) }
     };
 
     Ok((entry, stack))

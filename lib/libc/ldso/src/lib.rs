@@ -25,15 +25,14 @@ fn dl_main() -> rxx::DlReturn {
 
     log::debug!("dl_main started");
 
-    let mut startup_args = init_channel()
+    let startup_args = init_channel()
         .receive::<StartupArgs>()
         .expect("Failed to receive boot message");
 
-    let handle = startup_args
-        .handles
-        .remove(&HandleInfo::new().with_handle_type(HandleType::VdsoPhys))
-        .expect("Failed to get VDSO physical object");
-    let vdso = unsafe { Phys::from_raw(handle) };
+    let _args = svrt::init(startup_args).expect("Failed to initialize runtime");
+
+    let vdso = svrt::take_startup_handle(HandleInfo::new().with_handle_type(HandleType::VdsoPhys));
+    let vdso = unsafe { Phys::from_raw(vdso) };
 
     log::debug!("{:?}", unsafe { vdso.raw() });
 

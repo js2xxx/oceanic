@@ -55,9 +55,9 @@ where
         if !channel.features().contains(Feature::WRITE) {
             return Err(Error::EPERM);
         }
-        let objects = unsafe { map.send(handles, channel) }?;
+        let objects = unsafe { map.send(handles, &channel) }?;
         let mut packet = Packet::new(packet.id, objects, buffer);
-        send(channel, &mut packet)
+        send(&channel, &mut packet)
     })
 }
 

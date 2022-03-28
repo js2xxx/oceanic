@@ -1,3 +1,5 @@
+use alloc::sync::Arc;
+
 use sv_call::Feature;
 
 use super::{
@@ -14,7 +16,7 @@ use crate::{
 
 #[derive(Debug)]
 pub struct Space {
-    mem: Arsc<mem::space::Space>,
+    mem: Arc<mem::space::Space>,
     handles: HandleMap,
     futexes: Futexes,
 }
@@ -35,7 +37,7 @@ impl Space {
 
     pub fn new_current() -> sv_call::Result<Arsc<Self>> {
         Arsc::try_new(Space {
-            mem: mem::space::with_current(Arsc::clone),
+            mem: mem::space::with_current(Arc::clone),
             handles: HandleMap::new(),
             futexes: Futexes::new(Default::default()),
         })
@@ -43,7 +45,7 @@ impl Space {
     }
 
     #[inline]
-    pub fn mem(&self) -> &Arsc<mem::space::Space> {
+    pub fn mem(&self) -> &Arc<mem::space::Space> {
         &self.mem
     }
 
@@ -70,7 +72,7 @@ impl Space {
         super::PREEMPT.scope(|| {
             self.handles().get::<Tid>(hdl).and_then(|obj| {
                 if obj.features().contains(need_feature) {
-                    Ok(Tid::clone(obj))
+                    Ok(Tid::clone(&obj))
                 } else {
                     Err(sv_call::Error::EPERM)
                 }
@@ -81,6 +83,6 @@ impl Space {
 
 unsafe impl DefaultFeature for Arsc<Space> {
     fn default_features() -> Feature {
-        Feature::SEND | Feature::SYNC | Feature::READ | Feature::WRITE
+        Feature::READ | Feature::WRITE
     }
 }

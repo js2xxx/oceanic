@@ -18,30 +18,30 @@ static mut VDSO: MaybeUninit<Dso> = MaybeUninit::uninit();
 
 #[derive(Debug, Copy, Clone)]
 pub enum DsoBase {
-    Dynamic(usize),
-    Static(usize),
+    Dyn(usize),
+    Exec(usize),
 }
 
 impl DsoBase {
     pub fn new(base: usize, e_type: u16) -> Self {
         match e_type {
-            ET_DYN => DsoBase::Dynamic(base),
-            ET_EXEC => DsoBase::Static(base),
+            ET_DYN => DsoBase::Dyn(base),
+            ET_EXEC => DsoBase::Exec(base),
             _ => unimplemented!(),
         }
     }
 
     pub fn get(self) -> usize {
         match self {
-            DsoBase::Dynamic(base) => base,
-            Self::Static(base) => base,
+            DsoBase::Dyn(base) => base,
+            Self::Exec(base) => base,
         }
     }
 
     pub fn ptr<T>(&self, offset: usize) -> *mut T {
         let addr = match self {
-            DsoBase::Dynamic(base) => base + offset,
-            DsoBase::Static(_) => offset,
+            DsoBase::Dyn(base) => base + offset,
+            DsoBase::Exec(_) => offset,
         };
         addr as *mut T
     }
@@ -278,18 +278,16 @@ impl DsoList {
         let reloc_ptr = dso.base.ptr(reloc.offset);
 
         let sym = symbols[reloc.sym_index];
-        let def = if reloc.sym_index != 0 {
-            if st_type(sym.st_info) == STT_SECTION {
-                Some((dso, sym))
-            } else {
-                self.find_symbol(
-                    unsafe { CStr::from_ptr(strings.add(sym.st_name as usize)) },
-                    (reloc.ty == R_X86_64_COPY).then(|| dso),
-                    reloc.ty == R_X86_64_JUMP_SLOT,
-                )
-            }
-        } else {
+        let def = if reloc.sym_index == 0 {
             None
+        } else if st_type(sym.st_info) == STT_SECTION {
+            Some((dso, sym))
+        } else {
+            self.find_symbol(
+                unsafe { CStr::from_ptr(strings.add(sym.st_name as usize)) },
+                (reloc.ty == R_X86_64_COPY).then(|| dso),
+                reloc.ty == R_X86_64_JUMP_SLOT,
+            )
         };
         let sym_val = def.as_ref().map_or(ptr::null_mut(), |(dso, sym)| {
             dso.base.ptr(sym.st_value as usize)

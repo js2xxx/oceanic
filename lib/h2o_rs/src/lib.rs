@@ -12,6 +12,7 @@ pub mod mem;
 pub mod obj;
 pub mod task;
 pub mod time;
+pub mod c_ty;
 
 #[cfg(feature = "alloc")]
 extern crate alloc;

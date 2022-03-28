@@ -63,18 +63,15 @@ unsafe impl Send for Kstack {}
 
 impl Kstack {
     pub fn new(entry: Option<Entry>, ty: super::Type) -> Self {
-        let ptr = space::KRL
-            .allocate(
-                Layout::new::<KstackData>().size(),
-                Flags::READABLE | Flags::WRITABLE,
-                false,
-            )
-            .expect("Failed to allocate kernel stack");
+        let ptr = space::allocate(
+            Layout::new::<KstackData>().size(),
+            Flags::READABLE | Flags::WRITABLE,
+            false,
+        )
+        .expect("Failed to allocate kernel stack");
         unsafe {
             let pad = NonNull::slice_from_raw_parts(ptr.as_non_null_ptr(), PAGE_SIZE);
-            space::KRL
-                .reprotect(pad, Flags::READABLE)
-                .expect("Failed to set padding");
+            space::reprotect_unchecked(pad, Flags::READABLE).expect("Failed to set padding");
         }
 
         let mut kstack = ptr.cast::<KstackData>();
@@ -144,7 +141,7 @@ impl Deref for Kstack {
 impl Drop for Kstack {
     #[inline]
     fn drop(&mut self) {
-        let _ = unsafe { space::KRL.unmap(self.ptr.cast()) };
+        let _ = unsafe { space::unmap(self.ptr.cast()) };
     }
 }
 

@@ -13,3 +13,4 @@ solvent = {path = "../h2o_rs", default_features = false}
 # External crates
 cstr_core = "0.2"
 modular-bitfield = "0.11"
+spin = {version = "0.9", features = ["use_ticket_mutex"]}

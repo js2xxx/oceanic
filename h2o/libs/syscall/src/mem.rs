@@ -47,3 +47,13 @@ pub struct MapInfo {
     pub len: usize,
     pub flags: Flags,
 }
+
+#[repr(C)]
+pub struct VirtMapInfo {
+    pub offset: usize,
+    pub phys: crate::Handle,
+    pub phys_offset: usize,
+    pub len: usize,
+    pub align: usize,
+    pub flags: Flags,
+}

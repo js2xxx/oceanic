@@ -1,8 +1,9 @@
-use core::ptr;
+use core::ptr::{self, NonNull};
 
-use sv_call::{ipc::*, *};
+use solvent::prelude::Virt;
+use sv_call::{ipc::*, task::DEFAULT_STACK_SIZE, *};
 
-pub unsafe fn test(stack: (*mut u8, *mut u8, Handle)) {
+pub unsafe fn test(virt: &Virt, stack: (*mut u8, *mut u8, Handle)) {
     #[inline]
     fn rp(id: usize, hdl: &mut [Handle], buf: &mut [u8]) -> RawPacket {
         RawPacket {
@@ -168,8 +169,7 @@ pub unsafe fn test(stack: (*mut u8, *mut u8, Handle)) {
             .expect("Failed to join the task");
     }
 
-    sv_mem_unmap(Handle::NULL, stack.1)
-        .into_res()
+    virt.unmap(NonNull::new_unchecked(stack.1), DEFAULT_STACK_SIZE, false)
         .expect("Failed to unmap the memory");
     sv_obj_drop(stack.2)
         .into_res()
