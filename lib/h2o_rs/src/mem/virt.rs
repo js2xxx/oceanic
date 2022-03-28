@@ -118,7 +118,8 @@ impl Virt {
 
     /// Implicitly dropping the handle will not affect the hierarchical
     /// structure of `Virt`s.
-    pub fn destroy(self) -> Result {
-        unsafe { sv_call::sv_virt_drop(Self::into_raw(self)) }.into_res()
+    pub fn destroy(&self) -> Result {
+        // SAFETY: We don't move the ownership of the handle.
+        unsafe { sv_call::sv_virt_drop(unsafe { self.raw() }) }.into_res()
     }
 }

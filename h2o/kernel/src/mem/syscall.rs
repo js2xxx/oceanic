@@ -185,7 +185,7 @@ fn virt_info(hdl: Handle, size: UserPtr<Out, usize>) -> Result<*mut u8> {
 fn virt_drop(hdl: Handle) -> Result {
     hdl.check_null()?;
     SCHED.with_current(|cur| {
-        let virt = cur.space().handles().remove::<Weak<space::Virt>>(hdl)?;
+        let virt = cur.space().handles().get::<Weak<space::Virt>>(hdl)?;
         let virt = virt.upgrade().ok_or(Error::EKILLED)?;
         virt.destroy()
     })

@@ -46,6 +46,7 @@ pub unsafe fn apply_relr(base: *mut u8, relr: *const usize, size: usize) {
     }
 }
 
+#[derive(Debug)]
 pub struct GnuHash<'a> {
     sym_base: u32,
     bloom_shift: u32,

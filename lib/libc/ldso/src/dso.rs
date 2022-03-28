@@ -7,14 +7,20 @@ use core::{
     sync::atomic::{self, AtomicU32, Ordering::*},
 };
 
-use cstr_core::CStr;
-use solvent::prelude::*;
+use cstr_core::{cstr, CStr};
+use solvent::prelude::Phys;
 use spin::Once;
 
 use crate::{elf::*, load_address, vdso_map};
 
 static mut LDSO: MaybeUninit<Dso> = MaybeUninit::uninit();
 static mut VDSO: MaybeUninit<Dso> = MaybeUninit::uninit();
+
+#[derive(Debug)]
+pub enum Error {
+    SectionNotFound(&'static str),
+    ElfLoad(elfload::Error),
+}
 
 #[derive(Debug, Copy, Clone)]
 pub enum DsoBase {
@@ -53,14 +59,14 @@ struct DsoLink {
     prev: Option<NonNull<Dso>>,
 }
 
+#[derive(Debug)]
 pub struct Dso {
     link: UnsafeCell<DsoLink>,
 
     id: u32,
     base: DsoBase,
-    name: &'static str,
+    name: &'static CStr,
 
-    segments: &'static [ProgramHeader],
     dynamic: &'static [Dyn],
     gnu_hash: GnuHash<'static>,
 
@@ -71,7 +77,7 @@ impl Dso {
     /// # Safety
     ///
     /// The caller must ensure that the mapping for the DSO is initialized.
-    unsafe fn new_static(base: usize, name: &'static str) -> Result<Dso> {
+    unsafe fn new_static(base: usize, name: &'static CStr) -> Result<Dso, Error> {
         // SAFETY: The mapping is already initialized.
         let header = unsafe { ptr::read(base as *const Header) };
         assert_eq!(&header.e_ident[..SELFMAG], ELFMAG);
@@ -101,35 +107,46 @@ impl Dso {
                 .split(|d| d.d_tag == DT_NULL)
                 .next()
             })
-            .ok_or(Error::ENOEXEC)?;
+            .unwrap_or(&[]);
 
-        let gnu_hash = base.ptr(
-            dynamic
-                .iter()
-                .find_map(|d| (d.d_tag == DT_GNU_HASH).then(|| d.d_val as usize))
-                .ok_or(Error::ENOEXEC)?,
-        );
-        let syms = base.ptr(
-            dynamic
-                .iter()
-                .find_map(|d| (d.d_tag == DT_SYMTAB).then(|| d.d_val as usize))
-                .ok_or(Error::ENOEXEC)?,
-        );
-        let strs = base.ptr(
-            dynamic
-                .iter()
-                .find_map(|d| (d.d_tag == DT_STRTAB).then(|| d.d_val as usize))
-                .ok_or(Error::ENOEXEC)?,
-        );
-
-        let gnu_hash = GnuHash::parse(gnu_hash, syms, strs);
+        let gnu_hash = get_gnu_hash(base, dynamic)?;
 
         Ok(Dso {
             link: Default::default(),
             id: Self::next_id(),
             base,
             name,
-            segments,
+            dynamic,
+            gnu_hash,
+            relocate: Once::new(),
+        })
+    }
+
+    pub fn load(phys: &Phys, name: &'static CStr) -> Result<Dso, Error> {
+        let elf = elfload::load(phys, true, svrt::root_virt()).map_err(Error::ElfLoad)?;
+
+        let base = DsoBase::new(elf.range.start, ET_DYN);
+
+        let dynamic = elf
+            .dynamic
+            .and_then(|seg| unsafe {
+                let size = mem::size_of::<Dyn>();
+                slice::from_raw_parts(
+                    base.ptr::<Dyn>(seg.p_vaddr as usize),
+                    seg.p_memsz as usize / size,
+                )
+                .split(|d| d.d_tag == DT_NULL)
+                .next()
+            })
+            .unwrap_or(&[]);
+
+        let gnu_hash = unsafe { get_gnu_hash(base, dynamic) }?;
+
+        Ok(Dso {
+            link: Default::default(),
+            id: Self::next_id(),
+            base,
+            name,
             dynamic,
             gnu_hash,
             relocate: Once::new(),
@@ -142,11 +159,29 @@ impl Dso {
     }
 }
 
-impl Dso {
-    pub fn segment(&self, index: usize) -> Option<&ProgramHeader> {
-        self.segments.get(index)
-    }
+unsafe fn get_gnu_hash(base: DsoBase, dynamic: &[Dyn]) -> Result<GnuHash, Error> {
+    let gnu_hash = base.ptr(
+        dynamic
+            .iter()
+            .find_map(|d| (d.d_tag == DT_GNU_HASH).then(|| d.d_val as usize))
+            .ok_or(Error::SectionNotFound(".gnu_hash"))?,
+    );
+    let syms = base.ptr(
+        dynamic
+            .iter()
+            .find_map(|d| (d.d_tag == DT_SYMTAB).then(|| d.d_val as usize))
+            .ok_or(Error::SectionNotFound(".symtab"))?,
+    );
+    let strs = base.ptr(
+        dynamic
+            .iter()
+            .find_map(|d| (d.d_tag == DT_STRTAB).then(|| d.d_val as usize))
+            .ok_or(Error::SectionNotFound(".strtab"))?,
+    );
+    Ok(GnuHash::parse(gnu_hash, syms, strs))
+}
 
+impl Dso {
     fn dyn_val(&self, tag: u64) -> Option<usize> {
         self.dynamic
             .iter()
@@ -354,10 +389,10 @@ impl<'a> Iterator for DsoIter<'a> {
     }
 }
 
-pub fn init() -> Result<DsoList> {
+pub fn init() -> Result<DsoList, Error> {
     let list = unsafe {
-        let ldso = LDSO.write(Dso::new_static(load_address(), "libc.so")?);
-        let vdso = VDSO.write(Dso::new_static(vdso_map(), "<VDSO>")?);
+        let ldso = LDSO.write(Dso::new_static(load_address(), cstr!("ld-oceanic.so"))?);
+        let vdso = VDSO.write(Dso::new_static(vdso_map(), cstr!("<VDSO>"))?);
         DsoList::new(ldso, vdso)
     };
     list.relocate();

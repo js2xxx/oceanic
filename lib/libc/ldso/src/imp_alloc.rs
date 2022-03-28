@@ -44,8 +44,10 @@ impl DlAlloc {
             }
 
             let size = (next_end - end).next_multiple_of(PAGE_SIZE);
-            let res = Phys::allocate(size, false)
-                .and_then(|phys| root_virt.map_phys(Some(end), phys, flags));
+            let res = Phys::allocate(size, false).and_then(|phys| {
+                let base = root_virt.base().as_ptr() as usize;
+                root_virt.map_phys(Some(end - base), phys, flags)
+            });
             let next_end = match res {
                 Ok(mut ptr) => unsafe { ptr.as_mut().as_mut_ptr_range().end as usize },
                 Err(_) => handle_alloc_error(layout),
