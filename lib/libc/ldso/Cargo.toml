@@ -9,10 +9,10 @@ crate-type = ["cdylib"]
 [dependencies]
 # Local crates
 dbglog = {path = "../../dbglog"}
+elfload = {path = "../../elfload"}
 iter_ex = {path = "../../../h2o/libs/iter_ex"}
 solvent = {path = "../../h2o_rs"}
 svrt = {path = "../../svrt"}
-elfload = {path = "../../elfload"}
 # External crates
 cstr_core = "0.2"
 goblin = {version = "0.4", default-features = false, features = ["elf32", "elf64", "endian_fd"]}

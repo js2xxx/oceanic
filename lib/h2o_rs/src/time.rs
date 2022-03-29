@@ -97,3 +97,11 @@ pub fn try_into_us(duration: Duration) -> Result<u64> {
         u64::try_from(duration.as_micros()).map_err(Error::from)
     }
 }
+
+impl core::fmt::Display for Instant {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let ns = unsafe { self.raw() };
+        let s = ns as f64 / 1_000_000_000.0;
+        write!(f, "{:.6}", s)
+    }
+}

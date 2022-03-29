@@ -5,7 +5,7 @@ extern crate alloc;
 use alloc::vec::Vec;
 use core::{mem, ops::Range};
 
-use goblin::elf64::{header::*, program_header::*};
+use goblin::elf64::{header::*, program_header::*, section_header::*};
 use solvent::prelude::{Flags, Phys, Virt, PAGE_MASK};
 
 #[derive(Debug)]
@@ -21,11 +21,13 @@ pub enum Error {
 }
 
 pub struct LoadedElf {
+    pub is_dyn: bool,
     pub virt: Virt,
     pub range: Range<usize>,
     pub stack: Option<(usize, Flags)>,
     pub entry: usize,
     pub dynamic: Option<ProgramHeader>,
+    pub sym_len: usize,
 }
 
 pub fn parse_flags(flags: u32) -> Flags {
@@ -76,9 +78,22 @@ pub fn parse_segments(
     Ok(ProgramHeader::from_bytes(&data, count))
 }
 
+pub fn parse_sections(
+    phys: &Phys,
+    offset: usize,
+    count: usize,
+) -> Result<Vec<SectionHeader>, Error> {
+    let data = phys
+        .read(offset, count * mem::size_of::<SectionHeader>())
+        .map_err(Error::PhysRead)?;
+
+    Ok(SectionHeader::from_bytes(&data, count))
+}
+
 pub fn get_addr_range_info(segments: &[ProgramHeader]) -> (usize, usize) {
     segments
         .iter()
+        .filter(|segment| segment.p_type == PT_LOAD)
         .fold((usize::MAX, 0), |(min, max), segment| {
             let base = segment.p_vaddr as usize;
             let size = segment.p_memsz as usize;
@@ -150,10 +165,9 @@ pub fn map_segment(
 
 pub fn load(phys: &Phys, dyn_only: bool, root_virt: &Virt) -> Result<LoadedElf, Error> {
     let (header, is_dyn) = parse_header(phys, dyn_only)?;
-    let offset = header.e_phoff as usize;
-    let count = header.e_phnum as usize;
 
-    let segments = parse_segments(phys, offset, count)?;
+    let segments = parse_segments(phys, header.e_phoff as usize, header.e_phnum as usize)?;
+    let sections = parse_sections(phys, header.e_shoff as usize, header.e_shnum as usize)?;
     let (min, max) = get_addr_range_info(&segments);
 
     let virt = {
@@ -194,12 +208,21 @@ pub fn load(phys: &Phys, dyn_only: bool, root_virt: &Virt) -> Result<LoadedElf, 
         }
     }
 
+    let sym_len = sections
+        .into_iter()
+        .find_map(|section| {
+            (section.sh_type == SHT_DYNSYM).then(|| (section.sh_size / section.sh_entsize) as usize)
+        })
+        .unwrap_or_default();
+
     mem::forget(guard);
     Ok(LoadedElf {
+        is_dyn,
         virt,
         range: base..(base + max - min),
         stack,
         entry,
         dynamic,
+        sym_len,
     })
 }

@@ -4,8 +4,12 @@
         "returns": "()",
         "args": [
             {
-                "name": "rec",
-                "ty": "*const ()"
+                "name": "buffer",
+                "ty": "*const u8"
+            },
+            {
+                "name": "len",
+                "ty": "usize"
             }
         ]
     }

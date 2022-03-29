@@ -1,3 +1,4 @@
+use alloc::boxed::Box;
 use core::{
     cell::UnsafeCell,
     marker::PhantomData,
@@ -18,7 +19,7 @@ static mut VDSO: MaybeUninit<Dso> = MaybeUninit::uninit();
 
 #[derive(Debug)]
 pub enum Error {
-    SectionNotFound(&'static str),
+    SymbolLoad,
     ElfLoad(elfload::Error),
 }
 
@@ -68,7 +69,7 @@ pub struct Dso {
     name: &'static CStr,
 
     dynamic: &'static [Dyn],
-    gnu_hash: GnuHash<'static>,
+    syms: Symbols<'static>,
 
     relocate: Once,
 }
@@ -109,7 +110,7 @@ impl Dso {
             })
             .unwrap_or(&[]);
 
-        let gnu_hash = get_gnu_hash(base, dynamic)?;
+        let syms = Symbols::from_dynamic(&base, dynamic, None).ok_or(Error::SymbolLoad)?;
 
         Ok(Dso {
             link: Default::default(),
@@ -117,15 +118,15 @@ impl Dso {
             base,
             name,
             dynamic,
-            gnu_hash,
+            syms,
             relocate: Once::new(),
         })
     }
 
     pub fn load(phys: &Phys, name: &'static CStr) -> Result<Dso, Error> {
-        let elf = elfload::load(phys, true, svrt::root_virt()).map_err(Error::ElfLoad)?;
+        let elf = elfload::load(phys, false, svrt::root_virt()).map_err(Error::ElfLoad)?;
 
-        let base = DsoBase::new(elf.range.start, ET_DYN);
+        let base = DsoBase::new(elf.range.start, if elf.is_dyn { ET_DYN } else { ET_EXEC });
 
         let dynamic = elf
             .dynamic
@@ -140,7 +141,8 @@ impl Dso {
             })
             .unwrap_or(&[]);
 
-        let gnu_hash = unsafe { get_gnu_hash(base, dynamic) }?;
+        let syms =
+            Symbols::from_dynamic(&base, dynamic, Some(elf.sym_len)).ok_or(Error::SymbolLoad)?;
 
         Ok(Dso {
             link: Default::default(),
@@ -148,7 +150,7 @@ impl Dso {
             base,
             name,
             dynamic,
-            gnu_hash,
+            syms,
             relocate: Once::new(),
         })
     }
@@ -157,28 +159,6 @@ impl Dso {
         static ID: AtomicU32 = AtomicU32::new(1);
         ID.fetch_add(1, SeqCst)
     }
-}
-
-unsafe fn get_gnu_hash(base: DsoBase, dynamic: &[Dyn]) -> Result<GnuHash, Error> {
-    let gnu_hash = base.ptr(
-        dynamic
-            .iter()
-            .find_map(|d| (d.d_tag == DT_GNU_HASH).then(|| d.d_val as usize))
-            .ok_or(Error::SectionNotFound(".gnu_hash"))?,
-    );
-    let syms = base.ptr(
-        dynamic
-            .iter()
-            .find_map(|d| (d.d_tag == DT_SYMTAB).then(|| d.d_val as usize))
-            .ok_or(Error::SectionNotFound(".symtab"))?,
-    );
-    let strs = base.ptr(
-        dynamic
-            .iter()
-            .find_map(|d| (d.d_tag == DT_STRTAB).then(|| d.d_val as usize))
-            .ok_or(Error::SectionNotFound(".strtab"))?,
-    );
-    Ok(GnuHash::parse(gnu_hash, syms, strs))
 }
 
 impl Dso {
@@ -240,10 +220,13 @@ impl DsoList {
     unsafe fn new(head: &Dso, tail: &Dso) -> Self {
         (*head.link.get()).next = Some(NonNull::from(tail));
         (*tail.link.get()).prev = Some(NonNull::from(head));
-        DsoList {
+        let list = DsoList {
             head: Some(NonNull::from(head)),
             tail: Some(NonNull::from(tail)),
-        }
+        };
+        list.relocate_dso(head);
+        list.relocate_dso(tail);
+        list
     }
 
     fn iter(&self) -> DsoIter {
@@ -287,7 +270,7 @@ impl DsoList {
                 continue;
             }
 
-            let sym = match dso.gnu_hash.get_hashed(name, ghash) {
+            let sym = match dso.syms.get_by_name_hashed(name, ghash) {
                 Some(sym) => sym,
                 None => continue,
             };
@@ -309,20 +292,33 @@ impl DsoList {
         ret
     }
 
-    fn relocate_impl(&self, dso: &Dso, symbols: &[Sym], strings: *const i8, reloc: Reloc) -> bool {
+    fn relocate_one(&self, dso: &Dso, reloc: Reloc) -> bool {
         let reloc_ptr = dso.base.ptr(reloc.offset);
 
-        let sym = symbols[reloc.sym_index];
+        let sym = match dso.syms.get(reloc.sym_index) {
+            Some(sym) => *sym,
+            None => return false,
+        };
+        let name = &unsafe { dso.syms.get_str(sym.st_name as usize) };
         let def = if reloc.sym_index == 0 {
             None
         } else if st_type(sym.st_info) == STT_SECTION {
             Some((dso, sym))
         } else {
-            self.find_symbol(
-                unsafe { CStr::from_ptr(strings.add(sym.st_name as usize)) },
+            let def = self.find_symbol(
+                name,
                 (reloc.ty == R_X86_64_COPY).then(|| dso),
                 reloc.ty == R_X86_64_JUMP_SLOT,
-            )
+            );
+            if def.is_none()
+                && (sym.st_shndx as u32 != SHN_UNDEF || st_bind(sym.st_info) != STB_WEAK)
+            {
+                panic!(
+                    "Symbol {:?} not found when relocating in DSO {:?}",
+                    name, dso.name
+                );
+            }
+            def
         };
         let sym_val = def.as_ref().map_or(ptr::null_mut(), |(dso, sym)| {
             dso.base.ptr(sym.st_value as usize)
@@ -345,28 +341,43 @@ impl DsoList {
         false
     }
 
-    pub fn relocate(&self) {
-        for dso in self.iter() {
-            dso.relocate.call_once(|| {
-                if dso.base.get() != load_address() {
-                    if let Some((offset, size)) = dso.dyn_val(DT_RELR).zip(dso.dyn_val(DT_RELRSZ)) {
-                        unsafe { apply_relr(dso.base.ptr(0), dso.base.ptr(offset), size) }
-                    }
+    fn relocate_dso(&self, dso: &Dso) {
+        dso.relocate.call_once(|| {
+            if dso.base.get() != load_address() {
+                if let Some((offset, size)) = dso.dyn_val(DT_RELR).zip(dso.dyn_val(DT_RELRSZ)) {
+                    unsafe { apply_relr(dso.base.ptr(0), dso.base.ptr(offset), size) }
                 }
+            }
 
-                let symbols = dso.gnu_hash.symbols();
-                let strings = dso.gnu_hash.string_base();
+            let rel = unsafe { dso.dyn_slice::<Rel>(DT_REL, DT_RELSZ) }.unwrap_or(&[]);
+            let rela = unsafe { dso.dyn_slice::<Rela>(DT_RELA, DT_RELASZ) }.unwrap_or(&[]);
 
-                let rel = unsafe { dso.dyn_slice::<Rel>(DT_REL, DT_RELSZ) }.unwrap_or(&[]);
-                let rela = unsafe { dso.dyn_slice::<Rela>(DT_RELA, DT_RELASZ) }.unwrap_or(&[]);
-
-                for reloc in { rel.iter().map(Reloc::from) }.chain(rela.iter().map(Reloc::from)) {
-                    if self.relocate_impl(dso, symbols, strings, reloc) {
-                        break;
-                    }
+            for reloc in { rel.iter().map(Reloc::from) }.chain(rela.iter().map(Reloc::from)) {
+                if self.relocate_one(dso, reloc) {
+                    break;
                 }
-            });
+            }
+        });
+    }
+
+    pub fn push(&mut self, dso: Dso) {
+        let dso = Box::leak(Box::new(dso));
+
+        unsafe {
+            dso.link.get_mut().next = None;
+            dso.link.get_mut().prev = self.tail;
+            let node = Some((&*dso).into());
+
+            match self.tail {
+                None => self.head = node,
+                // Not creating new mutable (unique!) references overlapping `element`.
+                Some(tail) => (*(*tail.as_ptr()).link.get()).next = node,
+            }
+
+            self.tail = node;
         }
+
+        self.relocate_dso(dso);
     }
 }
 
@@ -395,7 +406,6 @@ pub fn init() -> Result<DsoList, Error> {
         let vdso = VDSO.write(Dso::new_static(vdso_map(), cstr!("<VDSO>"))?);
         DsoList::new(ldso, vdso)
     };
-    list.relocate();
     atomic::fence(SeqCst);
     Ok(list)
 }

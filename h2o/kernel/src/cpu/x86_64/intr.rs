@@ -152,7 +152,7 @@ unsafe fn exception(frame_ptr: *mut Frame, vec: def::ExVec) {
     }
 
     // No more available remedies. Die.
-    log::error!("{:?}", vec);
+    log::error!("{:?} in the kernel", vec);
 
     frame.dump(if vec == PageFault {
         Frame::ERRC_PF

@@ -1,7 +1,6 @@
 #![no_std]
 #![allow(unused_unsafe)]
 #![feature(alloc_error_handler)]
-#![feature(assert_matches)]
 #![feature(asm_sym)]
 #![feature(naked_functions)]
 #![feature(int_roundings)]
@@ -13,7 +12,7 @@ pub mod elf;
 mod imp_alloc;
 pub mod rxx;
 
-use core::{assert_matches::assert_matches, mem};
+use core::mem;
 
 use cstr_core::cstr;
 use solvent::prelude::{Object, Phys};
@@ -22,7 +21,7 @@ use svrt::{HandleInfo, HandleType, StartupArgs};
 pub use self::rxx::{dynamic, init_channel, load_address, vdso_map};
 
 fn dl_main() -> rxx::DlReturn {
-    let list = dso::init().expect("Failed to initialize the DSO list");
+    let mut list = dso::init().expect("Failed to initialize the DSO list");
     dbglog::init(log::Level::Debug);
 
     log::debug!("dl_main started");
@@ -37,20 +36,12 @@ fn dl_main() -> rxx::DlReturn {
         svrt::take_startup_handle(HandleInfo::new().with_handle_type(HandleType::ProgramPhys));
     let prog = unsafe { Phys::from_raw(prog) };
 
-    log::debug!("{:?}", unsafe { prog.raw() });
-
-    let _prog = dso::Dso::load(&prog, cstr!("<Program>"));
-    assert_matches!(
-        _prog,
-        Err(dso::Error::ElfLoad(elfload::Error::NotSupported(
-            "Only support dynamic (or executable if enabled) file"
-        )))
-    );
+    let dso = dso::Dso::load(&prog, cstr!("<Program>")).expect("Failed to load program");
+    list.push(dso);
 
     log::debug!("Reaching end of the dynamic linker");
 
     mem::forget(list);
-    mem::forget(prog);
     loop {
         unsafe { core::arch::asm!("pause") }
     }

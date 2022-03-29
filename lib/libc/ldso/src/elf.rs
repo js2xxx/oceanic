@@ -5,6 +5,8 @@ pub use goblin::elf64::{
     dynamic::*, header::*, program_header::*, reloc::*, section_header::*, sym::*, Note,
 };
 
+use crate::dso::DsoBase;
+
 pub const PT_NUM: u32 = 10;
 
 pub const DT_RELR: u64 = 36;
@@ -47,6 +49,94 @@ pub unsafe fn apply_relr(base: *mut u8, relr: *const usize, size: usize) {
 }
 
 #[derive(Debug)]
+pub enum Symbols<'a> {
+    GnuHashed(GnuHash<'a>),
+    Raw(&'a [Sym], *const i8),
+}
+
+impl<'a> Symbols<'a> {
+    pub fn from_raw(symtab: &'a [Sym], strtab: *const i8) -> Self {
+        Self::Raw(symtab, strtab)
+    }
+
+    /// # Safety
+    ///
+    /// `ghash_ptr` and `dsym_ptr` must point to a valid GNU hash table and a
+    /// symbol table.
+    pub unsafe fn try_from_gnu(
+        ghash_ptr: *const u8,
+        sym_ptr: *const Sym,
+        str_ptr: *const i8,
+    ) -> Option<Self> {
+        GnuHash::parse(ghash_ptr, sym_ptr, str_ptr).map(Self::GnuHashed)
+    }
+
+    pub fn from_dynamic(base: &DsoBase, dynamic: &[Dyn], sym_len: Option<usize>) -> Option<Self> {
+        let sym_ptr = base.ptr(
+            dynamic
+                .iter()
+                .find_map(|d| (d.d_tag == DT_SYMTAB).then(|| d.d_val as usize))?,
+        );
+        let str_ptr = base.ptr(
+            dynamic
+                .iter()
+                .find_map(|d| (d.d_tag == DT_STRTAB).then(|| d.d_val as usize))?,
+        );
+        let gnu_hash = dynamic
+            .iter()
+            .find_map(|d| (d.d_tag == DT_GNU_HASH).then(|| d.d_val as usize))
+            .map(|offset| base.ptr(offset));
+
+        gnu_hash
+            .and_then(|gnu_hash| unsafe { Self::try_from_gnu(gnu_hash, sym_ptr, str_ptr) })
+            .or_else(|| {
+                sym_len.map(|sym_len| {
+                    Symbols::from_raw(unsafe { slice::from_raw_parts(sym_ptr, sym_len) }, str_ptr)
+                })
+            })
+    }
+
+    pub fn get_by_name_hashed(&self, name: &CStr, ghash: u32) -> Option<&'a Sym> {
+        match self {
+            Symbols::GnuHashed(ref ghtab) => ghtab.get_hashed(name, ghash),
+            Symbols::Raw(syms, strs) => {
+                let mut ret = None;
+                for sym in *syms {
+                    let start = sym.st_name as usize;
+                    let sn = unsafe { CStr::from_ptr(strs.add(start)) };
+                    if sn == name {
+                        ret = Some(sym);
+                    }
+                }
+                ret
+            }
+        }
+    }
+
+    pub fn get_by_name(&self, name: &CStr) -> Option<&'a Sym> {
+        self.get_by_name_hashed(name, GnuHash::hash(name.to_bytes()))
+    }
+
+    pub fn get(&self, index: usize) -> Option<&'a Sym> {
+        match self {
+            Symbols::GnuHashed(ref ghtab) => ghtab.syms.get(index),
+            Symbols::Raw(syms, _) => syms.get(index),
+        }
+    }
+
+    /// # Safety
+    ///
+    /// The caller must ensure `st_name` is a valid name index of the symbol in
+    /// this symbol table.
+    pub unsafe fn get_str(&self, st_name: usize) -> &'a CStr {
+        match self {
+            Symbols::GnuHashed(ref ghtab) => CStr::from_ptr(ghtab.string_base().add(st_name)),
+            Symbols::Raw(_, strs) => CStr::from_ptr(strs.add(st_name)),
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct GnuHash<'a> {
     sym_base: u32,
     bloom_shift: u32,
@@ -62,7 +152,11 @@ impl<'a> GnuHash<'a> {
     ///
     /// `ghash_ptr` and `dsym_ptr` must point to a valid GNU hash table and a
     /// symbol table.
-    pub unsafe fn parse(ghash_ptr: *const u8, sym_ptr: *const Sym, str_ptr: *const i8) -> Self {
+    pub unsafe fn parse(
+        ghash_ptr: *const u8,
+        sym_ptr: *const Sym,
+        str_ptr: *const i8,
+    ) -> Option<Self> {
         let [bucket_count, sym_base, bloom_count, bloom_shift] =
             ptr::read(ghash_ptr.cast::<[u32; 4]>());
 
@@ -75,6 +169,9 @@ impl<'a> GnuHash<'a> {
         let mut ptr = chain_base;
 
         let mut max_sym = buckets.iter().max().copied().unwrap();
+        if max_sym == 0 {
+            return None;
+        }
         ptr = ptr.add((max_sym - sym_base) as usize);
 
         let (chain_len, sym_len) = loop {
@@ -86,7 +183,7 @@ impl<'a> GnuHash<'a> {
             }
         };
 
-        GnuHash {
+        Some(GnuHash {
             sym_base,
             bloom_shift,
             bloom_filters: slice::from_raw_parts(bloom_base, bloom_count as usize),
@@ -94,7 +191,7 @@ impl<'a> GnuHash<'a> {
             chains: slice::from_raw_parts(chain_base, chain_len),
             syms: slice::from_raw_parts(sym_ptr, sym_len),
             strs: str_ptr,
-        }
+        })
     }
 
     pub fn symbols(&self) -> &'a [Sym] {
