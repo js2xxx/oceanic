@@ -99,10 +99,7 @@ fn task_exec(ci: UserPtr<In, task::ExecInfo>) -> Result<Handle> {
             Ok((init_chan, Arsc::clone(cur.space())))
         } else {
             let space = handles.remove::<Arsc<Space>>(ci.space)?;
-            Ok((
-                init_chan,
-                Arsc::clone(&space),
-            ))
+            Ok((init_chan, Arsc::clone(&space)))
         }
     })?;
 

@@ -115,7 +115,7 @@ pub(crate) fn allocate(size: usize, flags: Flags, zeroed: bool) -> sv_call::Resu
         })
 }
 
-pub(crate) unsafe fn reprotect_unchecked(ptr: NonNull<[u8]>, flags: Flags) ->sv_call::Result {
+pub(crate) unsafe fn reprotect_unchecked(ptr: NonNull<[u8]>, flags: Flags) -> sv_call::Result {
     let base = LAddr::from(ptr);
     let end = LAddr::from(base.val() + ptr.len());
     KRL.arch.reprotect(base..end, flags).map_err(paging_error)

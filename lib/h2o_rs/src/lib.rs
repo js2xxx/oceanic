@@ -5,6 +5,7 @@
 #![feature(slice_ptr_get)]
 #![feature(slice_ptr_len)]
 
+pub mod c_ty;
 pub mod dev;
 pub mod error;
 pub mod ipc;
@@ -12,7 +13,6 @@ pub mod mem;
 pub mod obj;
 pub mod task;
 pub mod time;
-pub mod c_ty;
 
 #[cfg(feature = "alloc")]
 extern crate alloc;

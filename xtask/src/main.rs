@@ -15,6 +15,7 @@ const H2O_TINIT: &str = "h2o/tinit";
 const H2O_SYSCALL: &str = "h2o/libs/syscall";
 
 const OC_LIB: &str = "lib";
+const OC_BIN: &str = "bin";
 
 const BOOTFS: &str = "target/bootfs";
 

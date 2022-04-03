@@ -1,4 +1,5 @@
 use std::{
+    collections::HashSet,
     env,
     error::Error,
     ffi::OsString,
@@ -9,7 +10,7 @@ use std::{
 
 use structopt::StructOpt;
 
-use crate::{BOOTFS, DEBUG_DIR, H2O_BOOT, H2O_KERNEL, H2O_SYSCALL, H2O_TINIT, OC_LIB};
+use crate::{BOOTFS, DEBUG_DIR, H2O_BOOT, H2O_KERNEL, H2O_SYSCALL, H2O_TINIT, OC_BIN, OC_LIB};
 
 #[derive(Debug, StructOpt)]
 pub enum Type {
@@ -25,6 +26,14 @@ pub struct Dist {
 }
 
 impl Dist {
+    fn profile(&self) -> &'static str {
+        if self.release {
+            "release"
+        } else {
+            "debug"
+        }
+    }
+
     pub fn build(self) -> Result<(), Box<dyn Error>> {
         let cargo = env::var("CARGO").unwrap_or_else(|_| "cargo".to_string());
         let src_root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
@@ -111,6 +120,7 @@ impl Dist {
         )?;
 
         self.build_lib(&cargo, &src_root, &target_root)?;
+        self.build_bin(&cargo, &src_root, &target_root)?;
 
         crate::gen::gen_bootfs(Path::new(BOOTFS).join("../BOOT.fs"))?;
 
@@ -150,16 +160,54 @@ impl Dist {
         Ok(())
     }
 
+    fn build_bin(
+        &self,
+        cargo: &str,
+        src_root: impl AsRef<Path>,
+        target_root: &str,
+    ) -> Result<(), Box<dyn Error>> {
+        let src_root = src_root.as_ref().join(OC_BIN);
+        let bin_dir = Path::new(target_root).join("x86_64-pc-oceanic");
+        let dst_root = Path::new(target_root).join("bootfs/bin");
+        let dep_root = Path::new(target_root).join("bootfs/lib");
+
+        let mut dep_lib = HashSet::new();
+
+        for ent in fs::read_dir(src_root)?.flatten() {
+            let ty = ent.file_type()?;
+            let name = ent.file_name();
+            if ty.is_dir() && name != ".cargo" {
+                self.build_impl(cargo, &name, &name, ent.path(), &bin_dir, &dst_root)?;
+                for dep in fs::read_dir(bin_dir.join(self.profile()).join("deps"))?.flatten() {
+                    let name = dep.file_name();
+                    match name.to_str() {
+                        Some(name)
+                            if name.ends_with(".so")
+                                && name != "libldso.so"
+                                && dep_lib.insert(dep.path()) =>
+                        {
+                            fs::copy(dep.path(), dep_root.join(name))?;
+                            self.gen_debug(name, &dep_root, DEBUG_DIR)?;
+                        }
+                        _ => {},
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     fn build_impl(
         &self,
         cargo: &str,
-        bin_name: &str,
-        dst_name: &str,
+        bin_name: impl AsRef<Path>,
+        dst_name: impl AsRef<Path>,
         src_dir: impl AsRef<Path>,
         bin_dir: impl AsRef<Path>,
         target_dir: impl AsRef<Path>,
     ) -> Result<(), Box<dyn Error>> {
-        println!("Building {}", dst_name);
+        println!("Building {:?}", dst_name.as_ref());
 
         let mut cmd = Command::new(cargo);
         let cmd = cmd.current_dir(src_dir).arg("build");
@@ -167,25 +215,21 @@ impl Dist {
             cmd.arg("--release");
         }
         cmd.status()?.exit_ok()?;
-        let bin_dir = if self.release {
-            bin_dir.as_ref().join("release")
-        } else {
-            bin_dir.as_ref().join("debug")
-        };
-        fs::copy(bin_dir.join(bin_name), target_dir.as_ref().join(dst_name))?;
+        let bin_dir = bin_dir.as_ref().join(self.profile());
+        fs::copy(bin_dir.join(bin_name), target_dir.as_ref().join(&dst_name))?;
         self.gen_debug(dst_name, target_dir, DEBUG_DIR)?;
         Ok(())
     }
 
     fn gen_debug(
         &self,
-        target_name: &str,
+        target_name: impl AsRef<Path>,
         target_dir: impl AsRef<Path>,
         dbg_dir: impl AsRef<Path>,
     ) -> Result<(), Box<dyn Error>> {
-        let target_path = target_dir.as_ref().join(target_name);
+        let target_path = target_dir.as_ref().join(&target_name);
         {
-            let mut sym_name = OsString::from(target_name);
+            let mut sym_name = OsString::from(target_name.as_ref().as_os_str());
             sym_name.push(".sym");
             Command::new("llvm-objcopy")
                 .arg("--only-keep-debug")
@@ -198,7 +242,7 @@ impl Dist {
                 .status()?;
         }
         {
-            let mut asm_name = OsString::from(target_name);
+            let mut asm_name = OsString::from(target_name.as_ref().as_os_str());
             asm_name.push(".asm");
             fs::write(
                 dbg_dir.as_ref().join(asm_name),
@@ -210,7 +254,7 @@ impl Dist {
             )?;
         }
         {
-            let mut txt_name = OsString::from(target_name);
+            let mut txt_name = OsString::from(target_name.as_ref().as_os_str());
             txt_name.push(".txt");
             fs::write(
                 dbg_dir.as_ref().join(txt_name),

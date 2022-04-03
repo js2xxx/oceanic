@@ -39,16 +39,6 @@ pub const PAGE_SIZE: usize = 4096;
 } }
 
 #[repr(C)]
-pub struct MapInfo {
-    pub addr: usize,
-    pub map_addr: bool,
-    pub phys: crate::Handle,
-    pub phys_offset: usize,
-    pub len: usize,
-    pub flags: Flags,
-}
-
-#[repr(C)]
 pub struct VirtMapInfo {
     pub offset: usize,
     pub phys: crate::Handle,

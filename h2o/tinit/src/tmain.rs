@@ -100,8 +100,8 @@ extern "C" fn tmain(init_chan: sv_call::Handle) {
 
     let bin = {
         let bin_data = bootfs
-            .find(b"bin/test-bin", b'/')
-            .expect("Failed to find test_bin");
+            .find(b"bin/progm", b'/')
+            .expect("Failed to find progm");
 
         let bin_phys =
             sub_phys(bin_data, bootfs, &bootfs_phys).expect("Failed to create the physical object");

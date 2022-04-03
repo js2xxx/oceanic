@@ -59,6 +59,7 @@ impl log::Log for Logger {
         .expect("Failed to write str");
         let _ = unsafe { sv_call::sv_log(buffer.0.as_ptr(), buffer.1) };
         *buffer = Buffer([0; 128], 0);
+        drop(buffer);
     }
 
     fn flush(&self) {}

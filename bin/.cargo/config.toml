@@ -1,0 +1,17 @@
+[build]
+target = "../.cargo/x86_64-pc-oceanic.json"
+
+[unstable]
+build-std = ["core", "compiler_builtins", "alloc", "panic_abort"]
+build-std-features = ["compiler-builtins-mem"]
+
+[profile.dev]
+incremental = true
+lto = 'thin'
+panic = 'abort'
+
+[profile.release]
+incremental = true
+lto = 'thin'
+opt-level = 2
+panic = 'abort'

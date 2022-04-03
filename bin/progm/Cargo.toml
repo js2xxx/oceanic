@@ -1,13 +1,10 @@
 [package]
 edition = "2021"
-name = "co2"
+name = "progm"
 version = "0.1.0"
-
-[lib]
-crate-type = ["cdylib"]
 
 [dependencies]
 # Local crates
-ldso = {path = "ldso"}
+co2 = {path = "../../lib/libc"}
 # External crates
 log = "0.4"

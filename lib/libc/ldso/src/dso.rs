@@ -1,6 +1,7 @@
 use alloc::boxed::Box;
 use core::{
     cell::UnsafeCell,
+    fmt,
     marker::PhantomData,
     mem::{self, MaybeUninit},
     ptr::{self, NonNull},
@@ -10,12 +11,18 @@ use core::{
 
 use cstr_core::{cstr, CStr};
 use solvent::prelude::Phys;
-use spin::Once;
+use spin::{Mutex, Once};
 
 use crate::{elf::*, load_address, vdso_map};
 
 static mut LDSO: MaybeUninit<Dso> = MaybeUninit::uninit();
 static mut VDSO: MaybeUninit<Dso> = MaybeUninit::uninit();
+
+static mut DSO_LIST: MaybeUninit<Mutex<DsoList>> = MaybeUninit::uninit();
+
+pub fn dso_list() -> &'static Mutex<DsoList> {
+    unsafe { DSO_LIST.assume_init_ref() }
+}
 
 #[derive(Debug)]
 pub enum Error {
@@ -23,7 +30,7 @@ pub enum Error {
     ElfLoad(elfload::Error),
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Copy, Clone)]
 pub enum DsoBase {
     Dyn(usize),
     Exec(usize),
@@ -54,6 +61,15 @@ impl DsoBase {
     }
 }
 
+impl fmt::Debug for DsoBase {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Dyn(b) => write!(f, "Dyn({:#x})", b),
+            Self::Exec(b) => write!(f, "Exec({:#x})", b),
+        }
+    }
+}
+
 #[derive(Debug, Default)]
 struct DsoLink {
     next: Option<NonNull<Dso>>,
@@ -64,7 +80,7 @@ struct DsoLink {
 pub struct Dso {
     link: UnsafeCell<DsoLink>,
 
-    id: u32,
+    _id: u32,
     base: DsoBase,
     name: &'static CStr,
 
@@ -114,7 +130,7 @@ impl Dso {
 
         Ok(Dso {
             link: Default::default(),
-            id: Self::next_id(),
+            _id: Self::next_id(),
             base,
             name,
             dynamic,
@@ -123,10 +139,11 @@ impl Dso {
         })
     }
 
-    pub fn load(phys: &Phys, name: &'static CStr) -> Result<Dso, Error> {
-        let elf = elfload::load(phys, false, svrt::root_virt()).map_err(Error::ElfLoad)?;
+    pub fn load(phys: &Phys, name: &'static CStr) -> Result<elfload::LoadedElf, Error> {
+        let elf = elfload::load(phys, true, svrt::root_virt()).map_err(Error::ElfLoad)?;
 
         let base = DsoBase::new(elf.range.start, if elf.is_dyn { ET_DYN } else { ET_EXEC });
+        log::debug!("{:?}", base);
 
         let dynamic = elf
             .dynamic
@@ -144,15 +161,17 @@ impl Dso {
         let syms =
             Symbols::from_dynamic(&base, dynamic, Some(elf.sym_len)).ok_or(Error::SymbolLoad)?;
 
-        Ok(Dso {
+        let dso = Dso {
             link: Default::default(),
-            id: Self::next_id(),
+            _id: Self::next_id(),
             base,
             name,
             dynamic,
             syms,
             relocate: Once::new(),
-        })
+        };
+        dso_list().lock().push(dso);
+        Ok(elf)
     }
 
     fn next_id() -> u32 {
@@ -313,10 +332,12 @@ impl DsoList {
             if def.is_none()
                 && (sym.st_shndx as u32 != SHN_UNDEF || st_bind(sym.st_info) != STB_WEAK)
             {
-                panic!(
+                log::error!(
                     "Symbol {:?} not found when relocating in DSO {:?}",
-                    name, dso.name
+                    name,
+                    dso.name
                 );
+                panic!("Failed to relocate symbols");
             }
             def
         };
@@ -400,12 +421,12 @@ impl<'a> Iterator for DsoIter<'a> {
     }
 }
 
-pub fn init() -> Result<DsoList, Error> {
-    let list = unsafe {
+pub fn init() -> Result<(), Error> {
+    unsafe {
         let ldso = LDSO.write(Dso::new_static(load_address(), cstr!("ld-oceanic.so"))?);
         let vdso = VDSO.write(Dso::new_static(vdso_map(), cstr!("<VDSO>"))?);
-        DsoList::new(ldso, vdso)
+        DSO_LIST.write(Mutex::new(DsoList::new(ldso, vdso)))
     };
     atomic::fence(SeqCst);
-    Ok(list)
+    Ok(())
 }

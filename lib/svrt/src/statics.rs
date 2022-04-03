@@ -25,7 +25,7 @@ const SS_UNINIT: usize = 0;
 const SS_PROGRESS: usize = 1;
 const SS_INIT: usize = 2;
 
-pub fn init(args: StartupArgs) -> Result<Vec<u8>> {
+pub fn init_rt(args: StartupArgs) -> Result<Vec<u8>> {
     loop {
         let value = STARTUP_STATE.load(Acquire);
         match value {
