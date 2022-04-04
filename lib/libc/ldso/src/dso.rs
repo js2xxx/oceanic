@@ -189,12 +189,13 @@ impl Dso {
     }
 
     fn load_deps(dynamic: &[Dyn], syms: &Symbols) -> Result<(), Error> {
+        let replace_deps = [cstr!("libldso.so"), cstr!("libh2o.so")];
         let deps = dynamic
             .iter()
             .filter_map(|d| {
                 (d.d_tag == DT_NEEDED)
                     .then(|| unsafe { syms.get_str(d.d_val as usize) })
-                    .filter(|name| name != &cstr!("libldso.so"))
+                    .filter(|name| !replace_deps.contains(name))
                     .map(CString::from)
             })
             .collect::<Vec<_>>();

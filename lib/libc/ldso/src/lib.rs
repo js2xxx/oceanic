@@ -13,16 +13,16 @@ mod imp_alloc;
 mod rxx;
 
 use cstr_core::cstr;
-use solvent::prelude::{Object, Phys};
+use solvent::prelude::{Channel, Object, Phys};
 pub use svrt::*;
 
-pub use self::rxx::{dynamic, init_channel, load_address, vdso_map};
+pub use self::rxx::{dynamic, load_address, vdso_map};
 
-fn dl_main() -> rxx::DlReturn {
+fn dl_main(init_chan: Channel) -> rxx::DlReturn {
     dso::init().expect("Failed to initialize the DSO list");
     dbglog::init(log::Level::Debug);
 
-    let startup_args = init_channel()
+    let startup_args = init_chan
         .receive::<StartupArgs>()
         .expect("Failed to receive boot message");
 
@@ -31,11 +31,12 @@ fn dl_main() -> rxx::DlReturn {
     let prog = take_startup_handle(HandleInfo::new().with_handle_type(HandleType::ProgramPhys));
     let prog = unsafe { Phys::from_raw(prog) };
 
-    let _elf = dso::Dso::load(&prog, cstr!("<Program>").into()).expect("Failed to load program");
+    let elf = dso::Dso::load(&prog, cstr!("<Program>").into()).expect("Failed to load program");
 
     log::debug!("Reaching end of the dynamic linker");
 
-    loop {
-        unsafe { core::arch::asm!("pause") }
+    rxx::DlReturn {
+        entry: elf.entry,
+        init_chan: Channel::into_raw(init_chan),
     }
 }

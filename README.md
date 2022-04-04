@@ -27,6 +27,7 @@ support aarch64 in the future.
 1. Download rust and other dependencies (Ubuntu for example):
    ```sh
    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+   bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"
    sudo apt install build-essential qemu-system-x86
    ```
 

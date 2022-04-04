@@ -1,7 +1,4 @@
-use core::{
-    mem::MaybeUninit,
-    sync::atomic::{self, Ordering::SeqCst},
-};
+use core::sync::atomic::{self, Ordering::SeqCst};
 
 use solvent::prelude::{Channel, Handle, Object};
 
@@ -59,11 +56,6 @@ pub fn vdso_map() -> usize {
     unsafe { _VDSO_MAP }
 }
 
-static mut _INIT_CHANNEL: MaybeUninit<Channel> = MaybeUninit::uninit();
-pub fn init_channel() -> &'static Channel {
-    unsafe { _INIT_CHANNEL.assume_init_ref() }
-}
-
 #[no_mangle]
 #[naked]
 unsafe extern "C" fn _start() -> ! {
@@ -84,7 +76,7 @@ unsafe extern "C" fn _start() -> ! {
 
 #[repr(C)]
 pub struct DlReturn {
-    pub arg: usize,
+    pub init_chan: Handle,
     pub entry: usize,
 }
 
@@ -139,8 +131,7 @@ unsafe extern "C" fn dl_start(init_chan: Handle, vdso_map: usize) -> DlReturn {
     }
 
     atomic::fence(SeqCst);
-    _INIT_CHANNEL.write(Channel::from_raw(init_chan));
     _VDSO_MAP = vdso_map;
 
-    crate::dl_main()
+    crate::dl_main(Channel::from_raw(init_chan))
 }

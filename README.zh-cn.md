@@ -22,6 +22,7 @@
 1. 安装Rust和其他依赖（以Ubuntu为例）：
    ```sh
    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+   bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"
    sudo apt install build-essential qemu-system-x86
    ```
 

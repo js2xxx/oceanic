@@ -95,6 +95,12 @@ impl Dist {
                 bin_dir.join("libsv_call.so"),
                 src_root.join(H2O_KERNEL).join("target/vdso"),
             )?;
+            Command::new("llvm-ifs")
+                .arg("--input-format=ELF")
+                .arg(format!("--output-elf={}/libh2o.so", target_root))
+                .arg(src_root.join(H2O_KERNEL).join("target/vdso"))
+                .status()?
+                .exit_ok()?;
 
             fs::File::create(cd.join("target/rxx.rs"))?;
         }
