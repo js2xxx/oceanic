@@ -17,7 +17,6 @@ pub enum HandleIndex {
 pub struct Targs {
     pub rsdp: usize,
     pub smbios: usize,
-    pub bootfs_size: usize,
 }
 
 unsafe impl plain::Plain for Targs {}

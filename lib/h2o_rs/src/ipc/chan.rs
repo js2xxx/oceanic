@@ -209,7 +209,9 @@ impl Channel {
     {
         let mut packet = Packet::default();
         self.receive_packet(&mut packet)?;
+        let id = packet.id;
         let ret = handler(&mut packet)?;
+        packet.id = id;
         self.send_packet(&mut packet)?;
         Ok(ret)
     }

@@ -189,7 +189,7 @@ impl Dist {
                             fs::copy(dep.path(), dep_root.join(name))?;
                             self.gen_debug(name, &dep_root, DEBUG_DIR)?;
                         }
-                        _ => {},
+                        _ => {}
                     }
                 }
             }

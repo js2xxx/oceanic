@@ -101,7 +101,6 @@ pub fn setup() {
         let targs = Targs {
             rsdp: *crate::kargs().rsdp,
             smbios: *crate::kargs().smbios,
-            bootfs_size: crate::kargs().bootfs_len,
         };
         unsafe { mem::transmute::<_, [u8; mem::size_of::<Targs>()]>(targs) }
     };
@@ -126,4 +125,7 @@ pub fn setup() {
     )
     .expect("Failed to initialize TINIT");
     SCHED.unblock(tinit, true);
+
+    // Get rid of EPIPE in TINIT.
+    mem::forget(me);
 }

@@ -182,6 +182,9 @@ impl Channel {
         buffer_cap: &mut usize,
         handle_cap: &mut usize,
     ) -> sv_call::Result<Packet> {
+        if self.peer.strong_count() == 0 {
+            return Err(sv_call::Error::EPIPE);
+        }
         let _pree = PREEMPT.lock();
         let mut head = self.head.lock();
         if head.is_none() {
@@ -239,6 +242,9 @@ impl Channel {
         buffer_cap: &mut usize,
         handle_cap: &mut usize,
     ) -> sv_call::Result<Packet> {
+        if self.peer.strong_count() == 0 {
+            return Err(sv_call::Error::EPIPE);
+        }
         let _pree = PREEMPT.lock();
         let mut callers = self.me.callers.lock();
         let mut caller = match callers.entry(id) {

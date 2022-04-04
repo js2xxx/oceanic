@@ -1,4 +1,4 @@
-use alloc::boxed::Box;
+use alloc::{boxed::Box, vec::Vec};
 use core::{
     cell::UnsafeCell,
     fmt,
@@ -7,16 +7,25 @@ use core::{
     ptr::{self, NonNull},
     slice,
     sync::atomic::{self, AtomicU32, Ordering::*},
+    time::Duration,
 };
 
-use cstr_core::{cstr, CStr};
-use solvent::prelude::Phys;
-use spin::{Mutex, Once};
+use cstr_core::{cstr, CStr, CString};
+use rpc::load::{GetObject, GetObjectResponse as Response};
+use solvent::prelude::{Channel, Object, Phys};
+use spin::{Lazy, Mutex, Once};
+use svrt::{HandleInfo, HandleType};
 
 use crate::{elf::*, load_address, vdso_map};
 
 static mut LDSO: MaybeUninit<Dso> = MaybeUninit::uninit();
 static mut VDSO: MaybeUninit<Dso> = MaybeUninit::uninit();
+static LDRPC: Lazy<Option<Channel>> = Lazy::new(|| {
+    let handle =
+        svrt::try_take_startup_handle(HandleInfo::new().with_handle_type(HandleType::LoadRpc))
+            .ok()?;
+    Some(unsafe { Channel::from_raw(handle) })
+});
 
 static mut DSO_LIST: MaybeUninit<Mutex<DsoList>> = MaybeUninit::uninit();
 
@@ -28,6 +37,7 @@ pub fn dso_list() -> &'static Mutex<DsoList> {
 pub enum Error {
     SymbolLoad,
     ElfLoad(elfload::Error),
+    DepGet(solvent::error::Error),
 }
 
 #[derive(Copy, Clone)]
@@ -139,7 +149,7 @@ impl Dso {
         })
     }
 
-    pub fn load(phys: &Phys, name: &'static CStr) -> Result<elfload::LoadedElf, Error> {
+    pub fn load(phys: &Phys, name: CString) -> Result<elfload::LoadedElf, Error> {
         let elf = elfload::load(phys, true, svrt::root_virt()).map_err(Error::ElfLoad)?;
 
         let base = DsoBase::new(elf.range.start, if elf.is_dyn { ET_DYN } else { ET_EXEC });
@@ -161,6 +171,10 @@ impl Dso {
         let syms =
             Symbols::from_dynamic(&base, dynamic, Some(elf.sym_len)).ok_or(Error::SymbolLoad)?;
 
+        Self::load_deps(dynamic, &syms)?;
+
+        let name = unsafe { CStr::from_ptr(CString::into_raw(name)) };
+
         let dso = Dso {
             link: Default::default(),
             _id: Self::next_id(),
@@ -172,6 +186,35 @@ impl Dso {
         };
         dso_list().lock().push(dso);
         Ok(elf)
+    }
+
+    fn load_deps(dynamic: &[Dyn], syms: &Symbols) -> Result<(), Error> {
+        let deps = dynamic
+            .iter()
+            .filter_map(|d| {
+                (d.d_tag == DT_NEEDED)
+                    .then(|| unsafe { syms.get_str(d.d_val as usize) })
+                    .filter(|name| name != &cstr!("libldso.so"))
+                    .map(CString::from)
+            })
+            .collect::<Vec<_>>();
+        log::debug!("Dependencies: {:?}", deps);
+        let ldrpc = LDRPC
+            .as_ref()
+            .ok_or(Error::DepGet(solvent::error::Error::ENOENT))?;
+        let resp = rpc::call::<GetObject>(ldrpc, deps.clone().into(), Duration::MAX)
+            .map_err(Error::DepGet)?;
+        let objs = match resp {
+            Response::Success(objs) => objs,
+            Response::Error { not_found_index } => {
+                log::error!("DT_NEEDED Library at index {} not found", not_found_index);
+                return Err(Error::DepGet(solvent::error::Error::ENOENT));
+            }
+        };
+        for (phys, name) in objs.into_iter().zip(deps.into_iter()) {
+            Self::load(&phys, name)?;
+        }
+        Ok(())
     }
 
     fn next_id() -> u32 {

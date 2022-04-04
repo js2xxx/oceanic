@@ -31,7 +31,7 @@ fn dl_main() -> rxx::DlReturn {
     let prog = take_startup_handle(HandleInfo::new().with_handle_type(HandleType::ProgramPhys));
     let prog = unsafe { Phys::from_raw(prog) };
 
-    let _elf = dso::Dso::load(&prog, cstr!("<Program>")).expect("Failed to load program");
+    let _elf = dso::Dso::load(&prog, cstr!("<Program>").into()).expect("Failed to load program");
 
     log::debug!("Reaching end of the dynamic linker");
 

@@ -6,5 +6,6 @@ version = "0.1.0"
 [dependencies]
 # Local crates
 co2 = {path = "../../lib/libc"}
+solvent = {path = "../../lib/h2o_rs"}
 # External crates
 log = "0.4"

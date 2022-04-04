@@ -39,6 +39,7 @@ pub enum HandleType {
     RootVirt,
     VdsoPhys,
     ProgramPhys,
+    LoadRpc,
 }
 
 #[derive(Copy, Clone)]

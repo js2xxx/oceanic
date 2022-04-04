@@ -20,11 +20,13 @@ mod mem;
 mod rxx;
 mod test;
 
-use alloc::vec;
-use core::mem::MaybeUninit;
+use alloc::{vec, vec::Vec};
+use core::{hint, mem::MaybeUninit, time::Duration};
 
 use bootfs::parse::Directory;
+use rpc::load::{GetObject, GetObjectResponse};
 use solvent::prelude::*;
+use sv_call::ipc::SIG_READ;
 use svrt::{HandleInfo, HandleType, StartupArgs};
 use targs::{HandleIndex, Targs};
 
@@ -61,6 +63,34 @@ fn map_bootfs(phys: &Phys, root: &Virt) -> Directory<'static> {
         )
         .expect("Failed to map boot FS");
     Directory::root(unsafe { ptr.as_ref() }).expect("Failed to parse boot filesystem")
+}
+
+fn serve_load(load_rpc: Channel, bootfs: Directory, bootfs_phys: &Phys) -> Error {
+    loop {
+        let res = rpc::handle::<GetObject, _>(&load_rpc, |request| {
+            let mut objs = Vec::with_capacity(request.paths.len());
+            for (i, path) in request.paths.into_iter().enumerate() {
+                let mut root = Vec::from(b"lib/" as &[u8]);
+                root.append(&mut path.into_bytes());
+                let obj = bootfs
+                    .find(&root, b'/')
+                    .and_then(|bin| sub_phys(bin, bootfs, bootfs_phys).ok());
+                match obj {
+                    Some(obj) => objs.push(obj),
+                    None => return GetObjectResponse::Error { not_found_index: i },
+                }
+            }
+            rpc::load::GetObjectResponse::Success(objs)
+        });
+        match res {
+            Ok(()) => hint::spin_loop(),
+            Err(Error::ENOENT) => match load_rpc.try_wait(Duration::MAX, true, SIG_READ) {
+                Ok(_) => {}
+                Err(err) => break err,
+            },
+            Err(err) => break err,
+        }
+    }
 }
 
 #[no_mangle]
@@ -125,6 +155,8 @@ extern "C" fn tmain(init_chan: sv_call::Handle) {
         .reduce_features(Feature::SEND | Feature::WRITE)
         .expect("Failed to reduce features for write");
 
+    let load_rpc = Channel::new();
+
     let startup_args = StartupArgs {
         handles: [
             (
@@ -138,6 +170,10 @@ extern "C" fn tmain(init_chan: sv_call::Handle) {
             (
                 HandleInfo::new().with_handle_type(HandleType::ProgramPhys),
                 Phys::into_raw(bin.phys),
+            ),
+            (
+                HandleInfo::new().with_handle_type(HandleType::LoadRpc),
+                Channel::into_raw(load_rpc.1),
             ),
         ]
         .into_iter()
@@ -157,6 +193,10 @@ extern "C" fn tmain(init_chan: sv_call::Handle) {
         vdso_base.as_mut_ptr() as u64,
     )
     .expect("Failed to create the task");
+
+    log::debug!("Serving for load_rpc");
+    let err = serve_load(load_rpc.0, bootfs, &bootfs_phys);
+    log::debug!("End service for load_rpc: {:?}", err);
 
     log::debug!("Waiting for the task");
 

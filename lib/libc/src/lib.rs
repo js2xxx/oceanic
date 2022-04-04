@@ -19,3 +19,16 @@ fn rust_oom(layout: core::alloc::Layout) -> ! {
         unsafe { core::arch::asm!("pause; ud2") }
     }
 }
+
+struct NullAlloc;
+
+#[global_allocator]
+static NULL_ALLOC: NullAlloc = NullAlloc;
+
+unsafe impl core::alloc::GlobalAlloc for NullAlloc {
+    unsafe fn alloc(&self, _: core::alloc::Layout) -> *mut u8 {
+        core::ptr::null_mut()
+    }
+
+    unsafe fn dealloc(&self, _: *mut u8, _: core::alloc::Layout) {}
+}

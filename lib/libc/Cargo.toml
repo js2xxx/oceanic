@@ -9,5 +9,6 @@ crate-type = ["cdylib"]
 [dependencies]
 # Local crates
 ldso = {path = "ldso"}
+solvent = {path = "../h2o_rs"}
 # External crates
 log = "0.4"
