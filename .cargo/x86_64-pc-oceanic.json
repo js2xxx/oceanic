@@ -19,7 +19,8 @@
             "-zmax-page-size=4096",
             "-zseparate-loadable-segments",
             "--pack-dyn-relocs=relr",
-            "--pic-veneer"
+            "--pic-veneer",
+            "--dynamic-linker=lib/ld-oceanic.so"
         ],
         "gcc": [
             "-Wl,--build-id",
@@ -27,7 +28,8 @@
             "-zpack-relative-relocs",
             "-zcombreloc",
             "-fpic",
-            "-m64"
+            "-m64",
+            "--dynamic-linker=lib/ld-oceanic.so"
         ]
     },
     "panic-strategy": "abort",

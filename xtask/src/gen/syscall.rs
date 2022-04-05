@@ -90,7 +90,7 @@ pub fn gen_rust_calls(funcs: &[SyscallFn], output: impl AsRef<Path>) -> Result<(
 pub fn gen_rust_stubs(funcs: &[SyscallFn], output: impl AsRef<Path>) -> Result<(), Box<dyn Error>> {
     let mut output = BufWriter::new(fs::File::create(output)?);
 
-    write!(output, "extern \"C\" {{")?;
+    write!(output, "#[link(name = \"h2o\")] extern \"C\" {{")?;
     for func in funcs.iter() {
         write!(output, "pub fn {}(", func.name)?;
         for arg in &func.args {

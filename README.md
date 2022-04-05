@@ -15,8 +15,8 @@ support aarch64 in the future.
 
 - `debug` - contains the decompiled assembly files, debug symbols, object file informations. and the serial log files of the virtual machines.
 - `h2o` - contains the source code for the kernel.
-- `lib` - contains the source library code for the entire project.
 - `scripts` - contains the scripts required for building the project.
+- `src` - contains the source code of libraries and executables for the entire project.
 - `target` - contains the binaries and virtual disk files.
 - `xtask` - contains the builder for the project.
 

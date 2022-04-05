@@ -10,7 +10,7 @@ default = ["sv-call/default", "solvent/default"]
 [dependencies]
 # Local crates
 solvent = {path = "../h2o_rs", default-features = false}
-sv-call = {path = "../../h2o/libs/syscall", default-features = false}
+sv-call = {path = "../../../h2o/libs/syscall", default-features = false}
 # External crates
 log = "0.4"
 spin = {version = "0.9", features = ["use_ticket_mutex"]}

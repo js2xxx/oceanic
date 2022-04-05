@@ -10,13 +10,13 @@ path = "src/tmain.rs"
 
 [dependencies]
 # Local crates
-bootfs = {path = "../../lib/bootfs", default-features = false}
-dbglog = {path = "../../lib/dbglog", default-features = false, features = ["call"]}
+bootfs = {path = "../../src/lib/bootfs", default-features = false}
+dbglog = {path = "../../src/lib/dbglog", default-features = false, features = ["call"]}
 heap = {path = "../libs/heap"}
-solvent = {path = "../../lib/h2o_rs", default-features = false, features = ["call", "alloc"]}
+solvent = {path = "../../src/lib/h2o_rs", default-features = false, features = ["call", "alloc"]}
 sv-call = {path = "../libs/syscall", default-features = false, features = ["call"]}
-svrt = {path = "../../lib/svrt", default-features = false, features = ["call"]}
-rpc = {path = "../../lib/rpc", default-features = false, features = ["call"]}
+svrt = {path = "../../src/lib/svrt", default-features = false, features = ["call"]}
+rpc = {path = "../../src/lib/rpc", default-features = false, features = ["call"]}
 targs = {path = "../libs/targs"}
 # External crates
 cstr_core = "0.2"
