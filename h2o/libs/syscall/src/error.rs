@@ -49,6 +49,13 @@ impl Error {
         }
     }
 
+    pub fn desc_by_index(errnum: i32) -> Option<&'static str> {
+        let index = -errnum as usize;
+        { ERRC_DESC.get(index) }
+            .or_else(|| CUSTOM_DESC.get(index - Self::CUSTOM_OFFSET as usize))
+            .copied()
+    }
+
     #[inline]
     pub fn raw(&self) -> i32 {
         self.raw

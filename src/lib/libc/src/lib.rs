@@ -1,5 +1,12 @@
 #![no_std]
+#![allow(unused_unsafe)]
 #![feature(alloc_error_handler)]
+#![feature(c_size_t)]
+#![feature(core_ffi_c)]
+
+pub mod ctypes;
+pub mod string;
+
 
 #[panic_handler]
 fn rust_begin_unwind(info: &core::panic::PanicInfo) -> ! {

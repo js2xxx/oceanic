@@ -21,7 +21,6 @@ targs = {path = "../libs/targs"}
 # External crates
 cstr_core = "0.2"
 log = "0.4"
-memchr = {version = "2.4", default-features = false}
 object = {version = "0.28", default-features = false, features = ["elf", "read_core"]}
 plain = "0.2"
 spin = {version = "0.9", features = ["use_ticket_mutex"]}
