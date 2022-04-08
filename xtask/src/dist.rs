@@ -67,7 +67,7 @@ impl Dist {
             let cd = src_root.join(H2O_SYSCALL);
             let ldscript = cd.join("syscall.ld");
 
-            fs::copy(cd.join("target/rxx.rs.in"), cd.join("target/rxx.rs"))?;
+            fs::copy(cd.join("rxx.rs.in"), cd.join("target/rxx.rs"))?;
 
             let mut cmd = Command::new(&cargo);
             let cmd = cmd.current_dir(&cd).arg("rustc").args([

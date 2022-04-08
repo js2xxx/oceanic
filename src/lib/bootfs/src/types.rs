@@ -3,7 +3,6 @@ use core::{alloc::Layout, mem};
 use plain::Plain;
 use static_assertions::const_assert;
 
-#[cfg(target_arch = "x86_64")]
 pub const PAGE_LAYOUT: Layout = unsafe { Layout::from_size_align_unchecked(4096, 4096) };
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
