@@ -163,6 +163,21 @@ pub fn map_segment(
     Ok(())
 }
 
+pub fn get_interp(phys: &Phys) -> Result<Option<Vec<u8>>, Error> {
+    let (header, _) = parse_header(phys, true)?;
+    let segments = parse_segments(phys, header.e_phoff as usize, header.e_phnum as usize)?;
+    { segments.iter() }
+        .find_map(|segment| {
+            (segment.p_type == PT_INTERP).then(|| {
+                let offset = segment.p_offset as usize;
+                let size = segment.p_filesz as usize;
+
+                phys.read(offset, size).map_err(Error::PhysRead)
+            })
+        })
+        .transpose()
+}
+
 pub fn load(phys: &Phys, dyn_only: bool, root_virt: &Virt) -> Result<LoadedElf, Error> {
     let (header, is_dyn) = parse_header(phys, dyn_only)?;
 
@@ -202,7 +217,9 @@ pub fn load(phys: &Phys, dyn_only: bool, root_virt: &Virt) -> Result<LoadedElf, 
     for segment in segments {
         match segment.p_type {
             PT_LOAD => map_segment(&segment, phys, &virt, base_offset)?,
-            PT_GNU_STACK => stack = Some((segment.p_memsz as usize, parse_flags(segment.p_flags))),
+            PT_GNU_STACK if segment.p_memsz > 0 => {
+                stack = Some((segment.p_memsz as usize, parse_flags(segment.p_flags)))
+            }
             PT_DYNAMIC => dynamic = Some(segment),
             _ => {}
         }

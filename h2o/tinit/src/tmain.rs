@@ -133,14 +133,12 @@ extern "C" fn tmain(init_chan: sv_call::Handle) {
             .find(b"bin/progm", b'/')
             .expect("Failed to find progm");
 
-        let bin_phys =
-            sub_phys(bin_data, bootfs, &bootfs_phys).expect("Failed to create the physical object");
-        unsafe { load::Image::new(bin_data, bin_phys) }.expect("Failed to create the image")
+        sub_phys(bin_data, bootfs, &bootfs_phys).expect("Failed to create the physical object")
     };
 
     let (space, virt) = Space::new();
     let (entry, stack) =
-        load::load_elf(bin.clone(), bootfs, &bootfs_phys, &virt).expect("Failed to load test_bin");
+        load::load_elf(&bin, bootfs, &bootfs_phys, &virt).expect("Failed to load test_bin");
 
     let vdso_base = virt
         .map_vdso(Phys::clone(&vdso_phys))
@@ -169,7 +167,7 @@ extern "C" fn tmain(init_chan: sv_call::Handle) {
             ),
             (
                 HandleInfo::new().with_handle_type(HandleType::ProgramPhys),
-                Phys::into_raw(bin.phys),
+                Phys::into_raw(bin),
             ),
             (
                 HandleInfo::new().with_handle_type(HandleType::LoadRpc),

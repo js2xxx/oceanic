@@ -62,8 +62,12 @@ impl Phys {
 
     /// # Errors
     ///
-    /// Returns error if the heap memory is exhausted.
+    /// Returns error if the heap memory is exhausted or the size is zero.
     pub fn allocate(size: usize, zeroed: bool) -> Result<Self> {
+        if size == 0 {
+            return Err(sv_call::Error::ENOMEM);
+        }
+
         let mut inner = Arsc::try_new_uninit()?;
         let layout = unsafe { Layout::from_size_align_unchecked(size, PAGE_SIZE) }.pad_to_align();
         let mem = if zeroed {
@@ -71,6 +75,7 @@ impl Phys {
         } else {
             Global.allocate(layout)
         };
+
         mem.map(|ptr| unsafe {
             Arsc::get_mut_unchecked(&mut inner).write(PhysInner::new_manual(
                 true,

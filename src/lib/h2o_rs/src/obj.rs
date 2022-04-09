@@ -1,4 +1,4 @@
-use core::{mem, time::Duration};
+use core::{marker::PhantomData, mem, mem::ManuallyDrop, ops::Deref, time::Duration};
 
 pub use sv_call::{Feature, Handle};
 
@@ -78,6 +78,14 @@ pub trait Object {
         // SAFETY: The handle is freshly allocated.
         Ok(unsafe { Self::from_raw(handle) })
     }
+
+    fn as_ref(&self) -> Ref<'_, Self>
+    where
+        Self: Sized,
+    {
+        // SAFETY: The handle is valid and the ownership is not transferred.
+        unsafe { Ref::from_raw(self.raw()) }
+    }
 }
 
 #[macro_export]
@@ -110,4 +118,34 @@ macro_rules! impl_obj {
             }
         }
     };
+}
+
+pub struct Ref<'a, T: ?Sized> {
+    marker: PhantomData<&'a T>,
+    inner: ManuallyDrop<T>,
+}
+
+impl<'a, T: Object> Ref<'a, T> {
+    /// # Safety
+    ///
+    /// The handle must be of the same type as the object.u
+    pub unsafe fn from_raw(raw: sv_call::Handle) -> Self {
+        Ref {
+            marker: PhantomData,
+            // SAFETY: The ownership of the handle is not transferred.
+            inner: ManuallyDrop::new(unsafe { T::from_raw(raw) }),
+        }
+    }
+
+    pub fn into_raw(this: Self) -> sv_call::Handle {
+        T::into_raw(ManuallyDrop::into_inner(this.inner))
+    }
+}
+
+impl<'a, T: Object + ?Sized> Deref for Ref<'a, T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
 }
