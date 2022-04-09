@@ -33,6 +33,8 @@ pub fn dso_list() -> &'static Mutex<DsoList> {
     unsafe { DSO_LIST.assume_init_ref() }
 }
 
+type IniFn = unsafe extern "C" fn();
+
 #[derive(Debug)]
 pub enum Error {
     SymbolLoad,
@@ -89,6 +91,7 @@ struct DsoLink {
 #[derive(Debug)]
 pub struct Dso {
     link: UnsafeCell<DsoLink>,
+    fini_link: UnsafeCell<DsoLink>,
 
     _id: u32,
     base: DsoBase,
@@ -98,6 +101,8 @@ pub struct Dso {
     syms: Symbols<'static>,
 
     relocate: Once,
+    init: Once,
+    fini: Once,
 }
 
 impl Dso {
@@ -140,17 +145,20 @@ impl Dso {
 
         Ok(Dso {
             link: Default::default(),
+            fini_link: Default::default(),
             _id: Self::next_id(),
             base,
             name,
             dynamic,
             syms,
             relocate: Once::new(),
+            init: Once::new(),
+            fini: Once::new(),
         })
     }
 
-    pub fn load(phys: &Phys, name: CString) -> Result<elfload::LoadedElf, Error> {
-        let elf = elfload::load(phys, true, svrt::root_virt()).map_err(Error::ElfLoad)?;
+    pub fn load(phys: &Phys, name: CString, prog: bool) -> Result<elfload::LoadedElf, Error> {
+        let elf = elfload::load(phys, true, &*svrt::root_virt()).map_err(Error::ElfLoad)?;
 
         let base = DsoBase::new(elf.range.start, if elf.is_dyn { ET_DYN } else { ET_EXEC });
         log::debug!("{:?}", base);
@@ -177,14 +185,17 @@ impl Dso {
 
         let dso = Dso {
             link: Default::default(),
+            fini_link: Default::default(),
             _id: Self::next_id(),
             base,
             name,
             dynamic,
             syms,
             relocate: Once::new(),
+            init: Once::new(),
+            fini: Once::new(),
         };
-        dso_list().lock().push(dso);
+        dso_list().lock().push(dso, prog);
         Ok(elf)
     }
 
@@ -213,7 +224,7 @@ impl Dso {
             }
         };
         for (phys, name) in objs.into_iter().zip(deps.into_iter()) {
-            Self::load(&phys, name)?;
+            Self::load(&phys, name, false)?;
         }
         Ok(())
     }
@@ -231,7 +242,7 @@ impl Dso {
             .find_map(|d| (d.d_tag == tag).then(|| d.d_val as usize))
     }
 
-    unsafe fn dyn_ptr<T>(&self, tag: u64) -> Option<*mut T> {
+    fn dyn_ptr<T>(&self, tag: u64) -> Option<*mut T> {
         self.dyn_val(tag).map(|offset| self.base.ptr(offset))
     }
 
@@ -272,9 +283,12 @@ impl From<&Rela> for Reloc {
     }
 }
 
+#[derive(Default)]
 pub struct DsoList {
     head: Option<NonNull<Dso>>,
     tail: Option<NonNull<Dso>>,
+    prog: Option<NonNull<Dso>>,
+    fini: Option<NonNull<Dso>>,
 }
 
 unsafe impl Send for DsoList {}
@@ -286,6 +300,7 @@ impl DsoList {
         let list = DsoList {
             head: Some(NonNull::from(head)),
             tail: Some(NonNull::from(tail)),
+            ..Default::default()
         };
         list.relocate_dso(head);
         list.relocate_dso(tail);
@@ -297,6 +312,10 @@ impl DsoList {
             cur: self.head,
             _marker: PhantomData,
         }
+    }
+
+    fn program(&self) -> Option<&Dso> {
+        unsafe { self.prog.map(|p| p.as_ref()) }
     }
 
     pub fn find_symbol(
@@ -425,7 +444,7 @@ impl DsoList {
         });
     }
 
-    pub fn push(&mut self, dso: Dso) {
+    pub fn push(&mut self, dso: Dso, prog: bool) {
         let dso = Box::leak(Box::new(dso));
 
         unsafe {
@@ -443,6 +462,69 @@ impl DsoList {
         }
 
         self.relocate_dso(dso);
+
+        if prog {
+            self.prog = Some(dso.into());
+        }
+    }
+
+    fn push_fini(fini: &mut Option<NonNull<Dso>>, dso: &Dso) {
+        unsafe {
+            (*dso.link.get()).prev = None;
+            (*dso.link.get()).next = *fini;
+
+            *fini = Some(dso.into());
+        }
+    }
+
+    pub fn do_init(&mut self) {
+        if let Some(preinit_array) = self.program().and_then(|prog| unsafe {
+            prog.dyn_slice::<IniFn>(DT_PREINIT_ARRAY, DT_PREINIT_ARRAYSZ)
+        }) {
+            for p in preinit_array {
+                unsafe { p() };
+            }
+        }
+
+        let mut cur = self.head;
+        while let Some(ptr) = cur {
+            let dso = unsafe { ptr.as_ref() };
+
+            dso.init.call_once(|| unsafe {
+                Self::push_fini(&mut self.fini, dso);
+
+                if let Some(init) = dso.dyn_ptr::<IniFn>(DT_INIT) {
+                    (*init)();
+                }
+
+                if let Some(init_arr) = dso.dyn_slice::<IniFn>(DT_INIT_ARRAY, DT_INIT_ARRAYSZ) {
+                    init_arr.iter().for_each(|i| i());
+                }
+            });
+
+            cur = unsafe { (*dso.link.get()).next };
+        }
+    }
+
+    pub fn do_fini(&self) {
+        let mut cur = self.fini;
+        while let Some(ptr) = cur {
+            let dso = unsafe { ptr.as_ref() };
+
+            if dso.init.is_completed() {
+                dso.fini.call_once(|| unsafe {
+                    if let Some(fini_arr) = dso.dyn_slice::<IniFn>(DT_FINI_ARRAY, DT_FINI_ARRAYSZ) {
+                        fini_arr.iter().rev().for_each(|f| f());
+                    }
+
+                    if let Some(fini) = dso.dyn_ptr::<IniFn>(DT_FINI) {
+                        (*fini)();
+                    }
+                });
+            }
+
+            cur = unsafe { (*dso.fini_link.get()).next };
+        }
     }
 }
 

@@ -8,8 +8,8 @@ pub struct StartupArgsHeader {
     pub handle_count: usize,
     pub args_offset: usize,
     pub args_len: usize,
-    pub envs_offset: usize,
-    pub envs_len: usize,
+    pub env_offset: usize,
+    pub env_len: usize,
 }
 pub const STARTUP_ARGS_HEADER_SIZE: usize = core::mem::size_of::<StartupArgsHeader>();
 pub const PACKET_SIG_STARTUP_ARGS: [u8; 4] = [0xaa, 0xcf, 0x2b, 0x9d];

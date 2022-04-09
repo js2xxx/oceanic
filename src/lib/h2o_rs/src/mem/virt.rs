@@ -19,6 +19,7 @@ use crate::obj::Object;
 #[repr(transparent)]
 pub struct Virt(Handle);
 crate::impl_obj!(Virt);
+crate::impl_obj!(@CLONE, Virt);
 crate::impl_obj!(@DROP, Virt);
 
 impl Virt {

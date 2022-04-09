@@ -24,6 +24,8 @@ pub struct LoadedElf {
     pub is_dyn: bool,
     pub virt: Virt,
     pub range: Range<usize>,
+    /// Note: The size of the stack can be zero and the caller should check it before allocating
+    /// memory for the stack.
     pub stack: Option<(usize, Flags)>,
     pub entry: usize,
     pub dynamic: Option<ProgramHeader>,
@@ -217,9 +219,7 @@ pub fn load(phys: &Phys, dyn_only: bool, root_virt: &Virt) -> Result<LoadedElf, 
     for segment in segments {
         match segment.p_type {
             PT_LOAD => map_segment(&segment, phys, &virt, base_offset)?,
-            PT_GNU_STACK if segment.p_memsz > 0 => {
-                stack = Some((segment.p_memsz as usize, parse_flags(segment.p_flags)))
-            }
+            PT_GNU_STACK => stack = Some((segment.p_memsz as usize, parse_flags(segment.p_flags))),
             PT_DYNAMIC => dynamic = Some(segment),
             _ => {}
         }

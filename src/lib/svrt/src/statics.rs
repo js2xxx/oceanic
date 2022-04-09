@@ -7,7 +7,7 @@ use core::{
 
 use solvent::{
     c_ty::{StatusOrHandle, StatusOrValue},
-    prelude::{Error, Handle, Object, Result, Virt},
+    prelude::{Error, Handle, Object, Ref, Result, Virt},
 };
 use spin::Mutex;
 
@@ -38,7 +38,7 @@ pub fn init_rt(args: StartupArgs) -> Result<Vec<u8>> {
                         let args = unsafe {
                             let args = STARTUP_ARGS.write(args);
                             ROOT_VIRT = args.root_virt();
-                            ENVS = &args.envs;
+                            ENVS = &args.env;
                             mem::take(&mut args.args)
                         };
                         STARTUP_STATE.store(SS_INIT, Release);
@@ -63,11 +63,11 @@ where
     }
 }
 
-pub fn try_get_root_virt() -> Result<&'static Virt> {
-    init_or(|| unsafe { ROOT_VIRT.as_ref().ok_or(Error::ENOENT) })
+pub fn try_get_root_virt() -> Result<Ref<'static, Virt>> {
+    init_or(|| unsafe { ROOT_VIRT.as_ref().map(Into::into).ok_or(Error::ENOENT) })
 }
 
-pub fn root_virt() -> &'static Virt {
+pub fn root_virt() -> Ref<'static, Virt> {
     try_get_root_virt().expect("Failed to get the root virt: uninitialized or failed to receive")
 }
 

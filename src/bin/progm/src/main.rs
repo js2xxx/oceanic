@@ -2,9 +2,23 @@
 #![no_main]
 #![feature(alloc_error_handler)]
 
+use solvent::prelude::Handle;
+
 #[no_mangle]
-extern "C" fn _start() {
-    todo!()
+unsafe extern "C" fn _start(init_chan: Handle) {
+    __libc_start_main(init_chan, main)
+}
+
+#[no_mangle]
+unsafe extern "C" fn main(_: u32, _: *mut *mut i8, _: *mut *mut i8) -> i32 {
+    0
+}
+
+type Main = unsafe extern "C" fn(argc: u32, argv: *mut *mut i8, environ: *mut *mut i8) -> i32;
+
+#[link(name = "co2")]
+extern "C" {
+    fn __libc_start_main(init_chan: Handle, main: Main) -> !;
 }
 
 #[panic_handler]

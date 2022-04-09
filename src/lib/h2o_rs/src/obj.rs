@@ -86,6 +86,14 @@ pub trait Object {
         // SAFETY: The handle is valid and the ownership is not transferred.
         unsafe { Ref::from_raw(self.raw()) }
     }
+
+    fn leak(self) -> Ref<'static, Self>
+    where
+        Self: Sized,
+    {
+        // SAFETY: The handle is valid and the ownership is not transferred.
+        unsafe { Ref::from_raw(Self::into_raw(self)) }
+    }
 }
 
 #[macro_export]
@@ -120,9 +128,17 @@ macro_rules! impl_obj {
     };
 }
 
+#[derive(Clone, Copy)]
 pub struct Ref<'a, T: ?Sized> {
     marker: PhantomData<&'a T>,
     inner: ManuallyDrop<T>,
+}
+
+impl<'a, T: Object> From<&'a T> for Ref<'a, T> {
+    fn from(obj: &'a T) -> Self {
+        // SAFETY: The handle is valid and the ownership is not transferred.
+        unsafe { Ref::from_raw(obj.raw()) }
+    }
 }
 
 impl<'a, T: Object> Ref<'a, T> {
@@ -142,7 +158,7 @@ impl<'a, T: Object> Ref<'a, T> {
     }
 }
 
-impl<'a, T: Object + ?Sized> Deref for Ref<'a, T> {
+impl<'a, T: ?Sized> Deref for Ref<'a, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {

@@ -31,7 +31,8 @@ fn dl_main(init_chan: Channel) -> rxx::DlReturn {
     let prog = take_startup_handle(HandleInfo::new().with_handle_type(HandleType::ProgramPhys));
     let prog = unsafe { Phys::from_raw(prog) };
 
-    let elf = dso::Dso::load(&prog, cstr!("<Program>").into()).expect("Failed to load program");
+    let elf =
+        dso::Dso::load(&prog, cstr!("<PROGRAM>").into(), true).expect("Failed to load program");
 
     log::debug!("Reaching end of the dynamic linker");
 
@@ -39,4 +40,14 @@ fn dl_main(init_chan: Channel) -> rxx::DlReturn {
         entry: elf.entry,
         init_chan: Channel::into_raw(init_chan),
     }
+}
+
+#[no_mangle]
+extern "C" fn __libc_start_init() {
+    dso::dso_list().lock().do_init();
+}
+
+#[no_mangle]
+extern "C" fn __libc_exit_fini() {
+    dso::dso_list().lock().do_fini();
 }

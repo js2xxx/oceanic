@@ -265,3 +265,11 @@ unsafe impl DefaultFeature for Channel {
         Feature::SEND | Feature::READ | Feature::WRITE | Feature::WAIT
     }
 }
+
+impl Drop for Channel {
+    fn drop(&mut self) {
+        if let Some(peer) = self.peer.upgrade() {
+            peer.event.notify(0, usize::MAX);
+        }
+    }
+}

@@ -155,11 +155,11 @@ extern "C" fn tmain(init_chan: sv_call::Handle) {
 
     let load_rpc = Channel::new();
 
-    let startup_args = StartupArgs {
+    let dl_args = StartupArgs {
         handles: [
             (
                 HandleInfo::new().with_handle_type(HandleType::RootVirt),
-                Virt::into_raw(virt),
+                Virt::into_raw(virt.clone()),
             ),
             (
                 HandleInfo::new().with_handle_type(HandleType::VdsoPhys),
@@ -176,11 +176,24 @@ extern "C" fn tmain(init_chan: sv_call::Handle) {
         ]
         .into_iter()
         .collect(),
-        args: vec![],
-        envs: vec![],
+        args: vec![0],
+        env: vec![0],
     };
 
-    me.send(startup_args).expect("Failed to send packet");
+    me.send(dl_args).expect("Failed to send dyn loader args");
+
+    let exe_args = StartupArgs {
+        handles: [(
+            HandleInfo::new().with_handle_type(HandleType::RootVirt),
+            Virt::into_raw(virt),
+        )]
+        .into_iter()
+        .collect(),
+        args: vec![0],
+        env: vec![0],
+    };
+
+    me.send(exe_args).expect("Failed to send executable args");
 
     let task = Task::exec(
         Some("PROGMGR"),

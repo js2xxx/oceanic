@@ -173,7 +173,7 @@ mod syscall {
         if !obj.features().contains(Feature::WAIT) {
             return Err(Error::EPERM);
         }
-        let event = obj.event().upgrade().ok_or(Error::EPERM)?;
+        let event = obj.event().upgrade().ok_or(Error::EPIPE)?;
 
         let blocker = Blocker::new(&event, wake_all, signal);
         blocker.wait(pree, time::from_us(timeout_us))?;
@@ -192,7 +192,7 @@ mod syscall {
             if !obj.features().contains(Feature::WAIT) {
                 return Err(Error::EPERM);
             }
-            let event = obj.event().upgrade().ok_or(Error::EPERM)?;
+            let event = obj.event().upgrade().ok_or(Error::EPIPE)?;
 
             let blocker = Blocker::new(&event, wake_all, signal);
             cur.space().handles().insert(blocker, None)

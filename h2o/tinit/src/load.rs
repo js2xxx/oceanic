@@ -56,10 +56,22 @@ pub fn load_elf(
 ) -> Result<(NonNull<u8>, NonNull<u8>), Error> {
     let elf = load_segs(phys, bootfs, bootfs_phys, root)?;
 
-    let (stack_size, stack_flags) = elf.stack.unwrap_or((
-        DEFAULT_STACK_SIZE,
-        Flags::READABLE | Flags::WRITABLE | Flags::USER_ACCESS,
-    ));
+    let (stack_size, stack_flags) = elf.stack.map_or(
+        (
+            DEFAULT_STACK_SIZE,
+            Flags::READABLE | Flags::WRITABLE | Flags::USER_ACCESS,
+        ),
+        |stack| {
+            (
+                if stack.0 > 0 {
+                    stack.0
+                } else {
+                    DEFAULT_STACK_SIZE
+                },
+                stack.1,
+            )
+        },
+    );
 
     let stack = {
         let layout = unsafe { Virt::page_aligned(stack_size) };

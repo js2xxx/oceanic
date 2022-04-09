@@ -1,7 +1,6 @@
 use alloc::{collections::BTreeMap, vec::Vec};
 use core::{array::TryFromSliceError, mem};
 
-use cstr_core::{CStr, CString};
 use solvent::prelude::{Error, Handle, Object, Packet, PacketTyped, Phys, Virt};
 
 use crate::{
@@ -42,7 +41,7 @@ impl From<TryFromError> for Error {
 pub struct StartupArgs {
     pub handles: BTreeMap<HandleInfo, Handle>,
     pub args: Vec<u8>,
-    pub envs: Vec<u8>,
+    pub env: Vec<u8>,
 }
 
 impl StartupArgs {
@@ -76,11 +75,11 @@ impl PacketTyped for StartupArgs {
 
         let mut args = self.args;
 
-        let mut envs = self.envs;
+        let mut env = self.env;
 
         let handle_info_offset = STARTUP_ARGS_HEADER_SIZE;
         let args_offset = handle_info_offset + args.len();
-        let envs_offset = args_offset + envs.len();
+        let env_offset = args_offset + env.len();
 
         let header = StartupArgsHeader {
             signature: PACKET_SIG_STARTUP_ARGS,
@@ -88,14 +87,14 @@ impl PacketTyped for StartupArgs {
             handle_count: handles.len(),
             args_offset,
             args_len: args.len(),
-            envs_offset,
-            envs_len: envs.len(),
+            env_offset,
+            env_len: env.len(),
         };
 
         let mut buffer = Vec::from(header.as_bytes());
         buffer.append(&mut hinfos);
         buffer.append(&mut args);
-        buffer.append(&mut envs);
+        buffer.append(&mut env);
 
         Packet {
             buffer,
@@ -131,11 +130,11 @@ impl PacketTyped for StartupArgs {
                 .ok_or(TryFromError::BufferTooShort)?,
         );
 
-        let envs = Vec::from(
+        let env = Vec::from(
             packet
                 .buffer
-                .get(header.envs_offset..)
-                .and_then(|data| data.get(..header.envs_len))
+                .get(header.env_offset..)
+                .and_then(|data| data.get(..header.env_len))
                 .ok_or(TryFromError::BufferTooShort)?,
         );
 
@@ -144,20 +143,7 @@ impl PacketTyped for StartupArgs {
         Ok(StartupArgs {
             handles,
             args,
-            envs,
+            env,
         })
     }
-}
-
-pub fn from_cstr_vec(data: Vec<CString>) -> Vec<u8> {
-    data.into_iter().fold(Vec::new(), |mut acc, arg| {
-        acc.append(&mut arg.into_bytes_with_nul());
-        acc
-    })
-}
-
-pub fn parse_cstr_vec(data: &[u8]) -> Result<Vec<CString>, cstr_core::FromBytesWithNulError> {
-    data.split_inclusive(|&b| b == 0)
-        .map(|data| CStr::from_bytes_with_nul(data).map(CString::from))
-        .try_collect()
 }
