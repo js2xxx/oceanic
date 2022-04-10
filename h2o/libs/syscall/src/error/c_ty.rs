@@ -23,6 +23,17 @@ impl Status {
             Err(self.0)
         }
     }
+
+    #[inline]
+    pub fn from_res(res: Result) -> Self {
+        SerdeReg::decode(res.encode())
+    }
+}
+
+impl Default for Status {
+    fn default() -> Self {
+        Status(Error::OK)
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -48,6 +59,11 @@ impl StatusOrHandle {
     pub fn into_res(self) -> Result<Handle> {
         SerdeReg::decode(self.encode())
     }
+
+    #[inline]
+    pub fn from_res(res: Result<Handle>) -> Self {
+        SerdeReg::decode(res.encode())
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -71,5 +87,16 @@ impl StatusOrValue {
     #[inline]
     pub fn into_res(self) -> Result<u64> {
         SerdeReg::decode(self.encode())
+    }
+
+    #[inline]
+    pub fn from_res(res: Result<u64>) -> Self {
+        SerdeReg::decode(res.encode())
+    }
+}
+
+impl Default for StatusOrValue {
+    fn default() -> Self {
+        StatusOrValue { value: 0 }
     }
 }

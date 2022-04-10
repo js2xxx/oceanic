@@ -46,7 +46,7 @@ use core::{cell::Cell, cmp::min, mem::size_of, ops::Range};
 
 use bitop_ex::BitOpEx;
 use intrusive_collections::{intrusive_adapter, LinkedList, LinkedListLink};
-use iter_ex::PointerIterator;
+use iter_ex::PtrIter;
 use spin::Mutex;
 
 use super::{PAddr, KMEM_PHYS_BASE, PAGE_SHIFT, PAGE_SIZE};
@@ -682,13 +682,11 @@ pub unsafe fn dealloc_pages_exact(n: usize, addr: PAddr) {
 
 /// Parse the memory map acquired from H2O's boot loader.
 ///
-/// TODO: To storage the info of other memory map types.
-///
 /// # Safety
 ///
 /// It'll always be safe **UNLESS** `mmap_ptr` is invalid.
 unsafe fn parse_mmap(
-    mmap_iter: &PointerIterator<crate::boot::MemRange>,
+    mmap_iter: &PtrIter<crate::boot::MemRange>,
     reserved_range: Range<usize>,
 ) -> (usize, usize) {
     use crate::boot::MemType;
@@ -740,10 +738,7 @@ pub fn dump_data(pftype: PfType) {
 ///
 /// Unfortunately, we must initialize every free list manually, and it takes a
 /// long time.
-pub fn init(
-    mmap: &PointerIterator<crate::boot::MemRange>,
-    reserved_range: Range<usize>,
-) -> (usize, usize) {
+pub fn init(mmap: &PtrIter<crate::boot::MemRange>, reserved_range: Range<usize>) -> (usize, usize) {
     for i in ORDERS {
         *(pf_list_mut(PfType::Low, i).unwrap()) = PfList::new(PFAdapter::new());
         *(pf_list_mut(PfType::High, i).unwrap()) = PfList::new(PFAdapter::new());

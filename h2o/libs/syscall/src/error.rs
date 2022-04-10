@@ -49,6 +49,13 @@ impl Error {
         }
     }
 
+    pub fn desc_by_index(errnum: i32) -> Option<&'static str> {
+        let index = -errnum as usize;
+        { ERRC_DESC.get(index) }
+            .or_else(|| CUSTOM_DESC.get(index - Self::CUSTOM_OFFSET as usize))
+            .copied()
+    }
+
     #[inline]
     pub fn raw(&self) -> i32 {
         self.raw
@@ -57,6 +64,10 @@ impl Error {
     #[inline]
     pub fn into_retval(self) -> usize {
         Err::<(), _>(self).encode()
+    }
+
+    pub fn try_from_retval(retval: usize) -> Option<Self> {
+        Self::try_decode(retval)
     }
 }
 
@@ -139,7 +150,7 @@ impl Error {
     declare_error!(ERANGE, 34, "Range not available");
 
     const CUSTOM_OFFSET: i32 = CUSTOM_RANGE.start;
-    declare_error!(EKILLED, 1001, "Task already killed");
+    declare_error!(EKILLED, 1001, "Object already killed");
     declare_error!(EBUFFER, 1002, "Buffer range exceeded");
     declare_error!(ETIME, 1003, "Timed out");
     declare_error!(EALIGN, 1004, "Pointer unaligned");
@@ -191,5 +202,5 @@ const CUSTOM_DESC: &[&str] = &[
     "Timed out",
     "Pointer unaligned",
     "Object type mismatch",
-    "Function not supported"
+    "Function not supported",
 ];

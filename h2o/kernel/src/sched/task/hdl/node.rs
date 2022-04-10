@@ -3,35 +3,39 @@ use core::{
     any::Any,
     fmt,
     iter::FusedIterator,
-    marker::{PhantomData, PhantomPinned},
+    marker::{PhantomData, PhantomPinned, Unsize},
     mem,
-    ops::Deref,
+    ops::{CoerceUnsized, Deref},
     ptr::NonNull,
 };
 
 use archop::Azy;
-use sv_call::Result;
+use sv_call::{Feature, Result};
 
-use super::Object;
+use super::DefaultFeature;
 use crate::{
     mem::Arena,
     sched::{Arsc, Event, PREEMPT},
 };
 
-pub const MAX_HANDLE_COUNT: usize = 1 << 18;
+pub const MAX_HANDLE_COUNT: usize = 1 << 16;
 
 pub(super) static HR_ARENA: Azy<Arena<Ref>> = Azy::new(|| Arena::new(MAX_HANDLE_COUNT));
 
 #[derive(Debug)]
 pub struct Ref<T: ?Sized = dyn Any> {
-    obj: Arsc<Object<T>>,
+    _marker: PhantomPinned,
     next: Option<Ptr>,
     prev: Option<Ptr>,
-    _marker: PhantomPinned,
+    event: Weak<dyn Event>,
+    feat: Feature,
+    obj: Arsc<T>,
 }
 pub type Ptr = NonNull<Ref>;
 
 unsafe impl<T: ?Sized> Send for Ref<T> {}
+
+impl<T: ?Sized + Unsize<U>, U: ?Sized> CoerceUnsized<Ref<U>> for Ref<T> {}
 
 impl<T: ?Sized> Ref<T> {
     /// # Safety
@@ -40,39 +44,32 @@ impl<T: ?Sized> Ref<T> {
     /// `sync`.
     pub unsafe fn try_new_unchecked(
         data: T,
-        send: bool,
-        sync: bool,
-        event: Weak<dyn Event>,
+        feat: Feature,
+        event: Option<Weak<dyn Event>>,
     ) -> sv_call::Result<Self>
     where
         T: Sized,
     {
+        let event = event.unwrap_or(Weak::<crate::sched::BasicEvent>::new() as _);
+        if event.strong_count() == 0 && feat.contains(Feature::WAIT) {
+            return Err(sv_call::Error::EPERM);
+        }
         Ok(Ref {
-            obj: Arsc::try_new(Object {
-                send,
-                sync,
-                event,
-                data,
-            })?,
+            _marker: PhantomPinned,
             next: None,
             prev: None,
-            _marker: PhantomPinned,
+            event,
+            feat,
+            obj: Arsc::try_new(data)?,
         })
     }
 
-    /// # Safety
-    ///
-    /// The caller must ensure that `self` is not inserted in any handle list.
-    pub unsafe fn coerce_unchecked(self) -> Ref
+    #[inline]
+    pub fn try_new(data: T, event: Option<Weak<dyn Event>>) -> sv_call::Result<Self>
     where
-        T: Sized + Any,
+        T: DefaultFeature + Sized,
     {
-        Ref {
-            obj: self.obj,
-            next: None,
-            prev: None,
-            _marker: PhantomPinned,
-        }
+        unsafe { Self::try_new_unchecked(data, T::default_features(), event) }
     }
 
     /// # Safety
@@ -80,41 +77,25 @@ impl<T: ?Sized> Ref<T> {
     /// The caller must ensure that `self` is owned by the current task if its
     /// not [`Send`].
     pub unsafe fn deref_unchecked(&self) -> &T {
-        &self.obj.data
-    }
-
-    #[inline]
-    pub fn event(&self) -> &Weak<dyn Event> {
-        &self.obj.event
-    }
-}
-
-impl<T: ?Sized + Send> Ref<T> {
-    #[inline]
-    pub fn try_new(data: T, event: Weak<dyn Event>) -> sv_call::Result<Self>
-    where
-        T: Sized,
-    {
-        unsafe { Self::try_new_unchecked(data, true, false, event) }
-    }
-
-    #[inline]
-    pub fn raw(&self) -> &Arsc<Object<T>> {
         &self.obj
     }
 
     #[inline]
-    pub fn into_raw(self) -> Arsc<Object<T>> {
-        self.obj
+    pub fn event(&self) -> &Weak<dyn Event> {
+        &self.event
     }
 
     #[inline]
-    pub fn from_raw(obj: Arsc<Object<T>>) -> Self {
-        Self {
-            obj,
-            next: None,
-            prev: None,
-            _marker: PhantomPinned,
+    pub fn features(&self) -> Feature {
+        self.feat
+    }
+
+    pub fn set_features(&mut self, feat: Feature) -> Result {
+        if feat & !self.feat == Feature::empty() {
+            self.feat = feat;
+            Ok(())
+        } else {
+            Err(sv_call::Error::EPERM)
         }
     }
 }
@@ -129,34 +110,38 @@ impl<T: ?Sized + Send> Deref for Ref<T> {
     }
 }
 
-impl<T: ?Sized + Send + Sync> Ref<T> {
-    #[inline]
-    pub fn try_new_shared(data: T, event: Weak<dyn Event>) -> sv_call::Result<Self>
-    where
-        T: Sized,
-    {
-        unsafe { Self::try_new_unchecked(data, true, true, event) }
-    }
-}
-
-impl<T: ?Sized + Send + Sync> Clone for Ref<T> {
-    #[inline]
-    fn clone(&self) -> Self {
-        Self {
-            obj: Arsc::clone(&self.obj),
-            next: None,
-            prev: None,
-            _marker: PhantomPinned,
-        }
-    }
-}
-
 impl Ref {
+    #[inline]
+    pub fn is<T: Any>(&self) -> bool {
+        self.obj.is::<T>()
+    }
+
     pub fn downcast_ref<T: Any>(&self) -> Result<&Ref<T>> {
-        if self.obj.data.is::<T>() {
+        if self.is::<T>() {
             Ok(unsafe { &*(self as *const Ref as *const Ref<T>) })
         } else {
             Err(sv_call::Error::ETYPE)
+        }
+    }
+
+    pub fn downcast<T: Any>(self) -> core::result::Result<Ref<T>, Self> {
+        match self.obj.downcast() {
+            Ok(obj) => Ok(Ref {
+                _marker: PhantomPinned,
+                next: None,
+                prev: None,
+                event: self.event,
+                feat: self.feat,
+                obj,
+            }),
+            Err(obj) => Err(Ref {
+                _marker: PhantomPinned,
+                next: None,
+                prev: None,
+                event: self.event,
+                feat: self.feat,
+                obj,
+            }),
         }
     }
 
@@ -166,27 +151,25 @@ impl Ref {
     /// not to be moved to another task if its not [`Send`] or [`Sync`].
     #[inline]
     #[must_use = "Don't make useless clonings"]
-    pub unsafe fn clone_unchecked(&self) -> Ref {
-        Self {
-            obj: Arsc::clone(&self.obj),
+    unsafe fn clone_unchecked(&self) -> Ref {
+        Ref {
+            _marker: PhantomPinned,
             next: None,
             prev: None,
-            _marker: PhantomPinned,
+            event: Weak::clone(&self.event),
+            feat: self.feat,
+            obj: Arsc::clone(&self.obj),
         }
     }
 
     pub fn try_clone(&self) -> Result<Ref> {
-        if self.obj.send && self.obj.sync {
+        let feat = self.features();
+        if feat.contains(Feature::SEND | Feature::SYNC) {
             // SAFETY: The underlying object is `send` and `sync`.
             Ok(unsafe { self.clone_unchecked() })
         } else {
             Err(sv_call::Error::EPERM)
         }
-    }
-
-    #[inline]
-    pub fn is_send(&self) -> bool {
-        self.obj.send
     }
 }
 
@@ -274,26 +257,19 @@ impl List {
 }
 
 impl List {
-    /// # Safety
-    ///
-    /// The caller must ensure that `value` comes from the current task if its
-    /// not [`Send`].
-    pub unsafe fn insert_impl(&mut self, value: Ref) -> Result<Ptr> {
+    pub fn insert(&mut self, value: Ref) -> Result<Ptr> {
         let link = HR_ARENA.allocate()?;
         // SAFETY: The pointer is allocated from the arena.
         unsafe { link.as_ptr().write(value) };
 
-        self.insert_node(link);
+        // SAFETY: The node is freshly allocated.
+        unsafe { self.insert_node(link) };
         self.len += 1;
 
         Ok(link)
     }
 
-    /// # Safety
-    ///
-    /// The caller must ensure that the list belongs to the current task if
-    /// `link` is not [`Send`].
-    pub(super) unsafe fn remove_impl(&mut self, link: Ptr) -> Result<Ref> {
+    pub fn remove(&mut self, link: Ptr) -> Result<Ref> {
         let mut cur = self.head;
         loop {
             cur = match cur {
@@ -312,7 +288,7 @@ impl List {
                 }
                 // SAFETY: The pointer is allocated from the arena.
                 Some(cur) => unsafe { cur.as_ref().next },
-                None => break Err(sv_call::Error::ERANGE),
+                None => break Err(sv_call::Error::ENOENT),
             }
         }
     }
@@ -405,7 +381,7 @@ impl fmt::Debug for List {
 impl Drop for List {
     fn drop(&mut self) {
         while let Some(head) = self.head {
-            let _ = unsafe { self.remove_impl(head) };
+            let _ = self.remove(head);
         }
     }
 }

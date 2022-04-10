@@ -1,0 +1,20 @@
+[package]
+edition = "2021"
+name = "co2"
+version = "0.1.0"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+# Local crates
+solvent = {path = "../h2o_rs"}
+svrt = {path = "../svrt"}
+# External crates
+bitvec = {version = "0.22", default-features = false, features = ["atomic"]}
+cstr_core = "0.2"
+log = "0.4"
+memchr = {version = "2.4", default-features = false}
+
+[build-dependencies]
+cbindgen = "0.20"

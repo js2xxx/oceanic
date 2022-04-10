@@ -1,6 +1,12 @@
-use std::{env, error::Error, path::Path, process::Command};
+use std::{
+    env,
+    error::Error,
+    fs,
+    path::{Path, PathBuf},
+    process::Command,
+};
 
-use crate::{H2O_BOOT, H2O_KERNEL, H2O_TINIT};
+use crate::{H2O_BOOT, H2O_KERNEL, H2O_TINIT, OC_BIN, OC_LIB};
 
 pub(crate) fn check() -> Result<(), Box<dyn Error>> {
     let cargo = env::var("CARGO").unwrap_or_else(|_| "cargo".to_string());
@@ -9,44 +15,36 @@ pub(crate) fn check() -> Result<(), Box<dyn Error>> {
         .nth(1)
         .unwrap();
 
-    {
-        // Check h2o_boot
-        println!("Checking h2o_boot");
-
+    let check = |dir: PathBuf| -> Result<(), Box<dyn Error>> {
         Command::new(&cargo)
-            .current_dir(src_root.join(H2O_BOOT))
-            .args(["clippy", "--message-format=json"])
+            .current_dir(dir)
+            .args(["clippy", "--message-format=json-diagnostic-short"])
             .status()?
-            .exit_ok()?;
+            .exit_ok()
+            .map_err(Into::into)
+    };
+
+    check(src_root.join(H2O_BOOT))?;
+
+    check(src_root.join(H2O_KERNEL))?;
+
+    check(src_root.join(H2O_TINIT))?;
+
+    for ent in fs::read_dir(src_root.join(OC_BIN))?.flatten() {
+        let ty = ent.file_type()?;
+        let name = ent.file_name();
+        if ty.is_dir() && name != ".cargo" {
+            check(ent.path())?;
+        }
     }
-
-    {
-        // Check h2o_kernel
-        println!("Building h2o_kernel");
-
-        Command::new(&cargo)
-            .current_dir(src_root.join(H2O_KERNEL))
-            .args(["clippy", "--message-format=json"])
-            .status()?
-            .exit_ok()?;
+    for ent in fs::read_dir(src_root.join(OC_LIB))?.flatten() {
+        let ty = ent.file_type()?;
+        let name = ent.file_name();
+        if ty.is_dir() && name != ".cargo" {
+            check(ent.path())?;
+        }
     }
-
-    // Build h2o_tinit
-    {
-        println!("Checking h2o_tinit");
-
-        Command::new(&cargo)
-            .current_dir(src_root.join(H2O_TINIT))
-            .args(["clippy", "--message-format=json"])
-            .status()?
-            .exit_ok()?;
-    }
-
-    Command::new(&cargo)
-        .current_dir(src_root.join("lib"))
-        .args(["clippy", "--message-format=json"])
-        .status()?
-        .exit_ok()?;
+    check(src_root.join(OC_LIB).join("libc/ldso"))?;
 
     Ok(())
 }

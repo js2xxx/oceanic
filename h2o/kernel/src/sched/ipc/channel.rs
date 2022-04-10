@@ -12,9 +12,13 @@ use core::{
 use bytes::Bytes;
 use crossbeam_queue::SegQueue;
 use spin::Mutex;
+use sv_call::Feature;
 
 use super::{Event, SIG_READ};
-use crate::sched::{task::hdl, BasicEvent, PREEMPT, SCHED};
+use crate::sched::{
+    task::hdl::{self, DefaultFeature},
+    BasicEvent, PREEMPT, SCHED,
+};
 
 const MAX_QUEUE_SIZE: usize = 2048;
 
@@ -178,6 +182,9 @@ impl Channel {
         buffer_cap: &mut usize,
         handle_cap: &mut usize,
     ) -> sv_call::Result<Packet> {
+        if self.peer.strong_count() == 0 {
+            return Err(sv_call::Error::EPIPE);
+        }
         let _pree = PREEMPT.lock();
         let mut head = self.head.lock();
         if head.is_none() {
@@ -235,6 +242,9 @@ impl Channel {
         buffer_cap: &mut usize,
         handle_cap: &mut usize,
     ) -> sv_call::Result<Packet> {
+        if self.peer.strong_count() == 0 {
+            return Err(sv_call::Error::EPIPE);
+        }
         let _pree = PREEMPT.lock();
         let mut callers = self.me.callers.lock();
         let mut caller = match callers.entry(id) {
@@ -247,5 +257,19 @@ impl Channel {
         }
         Self::get_packet(&mut caller.get_mut().head, buffer_cap, handle_cap)
             .inspect(|_| drop(caller.remove()))
+    }
+}
+
+unsafe impl DefaultFeature for Channel {
+    fn default_features() -> Feature {
+        Feature::SEND | Feature::READ | Feature::WRITE | Feature::WAIT
+    }
+}
+
+impl Drop for Channel {
+    fn drop(&mut self) {
+        if let Some(peer) = self.peer.upgrade() {
+            peer.event.notify(0, usize::MAX);
+        }
     }
 }

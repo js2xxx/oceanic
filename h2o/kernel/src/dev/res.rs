@@ -1,10 +1,11 @@
 use alloc::sync::{Arc, Weak};
-use core::ops::Range;
+use core::{any::Any, ops::Range};
 
 use collection_ex::RangeMap;
 use spin::Mutex;
+use sv_call::Feature;
 
-use crate::sched::PREEMPT;
+use crate::sched::{task::hdl::DefaultFeature, PREEMPT};
 
 pub struct Resource<T: Ord + Copy> {
     magic: u64,
@@ -70,6 +71,12 @@ impl<T: Ord + Copy> Drop for Resource<T> {
     }
 }
 
+unsafe impl<T: Ord + Copy + Send + Sync + Any> DefaultFeature for Arc<Resource<T>> {
+    fn default_features() -> Feature {
+        Feature::SEND | Feature::SYNC | Feature::READ | Feature::WRITE
+    }
+}
+
 mod syscall {
     use alloc::sync::Arc;
     use core::{any::Any, ops::Add};
@@ -85,8 +92,11 @@ mod syscall {
     ) -> Result<Handle> {
         SCHED.with_current(|cur| {
             let res = cur.space().handles().get::<Arc<Resource<T>>>(hdl)?;
+            if !res.features().contains(Feature::SYNC) {
+                return Err(Error::EPERM);
+            }
             let sub = res.allocate(base..(base + size)).ok_or(Error::ENOMEM)?;
-            cur.space().handles().insert_shared(sub)
+            cur.space().handles().insert(sub, None)
         })
     }
 

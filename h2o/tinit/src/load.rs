@@ -1,151 +1,101 @@
-use core::alloc::Layout;
+use core::{alloc::Layout, ptr::NonNull};
 
 use bootfs::parse::Directory;
-use object::{
-    elf::{PF_R, PF_W, PF_X, PT_GNU_STACK, PT_INTERP, PT_LOAD},
-    read::{
-        self,
-        elf::{ElfFile64, ProgramHeader},
-    },
-    Endianness, Object,
-};
-use solvent::prelude::{Flags, Phys, PhysRef, Space, PAGE_MASK, PAGE_SIZE};
+use solvent::prelude::{Error as SError, Flags, Phys, Virt, PAGE_LAYOUT, PAGE_SIZE};
 use sv_call::task::DEFAULT_STACK_SIZE;
 
-use crate::c_str::CStr;
+const STACK_PROTECTOR_SIZE: usize = PAGE_SIZE;
+const STACK_PROTECTOR_LAYOUT: Layout = PAGE_LAYOUT;
 
-pub struct Image<'a> {
-    data: &'a [u8],
-    phys: PhysRef,
-}
-
-impl<'a> Image<'a> {
-    /// # Safety
-    ///
-    /// `data` must be the mapped memory location corresponding to `phys`.
-    pub unsafe fn new(data: &'a [u8], phys: PhysRef) -> Option<Self> {
-        (data.len() == phys.len()).then(|| Image { data, phys })
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug)]
 pub enum Error {
-    Parse(read::Error),
-    Solvent(solvent::error::Error),
+    Solvent(SError),
+    Load(elfload::Error),
 }
 
-impl From<read::Error> for Error {
-    fn from(err: read::Error) -> Self {
-        Error::Parse(err)
-    }
-}
-
-impl From<solvent::error::Error> for Error {
-    fn from(err: solvent::error::Error) -> Self {
+impl From<SError> for Error {
+    fn from(err: SError) -> Self {
         Error::Solvent(err)
     }
 }
 
-fn map_segment(
-    image: &Image,
-    space: &Space,
-    end: Endianness,
-    seg: &impl ProgramHeader<Endian = object::Endianness>,
-) -> Result<(), Error> {
-    let msize = seg.p_memsz(end).into() as usize;
-    let fsize = seg.p_filesz(end).into() as usize;
-    let offset = seg.p_offset(end).into() as usize;
-    let address = seg.p_vaddr(end).into() as usize;
+fn load_segs(
+    phys: &Phys,
+    bootfs: Directory,
+    bootfs_phys: &Phys,
+    root: &Virt,
+) -> Result<elfload::LoadedElf, Error> {
+    let phys = match elfload::get_interp(phys) {
+        Ok(Some(mut interp)) => {
+            use SError as SvError;
 
-    if offset & PAGE_MASK != address & PAGE_MASK {
-        return Err(Error::Solvent(solvent::error::Error::EALIGN));
-    }
-    let fend = (offset + fsize).next_multiple_of(PAGE_SIZE);
-    let mend = (offset + msize).next_multiple_of(PAGE_SIZE);
-    let offset = offset & !PAGE_MASK;
-    let address = address & !PAGE_MASK;
-    let fsize = fend - offset;
-    let msize = mend - offset;
+            let last = interp.pop();
+            assert_eq!(last, Some(0), "Not a valid c string");
 
-    let data_phys = image
-        .phys
-        .dup_sub(offset, fsize)
-        .ok_or(Error::Solvent(solvent::error::Error::ERANGE))?;
+            let data = bootfs
+                .find(&interp, b'/')
+                .ok_or(SvError::ENOENT)
+                .inspect_err(|_| {
+                    log::error!("Failed to find the interpreter for the executable")
+                })?;
 
-    let flags = {
-        let seg_flags = seg.p_flags(end);
-        let mut flags = Flags::USER_ACCESS;
-        if seg_flags & PF_R != 0 {
-            flags |= Flags::READABLE;
+            crate::sub_phys(data, bootfs, bootfs_phys)?
         }
-        if seg_flags & PF_W != 0 {
-            flags |= Flags::WRITABLE;
-        }
-        if seg_flags & PF_X != 0 {
-            flags |= Flags::EXECUTABLE;
-        }
-        flags
+        Ok(None) => panic!("Executables cannot be directly executed"),
+        Err(err) => return Err(Error::Load(err)),
     };
 
-    space.map_ref(Some(address), data_phys, flags)?;
-
-    if msize > fsize {
-        let address = address + fsize;
-        let len = msize - fsize;
-
-        let layout =
-            Layout::from_size_align(len, PAGE_SIZE).map_err(solvent::error::Error::from)?;
-        let mem = Phys::allocate(layout, flags)?;
-        space.map(Some(address), mem, 0, len, flags)?;
-    }
-    Ok(())
+    elfload::load(&phys, true, root).map_err(Error::Load)
 }
 
 pub fn load_elf(
-    image: Image,
+    phys: &Phys,
     bootfs: Directory,
-    bootfs_phys: &PhysRef,
-    space: &Space,
-) -> Result<(usize, usize), Error> {
-    let file = ElfFile64::<'_, Endianness, _>::parse(image.data)?;
+    bootfs_phys: &Phys,
+    root: &Virt,
+) -> Result<(NonNull<u8>, NonNull<u8>), Error> {
+    let elf = load_segs(phys, bootfs, bootfs_phys, root)?;
 
-    let mut entry = file.entry() as usize;
-    log::debug!("File type: {:?}", file.kind());
+    let (stack_size, stack_flags) = elf.stack.map_or(
+        (
+            DEFAULT_STACK_SIZE,
+            Flags::READABLE | Flags::WRITABLE | Flags::USER_ACCESS,
+        ),
+        |stack| {
+            (
+                if stack.0 > 0 {
+                    stack.0
+                } else {
+                    DEFAULT_STACK_SIZE
+                },
+                stack.1,
+            )
+        },
+    );
 
-    let mut stack_size = DEFAULT_STACK_SIZE;
-    let mut interp = None;
-    for seg in file.raw_segments() {
-        match seg.p_type(file.endian()) {
-            PT_LOAD => map_segment(&image, space, file.endian(), seg)?,
-            PT_GNU_STACK => stack_size = seg.p_memsz(file.endian()) as usize,
-            PT_INTERP => {
-                interp = Some(
-                    CStr::from_bytes_with_nul(
-                        seg.data(file.endian(), file.data())
-                            .expect("Index out of bounds"),
-                    )
-                    .expect("Not a valid cstring"),
-                )
-            }
-            _ => {}
-        }
-    }
+    let stack = {
+        let layout = unsafe { Virt::page_aligned(stack_size) };
+        let (alloc_layout, _) = layout
+            .extend(STACK_PROTECTOR_LAYOUT)
+            .and_then(|(layout, _)| layout.extend(STACK_PROTECTOR_LAYOUT))
+            .map_err(SError::from)?;
 
-    if let Some(interp) = interp {
-        use solvent::error::Error;
-        let data = bootfs
-            .find(interp.to_bytes(), b'/')
-            .ok_or(Error::ENOENT)
-            .inspect_err(|_| log::error!("Failed to find the interpreter for the executable"))?;
-
-        let phys = crate::sub_phys(data, bootfs, bootfs_phys)?;
-        (entry, _) = load_elf(
-            unsafe { Image::new(data, phys).ok_or(Error::ENOENT) }?,
-            bootfs,
-            bootfs_phys,
-            space,
+        let virt = root.allocate(None, alloc_layout)?;
+        let stack_phys = Phys::allocate(stack_size, true)?;
+        let stack_ptr = virt.map(
+            Some(STACK_PROTECTOR_SIZE),
+            stack_phys,
+            0,
+            layout,
+            stack_flags,
         )?;
-    }
 
-    Ok((entry, stack_size))
+        let base = stack_ptr.as_non_null_ptr();
+        unsafe { NonNull::new_unchecked(base.as_ptr().add(stack_size)) }
+    };
+
+    Ok((
+        unsafe { NonNull::new_unchecked(elf.entry as *mut u8) },
+        stack,
+    ))
 }

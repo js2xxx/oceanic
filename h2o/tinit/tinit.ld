@@ -19,6 +19,11 @@ SECTIONS
             *(.data*)
       }
 
+      .bss ALIGN (4K) :
+      {
+            *(.bss*)
+      }
+
       .tdata ALIGN (4K) :
       {
             *(.tdata*)

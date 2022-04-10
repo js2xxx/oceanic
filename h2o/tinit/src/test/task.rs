@@ -4,9 +4,10 @@ use core::{
     ptr::null_mut,
 };
 
+use solvent::prelude::{Object, Phys, Virt};
 use sv_call::{
     ipc::{RawPacket, SIG_READ},
-    mem::{Flags, MapInfo},
+    mem::Flags,
     task::{
         ctx::{Gpr, GPR_SIZE},
         excep::{Exception, ExceptionResult},
@@ -47,14 +48,20 @@ unsafe fn join(normal: Handle, fault: Handle) {
     sv_obj_wait(normal, u64::MAX, false, SIG_READ)
         .into_res()
         .expect("Failed to wait for the task");
-    let ret = sv_task_join(normal);
-    assert_eq!(ret.into_res(), Ok(12345));
+
+    let mut ret = Default::default();
+    sv_task_join(normal, &mut ret)
+        .into_res()
+        .expect("Failed to join the task");
+    assert_eq!(ret, 12345);
 
     sv_obj_wait(fault, u64::MAX, false, SIG_READ)
         .into_res()
         .expect("Failed to wait for the task");
-    let ret = sv_task_join(fault);
-    assert_eq!(ret.into_res(), Err(Error::EFAULT));
+    sv_task_join(fault, &mut ret)
+        .into_res()
+        .expect("Failed to join the task");
+    assert_eq!(Error::try_from_retval(ret), Some(Error::EFAULT));
 }
 
 unsafe fn sleep() {
@@ -177,8 +184,11 @@ unsafe fn debug_excep(task: Handle, st: Handle) {
     sv_obj_wait(task, u64::MAX, false, SIG_READ)
         .into_res()
         .expect("Failed to wait for the task");
-    let ret = sv_task_join(task);
-    assert_eq!(ret.into_res(), Err(Error::EFAULT));
+    let mut ret = Default::default();
+    sv_task_join(task, &mut ret)
+        .into_res()
+        .expect("Failed to join the task");
+    assert_eq!(Error::try_from_retval(ret), Some(Error::EFAULT));
 }
 
 unsafe fn suspend(task: Handle) {
@@ -210,8 +220,11 @@ unsafe fn kill(task: Handle) {
     sv_obj_wait(task, u64::MAX, false, SIG_READ)
         .into_res()
         .expect("Failed to wait for the task");
-    let ret = sv_task_join(task);
-    assert_eq!(ret.into_res(), Err(Error::EKILLED));
+    let mut ret = Default::default();
+    sv_task_join(task, &mut ret)
+        .into_res()
+        .expect("Failed to join the task");
+    assert_eq!(Error::try_from_retval(ret), Some(Error::EKILLED));
 }
 
 unsafe fn ctl(task: Handle) {
@@ -221,29 +234,22 @@ unsafe fn ctl(task: Handle) {
     kill(task);
 }
 
-pub unsafe fn test() -> (*mut u8, *mut u8, Handle) {
+pub unsafe fn test(virt: &Virt) -> (*mut u8, *mut u8, Handle) {
     // Test the defence of invalid user pointer access.
     let ret = sv_task_exec(0x100000000 as *const ExecInfo);
     assert_eq!(ret.into_res(), Err(Error::EPERM));
 
     let flags = Flags::READABLE | Flags::WRITABLE | Flags::USER_ACCESS;
-    let stack_phys = sv_phys_alloc(DEFAULT_STACK_SIZE, 4096, flags)
+    let stack_phys = sv_phys_alloc(DEFAULT_STACK_SIZE, false)
         .into_res()
         .expect("Failed to allocate memory");
     let stack_phys2 = sv_obj_clone(stack_phys)
         .into_res()
         .expect("Failed to clone stack");
-    let mi = MapInfo {
-        addr: 0,
-        map_addr: false,
-        phys: stack_phys,
-        phys_offset: 0,
-        len: DEFAULT_STACK_SIZE,
-        flags,
-    };
-    let stack_base = sv_mem_map(Handle::NULL, &mi)
-        .into_res()
-        .expect("Failed to map memory") as *mut u8;
+    let stack_base = virt
+        .map_phys(None, Phys::from_raw(stack_phys), flags)
+        .expect("Failed to map memory")
+        .as_mut_ptr();
     let stack_ptr = unsafe { stack_base.add(DEFAULT_STACK_SIZE - 4096) };
 
     let creator = |arg: u32| {

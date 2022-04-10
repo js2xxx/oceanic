@@ -11,4 +11,4 @@ bitop_ex = {path = "../bitop_ex"}
 iter_ex = {path = "../iter_ex"}
 # External crates
 bitvec = {version = "0.22", default-features = false, features = ["atomic", "alloc"]}
-spin = "0.9"
+spin = {version = "0.9", features = ["use_ticket_mutex"]}

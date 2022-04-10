@@ -15,8 +15,8 @@ support aarch64 in the future.
 
 - `debug` - contains the decompiled assembly files, debug symbols, object file informations. and the serial log files of the virtual machines.
 - `h2o` - contains the source code for the kernel.
-- `lib` - contains the source library code for the entire project.
 - `scripts` - contains the scripts required for building the project.
+- `src` - contains the source code of libraries and executables for the entire project.
 - `target` - contains the binaries and virtual disk files.
 - `xtask` - contains the builder for the project.
 
@@ -26,18 +26,20 @@ support aarch64 in the future.
 
 1. Download rust and other dependencies (Ubuntu for example):
    ```sh
+   # Select the nightly channel for rust
    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+   bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"
    sudo apt install build-essential qemu-system-x86
    ```
 
-2. Add the following toolchain:
+2. Add the following target:
    ```sh
-   rustup add toolchain nightly-x86_64-unknown-linux-gnu
+   rustup target add nightly-x86_64-unknown-linux-gnu
    ```
 
 3. Change to the project's root directory and run the following command:
    ```sh
-   cargo xtask dist iso
+   cargo xtask dist img
    ```
 
 4. To run the OS with qemu, run the following command:

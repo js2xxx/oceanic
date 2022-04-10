@@ -91,14 +91,24 @@ pub unsafe fn init(max_level: log::Level) {
 }
 
 mod syscall {
+    use core::fmt::Write;
+
     use sv_call::*;
 
-    use crate::syscall::{In, UserPtr};
+    use super::LOGGER;
+    use crate::{
+        sched::PREEMPT,
+        syscall::{In, UserPtr},
+    };
 
     #[syscall]
-    fn log(rec: UserPtr<In, ::log::Record>) -> Result {
-        let logger = unsafe { super::LOGGER.assume_init_ref() } as &dyn ::log::Log;
-        logger.log(unsafe { &rec.read()? });
+    fn log(buffer: UserPtr<In, u8>, len: usize) -> Result {
+        buffer.check_slice(len)?;
+        let string =
+            core::str::from_utf8(unsafe { core::slice::from_raw_parts(buffer.as_ptr(), len) })?;
+        let _pree = PREEMPT.lock();
+        let mut os = unsafe { LOGGER.assume_init_ref() }.output.lock();
+        writeln!(os, "{}", string).map_err(|_| Error::EFAULT)?;
         Ok(())
     }
 }

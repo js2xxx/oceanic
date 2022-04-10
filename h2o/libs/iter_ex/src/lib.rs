@@ -5,5 +5,5 @@ mod ptr_iter;
 
 pub use self::{
     comb::{Combine, CombineIter},
-    ptr_iter::PointerIterator,
+    ptr_iter::PtrIter,
 };

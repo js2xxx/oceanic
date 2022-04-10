@@ -11,7 +11,6 @@ bitflags! {
         const WRITABLE    = 1 << 2;
         const EXECUTABLE  = 1 << 3;
         const UNCACHED    = 1 << 4;
-        const ZEROED      = 1 << 10;
     }
 }
 
@@ -40,11 +39,11 @@ pub const PAGE_SIZE: usize = 4096;
 } }
 
 #[repr(C)]
-pub struct MapInfo {
-    pub addr: usize,
-    pub map_addr: bool,
+pub struct VirtMapInfo {
+    pub offset: usize,
     pub phys: crate::Handle,
     pub phys_offset: usize,
     pub len: usize,
+    pub align: usize,
     pub flags: Flags,
 }

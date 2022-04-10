@@ -1,45 +1,21 @@
-use sv_call::{
-    mem::{Flags, MapInfo},
-    *,
-};
+use solvent::prelude::{Flags, Phys, Virt, PAGE_LAYOUT, PAGE_SIZE};
 
-pub unsafe fn test() {
-    let flags = Flags::READABLE | Flags::WRITABLE | Flags::USER_ACCESS;
-    let phys = sv_phys_alloc(4096, 4096, flags)
-        .into_res()
-        .expect("Failed to allocate physical object");
-
-    let phys2 = sv_obj_clone(phys)
-        .into_res()
-        .expect("Failed to clone physical object");
-
-    let mi = MapInfo {
-        addr: 0,
-        map_addr: false,
-        phys,
-        phys_offset: 0,
-        len: 4096,
-        flags,
-    };
-
-    let ptr = sv_mem_map(Handle::NULL, &mi)
-        .into_res()
-        .expect("Failed to map the physical memory") as *mut u8;
-
-    let data = [1, 2, 3, 4];
-    unsafe { ptr.copy_from_nonoverlapping(data.as_ptr(), data.len()) };
-
-    sv_mem_unmap(Handle::NULL, ptr)
-        .into_res()
-        .expect("Failed to unmap the memory");
-
-    let mut buf = [0; 4];
-    sv_phys_read(phys2, 0, buf.len(), buf.as_mut_ptr())
-        .into_res()
-        .expect("Failed to read from physical memory");
-    assert_eq!(buf, data);
-
-    sv_obj_drop(phys2)
-        .into_res()
-        .expect("Failed to deallocate the physical object");
+pub unsafe fn test(virt: &Virt) {
+    let sub = virt
+        .allocate(None, PAGE_LAYOUT)
+        .expect("Failed to allocate sub-virt");
+    let phys = Phys::allocate(PAGE_SIZE, true).expect("Failed to allocate memory");
+    let ptr = sub
+        .map(
+            None,
+            phys.clone(),
+            0,
+            PAGE_LAYOUT,
+            Flags::READABLE | Flags::WRITABLE | Flags::USER_ACCESS,
+        )
+        .expect("Failed to map memory");
+    unsafe { ptr.as_mut_ptr().write(0x64) };
+    sub.destroy().expect("Failed to destroy sub-virt");
+    let buf = phys.read(0, 1).expect("Failed to read memory");
+    assert_eq!(&buf, &[0x64]);
 }

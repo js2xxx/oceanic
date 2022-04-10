@@ -1,4 +1,4 @@
-use core::{alloc::Layout, ptr::NonNull};
+use core::{alloc::Layout, mem, ptr::NonNull};
 
 #[inline(never)]
 unsafe fn alloc_pages(n: usize) -> Option<NonNull<[heap::Page]>> {
@@ -7,9 +7,9 @@ unsafe fn alloc_pages(n: usize) -> Option<NonNull<[heap::Page]>> {
         Flags::READABLE | Flags::WRITABLE | Flags::EXECUTABLE | Flags::USER_ACCESS
     };
     let (layout, _) = Layout::new::<heap::Page>().repeat(n).ok()?;
-    let phys = solvent::mem::Phys::allocate(layout, flags).ok()?;
-    let ptr = solvent::mem::Space::current()
-        .map(None, phys, 0, layout.size(), flags)
+    let phys = solvent::mem::Phys::allocate(layout.size(), false).ok()?;
+    let ptr = unsafe { crate::ROOT_VIRT.assume_init_ref() }
+        .map(None, phys, 0, layout, flags)
         .ok()?;
     Some(NonNull::slice_from_raw_parts(ptr.cast::<heap::Page>(), n))
 }
@@ -17,7 +17,8 @@ unsafe fn alloc_pages(n: usize) -> Option<NonNull<[heap::Page]>> {
 #[inline(never)]
 unsafe fn dealloc_pages(pages: NonNull<[heap::Page]>) {
     let ptr = pages.cast::<u8>();
-    let _ = solvent::mem::Space::current().unmap(ptr);
+    let size = pages.len() * mem::size_of::<heap::Page>();
+    let _ = unsafe { crate::ROOT_VIRT.assume_init_ref() }.unmap(ptr, size, false);
 }
 
 pub fn init() {

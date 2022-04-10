@@ -7,13 +7,13 @@ use alloc::{alloc::Global, sync::Arc};
 use core::{alloc::Allocator, ptr::NonNull, sync::atomic::AtomicUsize};
 
 use archop::Azy;
-use iter_ex::PointerIterator;
+use iter_ex::PtrIter;
 
 pub use self::arena::Arena;
 use crate::{dev::Resource, kargs};
 
-pub static MMAP: Azy<PointerIterator<pmm::boot::MemRange>> = Azy::new(|| {
-    PointerIterator::new(
+pub static MMAP: Azy<PtrIter<pmm::boot::MemRange>> = Azy::new(|| {
+    PtrIter::new(
         kargs().efi_mmap_paddr.to_laddr(minfo::ID_OFFSET).cast(),
         kargs().efi_mmap_len,
         kargs().efi_mmap_unit,

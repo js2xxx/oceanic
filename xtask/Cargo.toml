@@ -10,10 +10,11 @@ path = "src/main.rs"
 
 [dependencies]
 # Local crates
-bootfs = {path = "../lib/bootfs", features = ["gen"]}
+bootfs = {path = "../src/lib/bootfs", features = ["gen"]}
 # External crates
 cc = "1.0"
 quote = "1.0"
+rand = "0.8"
 serde = {version = "1.0", features = ["derive"]}
 serde_json = "1.0"
 structopt = "0.3"

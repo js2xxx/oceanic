@@ -2,7 +2,7 @@ use core::{mem, ptr::addr_of};
 
 use archop::Azy;
 use canary::Canary;
-use paging::{PAddr, PAGE_LAYOUT};
+use paging::{PAddr, PAGE_SIZE};
 use spin::RwLock;
 
 use crate::{
@@ -59,19 +59,15 @@ unsafe impl Sync for Hpet {}
 
 impl Hpet {
     unsafe fn new(data: acpi::HpetInfo) -> Result<Self, &'static str> {
-        let phys = Phys::new(
-            PAddr::new(data.base_address),
-            PAGE_LAYOUT,
-            Flags::READABLE | Flags::WRITABLE | Flags::UNCACHED,
-        )
-        .map_err(|_| "Failed to acquire memory for HPET")?;
+        let phys = Phys::new(PAddr::new(data.base_address), PAGE_SIZE)
+            .map_err(|_| "Failed to acquire memory for HPET")?;
         let addr = space::KRL
             .map(
                 None,
-                Arsc::clone(&phys),
+                Phys::clone(&phys),
                 0,
-                phys.layout().size(),
-                phys.flags(),
+                space::page_aligned(phys.len()),
+                Flags::READABLE | Flags::WRITABLE | Flags::UNCACHED,
             )
             .expect("Failed to allocate memory");
         let base_ptr = addr.cast::<HpetReg>();

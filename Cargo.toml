@@ -4,6 +4,10 @@ members = [
   "h2o/kernel",
   "h2o/libs/*",
   "h2o/tinit",
-  "lib/*",
+  "src/bin/*",
+  "src/lib/*",
+  "src/lib/libc/ldso",
   "xtask",
 ]
+
+exclude = ["src/bin/.cargo"]

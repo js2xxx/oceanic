@@ -1,17 +1,12 @@
 mod node;
 
 use alloc::sync::Weak;
-use core::{
-    any::Any,
-    marker::{PhantomData, Unsize},
-    ops::CoerceUnsized,
-    ptr::NonNull,
-};
+use core::{any::Any, pin::Pin, ptr::NonNull};
 
 use archop::Azy;
 use modular_bitfield::prelude::*;
 use spin::Mutex;
-use sv_call::Result;
+use sv_call::{Feature, Result};
 
 pub use self::node::{List, Ptr, Ref, MAX_HANDLE_COUNT};
 use crate::sched::{ipc::Channel, Event, PREEMPT};
@@ -22,15 +17,9 @@ struct Value {
     index: B18,
 }
 
-#[derive(Debug)]
-pub struct Object<T: ?Sized> {
-    send: bool,
-    sync: bool,
-    event: Weak<dyn Event>,
-    data: T,
+pub unsafe trait DefaultFeature: Any + Send {
+    fn default_features() -> Feature;
 }
-
-impl<U: ?Sized, T: ?Sized + CoerceUnsized<U> + Unsize<U>> CoerceUnsized<Object<U>> for Object<T> {}
 
 #[derive(Debug)]
 pub struct HandleMap {
@@ -47,7 +36,7 @@ impl HandleMap {
         }
     }
 
-    pub fn decode(&self, handle: sv_call::Handle) -> Result<Ptr> {
+    fn decode(&self, handle: sv_call::Handle) -> Result<Ptr> {
         let value = handle.raw() ^ self.mix;
         let value = Value::from_bytes(value.to_ne_bytes());
         let _ = value.gen();
@@ -56,30 +45,7 @@ impl HandleMap {
             .and_then(node::decode)
     }
 
-    #[inline]
-    pub fn get<T: Send + Any>(&self, handle: sv_call::Handle) -> Result<&Ref<T>> {
-        // SAFETY: The type is `Send`.
-        unsafe { self.get_unchecked(handle) }
-    }
-
-    /// # Safety
-    ///
-    /// The caller must ensure that the list belongs to the current task if the
-    /// expected type is not [`Send`].
-    #[inline]
-    pub unsafe fn get_unchecked<T: Any>(&self, handle: sv_call::Handle) -> Result<&Ref<T>> {
-        self.decode(handle)
-            .and_then(|ptr| unsafe { ptr.as_ref().downcast_ref::<T>() })
-    }
-
-    #[inline]
-    pub fn clone_ref(&self, handle: sv_call::Handle) -> Result<sv_call::Handle> {
-        let old_ptr = self.decode(handle)?;
-        let new = unsafe { old_ptr.as_ref() }.try_clone()?;
-        unsafe { self.insert_ref(new) }
-    }
-
-    pub fn encode(&self, value: Ptr) -> Result<sv_call::Handle> {
+    fn encode(&self, value: Ptr) -> Result<sv_call::Handle> {
         let index =
             node::encode(value).and_then(|index| u32::try_from(index).map_err(Into::into))?;
         let value = Value::new()
@@ -91,14 +57,34 @@ impl HandleMap {
         ))
     }
 
-    /// # Safety
-    ///
-    /// The caller must ensure that `value` comes from the current task if its
-    /// not [`Send`].
     #[inline]
-    pub unsafe fn insert_ref(&self, value: Ref) -> Result<sv_call::Handle> {
+    pub fn get_ref(&self, handle: sv_call::Handle) -> Result<Pin<&Ref>> {
+        self.decode(handle)
+            // SAFETY: Dereference within the available range and the 
+            // reference is at a fixed address.
+            .map(|ptr| unsafe { Pin::new_unchecked(ptr.as_ref()) })
+    }
+
+    #[inline]
+    pub fn get<T: Send + Any>(&self, handle: sv_call::Handle) -> Result<Pin<&Ref<T>>> {
+        self.decode(handle)
+            // SAFETY: Dereference within the available range.
+            .and_then(|ptr| unsafe { ptr.as_ref().downcast_ref::<T>() })
+            // SAFETY: The reference is at a fixed address.
+            .map(|obj| unsafe { Pin::new_unchecked(obj) })
+    }
+
+    #[inline]
+    pub fn clone_ref(&self, handle: sv_call::Handle) -> Result<sv_call::Handle> {
+        let old_ptr = self.decode(handle)?;
+        let new = unsafe { old_ptr.as_ref() }.try_clone()?;
+        self.insert_ref(new)
+    }
+
+    #[inline]
+    pub fn insert_ref(&self, value: Ref) -> Result<sv_call::Handle> {
         // SAFETY: The safety condition is guaranteed by the caller.
-        let link = PREEMPT.scope(|| unsafe { self.list.lock().insert_impl(value) })?;
+        let link = PREEMPT.scope(|| self.list.lock().insert(value))?;
         self.encode(link)
     }
 
@@ -109,67 +95,39 @@ impl HandleMap {
     pub unsafe fn insert_unchecked<T: 'static>(
         &self,
         data: T,
-        send: bool,
-        sync: bool,
-        event: Weak<dyn Event>,
+        feat: Feature,
+        event: Option<Weak<dyn Event>>,
     ) -> Result<sv_call::Handle> {
         // SAFETY: The safety condition is guaranteed by the caller.
-        let value = unsafe { Ref::try_new_unchecked(data, send, sync, event) }?;
-        // SAFETY: The safety condition is guaranteed by the caller.
-        unsafe { self.insert_ref(value.coerce_unchecked()) }
+        let value = unsafe { Ref::try_new_unchecked(data, feat, event) }?;
+        self.insert_ref(value)
     }
 
     #[inline]
-    pub fn insert_event<T: Send + Any>(
+    pub fn insert<T: DefaultFeature>(
         &self,
         data: T,
-        event: Weak<dyn Event>,
+        event: Option<Weak<dyn Event>>,
     ) -> Result<sv_call::Handle> {
-        let value = Ref::try_new(data, event)?;
-        // SAFETY: data is `Send`.
-        unsafe { self.insert_ref(value.coerce_unchecked()) }
+        unsafe { self.insert_unchecked(data, T::default_features(), event) }
     }
 
     #[inline]
-    pub fn insert_event_shared<T: Send + Sync + Any>(
-        &self,
-        data: T,
-        event: Weak<dyn Event>,
-    ) -> Result<sv_call::Handle> {
-        let value = Ref::try_new_shared(data, event)?;
-        // SAFETY: data is `Send`.
-        unsafe { self.insert_ref(value.coerce_unchecked()) }
-    }
-
-    #[inline]
-    pub fn insert<T: Send + Any>(&self, data: T) -> Result<sv_call::Handle> {
-        self.insert_event(data, Weak::<crate::sched::BasicEvent>::new() as _)
-    }
-
-    #[inline]
-    pub fn insert_shared<T: Send + Sync + Any>(&self, data: T) -> Result<sv_call::Handle> {
-        self.insert_event_shared(data, Weak::<crate::sched::BasicEvent>::new() as _)
-    }
-
-    /// # Safety
-    ///
-    /// The caller must ensure that the list belongs to the current task if
-    /// `link` is not [`Send`].
-    #[inline]
-    pub unsafe fn remove_ref(&self, handle: sv_call::Handle) -> Result<Ref> {
+    pub fn remove_ref(&self, handle: sv_call::Handle) -> Result<Ref> {
         let link = self.decode(handle)?;
-        // SAFETY: The safety condition is guaranteed by the caller.
-        PREEMPT.scope(|| unsafe { self.list.lock().remove_impl(link) })
+        PREEMPT.scope(|| self.list.lock().remove(link))
     }
 
-    #[inline]
-    pub fn remove<T: Send + Any>(&self, handle: sv_call::Handle) -> Result<Ref> {
-        let _ = PhantomData::<T>;
-        self.decode(handle)
+    pub fn remove<T: Send + Any>(&self, handle: sv_call::Handle) -> Result<Ref<T>> {
+        self.decode(handle).and_then(|value| {
             // SAFETY: Dereference within the available range.
-            .and_then(|value| unsafe { value.as_ref().downcast_ref::<T>() })
-            // SAFETY: The type is `Send`.
-            .and_then(|_| unsafe { self.remove_ref(handle) })
+            let ptr = unsafe { value.as_ref() };
+            if ptr.is::<T>() {
+                self.remove_ref(handle).map(|obj| obj.downcast().unwrap())
+            } else {
+                Err(sv_call::Error::ETYPE)
+            }
+        })
     }
 
     pub fn send(&self, handles: &[sv_call::Handle], src: &Channel) -> Result<List> {
@@ -177,16 +135,15 @@ impl HandleMap {
             return Ok(List::new());
         }
         PREEMPT.scope(|| {
-            self.list
-                .lock()
-                .split(
-                    handles.iter().map(|&handle| self.decode(handle)),
-                    |value| match value.downcast_ref::<Channel>() {
-                        Ok(chan) if chan.peer_eq(src) => Err(sv_call::Error::EPERM),
-                        Err(_) if !value.is_send() => Err(sv_call::Error::EPERM),
-                        _ => Ok(()),
-                    },
-                )
+            { self.list.lock() }.split(handles.iter().map(|&handle| self.decode(handle)), |value| {
+                match value.downcast_ref::<Channel>() {
+                    Ok(chan) if chan.peer_eq(src) => Err(sv_call::Error::EPERM),
+                    Err(_) if !value.features().contains(Feature::SEND) => {
+                        Err(sv_call::Error::EPERM)
+                    }
+                    _ => Ok(()),
+                }
+            })
         })
     }
 
@@ -216,7 +173,10 @@ pub(super) fn init() {
 mod syscall {
     use sv_call::*;
 
-    use crate::sched::SCHED;
+    use crate::{
+        sched::SCHED,
+        syscall::{InOut, UserPtr},
+    };
 
     #[syscall]
     fn obj_clone(hdl: Handle) -> Result<Handle> {
@@ -225,10 +185,21 @@ mod syscall {
     }
 
     #[syscall]
+    fn obj_feat(hdl_ptr: UserPtr<InOut, Handle>, feat: Feature) -> Result {
+        let old = unsafe { hdl_ptr.r#in().read() }?;
+        old.check_null()?;
+        let mut obj = SCHED.with_current(|cur| cur.space().handles().remove_ref(old))?;
+        let ret = obj.set_features(feat);
+        let new = SCHED.with_current(|cur| cur.space().handles().insert_ref(obj))?;
+        unsafe { hdl_ptr.out().write(new) }?;
+        ret
+    }
+
+    #[syscall]
     fn obj_drop(hdl: Handle) -> Result {
         hdl.check_null()?;
         SCHED
-            .with_current(|cur| unsafe { cur.space().handles().remove_ref(hdl) })
+            .with_current(|cur| cur.space().handles().remove_ref(hdl))
             .map(|_| {})
     }
 }

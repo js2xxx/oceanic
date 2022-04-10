@@ -22,7 +22,12 @@
     {
         "name": "sv_space_new",
         "returns": "Handle",
-        "args": []
+        "args": [
+            {
+                "name": "root_virt",
+                "ty": "*mut Handle"
+            }
+        ]
     },
     {
         "name": "sv_task_exec",
@@ -58,11 +63,15 @@
     },
     {
         "name": "sv_task_join",
-        "returns": "usize",
+        "returns": "()",
         "args": [
             {
                 "name": "hdl",
                 "ty": "Handle"
+            },
+            {
+                "name": "retval",
+                "ty": "*mut usize"
             }
         ]
     },

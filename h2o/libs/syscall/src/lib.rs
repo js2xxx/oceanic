@@ -6,6 +6,7 @@
 
 pub mod call;
 mod error;
+pub mod feat;
 pub mod ipc;
 pub mod mem;
 pub mod res;
@@ -22,6 +23,7 @@ pub use self::stub::*;
 pub use self::{
     call::{hdl::Handle, reg::*},
     error::*,
+    feat::*,
 };
 
 include!(concat!(env!("CARGO_MANIFEST_DIR"), "/target/rxx.rs"));

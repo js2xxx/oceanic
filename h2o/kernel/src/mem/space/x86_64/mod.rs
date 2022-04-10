@@ -50,6 +50,23 @@ impl Space {
             .build()
     }
 
+    fn pg_attr_to_flags(attr: paging::Attr) -> Flags {
+        let mut flags = Flags::READABLE;
+        if attr.contains(paging::Attr::WRITABLE) {
+            flags |= Flags::WRITABLE;
+        }
+        if attr.contains(paging::Attr::USER_ACCESS) {
+            flags |= Flags::USER_ACCESS;
+        }
+        if !attr.contains(paging::Attr::EXE_DISABLE) {
+            flags |= Flags::EXECUTABLE;
+        }
+        if attr.contains(paging::Attr::CACHE_DISABLE) {
+            flags |= Flags::UNCACHED;
+        }
+        flags
+    }
+
     /// Construct a new arch-specific space.
     ///
     /// The space's root page table must contains the page tables of the kernel
@@ -115,11 +132,12 @@ impl Space {
         )
     }
 
-    #[inline]
-    pub(in crate::mem) fn query(&self, virt: LAddr) -> Result<PAddr, paging::Error> {
+    #[allow(dead_code)]
+    pub(in crate::mem) fn query(&self, virt: LAddr) -> Result<(PAddr, Flags), paging::Error> {
         self.canary.assert();
 
         paging::query(&*self.root_table.lock(), virt, minfo::ID_OFFSET)
+            .map(|(phys, attr)| (phys, Self::pg_attr_to_flags(attr)))
     }
 
     pub(in crate::mem) fn unmaps(
@@ -129,7 +147,9 @@ impl Space {
         self.canary.assert();
 
         let mut lck = self.root_table.lock();
-        let phys = paging::query(&lck, virt.start, minfo::ID_OFFSET).ok();
+        let phys = paging::query(&lck, virt.start, minfo::ID_OFFSET)
+            .ok()
+            .map(|(phys, _)| phys);
         paging::unmaps(&mut lck, virt, minfo::ID_OFFSET, &mut PageAlloc).map(|_| phys)
     }
 
@@ -141,6 +161,14 @@ impl Space {
         archop::reg::cr3::write(*self.cr3 as u64);
     }
 }
+
+impl PartialEq for Space {
+    fn eq(&self, other: &Self) -> bool {
+        self.cr3 == other.cr3
+    }
+}
+
+impl Eq for Space {}
 
 struct PageAlloc;
 

@@ -1,12 +1,13 @@
 use alloc::sync::Arc;
 
 use spin::Mutex;
+use sv_call::Feature;
 
 use super::arch::MANAGER;
 use crate::{
     cpu::time::Instant,
     dev::Resource,
-    sched::{Event, EventData, PREEMPT, SIG_GENERIC},
+    sched::{task::hdl::DefaultFeature, Event, EventData, PREEMPT, SIG_GENERIC},
 };
 
 #[derive(Debug)]
@@ -67,6 +68,12 @@ impl Interrupt {
     }
 }
 
+unsafe impl DefaultFeature for Arc<Interrupt> {
+    fn default_features() -> Feature {
+        Feature::SEND | Feature::WAIT
+    }
+}
+
 fn handler(arg: *mut u8) {
     let intr = unsafe { &*arg.cast::<Interrupt>() };
     intr.notify(0, SIG_GENERIC);
@@ -105,7 +112,7 @@ mod syscall {
         let intr = SCHED.with_current(|cur| {
             let handles = cur.space().handles();
             let res = handles.get::<Arc<Resource<u32>>>(res)?;
-            Interrupt::new(res, gsi, level_triggered)
+            Interrupt::new(&res, gsi, level_triggered)
         })?;
 
         MANAGER.config(gsi, trig_mode, polarity)?;
@@ -116,7 +123,7 @@ mod syscall {
         MANAGER.mask(gsi, false)?;
 
         let event = Arc::downgrade(&intr) as _;
-        SCHED.with_current(|cur| unsafe { cur.space().handles().insert_event(intr, event) })
+        SCHED.with_current(|cur| unsafe { cur.space().handles().insert(intr, Some(event)) })
     }
 
     #[syscall]
@@ -129,8 +136,11 @@ mod syscall {
             .space()
             .handles()
             .get::<Arc<Interrupt>>(hdl)?;
+        if !intr.features().contains(Feature::WAIT) {
+            return Err(Error::EPERM);
+        }
 
-        let blocker = crate::sched::Blocker::new(&(Arc::clone(intr) as _), false, SIG_GENERIC);
+        let blocker = crate::sched::Blocker::new(&(Arc::clone(&intr) as _), false, SIG_GENERIC);
         blocker.wait(pree, time::from_us(timeout_us))?;
         if !blocker.detach().0 {
             return Err(Error::ETIME);
@@ -145,7 +155,6 @@ mod syscall {
         hdl.check_null()?;
         SCHED.with_current(|cur| {
             let intr = cur.space().handles().remove::<Arc<Interrupt>>(hdl)?;
-            let intr = intr.downcast_ref::<Arc<Interrupt>>()?;
             intr.cancel();
             MANAGER.register(intr.gsi, None)?;
             Ok(())

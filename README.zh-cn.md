@@ -10,8 +10,8 @@
 
 - `debug` - 存储反汇编文件、调试符号表、二进制文件信息和虚拟机的串口记录文件。
 - `h2o` - 存储内核的源代码。
-- `lib` - 存储整个项目需要的库代码。
 - `scripts` - 存储构建项目需要的脚本。
+- `src` - 存储整个项目的库和程序代码。
 - `target` - 存储生成的二进制和虚拟硬盘映像文件。
 - `xtask` - 存储这个项目的构建程序。
 
@@ -21,18 +21,20 @@
 
 1. 安装Rust和其他依赖（以Ubuntu为例）：
    ```sh
+   # 配置 Rust 时需要选择 nightly 通道
    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+   bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"
    sudo apt install build-essential qemu-system-x86
    ```
 
-2. 添加下列工作链：
+2. 添加下列目标：
    ```sh
-   rustup add toolchain nightly-x86_64-unknown-linux-gnu
+   rustup target add x86_64-unknown-linux-gnu
    ```
 
 3. 切换到项目的根目录，运行以下命令：
    ```sh
-   cargo xtask dist iso
+   cargo xtask dist img
    ```
 
 4. 运行以下命令以在qemu上运行：

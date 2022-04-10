@@ -10,10 +10,10 @@ pub(crate) mod reg;
 use crate::{
     c_ty::*,
     ipc::RawPacket,
-    mem::{Flags, MapInfo, MemInfo},
+    mem::{Flags, MemInfo, VirtMapInfo},
     res::IntrConfig,
     task::ExecInfo,
-    Handle, SerdeReg,
+    Feature, Handle, SerdeReg,
 };
 
 #[cfg(all(not(feature = "stub"), feature = "call"))]

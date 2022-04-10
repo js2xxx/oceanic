@@ -2,10 +2,10 @@
 use crate::{
     c_ty::*,
     ipc::RawPacket,
-    mem::{Flags, MapInfo, MemInfo},
+    mem::{Flags, MemInfo, VirtMapInfo},
     res::IntrConfig,
     task::ExecInfo,
-    Handle,
+    Feature, Handle,
 };
 
 #[cfg(feature = "stub")]

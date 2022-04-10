@@ -1,4 +1,5 @@
 use alloc::string::String;
+use core::ops::Range;
 
 use bitop_ex::BitOpEx;
 use goblin::elf::*;
@@ -7,12 +8,35 @@ use paging::{LAddr, PAddr};
 use super::*;
 use crate::{
     cpu::CpuMask,
-    mem::space::{Flags, Phys, Space},
-    sched::Arsc,
+    mem::space::{self, Flags, Phys, Space, Virt},
 };
 
+fn map_addr(
+    virt: &Arc<Virt>,
+    addr: Range<LAddr>,
+    phys: Option<Phys>,
+    flags: Flags,
+) -> sv_call::Result {
+    let offset = addr
+        .start
+        .val()
+        .checked_sub(virt.range().start.val())
+        .ok_or(sv_call::Error::ERANGE)?;
+    let len = addr
+        .end
+        .val()
+        .checked_sub(addr.start.val())
+        .ok_or(sv_call::Error::ERANGE)?;
+    let phys = match phys {
+        Some(phys) => phys,
+        None => Phys::allocate(len, true)?,
+    };
+    virt.map(Some(offset), phys, 0, space::page_aligned(len), flags)?;
+    Ok(())
+}
+
 fn load_prog(
-    space: &Arsc<Space>,
+    space: &Arc<Space>,
     flags: u32,
     virt: LAddr,
     phys: PAddr,
@@ -48,9 +72,8 @@ fn load_prog(
         let virt = LAddr::from(vstart)..LAddr::from(vend);
         log::trace!("Mapping {:?}", virt);
         let cnt = fsize.div_ceil_bit(paging::PAGE_SHIFT);
-        let (layout, _) = paging::PAGE_LAYOUT.repeat(cnt)?;
-        let phys = Phys::new(phys, layout, flags)?;
-        unsafe { space.map_addr(virt, Some(phys), flags) }?;
+        let phys = Phys::new(phys, paging::PAGE_SIZE * cnt)?;
+        map_addr(space, virt, Some(phys), flags)?;
     }
 
     if msize > fsize {
@@ -58,13 +81,13 @@ fn load_prog(
 
         let virt = LAddr::from(vend)..LAddr::from(vend + extra);
         log::trace!("Allocating {:?}", virt);
-        unsafe { space.map_addr(virt, None, flags | Flags::ZEROED) }?;
+        map_addr(space, virt, None, flags)?;
     }
 
     Ok(())
 }
 
-fn load_elf(space: &Arsc<Space>, file: &Elf, image: &[u8]) -> sv_call::Result<(LAddr, usize)> {
+fn load_elf(space: &Arc<Space>, file: &Elf, image: &[u8]) -> sv_call::Result<(LAddr, usize)> {
     log::trace!(
         "Loading ELF file from image {:?}, space = {:?}",
         image.as_ptr(),
@@ -102,6 +125,7 @@ fn load_elf(space: &Arsc<Space>, file: &Elf, image: &[u8]) -> sv_call::Result<(L
 
 pub fn from_elf(
     image: &[u8],
+    space: Arsc<super::Space>,
     name: String,
     affinity: CpuMask,
     init_chan: hdl::Ref,
@@ -116,11 +140,10 @@ pub fn from_elf(
             }
         })?;
 
-    let space = super::Space::new(Type::User)?;
-    let init_chan = unsafe { space.handles().insert_ref(init_chan) }?;
+    let init_chan = space.handles().insert_ref(init_chan)?;
 
     let (entry, stack_size) = load_elf(space.mem(), &file, image)?;
-    let stack = space.mem().init_stack(stack_size)?;
+    let stack = space::init_stack(space.mem(), stack_size)?;
 
     let starter = super::Starter {
         entry,
@@ -142,7 +165,7 @@ pub fn from_elf(
 
     crate::sched::SCHED.with_current(|cur| {
         let event = Arc::downgrade(&ret.tid().event) as _;
-        cur.space().handles().insert_event(ret.tid().clone(), event)
+        cur.space().handles().insert(ret.tid().clone(), Some(event))
     })?;
     Ok(ret)
 }

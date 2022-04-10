@@ -1,9 +1,10 @@
 use alloc::alloc::Global;
 use core::{
     alloc::{AllocError, Allocator, Layout},
+    any::Any,
     fmt,
     marker::{PhantomData, Unsize},
-    mem::{ManuallyDrop, MaybeUninit},
+    mem::{self, ManuallyDrop, MaybeUninit},
     ops::{CoerceUnsized, Deref, Receiver},
     ptr::{self, NonNull},
     sync::atomic::{self, AtomicUsize, Ordering::*},
@@ -159,6 +160,20 @@ impl<T, A: Allocator> Arsc<T, A> {
         // SAFETY: Allowed immutable reference.
         let alloc = unsafe { &this.inner.as_ref().alloc };
         Self::try_make_mut_with(this, |t| Ok((T::clone(t), A::clone(alloc))))
+    }
+}
+
+impl<A: Allocator> Arsc<dyn Any, A> {
+    pub fn downcast<T: Any>(self) -> core::result::Result<Arsc<T, A>, Self> {
+        if (*self).is::<T>() {
+            unsafe {
+                let inner = self.inner.cast::<ArscInner<T, A>>();
+                mem::forget(self);
+                Ok(Arsc::from_inner(inner))
+            }
+        } else {
+            Err(self)
+        }
     }
 }
 
