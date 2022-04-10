@@ -21,14 +21,15 @@
 
 1. 安装Rust和其他依赖（以Ubuntu为例）：
    ```sh
+   # 配置 Rust 时需要选择 nightly 通道
    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
    bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"
    sudo apt install build-essential qemu-system-x86
    ```
 
-2. 添加下列工作链：
+2. 添加下列目标：
    ```sh
-   rustup add toolchain nightly-x86_64-unknown-linux-gnu
+   rustup target add x86_64-unknown-linux-gnu
    ```
 
 3. 切换到项目的根目录，运行以下命令：

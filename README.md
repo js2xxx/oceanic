@@ -26,14 +26,15 @@ support aarch64 in the future.
 
 1. Download rust and other dependencies (Ubuntu for example):
    ```sh
+   # Select the nightly channel for rust
    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
    bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"
    sudo apt install build-essential qemu-system-x86
    ```
 
-2. Add the following toolchain:
+2. Add the following target:
    ```sh
-   rustup add toolchain nightly-x86_64-unknown-linux-gnu
+   rustup target add nightly-x86_64-unknown-linux-gnu
    ```
 
 3. Change to the project's root directory and run the following command:
