@@ -42,6 +42,8 @@ impl Dist {
 
         fs::create_dir_all(PathBuf::from(&target_root).join("bootfs/lib"))?;
         fs::create_dir_all(PathBuf::from(&target_root).join("bootfs/bin"))?;
+        fs::create_dir_all(PathBuf::from(&target_root).join("sysroot/usr/include"))?;
+        fs::create_dir_all(PathBuf::from(&target_root).join("sysroot/usr/lib"))?;
 
         // Generate syscall stubs
         crate::gen::gen_syscall(
@@ -97,7 +99,10 @@ impl Dist {
             )?;
             Command::new("llvm-ifs")
                 .arg("--input-format=ELF")
-                .arg(format!("--output-elf={}/libh2o.so", target_root))
+                .arg(format!(
+                    "--output-elf={}/sysroot/usr/lib/libh2o.so",
+                    target_root
+                ))
                 .arg(src_root.join(H2O_KERNEL).join("target/vdso"))
                 .status()?
                 .exit_ok()?;
@@ -163,6 +168,27 @@ impl Dist {
             &dst_root,
         )?;
 
+        Command::new("llvm-ifs")
+            .arg("--input-format=ELF")
+            .arg(format!(
+                "--output-elf={}",
+                Path::new(target_root)
+                    .join("sysroot/usr/lib/libldso.so")
+                    .to_string_lossy()
+            ))
+            .arg(bin_dir.join(self.profile()).join("libldso.so"))
+            .status()?
+            .exit_ok()?;
+
+        self.build_impl(
+            cargo,
+            "libco2.so",
+            "libco2.so",
+            src_root.join("libc"),
+            &bin_dir,
+            &dst_root,
+        )?;
+
         Ok(())
     }
 
@@ -177,7 +203,10 @@ impl Dist {
         let dst_root = Path::new(target_root).join("bootfs/bin");
         let dep_root = Path::new(target_root).join("bootfs/lib");
 
-        let mut dep_lib = HashSet::new();
+        let mut dep_lib = ["libldso.so", "libco2.so"]
+            .into_iter()
+            .map(ToString::to_string)
+            .collect::<HashSet<_>>();
 
         for ent in fs::read_dir(src_root)?.flatten() {
             let ty = ent.file_type()?;
@@ -187,11 +216,7 @@ impl Dist {
                 for dep in fs::read_dir(bin_dir.join(self.profile()).join("deps"))?.flatten() {
                     let name = dep.file_name();
                     match name.to_str() {
-                        Some(name)
-                            if name.ends_with(".so")
-                                && name != "libldso.so"
-                                && dep_lib.insert(dep.path()) =>
-                        {
+                        Some(name) if name.ends_with(".so") && dep_lib.insert(name.to_string()) => {
                             fs::copy(dep.path(), dep_root.join(name))?;
                             self.gen_debug(name, &dep_root, DEBUG_DIR)?;
                         }

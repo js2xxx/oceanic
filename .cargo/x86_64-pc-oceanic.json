@@ -6,7 +6,7 @@
     "target-endian": "little",
     "target-pointer-width": "64",
     "target-c-int-width": "32",
-    "os": "h2o",
+    "os": "oceanic",
     "has-rpath": true,
     "has-thread-local": true,
     "executables": true,

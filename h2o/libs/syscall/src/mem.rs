@@ -31,12 +31,8 @@ pub struct MemInfo {
     pub current_used: usize,
 }
 
-cfg_if::cfg_if! { if #[cfg(target_arch = "x86_64")] {
-
 pub const PAGE_SHIFT: usize = 12;
 pub const PAGE_SIZE: usize = 4096;
-
-} }
 
 #[repr(C)]
 pub struct VirtMapInfo {

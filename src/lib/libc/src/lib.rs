@@ -1,7 +1,7 @@
 #![no_std]
 #![allow(unused_unsafe)]
 #![feature(alloc_error_handler)]
-#![feature(c_size_t)]
+#![feature(c_variadic)]
 #![feature(core_ffi_c)]
 #![feature(int_roundings)]
 #![feature(linkage)]
