@@ -35,9 +35,7 @@ pub(super) static IDLE: Lazy<Tid> = Lazy::new(|| {
     let entry = ctx::Entry {
         entry: LAddr::new(idle as *mut u8),
         stack,
-        args: [cpu as u64, unsafe {
-            archop::msr::read(archop::msr::FS_BASE)
-        }],
+        args: [cpu as u64, unsafe { archop::reg::read_fs() }],
     };
     let kstack = ctx::Kstack::new(Some(entry), Type::Kernel);
 
@@ -50,7 +48,7 @@ pub(super) static IDLE: Lazy<Tid> = Lazy::new(|| {
 });
 
 fn idle(cpu: usize, fs_base: u64) -> ! {
-    unsafe { archop::msr::write(archop::msr::FS_BASE, fs_base) };
+    unsafe { archop::reg::write_fs(fs_base) };
 
     log::debug!("IDLE #{}", cpu);
 

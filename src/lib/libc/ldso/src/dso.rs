@@ -1,4 +1,4 @@
-use alloc::{boxed::Box, vec::Vec};
+use alloc::{boxed::Box, collections::BTreeSet, vec::Vec};
 use core::{
     cell::UnsafeCell,
     fmt,
@@ -60,7 +60,7 @@ impl DsoBase {
     pub fn get(self) -> usize {
         match self {
             DsoBase::Dyn(base) => base,
-            Self::Exec(base) => base,
+            DsoBase::Exec(base) => base,
         }
     }
 
@@ -76,8 +76,8 @@ impl DsoBase {
 impl fmt::Debug for DsoBase {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Dyn(b) => write!(f, "Dyn({:#x})", b),
-            Self::Exec(b) => write!(f, "Exec({:#x})", b),
+            DsoBase::Dyn(b) => write!(f, "Dyn({:#x})", b),
+            DsoBase::Exec(b) => write!(f, "Exec({:#x})", b),
         }
     }
 }
@@ -158,6 +158,17 @@ impl Dso {
     }
 
     pub fn load(phys: &Phys, name: CString, prog: bool) -> Result<elfload::LoadedElf, Error> {
+        let mut dso_list = dso_list().lock();
+        let names = dso_list.names.clone();
+        Self::load_dso(phys, name, prog, &mut dso_list).inspect_err(|_| dso_list.names = names)
+    }
+
+    fn load_dso(
+        phys: &Phys,
+        name: CString,
+        prog: bool,
+        dso_list: &mut DsoList,
+    ) -> Result<elfload::LoadedElf, Error> {
         let elf = elfload::load(phys, true, &*svrt::root_virt()).map_err(Error::ElfLoad)?;
 
         let base = DsoBase::new(elf.range.start, if elf.is_dyn { ET_DYN } else { ET_EXEC });
@@ -179,7 +190,8 @@ impl Dso {
         let syms =
             Symbols::from_dynamic(&base, dynamic, Some(elf.sym_len)).ok_or(Error::SymbolLoad)?;
 
-        Self::load_deps(dynamic, &syms)?;
+        dso_list.names.insert(name.clone());
+        Self::load_deps(dynamic, &syms, dso_list)?;
 
         let name = unsafe { CStr::from_ptr(CString::into_raw(name)) };
 
@@ -195,18 +207,16 @@ impl Dso {
             init: Once::new(),
             fini: Once::new(),
         };
-        dso_list().lock().push(dso, prog);
+        dso_list.push(dso, prog);
         Ok(elf)
     }
 
-    fn load_deps(dynamic: &[Dyn], syms: &Symbols) -> Result<(), Error> {
-        let replace_deps = [cstr!("libldso.so"), cstr!("libh2o.so")];
-        let deps = dynamic
-            .iter()
+    fn load_deps(dynamic: &[Dyn], syms: &Symbols, dso_list: &mut DsoList) -> Result<(), Error> {
+        let deps = { dynamic.iter() }
             .filter_map(|d| {
                 (d.d_tag == DT_NEEDED)
                     .then(|| unsafe { syms.get_str(d.d_val as usize) })
-                    .filter(|name| !replace_deps.contains(name))
+                    .filter(|name| !dso_list.names.contains(*name))
                     .map(CString::from)
             })
             .collect::<Vec<_>>();
@@ -224,7 +234,7 @@ impl Dso {
             }
         };
         for (phys, name) in objs.into_iter().zip(deps.into_iter()) {
-            Self::load(&phys, name, false)?;
+            Self::load_dso(&phys, name, false, dso_list)?;
         }
         Ok(())
     }
@@ -283,12 +293,16 @@ impl From<&Rela> for Reloc {
     }
 }
 
-#[derive(Default)]
 pub struct DsoList {
     head: Option<NonNull<Dso>>,
     tail: Option<NonNull<Dso>>,
+
     prog: Option<NonNull<Dso>>,
     fini: Option<NonNull<Dso>>,
+
+    names: BTreeSet<CString>,
+
+    preinit: Once,
 }
 
 unsafe impl Send for DsoList {}
@@ -300,7 +314,10 @@ impl DsoList {
         let list = DsoList {
             head: Some(NonNull::from(head)),
             tail: Some(NonNull::from(tail)),
-            ..Default::default()
+            prog: None,
+            fini: None,
+            names: BTreeSet::new(),
+            preinit: Once::new(),
         };
         list.relocate_dso(head);
         list.relocate_dso(tail);
@@ -419,7 +436,7 @@ impl DsoList {
                     (reloc_ptr as *mut u8).copy_from_nonoverlapping(sym_val, sym.st_size as usize);
                 }
                 R_X86_64_PC32 => *reloc_ptr = sym_val as usize + reloc.addend - reloc_ptr as usize,
-                _ => unimplemented!("relocate other types"),
+                _ => unimplemented!("relocate other types: {:?}", reloc.ty),
             }
         }
         false
@@ -481,9 +498,8 @@ impl DsoList {
         if let Some(preinit_array) = self.program().and_then(|prog| unsafe {
             prog.dyn_slice::<IniFn>(DT_PREINIT_ARRAY, DT_PREINIT_ARRAYSZ)
         }) {
-            for p in preinit_array {
-                unsafe { p() };
-            }
+            self.preinit
+                .call_once(|| unsafe { preinit_array.iter().for_each(|p| p()) });
         }
 
         let mut cur = self.head;
@@ -491,8 +507,6 @@ impl DsoList {
             let dso = unsafe { ptr.as_ref() };
 
             dso.init.call_once(|| unsafe {
-                Self::push_fini(&mut self.fini, dso);
-
                 if let Some(init) = dso.dyn_ptr::<IniFn>(DT_INIT) {
                     (*init)();
                 }
@@ -500,6 +514,7 @@ impl DsoList {
                 if let Some(init_arr) = dso.dyn_slice::<IniFn>(DT_INIT_ARRAY, DT_INIT_ARRAYSZ) {
                     init_arr.iter().for_each(|i| i());
                 }
+                Self::push_fini(&mut self.fini, dso);
             });
 
             cur = unsafe { (*dso.link.get()).next };
@@ -554,5 +569,12 @@ pub fn init() -> Result<(), Error> {
         DSO_LIST.write(Mutex::new(DsoList::new(ldso, vdso)))
     };
     atomic::fence(SeqCst);
+
+    unsafe {
+        let dso_list = DSO_LIST.assume_init_mut().get_mut();
+        dso_list
+            .names
+            .extend([cstr!("libldso.so").into(), cstr!("libh2o.so").into()]);
+    }
     Ok(())
 }

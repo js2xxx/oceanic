@@ -4,6 +4,7 @@
 #![feature(asm_sym)]
 #![feature(naked_functions)]
 #![feature(int_roundings)]
+#![feature(result_option_inspect)]
 
 extern crate alloc;
 

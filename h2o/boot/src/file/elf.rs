@@ -1,4 +1,4 @@
-use core::{alloc::Layout, arch::asm, mem::size_of};
+use core::{alloc::Layout, mem::size_of};
 
 use bitop_ex::BitOpEx;
 use goblin::elf::*;
@@ -94,14 +94,7 @@ fn load_pls(syst: &SystemTable<Boot>, size: usize, align: usize) -> Layout {
         // and therefore should be modified in the kernel.
         self_ptr.write(self_ptr as usize);
 
-        const FS_BASE: u64 = 0xC0000100;
-        asm!(
-              "wrmsr",
-              in("ecx") FS_BASE,
-              in("eax") self_ptr,
-              in("edx") self_ptr as u64 >> 32,
-              options(nostack)
-        );
+        archop::reg::write_fs(self_ptr as u64);
     }
 
     layout

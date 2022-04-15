@@ -166,3 +166,39 @@ pub mod rflags {
     pub const ID: u64 = 1 << 21;
     pub const USER_ACCESS: u64 = CF | PF | AF | ZF | SF | TF | DF | OF | NT | AC | ID;
 }
+
+/// # Safety
+///
+/// The caller is responsible for the validity of the architecture context.
+#[inline]
+pub unsafe fn read_fs() -> u64 {
+    let mut ret;
+    core::arch::asm!("rdfsbase {}", out(reg) ret, options(nostack));
+    ret
+}
+
+/// # Safety
+///
+/// The caller is responsible for the validity of the architecture context.
+#[inline]
+pub unsafe fn write_fs(value: u64) {
+    core::arch::asm!("wrfsbase {}", in(reg) value, options(nostack));
+}
+
+/// # Safety
+///
+/// The caller is responsible for the validity of the architecture context.
+#[inline]
+pub unsafe fn read_gs() -> u64 {
+    let mut ret;
+    core::arch::asm!("rdgsbase {}", out(reg) ret, options(nostack));
+    ret
+}
+
+/// # Safety
+///
+/// The caller is responsible for the validity of the architecture context.
+#[inline]
+pub unsafe fn write_gs(value: u64) {
+    core::arch::asm!("wrgsbase {}", in(reg) value, options(nostack));
+}

@@ -80,7 +80,7 @@ pub static KERNEL_GS: Lazy<KernelGs> = Lazy::new(|| KernelGs {
     tss_rsp0: UnsafeCell::new(unsafe { seg::ndt::TSS.rsp0() }),
     syscall_user_stack: null_mut(),
     syscall_stack: unsafe { syscall::init() }.expect("Memory allocation failed"),
-    kernel_fs: LAddr::from(unsafe { archop::msr::read(archop::msr::FS_BASE) } as usize),
+    kernel_fs: LAddr::from(unsafe { archop::reg::read_fs() } as usize),
 });
 
 impl KernelGs {
