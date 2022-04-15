@@ -1,13 +1,20 @@
 #![no_std]
 #![allow(unused_unsafe)]
 #![feature(alloc_error_handler)]
+#![feature(alloc_layout_extra)]
+#![feature(allocator_api)]
 #![feature(asm_sym)]
-#![feature(naked_functions)]
 #![feature(int_roundings)]
+#![feature(naked_functions)]
+#![feature(nonnull_slice_from_raw_parts)]
 #![feature(result_option_inspect)]
-
+#![feature(slice_ptr_get)]
+#![feature(slice_ptr_len)]
 extern crate alloc;
 
+#[cfg(target_arch = "x86_64")]
+#[cfg_attr(target_arch = "x86_64", path = "arch/x86_64.rs")]
+mod arch;
 mod dso;
 pub mod elf;
 mod imp_alloc;

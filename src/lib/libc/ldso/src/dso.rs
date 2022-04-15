@@ -1,5 +1,6 @@
 use alloc::{boxed::Box, collections::BTreeSet, vec::Vec};
 use core::{
+    alloc::Layout,
     cell::UnsafeCell,
     fmt,
     marker::PhantomData,
@@ -40,6 +41,7 @@ pub enum Error {
     SymbolLoad,
     ElfLoad(elfload::Error),
     DepGet(solvent::error::Error),
+    Memory(usize, usize),
 }
 
 #[derive(Copy, Clone)]
@@ -99,6 +101,7 @@ pub struct Dso {
 
     dynamic: &'static [Dyn],
     syms: Symbols<'static>,
+    tls: Option<(*mut u8, usize)>,
 
     relocate: Once,
     init: Once,
@@ -151,6 +154,7 @@ impl Dso {
             name,
             dynamic,
             syms,
+            tls: None,
             relocate: Once::new(),
             init: Once::new(),
             fini: Once::new(),
@@ -195,7 +199,7 @@ impl Dso {
 
         let name = unsafe { CStr::from_ptr(CString::into_raw(name)) };
 
-        let dso = Dso {
+        let mut dso = Dso {
             link: Default::default(),
             fini_link: Default::default(),
             _id: Self::next_id(),
@@ -203,10 +207,14 @@ impl Dso {
             name,
             dynamic,
             syms,
+            tls: None,
             relocate: Once::new(),
             init: Once::new(),
             fini: Once::new(),
         };
+        if let Some(ref tls) = elf.tls {
+            dso_list.load_tls(&mut dso, tls, prog)?
+        }
         dso_list.push(dso, prog);
         Ok(elf)
     }
@@ -301,6 +309,7 @@ pub struct DsoList {
     fini: Option<NonNull<Dso>>,
 
     names: BTreeSet<CString>,
+    tls: Vec<Tls>,
 
     preinit: Once,
 }
@@ -317,6 +326,7 @@ impl DsoList {
             prog: None,
             fini: None,
             names: BTreeSet::new(),
+            tls: Vec::new(),
             preinit: Once::new(),
         };
         list.relocate_dso(head);
@@ -436,6 +446,19 @@ impl DsoList {
                     (reloc_ptr as *mut u8).copy_from_nonoverlapping(sym_val, sym.st_size as usize);
                 }
                 R_X86_64_PC32 => *reloc_ptr = sym_val as usize + reloc.addend - reloc_ptr as usize,
+                R_X86_64_DTPOFF64 => {
+                    let (dso, sym) = def.expect("No definition found for TPOFF64");
+                    let (_, size) = dso.tls.expect("No TLS available");
+                    let tls_addend = 0usize.wrapping_sub(size);
+                    *reloc_ptr = (sym.st_value as usize + reloc.addend).wrapping_add(tls_addend)
+                }
+                R_X86_64_TPOFF64 => {
+                    let (dso, sym) = def.expect("No definition found for TPOFF64");
+                    let (start, _) = dso.tls.expect("No TLS available");
+                    let tls_addend =
+                        (start as usize).wrapping_sub(Tcb::current().static_base as usize);
+                    *reloc_ptr = (sym.st_value as usize + reloc.addend).wrapping_add(tls_addend)
+                }
                 _ => unimplemented!("relocate other types: {:?}", reloc.ty),
             }
         }
@@ -541,6 +564,29 @@ impl DsoList {
             cur = unsafe { (*dso.fini_link.get()).next };
         }
     }
+
+    fn load_tls(&mut self, dso: &mut Dso, tls: &ProgramHeader, prog: bool) -> Result<(), Error> {
+        let layout = Layout::from_size_align(tls.p_memsz as usize, tls.p_align as usize)
+            .map_err(|_| Error::Memory(tls.p_memsz as usize, tls.p_align as usize))?;
+
+        let tdata = dso.base.ptr::<u8>(tls.p_offset as usize);
+        let init_data = NonNull::slice_from_raw_parts(
+            unsafe { NonNull::new_unchecked(tdata) },
+            tls.p_filesz as usize,
+        );
+
+        let tls = Tls::new(init_data, layout)
+            .map_err(|_| Error::Memory(layout.size(), layout.align()))?;
+        dso.tls = Some((tls.as_ptr(), tls.chunk_layout().size()));
+        if prog {
+            unsafe {
+                Tcb::current().static_base = tls.static_base();
+            }
+        }
+        self.tls.push(tls);
+
+        Ok(())
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -575,6 +621,8 @@ pub fn init() -> Result<(), Error> {
         dso_list
             .names
             .extend([cstr!("libldso.so").into(), cstr!("libh2o.so").into()]);
+
+        Tcb::init_current(0);
     }
     Ok(())
 }

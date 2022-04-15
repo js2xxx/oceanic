@@ -29,6 +29,7 @@ pub struct LoadedElf {
     pub stack: Option<(usize, Flags)>,
     pub entry: usize,
     pub dynamic: Option<ProgramHeader>,
+    pub tls: Option<ProgramHeader>,
     pub sym_len: usize,
 }
 
@@ -216,11 +217,13 @@ pub fn load(phys: &Phys, dyn_only: bool, root_virt: &Virt) -> Result<LoadedElf, 
 
     let mut stack = None;
     let mut dynamic = None;
+    let mut tls = None;
     for segment in segments {
         match segment.p_type {
             PT_LOAD => map_segment(&segment, phys, &virt, base_offset)?,
             PT_GNU_STACK => stack = Some((segment.p_memsz as usize, parse_flags(segment.p_flags))),
             PT_DYNAMIC => dynamic = Some(segment),
+            PT_TLS => tls = Some(segment),
             _ => {}
         }
     }
@@ -240,6 +243,7 @@ pub fn load(phys: &Phys, dyn_only: bool, root_virt: &Virt) -> Result<LoadedElf, 
         stack,
         entry,
         dynamic,
+        tls,
         sym_len,
     })
 }
