@@ -46,20 +46,20 @@ pub unsafe fn test(virt: &Virt, stack: (*mut u8, *mut u8, Handle)) {
             hdl[0] = Handle::NULL;
             let mut sendee = rp(0, &mut hdl, &mut buf);
             let ret = sv_chan_send(c1, &sendee);
-            assert_eq!(ret.into_res(), Err(Error::EINVAL));
+            assert_eq!(ret.into_res(), Err(EINVAL));
 
             // The channel itself can't be sent.
             // To make connections to other tasks, use `init_chan`.
             hdl[0] = c1;
             sendee = rp(0, &mut hdl, &mut buf);
             let ret = sv_chan_send(c1, &sendee);
-            assert_eq!(ret.into_res(), Err(Error::EPERM));
+            assert_eq!(ret.into_res(), Err(EPERM));
 
             // Neither can its peer.
             hdl[0] = c2;
             sendee = rp(0, &mut hdl, &mut buf);
             let ret = sv_chan_send(c1, &sendee);
-            assert_eq!(ret.into_res(), Err(Error::EPERM));
+            assert_eq!(ret.into_res(), Err(EPERM));
         }
 
         {
@@ -68,11 +68,11 @@ pub unsafe fn test(virt: &Virt, stack: (*mut u8, *mut u8, Handle)) {
                 .into_res()
                 .expect("Failed to wait for the channel");
             let ret = sv_chan_recv(c2, &mut receivee);
-            assert_eq!(ret.into_res(), Err(Error::EBUFFER));
+            assert_eq!(ret.into_res(), Err(EBUFFER));
 
             receivee = rp(0, &mut hdl, &mut []);
             let ret = sv_chan_recv(c2, &mut receivee);
-            assert_eq!(ret.into_res(), Err(Error::EBUFFER));
+            assert_eq!(ret.into_res(), Err(EBUFFER));
         }
 
         buf.fill(0);
@@ -88,7 +88,7 @@ pub unsafe fn test(virt: &Virt, stack: (*mut u8, *mut u8, Handle)) {
 
         receivee = rp(0, &mut hdl, &mut buf);
         let ret = sv_chan_recv(c2, &mut receivee);
-        assert_eq!(ret.into_res(), Err(Error::ENOENT));
+        assert_eq!(ret.into_res(), Err(ENOENT));
 
         e
     };

@@ -5,7 +5,7 @@
 #![feature(linkage)]
 
 pub mod call;
-mod error;
+pub mod error;
 pub mod feat;
 pub mod ipc;
 pub mod mem;
@@ -26,4 +26,15 @@ pub use self::{
     feat::*,
 };
 
-include!(concat!(env!("CARGO_MANIFEST_DIR"), "/target/rxx.rs"));
+#[cfg(all(not(feature = "call"), feature = "vdso"))]
+compile_error!("The VDSO feature is onlye supported with call feature");
+
+#[cfg(feature = "vdso")]
+#[panic_handler]
+#[linkage = "weak"]
+#[no_mangle]
+pub extern "C" fn rust_begin_unwind(_: &core::panic::PanicInfo) -> ! {
+    loop {
+        unsafe { core::arch::asm!("pause; ud2") }
+    }
+}

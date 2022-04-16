@@ -51,7 +51,7 @@ impl HandleMap {
         let value = Value::new()
             .with_gen(0)
             .with_index_checked(index)
-            .map_err(|_| sv_call::Error::ERANGE)?;
+            .map_err(|_| sv_call::ERANGE)?;
         Ok(sv_call::Handle::new(
             u32::from_ne_bytes(value.into_bytes()) ^ self.mix,
         ))
@@ -125,7 +125,7 @@ impl HandleMap {
             if ptr.is::<T>() {
                 self.remove_ref(handle).map(|obj| obj.downcast().unwrap())
             } else {
-                Err(sv_call::Error::ETYPE)
+                Err(sv_call::ETYPE)
             }
         })
     }
@@ -137,10 +137,8 @@ impl HandleMap {
         PREEMPT.scope(|| {
             { self.list.lock() }.split(handles.iter().map(|&handle| self.decode(handle)), |value| {
                 match value.downcast_ref::<Channel>() {
-                    Ok(chan) if chan.peer_eq(src) => Err(sv_call::Error::EPERM),
-                    Err(_) if !value.features().contains(Feature::SEND) => {
-                        Err(sv_call::Error::EPERM)
-                    }
+                    Ok(chan) if chan.peer_eq(src) => Err(sv_call::EPERM),
+                    Err(_) if !value.features().contains(Feature::SEND) => Err(sv_call::EPERM),
                     _ => Ok(()),
                 }
             })

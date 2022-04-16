@@ -167,20 +167,20 @@ mod syscall {
     #[syscall]
     fn obj_wait(hdl: Handle, timeout_us: u64, wake_all: bool, signal: usize) -> Result<usize> {
         let pree = PREEMPT.lock();
-        let cur = unsafe { (*SCHED.current()).as_ref().ok_or(Error::ESRCH) }?;
+        let cur = unsafe { (*SCHED.current()).as_ref().ok_or(ESRCH) }?;
 
         let obj = cur.space().handles().get_ref(hdl)?;
         if !obj.features().contains(Feature::WAIT) {
-            return Err(Error::EPERM);
+            return Err(EPERM);
         }
-        let event = obj.event().upgrade().ok_or(Error::EPIPE)?;
+        let event = obj.event().upgrade().ok_or(EPIPE)?;
 
         let blocker = Blocker::new(&event, wake_all, signal);
         blocker.wait(pree, time::from_us(timeout_us))?;
 
         let (detach_ret, signal) = blocker.detach();
         if !detach_ret {
-            return Err(Error::ETIME);
+            return Err(ETIME);
         }
         Ok(signal)
     }
@@ -190,9 +190,9 @@ mod syscall {
         SCHED.with_current(|cur| {
             let obj = cur.space().handles().get_ref(hdl)?;
             if !obj.features().contains(Feature::WAIT) {
-                return Err(Error::EPERM);
+                return Err(EPERM);
             }
-            let event = obj.event().upgrade().ok_or(Error::EPIPE)?;
+            let event = obj.event().upgrade().ok_or(EPIPE)?;
 
             let blocker = Blocker::new(&event, wake_all, signal);
             cur.space().handles().insert(blocker, None)
@@ -202,7 +202,7 @@ mod syscall {
     #[syscall]
     fn obj_awend(waiter: Handle, timeout_us: u64) -> Result<usize> {
         let pree = PREEMPT.lock();
-        let cur = unsafe { (*SCHED.current()).as_ref().ok_or(Error::ESRCH) }?;
+        let cur = unsafe { (*SCHED.current()).as_ref().ok_or(ESRCH) }?;
 
         let blocker = cur.space().handles().get::<Arc<Blocker>>(waiter)?;
         blocker.wait(pree, time::from_us(timeout_us))?;
@@ -211,7 +211,7 @@ mod syscall {
         SCHED.with_current(|cur| cur.space().handles().remove::<Arc<Blocker>>(waiter))?;
 
         if !detach_ret {
-            Err(Error::ETIME)
+            Err(ETIME)
         } else {
             Ok(signal)
         }

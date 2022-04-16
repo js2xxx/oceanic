@@ -231,14 +231,14 @@ impl Dso {
         log::debug!("Dependencies: {:?}", deps);
         let ldrpc = LDRPC
             .as_ref()
-            .ok_or(Error::DepGet(solvent::error::Error::ENOENT))?;
+            .ok_or(Error::DepGet(solvent::error::ENOENT))?;
         let resp = rpc::call::<GetObject>(ldrpc, deps.clone().into(), Duration::MAX)
             .map_err(Error::DepGet)?;
         let objs = match resp {
             Response::Success(objs) => objs,
             Response::Error { not_found_index } => {
                 log::error!("DT_NEEDED Library at index {} not found", not_found_index);
-                return Err(Error::DepGet(solvent::error::Error::ENOENT));
+                return Err(Error::DepGet(solvent::error::ENOENT));
             }
         };
         for (phys, name) in objs.into_iter().zip(deps.into_iter()) {

@@ -140,7 +140,7 @@ pub fn alloc_pls() -> sv_call::Result<NonNull<u8>> {
 
     let pls_layout = match crate::kargs().pls_layout {
         Some(layout) => layout,
-        None => return Err(sv_call::Error::ENOENT),
+        None => return Err(sv_call::ENOENT),
     };
 
     let base = Global

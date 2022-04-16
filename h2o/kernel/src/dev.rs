@@ -50,7 +50,7 @@ mod syscall {
         SCHED.with_current(|cur| {
             let res = cur.space().handles().get::<Arc<Resource<u16>>>(res)?;
             if !{ res.features() }.contains(Feature::READ | Feature::WRITE) {
-                return Err(Error::EPERM);
+                return Err(EPERM);
             }
             if res.magic_eq(pio_resource())
                 && res.range().start <= base
@@ -63,7 +63,7 @@ mod syscall {
                 unsafe { KERNEL_GS.update_tss_io_bitmap(cur.io_bitmap_mut().as_deref()) };
                 Ok(())
             } else {
-                Err(Error::EPERM)
+                Err(EPERM)
             }
         })
     }
@@ -84,7 +84,7 @@ mod syscall {
                 unsafe { KERNEL_GS.update_tss_io_bitmap(cur.io_bitmap_mut().as_deref()) };
                 Ok(())
             } else {
-                Err(Error::EPERM)
+                Err(EPERM)
             }
         })
     }

@@ -5,6 +5,7 @@
 #![feature(core_ffi_c)]
 #![feature(int_roundings)]
 #![feature(linkage)]
+#![feature(thread_local)]
 
 pub mod env;
 pub mod ffi;

@@ -21,12 +21,12 @@ fn map_addr(
         .start
         .val()
         .checked_sub(virt.range().start.val())
-        .ok_or(sv_call::Error::ERANGE)?;
+        .ok_or(sv_call::ERANGE)?;
     let len = addr
         .end
         .val()
         .checked_sub(addr.start.val())
-        .ok_or(sv_call::Error::ERANGE)?;
+        .ok_or(sv_call::ERANGE)?;
     let phys = match phys {
         Some(phys) => phys,
         None => Phys::allocate(len, true)?,
@@ -117,7 +117,7 @@ fn load_elf(space: &Arc<Space>, file: &Elf, image: &[u8]) -> sv_call::Result<(LA
                 (phdr.p_memsz as usize).round_up_bit(paging::PAGE_SHIFT),
             )?,
 
-            _ => return Err(sv_call::Error::ESPRT),
+            _ => return Err(sv_call::ESPRT),
         }
     }
     Ok((entry, stack_size))
@@ -131,12 +131,12 @@ pub fn from_elf(
     init_chan: hdl::Ref,
 ) -> sv_call::Result<Init> {
     let file = Elf::parse(image)
-        .map_err(|_| sv_call::Error::EINVAL)
+        .map_err(|_| sv_call::EINVAL)
         .and_then(|file| {
             if file.is_64 {
                 Ok(file)
             } else {
-                Err(sv_call::Error::EPERM)
+                Err(sv_call::EPERM)
             }
         })?;
 

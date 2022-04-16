@@ -7,7 +7,7 @@ use core::{alloc::Layout, mem, ops::Range};
 use bitop_ex::BitOpEx;
 use paging::{LAddr, PAddr, PAGE_SHIFT, PAGE_SIZE};
 use spin::Mutex;
-use sv_call::{mem::Flags, Error, Feature, Result};
+use sv_call::{error::*, mem::Flags, Feature, Result};
 
 use super::{paging_error, ty_to_range, Phys, Space};
 use crate::sched::{
@@ -103,7 +103,7 @@ impl Virt {
             let children = self.children.lock();
 
             if { children.iter() }.any(|(&base, child)| !check_vdso(vdso, base, child.end(base))) {
-                return Err(Error::EACCES);
+                return Err(EACCES);
             }
         }
         if let Some(parent) = self.parent.upgrade() {
@@ -127,27 +127,27 @@ impl Virt {
                 || layout.align() != PAGE_SIZE
                 || flags != VDSO.0)
         {
-            return Err(Error::EACCES);
+            return Err(EACCES);
         }
 
         let layout = check_layout(layout)?;
         if phys_offset.contains_bit(PAGE_SHIFT) {
-            return Err(Error::EALIGN);
+            return Err(EALIGN);
         }
         let phys_end = phys_offset.wrapping_add(layout.size());
         if !(phys_offset < phys_end && phys_end <= phys.len()) {
-            return Err(Error::ERANGE);
+            return Err(ERANGE);
         }
 
         let _pree = PREEMPT.lock();
         let mut children = self.children.lock();
-        let space = self.space.upgrade().ok_or(Error::EKILLED)?;
+        let space = self.space.upgrade().ok_or(EKILLED)?;
 
         let set_vdso = phys == VDSO.1;
         if set_vdso {
             check_set_vdso(&space.vdso, phys_offset, layout, flags)?;
             if self as *const _ != Arc::as_ptr(&space.root) {
-                return Err(Error::EACCES);
+                return Err(EACCES);
             }
         }
         let virt = find_range(&children, &self.range, offset, layout)?;
@@ -172,12 +172,12 @@ impl Virt {
         let end = LAddr::from(base.val() + len);
 
         if !(self.range.start <= start && end <= self.range.end) {
-            return Err(Error::ERANGE);
+            return Err(ERANGE);
         }
 
         let _pree = PREEMPT.lock();
         let children = self.children.lock();
-        let space = self.space.upgrade().ok_or(Error::EKILLED)?;
+        let space = self.space.upgrade().ok_or(EKILLED)?;
 
         let vdso = { *space.vdso.lock() };
         for (&base, child) in children
@@ -186,15 +186,15 @@ impl Virt {
         {
             let child_end = child.end(base);
             if !(start <= base && child_end <= end) {
-                return Err(Error::ERANGE);
+                return Err(ERANGE);
             }
             if !check_vdso(vdso, base, child_end) {
-                return Err(Error::EACCES);
+                return Err(EACCES);
             }
             match child {
-                Child::Virt(_) => return Err(Error::EINVAL),
+                Child::Virt(_) => return Err(EINVAL),
                 Child::Phys(_, f, _) if flags.intersects(!*f) => {
-                    return Err(Error::EPERM);
+                    return Err(EPERM);
                 }
                 _ => {}
             }
@@ -215,12 +215,12 @@ impl Virt {
         let end = LAddr::from(base.val() + len);
 
         if !(self.range.start <= start && end <= self.range.end) {
-            return Err(Error::ERANGE);
+            return Err(ERANGE);
         }
 
         let _pree = PREEMPT.lock();
         let mut children = self.children.lock();
-        let space = self.space.upgrade().ok_or(Error::EKILLED)?;
+        let space = self.space.upgrade().ok_or(EKILLED)?;
 
         let vdso = { *space.vdso.lock() };
         for (&base, child) in children
@@ -229,13 +229,13 @@ impl Virt {
         {
             let child_end = child.end(base);
             if !(start <= base && child_end <= end) {
-                return Err(Error::ERANGE);
+                return Err(ERANGE);
             }
             if !check_vdso(vdso, base, child_end) {
-                return Err(Error::EACCES);
+                return Err(EACCES);
             }
             if matches!(child, Child::Virt(_) if !drop_child) {
-                return Err(Error::EPERM);
+                return Err(EPERM);
             }
         }
 
@@ -299,10 +299,10 @@ impl Ord for Virt {
 
 fn check_layout(layout: Layout) -> Result<Layout> {
     if layout.size() == 0 {
-        return Err(Error::ERANGE);
+        return Err(ERANGE);
     }
     if layout.align() < PAGE_SIZE {
-        return Err(Error::EALIGN);
+        return Err(EALIGN);
     }
     Ok(layout.pad_to_align())
 }
@@ -314,19 +314,19 @@ fn check_set_vdso(
     flags: Flags,
 ) -> Result {
     if PREEMPT.scope(|| vdso.lock().is_some()) {
-        return Err(Error::EACCES);
+        return Err(EACCES);
     }
 
     if phys_offset != 0 {
-        return Err(Error::EACCES);
+        return Err(EACCES);
     }
 
     if layout.size() != VDSO.1.len() || layout.align() != PAGE_SIZE {
-        return Err(Error::EACCES);
+        return Err(EACCES);
     }
 
     if flags != VDSO.0 {
-        return Err(Error::EACCES);
+        return Err(EACCES);
     }
 
     Ok(())
@@ -352,24 +352,20 @@ fn find_range(
 ) -> Result<Range<LAddr>> {
     let base = match offset {
         Some(offset) => {
-            let base = LAddr::from(
-                { range.start.val() }
-                    .checked_add(offset)
-                    .ok_or(Error::ERANGE)?,
-            );
-            let end = LAddr::from(base.val().checked_add(layout.size()).ok_or(Error::ERANGE)?);
+            let base = LAddr::from({ range.start.val() }.checked_add(offset).ok_or(ERANGE)?);
+            let end = LAddr::from(base.val().checked_add(layout.size()).ok_or(ERANGE)?);
             if base.val().contains_bit(PAGE_SHIFT) {
-                return Err(Error::EALIGN);
+                return Err(EALIGN);
             }
             if !(range.start <= base && end <= range.end) {
-                return Err(Error::ERANGE);
+                return Err(ERANGE);
             }
             if !check_alloc(map, base..end) {
-                return Err(Error::EEXIST);
+                return Err(EEXIST);
             }
             base
         }
-        None => find_alloc(map, range, layout).ok_or(Error::ENOMEM)?,
+        None => find_alloc(map, range, layout).ok_or(ENOMEM)?,
     };
 
     Ok(base..LAddr::from(base.val() + layout.size()))

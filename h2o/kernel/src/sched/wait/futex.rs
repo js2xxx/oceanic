@@ -33,7 +33,7 @@ impl Futex {
         if unsafe { intrinsics::atomic_load(ptr) } == val {
             self.wo.wait(guard, timeout, "Futex::wait")
         } else {
-            Err(Error::EINVAL)
+            Err(EINVAL)
         }
     }
 

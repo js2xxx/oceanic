@@ -2,7 +2,7 @@ use core::{alloc::Layout, ptr::NonNull};
 
 use bootfs::parse::Directory;
 use solvent::prelude::{Error as SError, Flags, Phys, Virt, PAGE_LAYOUT, PAGE_SIZE};
-use sv_call::task::DEFAULT_STACK_SIZE;
+use sv_call::{task::DEFAULT_STACK_SIZE, ENOENT};
 
 const STACK_PROTECTOR_SIZE: usize = PAGE_SIZE;
 const STACK_PROTECTOR_LAYOUT: Layout = PAGE_LAYOUT;
@@ -27,17 +27,12 @@ fn load_segs(
 ) -> Result<elfload::LoadedElf, Error> {
     let phys = match elfload::get_interp(phys) {
         Ok(Some(mut interp)) => {
-            use SError as SvError;
-
             let last = interp.pop();
             assert_eq!(last, Some(0), "Not a valid c string");
 
-            let data = bootfs
-                .find(&interp, b'/')
-                .ok_or(SvError::ENOENT)
-                .inspect_err(|_| {
-                    log::error!("Failed to find the interpreter for the executable")
-                })?;
+            let data = bootfs.find(&interp, b'/').ok_or(ENOENT).inspect_err(|_| {
+                log::error!("Failed to find the interpreter for the executable")
+            })?;
 
             crate::sub_phys(data, bootfs, bootfs_phys)?
         }

@@ -69,7 +69,7 @@ pub fn allocate(ti: TaskInfo) -> sv_call::Result<Tid> {
             debug_assert!(old.is_none());
             Ok(Tid { raw, ti })
         }
-        None => Err(sv_call::Error::ENOSPC),
+        None => Err(sv_call::ENOSPC),
     }
 }
 

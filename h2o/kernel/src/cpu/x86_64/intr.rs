@@ -50,13 +50,10 @@ impl Manager {
 
         let in_use = ALLOC_VEC.contains(&entry.vec());
 
-        let self_apic_id = *LAPIC_ID
-            .read()
-            .get(&self.cpu)
-            .ok_or(sv_call::Error::EINVAL)?;
+        let self_apic_id = *LAPIC_ID.read().get(&self.cpu).ok_or(sv_call::EINVAL)?;
         let apic_id = entry.dest_id();
         if in_use && self_apic_id != apic_id {
-            return Err(sv_call::Error::EEXIST);
+            return Err(sv_call::EEXIST);
         }
 
         let vec = in_use.then_some(entry.vec());
@@ -67,16 +64,12 @@ impl Manager {
                 map.try_insert_with(
                     vec..(vec + 1),
                     || Ok::<_, sv_call::Error>(((), ())),
-                    sv_call::Error::EEXIST,
+                    sv_call::EEXIST,
                 )?;
                 vec
             } else {
-                map.allocate_with(
-                    1,
-                    |_| Ok::<_, sv_call::Error>(((), ())),
-                    sv_call::Error::ENOMEM,
-                )?
-                .0
+                map.allocate_with(1, |_| Ok::<_, sv_call::Error>(((), ())), sv_call::ENOMEM)?
+                    .0
             };
 
             *self.slots[vec as usize].lock() = Some(handler);
@@ -144,7 +137,7 @@ unsafe fn exception(frame_ptr: *mut Frame, vec: def::ExVec) {
                     });
                 }
                 // Kill the fucking task.
-                SCHED.exit_current(sv_call::Error::EFAULT.into_retval())
+                SCHED.exit_current(sv_call::EFAULT.into_retval())
             }
             // unreachable!()
         }

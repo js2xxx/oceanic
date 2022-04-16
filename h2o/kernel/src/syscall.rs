@@ -31,7 +31,7 @@ static SYSCALL_TABLE: &[SyscallWrapper] =
 pub fn handler(num: usize, args: &[usize; 5]) -> usize {
     match SYSCALL_TABLE.get(num).copied() {
         Some(handler) => unsafe { handler(args[0], args[1], args[2], args[3], args[4]) },
-        _ => Error::EINVAL.into_retval(),
+        _ => EINVAL.into_retval(),
     }
 }
 

@@ -52,7 +52,7 @@ impl<T: ?Sized> Ref<T> {
     {
         let event = event.unwrap_or(Weak::<crate::sched::BasicEvent>::new() as _);
         if event.strong_count() == 0 && feat.contains(Feature::WAIT) {
-            return Err(sv_call::Error::EPERM);
+            return Err(sv_call::EPERM);
         }
         Ok(Ref {
             _marker: PhantomPinned,
@@ -95,7 +95,7 @@ impl<T: ?Sized> Ref<T> {
             self.feat = feat;
             Ok(())
         } else {
-            Err(sv_call::Error::EPERM)
+            Err(sv_call::EPERM)
         }
     }
 }
@@ -120,7 +120,7 @@ impl Ref {
         if self.is::<T>() {
             Ok(unsafe { &*(self as *const Ref as *const Ref<T>) })
         } else {
-            Err(sv_call::Error::ETYPE)
+            Err(sv_call::ETYPE)
         }
     }
 
@@ -168,7 +168,7 @@ impl Ref {
             // SAFETY: The underlying object is `send` and `sync`.
             Ok(unsafe { self.clone_unchecked() })
         } else {
-            Err(sv_call::Error::EPERM)
+            Err(sv_call::EPERM)
         }
     }
 }
@@ -288,7 +288,7 @@ impl List {
                 }
                 // SAFETY: The pointer is allocated from the arena.
                 Some(cur) => unsafe { cur.as_ref().next },
-                None => break Err(sv_call::Error::ENOENT),
+                None => break Err(sv_call::ENOENT),
             }
         }
     }

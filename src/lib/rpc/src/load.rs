@@ -2,7 +2,7 @@ use alloc::vec::Vec;
 use core::mem;
 
 use cstr_core::CString;
-use solvent::prelude::{Error, Object, Packet, PacketTyped, Phys};
+use solvent::prelude::{Error, Object, Packet, PacketTyped, Phys, EBUFFER, ETYPE};
 
 use crate::{from_cstr_vec, parse_cstr_vec, Byted, Carrier};
 
@@ -56,14 +56,14 @@ impl PacketTyped for GetObjectRequest {
             .buffer
             .get(..mem::size_of::<GetObjectRequestHeader>())
             .and_then(GetObjectRequestHeader::from_bytes)
-            .ok_or(Error::EBUFFER)?;
+            .ok_or(EBUFFER)?;
         if header.sig != PACKET_SIG_LOAD_LIBRARY_REQUEST {
-            return Err(Error::ETYPE);
+            return Err(ETYPE);
         }
         let paths = { packet.buffer.get(header.path_offset..) }
             .and_then(|s| s.get(..header.path_len))
             .and_then(|s| parse_cstr_vec(s).ok())
-            .ok_or(Error::EBUFFER)?;
+            .ok_or(EBUFFER)?;
 
         *packet = Default::default();
         Ok(GetObjectRequest { paths })
@@ -123,10 +123,10 @@ impl PacketTyped for GetObjectResponse {
             .buffer
             .get(..mem::size_of::<GetObjectResponseHeader>())
             .and_then(GetObjectResponseHeader::from_bytes)
-            .ok_or(Error::EBUFFER)?;
+            .ok_or(EBUFFER)?;
         if header.is_ok {
             if packet.handles.len() != header.handle_count {
-                return Err(Error::ETYPE);
+                return Err(ETYPE);
             }
             let objs = packet
                 .handles
@@ -137,7 +137,7 @@ impl PacketTyped for GetObjectResponse {
             Ok(GetObjectResponse::Success(objs))
         } else {
             if !packet.handles.is_empty() {
-                return Err(Error::ETYPE);
+                return Err(ETYPE);
             }
             Ok(GetObjectResponse::Error {
                 not_found_index: header.not_found_index,

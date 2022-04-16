@@ -53,7 +53,7 @@ impl Interrupt {
                 event_data: EventData::new(0),
             }))
         } else {
-            Err(sv_call::Error::EPERM)
+            Err(sv_call::EPERM)
         }
     }
 
@@ -132,18 +132,18 @@ mod syscall {
         last_time.check()?;
 
         let pree = PREEMPT.lock();
-        let intr = unsafe { (*SCHED.current()).as_ref().ok_or(Error::ESRCH)? }
+        let intr = unsafe { (*SCHED.current()).as_ref().ok_or(ESRCH)? }
             .space()
             .handles()
             .get::<Arc<Interrupt>>(hdl)?;
         if !intr.features().contains(Feature::WAIT) {
-            return Err(Error::EPERM);
+            return Err(EPERM);
         }
 
         let blocker = crate::sched::Blocker::new(&(Arc::clone(&intr) as _), false, SIG_GENERIC);
         blocker.wait(pree, time::from_us(timeout_us))?;
         if !blocker.detach().0 {
-            return Err(Error::ETIME);
+            return Err(ETIME);
         }
 
         unsafe { last_time.write(intr.last_time().unwrap().raw()) }?;

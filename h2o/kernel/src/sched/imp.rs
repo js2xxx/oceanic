@@ -90,7 +90,7 @@ impl Scheduler {
         PREEMPT.scope(|| unsafe {
             (*self.current.get())
                 .as_mut()
-                .ok_or(sv_call::Error::ESRCH)
+                .ok_or(sv_call::ESRCH)
                 .and_then(func)
         })
     }
@@ -172,7 +172,7 @@ impl Scheduler {
         if unsafe { self.update(cur_time) } {
             let ret = self.schedule(cur_time, pree);
             match ret {
-                Ok(()) | Err(sv_call::Error::ENOENT) => {}
+                Ok(()) | Err(sv_call::ENOENT) => {}
                 Err(err) => log::warn!("Scheduling failed: {:?}", err),
             }
         }
@@ -199,7 +199,7 @@ impl Scheduler {
             Some(task::Signal::Kill) => {
                 log::trace!("Killing task {:?}, P{}", cur.tid.raw(), PREEMPT.raw());
                 let _ = self.schedule_impl(cur_time, pree, None, |task| {
-                    task::Ready::exit(task, sv_call::Error::EKILLED.into_retval());
+                    task::Ready::exit(task, sv_call::EKILLED.into_retval());
                     Ok(())
                 });
                 unreachable!("Dead task");
@@ -210,7 +210,7 @@ impl Scheduler {
                     *slot.lock() = Some(task::Ready::block(task, "task_ctl_suspend"));
                     Ok(())
                 });
-                assert_matches!(ret, Ok(()) | Err(sv_call::Error::ENOENT));
+                assert_matches!(ret, Ok(()) | Err(sv_call::ENOENT));
 
                 None
             }
@@ -279,7 +279,7 @@ impl Scheduler {
             Some(next) => next,
             None => match self.run_queue.pop() {
                 Some(task) => task,
-                None => return Err(sv_call::Error::ENOENT),
+                None => return Err(sv_call::ENOENT),
             },
         };
         log::trace!("Switching to {:?}, P{}", next.tid.raw(), PREEMPT.raw());
@@ -304,8 +304,7 @@ impl Scheduler {
         // We will enable preemption in `switch_ctx`.
         mem::forget(pree);
         unsafe { task::ctx::switch_ctx(old, new) };
-        ret.transpose()
-            .and_then(|res| res.ok_or(sv_call::Error::ESRCH))
+        ret.transpose().and_then(|res| res.ok_or(sv_call::ESRCH))
     }
 }
 

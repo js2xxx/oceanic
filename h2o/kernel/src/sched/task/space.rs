@@ -74,7 +74,7 @@ impl Space {
                 if obj.features().contains(need_feature) {
                     Ok(Tid::clone(&obj))
                 } else {
-                    Err(sv_call::Error::EPERM)
+                    Err(sv_call::EPERM)
                 }
             })
         })

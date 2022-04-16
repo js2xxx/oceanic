@@ -45,14 +45,14 @@ impl Error {
         if ERRC_RANGE.contains(&index) {
             ERRC_DESC[index as usize]
         } else {
-            CUSTOM_DESC[(index - Self::CUSTOM_OFFSET) as usize]
+            CUSTOM_DESC[(index - CUSTOM_OFFSET) as usize]
         }
     }
 
     pub fn desc_by_index(errnum: i32) -> Option<&'static str> {
         let index = -errnum as usize;
         { ERRC_DESC.get(index) }
-            .or_else(|| CUSTOM_DESC.get(index - Self::CUSTOM_OFFSET as usize))
+            .or_else(|| CUSTOM_DESC.get(index - CUSTOM_OFFSET as usize))
             .copied()
     }
 
@@ -80,28 +80,28 @@ impl Debug for Error {
 impl From<core::alloc::AllocError> for Error {
     #[inline]
     fn from(_: core::alloc::AllocError) -> Self {
-        Error::ENOMEM
+        ENOMEM
     }
 }
 
 impl From<core::alloc::LayoutError> for Error {
     #[inline]
     fn from(_: core::alloc::LayoutError) -> Self {
-        Error::ENOMEM
+        ENOMEM
     }
 }
 
 impl From<core::num::TryFromIntError> for Error {
     #[inline]
     fn from(_: core::num::TryFromIntError) -> Self {
-        Error::EINVAL
+        EINVAL
     }
 }
 
 impl From<core::str::Utf8Error> for Error {
     #[inline]
     fn from(_: core::str::Utf8Error) -> Self {
-        Error::EINVAL
+        EINVAL
     }
 }
 
@@ -112,51 +112,49 @@ macro_rules! declare_error {
     };
 }
 
-impl Error {
-    declare_error!(OK, 0, "Success");
-    declare_error!(EPERM, 1, "Operation not permitted");
-    declare_error!(ENOENT, 2, "No such file or directory");
-    declare_error!(ESRCH, 3, "No such process");
-    declare_error!(EINTR, 4, "Interrupted system call");
-    declare_error!(EIO, 5, "I/O error");
-    declare_error!(ENXIO, 6, "No such device or address");
-    declare_error!(E2BIG, 7, "Argument list too long");
-    declare_error!(ENOEXEC, 8, "Executable format error");
-    declare_error!(EBADF, 9, "Bad file number");
-    declare_error!(ECHILD, 10, "No child processes");
-    declare_error!(EAGAIN, 11, "Try again");
-    declare_error!(ENOMEM, 12, "Out of memory");
-    declare_error!(EACCES, 13, "Permission denied");
-    declare_error!(EFAULT, 14, "Bad address");
-    declare_error!(ENOTBLK, 15, "Block device required");
-    declare_error!(EBUSY, 16, "Device or resource busy");
-    declare_error!(EEXIST, 17, "File exists");
-    declare_error!(EXDEV, 18, "Cross-device link");
-    declare_error!(ENODEV, 19, "No such device");
-    declare_error!(ENOTDIR, 20, "Not a directory");
-    declare_error!(EISDIR, 21, "Is a directory");
-    declare_error!(EINVAL, 22, "Invalid argument");
-    declare_error!(ENFILE, 23, "File table overflow");
-    declare_error!(EMFILE, 24, "Too many open files");
-    declare_error!(ENOTTY, 25, "Not a typewriter");
-    declare_error!(ETXTBSY, 26, "Text file busy");
-    declare_error!(EFBIG, 27, "File too large");
-    declare_error!(ENOSPC, 28, "No space left on device");
-    declare_error!(ESPIPE, 29, "Illegal seek");
-    declare_error!(EROFS, 30, "Read-only file system");
-    declare_error!(EMLINK, 31, "Too many links");
-    declare_error!(EPIPE, 32, "Broken pipe");
-    declare_error!(EDOM, 33, "Math argument out of domain of func");
-    declare_error!(ERANGE, 34, "Range not available");
+declare_error!(OK, 0, "Success");
+declare_error!(EPERM, 1, "Operation not permitted");
+declare_error!(ENOENT, 2, "No such file or directory");
+declare_error!(ESRCH, 3, "No such process");
+declare_error!(EINTR, 4, "Interrupted system call");
+declare_error!(EIO, 5, "I/O error");
+declare_error!(ENXIO, 6, "No such device or address");
+declare_error!(E2BIG, 7, "Argument list too long");
+declare_error!(ENOEXEC, 8, "Executable format error");
+declare_error!(EBADF, 9, "Bad file number");
+declare_error!(ECHILD, 10, "No child processes");
+declare_error!(EAGAIN, 11, "Try again");
+declare_error!(ENOMEM, 12, "Out of memory");
+declare_error!(EACCES, 13, "Permission denied");
+declare_error!(EFAULT, 14, "Bad address");
+declare_error!(ENOTBLK, 15, "Block device required");
+declare_error!(EBUSY, 16, "Device or resource busy");
+declare_error!(EEXIST, 17, "File exists");
+declare_error!(EXDEV, 18, "Cross-device link");
+declare_error!(ENODEV, 19, "No such device");
+declare_error!(ENOTDIR, 20, "Not a directory");
+declare_error!(EISDIR, 21, "Is a directory");
+declare_error!(EINVAL, 22, "Invalid argument");
+declare_error!(ENFILE, 23, "File table overflow");
+declare_error!(EMFILE, 24, "Too many open files");
+declare_error!(ENOTTY, 25, "Not a typewriter");
+declare_error!(ETXTBSY, 26, "Text file busy");
+declare_error!(EFBIG, 27, "File too large");
+declare_error!(ENOSPC, 28, "No space left on device");
+declare_error!(ESPIPE, 29, "Illegal seek");
+declare_error!(EROFS, 30, "Read-only file system");
+declare_error!(EMLINK, 31, "Too many links");
+declare_error!(EPIPE, 32, "Broken pipe");
+declare_error!(EDOM, 33, "Math argument out of domain of func");
+declare_error!(ERANGE, 34, "Range not available");
 
-    const CUSTOM_OFFSET: i32 = CUSTOM_RANGE.start;
-    declare_error!(EKILLED, 1001, "Object already killed");
-    declare_error!(EBUFFER, 1002, "Buffer range exceeded");
-    declare_error!(ETIME, 1003, "Timed out");
-    declare_error!(EALIGN, 1004, "Pointer unaligned");
-    declare_error!(ETYPE, 1005, "Object type mismatch");
-    declare_error!(ESPRT, 1006, "Function not supported");
-}
+const CUSTOM_OFFSET: i32 = CUSTOM_RANGE.start;
+declare_error!(EKILLED, 1001, "Object already killed");
+declare_error!(EBUFFER, 1002, "Buffer range exceeded");
+declare_error!(ETIME, 1003, "Timed out");
+declare_error!(EALIGN, 1004, "Pointer unaligned");
+declare_error!(ETYPE, 1005, "Object type mismatch");
+declare_error!(ESPRT, 1006, "Function not supported");
 
 const ERRC_DESC: &[&str] = &[
     "OK",

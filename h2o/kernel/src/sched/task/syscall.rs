@@ -48,7 +48,7 @@ unsafe impl DefaultFeature for SuspendToken {
 fn task_exit(retval: usize) -> Result {
     SCHED.exit_current(retval);
     #[allow(unreachable_code)]
-    Err(Error::EKILLED)
+    Err(EKILLED)
 }
 
 #[syscall]
@@ -75,7 +75,7 @@ fn get_name(ptr: UserPtr<In, u8>, len: usize) -> Result<Option<String>> {
             ptr.read_slice(buf.as_mut_ptr(), len)?;
             buf.set_len(len);
         }
-        Ok(Some(String::from_utf8(buf).map_err(|_| Error::EINVAL)?))
+        Ok(Some(String::from_utf8(buf).map_err(|_| EINVAL)?))
     } else {
         Ok(None)
     }
@@ -173,8 +173,8 @@ fn task_join(hdl: Handle, retval: UserPtr<Out, usize>) -> Result {
 
     SCHED.with_current(|cur| {
         let handles = cur.space().handles();
-        let val = { handles.get::<Tid>(hdl) }
-            .and_then(|tid| tid.ret_cell().lock().ok_or(Error::ENOENT))?;
+        let val =
+            { handles.get::<Tid>(hdl) }.and_then(|tid| tid.ret_cell().lock().ok_or(ENOENT))?;
 
         drop(handles.remove::<Tid>(hdl));
         unsafe { retval.write(val) }
@@ -206,7 +206,7 @@ fn task_ctl(hdl: Handle, op: u32, data: UserPtr<InOut, Handle>) -> Result {
 
             st.tid.with_signal(|sig| {
                 if sig == &Some(Signal::Kill) {
-                    Err(Error::EPERM)
+                    Err(EPERM)
                 } else {
                     *sig = Some(st.signal());
                     Ok(())
@@ -218,7 +218,7 @@ fn task_ctl(hdl: Handle, op: u32, data: UserPtr<InOut, Handle>) -> Result {
 
             Ok(())
         }
-        _ => Err(Error::EINVAL),
+        _ => Err(EINVAL),
     }
 }
 
@@ -230,12 +230,12 @@ fn read_regs(
     len: usize,
 ) -> Result<()> {
     if !feat.contains(Feature::READ) {
-        return Err(Error::EPERM);
+        return Err(EPERM);
     }
     match addr {
         task::TASK_DBGADDR_GPR => {
             if len < task::ctx::GPR_SIZE {
-                Err(Error::EBUFFER)
+                Err(EBUFFER)
             } else {
                 unsafe { data.cast().write(task.kstack().task_frame().debug_get()) }
             }
@@ -243,12 +243,12 @@ fn read_regs(
         task::TASK_DBGADDR_FPU => {
             let size = archop::fpu::frame_size();
             if len < size {
-                Err(Error::EBUFFER)
+                Err(EBUFFER)
             } else {
                 unsafe { data.write_slice(&task.ext_frame()[..size]) }
             }
         }
-        _ => Err(Error::EINVAL),
+        _ => Err(EINVAL),
     }
 }
 
@@ -260,12 +260,12 @@ fn write_regs(
     len: usize,
 ) -> Result<()> {
     if !feat.contains(Feature::WRITE) {
-        return Err(Error::EPERM);
+        return Err(EPERM);
     }
     match addr {
         task::TASK_DBGADDR_GPR => {
             if len < sv_call::task::ctx::GPR_SIZE {
-                Err(Error::EBUFFER)
+                Err(EBUFFER)
             } else {
                 let gpr = unsafe { data.cast().read()? };
                 unsafe { task.kstack_mut().task_frame_mut().debug_set(&gpr) }
@@ -274,19 +274,19 @@ fn write_regs(
         task::TASK_DBGADDR_FPU => {
             let size = archop::fpu::frame_size();
             if len < size {
-                Err(Error::EBUFFER)
+                Err(EBUFFER)
             } else {
                 let ptr = task.ext_frame_mut().as_mut_ptr();
                 unsafe { data.read_slice(ptr, size) }
             }
         }
-        _ => Err(Error::EINVAL),
+        _ => Err(EINVAL),
     }
 }
 
 fn create_excep_chan(task: &Blocked, feat: Feature) -> Result<crate::sched::ipc::Channel> {
     if !feat.contains(Feature::READ) {
-        return Err(Error::EPERM);
+        return Err(EPERM);
     }
     let slot = task.tid().excep_chan();
     let chan = match slot.lock() {
@@ -295,7 +295,7 @@ fn create_excep_chan(task: &Blocked, feat: Feature) -> Result<crate::sched::ipc:
             *g = Some(krl);
             usr
         }
-        _ => return Err(Error::EEXIST),
+        _ => return Err(EEXIST),
     };
     Ok(chan)
 }
@@ -325,7 +325,7 @@ fn task_debug(hdl: Handle, op: u32, addr: usize, data: UserPtr<InOut, u8>, len: 
         task::TASK_DBG_READ_MEM => unsafe {
             crate::mem::space::with(task.space().mem(), |_| {
                 if !feat.contains(Feature::READ) {
-                    return Err(Error::EPERM);
+                    return Err(EPERM);
                 }
                 let slice = slice::from_raw_parts(addr as *mut u8, len);
                 data.out().write_slice(slice)
@@ -334,14 +334,14 @@ fn task_debug(hdl: Handle, op: u32, addr: usize, data: UserPtr<InOut, u8>, len: 
         task::TASK_DBG_WRITE_MEM => unsafe {
             crate::mem::space::with(task.space().mem(), |_| {
                 if !feat.contains(Feature::WRITE) {
-                    return Err(Error::EPERM);
+                    return Err(EPERM);
                 }
                 data.r#in().read_slice(addr as *mut u8, len)
             })
         },
         task::TASK_DBG_EXCEP_HDL => {
             if len < core::mem::size_of::<Handle>() {
-                Err(Error::EBUFFER)
+                Err(EBUFFER)
             } else {
                 let hdl = SCHED.with_current(|cur| {
                     create_excep_chan(&task, feat).and_then(|chan| {
@@ -353,7 +353,7 @@ fn task_debug(hdl: Handle, op: u32, addr: usize, data: UserPtr<InOut, u8>, len: 
                 unsafe { data.out().cast::<Handle>().write(hdl) }
             }
         }
-        _ => Err(Error::EINVAL),
+        _ => Err(EINVAL),
     };
 
     PREEMPT.scope(|| *slot.lock() = Some(task));

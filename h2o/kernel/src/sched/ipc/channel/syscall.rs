@@ -38,14 +38,14 @@ where
 
     let packet = unsafe { packet.read()? };
     if packet.buffer_size > MAX_BUFFER_SIZE || packet.handle_count >= MAX_HANDLE_COUNT {
-        return Err(Error::ENOMEM);
+        return Err(ENOMEM);
     }
     UserPtr::<In, Handle>::new(packet.handles).check_slice(packet.handle_count)?;
     UserPtr::<In, u8>::new(packet.buffer).check_slice(packet.buffer_size)?;
 
     let handles = unsafe { slice::from_raw_parts(packet.handles, packet.handle_count) };
     if handles.contains(&hdl) {
-        return Err(Error::EPERM);
+        return Err(EPERM);
     }
     let buffer = unsafe { slice::from_raw_parts(packet.buffer, packet.buffer_size) };
 
@@ -53,7 +53,7 @@ where
         let map = cur.space().handles();
         let channel = map.get::<Channel>(hdl)?;
         if !channel.features().contains(Feature::WRITE) {
-            return Err(Error::EPERM);
+            return Err(EPERM);
         }
         let objects = unsafe { map.send(handles, &channel) }?;
         let mut packet = Packet::new(packet.id, objects, buffer);
@@ -119,7 +119,7 @@ fn chan_recv(hdl: Handle, packet_ptr: UserPtr<InOut, RawPacket>) -> Result {
         let map = cur.space().handles();
         let channel = map.get::<Channel>(hdl)?;
         if !channel.features().contains(Feature::READ) {
-            return Err(Error::EPERM);
+            return Err(EPERM);
         }
 
         raw.buffer_size = raw.buffer_cap;
@@ -150,7 +150,7 @@ fn chan_crecv(
     let call_event = SCHED.with_current(|cur| {
         let channel = cur.space().handles().get::<Channel>(hdl)?;
         if !{ channel.features() }.contains(Feature::WAIT | Feature::READ) {
-            return Err(Error::EPERM);
+            return Err(EPERM);
         }
         Ok(channel.call_event(id)? as _)
     })?;
@@ -168,7 +168,7 @@ fn chan_crecv(
 
         let channel = map.get::<Channel>(hdl)?;
         if !channel.features().contains(Feature::READ) {
-            return Err(Error::EPERM);
+            return Err(EPERM);
         }
 
         raw.buffer_size = raw.buffer_cap;
@@ -179,7 +179,7 @@ fn chan_crecv(
 
     if let Some(blocker) = blocker {
         if !blocker.detach().0 {
-            return Err(Error::ETIME);
+            return Err(ETIME);
         }
     }
 
@@ -191,7 +191,7 @@ fn chan_acrecv(hdl: Handle, id: usize, wake_all: bool) -> Result<Handle> {
     SCHED.with_current(|cur| {
         let chan = cur.space().handles().get::<Channel>(hdl)?;
         if !{ chan.features() }.contains(Feature::READ | Feature::WAIT) {
-            return Err(Error::EPERM);
+            return Err(EPERM);
         }
         let event = chan.call_event(id)? as _;
 

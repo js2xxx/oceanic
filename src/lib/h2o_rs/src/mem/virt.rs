@@ -14,7 +14,7 @@ use crate::obj::Object;
 /// Note: The `Virt` object's lifetime is bound to the hierarchical
 /// structure instead of the handle itself (like an [`alloc::sync::Weak`]),
 /// so every operation to the object can fail due to its parent destroying all
-/// the nodes in the sub-tree, returning [`crate::error::Error::EKILLED`].
+/// the nodes in the sub-tree, returning [`crate::error::EKILLED`].
 #[derive(Debug)]
 #[repr(transparent)]
 pub struct Virt(Handle);

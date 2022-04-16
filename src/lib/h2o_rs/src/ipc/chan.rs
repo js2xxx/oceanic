@@ -245,7 +245,7 @@ where
             unsafe { handles.set_len(handle_count) };
             return Ok(value);
         }
-        (Err(Error::EBUFFER), buffer_size, handle_count) => {
+        (Err(EBUFFER), buffer_size, handle_count) => {
             buffer.reserve(buffer_size);
             handles.reserve(handle_count);
         }
@@ -268,7 +268,7 @@ where
                 }
                 break Ok(value);
             }
-            (Err(Error::EBUFFER), buffer_size, handle_count) => {
+            (Err(EBUFFER), buffer_size, handle_count) => {
                 buffer.reserve(buffer_size.saturating_sub(buffer_cap));
                 handles.reserve(handle_count.saturating_sub(handle_cap));
             }

@@ -1,7 +1,7 @@
 use alloc::{collections::BTreeMap, vec::Vec};
 use core::{array::TryFromSliceError, mem};
 
-use solvent::prelude::{Error, Handle, Object, Packet, PacketTyped, Phys, Virt};
+use solvent::prelude::{Error, Handle, Object, Packet, PacketTyped, Phys, Virt, EBUFFER, ETYPE};
 
 use crate::{
     HandleInfo, HandleType, StartupArgsHeader, PACKET_SIG_STARTUP_ARGS, STARTUP_ARGS_HEADER_SIZE,
@@ -30,9 +30,9 @@ impl From<cstr_core::FromBytesWithNulError> for TryFromError {
 impl From<TryFromError> for Error {
     fn from(val: TryFromError) -> Self {
         match val {
-            TryFromError::SignatureMismatch(_) => Error::ETYPE,
-            TryFromError::StringParseError(_) => Error::ETYPE,
-            TryFromError::BufferTooShort => Error::EBUFFER,
+            TryFromError::SignatureMismatch(_) => ETYPE,
+            TryFromError::StringParseError(_) => ETYPE,
+            TryFromError::BufferTooShort => EBUFFER,
             TryFromError::Other(err) => err,
         }
     }
@@ -140,10 +140,6 @@ impl PacketTyped for StartupArgs {
 
         *packet = Default::default();
 
-        Ok(StartupArgs {
-            handles,
-            args,
-            env,
-        })
+        Ok(StartupArgs { handles, args, env })
     }
 }

@@ -67,7 +67,7 @@ pub fn dispatch_exception(frame: &mut Frame, vec: ExVec) -> bool {
             Some(res.code == EXRES_CODE_RECOVERED)
         }
         Err(err) => match err {
-            sv_call::Error::EPIPE => None,
+            sv_call::EPIPE => None,
             _ => Some(false),
         },
     };

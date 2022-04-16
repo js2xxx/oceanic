@@ -38,16 +38,16 @@ pub static KRL: Azy<Arc<Space>> =
 static mut CURRENT: Option<Arc<Space>> = None;
 
 fn paging_error(err: paging::Error) -> sv_call::Error {
-    use sv_call::Error;
+    use sv_call::*;
     match err {
-        paging::Error::OutOfMemory => Error::ENOMEM,
-        paging::Error::AddrMisaligned { .. } => Error::EALIGN,
-        paging::Error::RangeEmpty => Error::EBUFFER,
+        paging::Error::OutOfMemory => ENOMEM,
+        paging::Error::AddrMisaligned { .. } => EALIGN,
+        paging::Error::RangeEmpty => EBUFFER,
         paging::Error::EntryExistent(b) => {
             if b {
-                Error::EEXIST
+                EEXIST
             } else {
-                Error::ENOENT
+                ENOENT
             }
         }
     }
@@ -124,7 +124,7 @@ pub(crate) unsafe fn reprotect_unchecked(ptr: NonNull<[u8]>, flags: Flags) -> sv
 pub(crate) unsafe fn unmap(ptr: NonNull<u8>) -> sv_call::Result {
     let base = LAddr::from(ptr);
     let ret = PREEMPT.scope(|| KRL.root.children.lock().remove(&base));
-    ret.map_or(Err(sv_call::Error::ENOENT), |child| {
+    ret.map_or(Err(sv_call::ENOENT), |child| {
         let end = child.end(base);
         let _ = PREEMPT.scope(|| KRL.arch.unmaps(base..end));
         Ok(())

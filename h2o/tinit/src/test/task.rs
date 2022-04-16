@@ -61,7 +61,7 @@ unsafe fn join(normal: Handle, fault: Handle) {
     sv_task_join(fault, &mut ret)
         .into_res()
         .expect("Failed to join the task");
-    assert_eq!(Error::try_from_retval(ret), Some(Error::EFAULT));
+    assert_eq!(Error::try_from_retval(ret), Some(EFAULT));
 }
 
 unsafe fn sleep() {
@@ -83,7 +83,7 @@ unsafe fn debug_mem(st: Handle) {
         buf.as_mut_ptr(),
         buf.len(),
     );
-    assert_eq!(ret.into_res(), Err(Error::EPERM));
+    assert_eq!(ret.into_res(), Err(EPERM));
 }
 
 unsafe fn debug_reg_gpr(st: Handle) {
@@ -188,7 +188,7 @@ unsafe fn debug_excep(task: Handle, st: Handle) {
     sv_task_join(task, &mut ret)
         .into_res()
         .expect("Failed to join the task");
-    assert_eq!(Error::try_from_retval(ret), Some(Error::EFAULT));
+    assert_eq!(Error::try_from_retval(ret), Some(EFAULT));
 }
 
 unsafe fn suspend(task: Handle) {
@@ -224,7 +224,7 @@ unsafe fn kill(task: Handle) {
     sv_task_join(task, &mut ret)
         .into_res()
         .expect("Failed to join the task");
-    assert_eq!(Error::try_from_retval(ret), Some(Error::EKILLED));
+    assert_eq!(Error::try_from_retval(ret), Some(EKILLED));
 }
 
 unsafe fn ctl(task: Handle) {
@@ -237,7 +237,7 @@ unsafe fn ctl(task: Handle) {
 pub unsafe fn test(virt: &Virt) -> (*mut u8, *mut u8, Handle) {
     // Test the defence of invalid user pointer access.
     let ret = sv_task_exec(0x100000000 as *const ExecInfo);
-    assert_eq!(ret.into_res(), Err(Error::EPERM));
+    assert_eq!(ret.into_res(), Err(EPERM));
 
     let flags = Flags::READABLE | Flags::WRITABLE | Flags::USER_ACCESS;
     let stack_phys = sv_phys_alloc(DEFAULT_STACK_SIZE, false)

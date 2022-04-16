@@ -4,7 +4,7 @@ use core::{ffi::c_void, ptr};
 pub extern "C" fn exit(s: i32) -> ! {
     // SAFETY: Clean up the context before _Exit.
     unsafe {
-        __libc_exit_fini();
+        crate::env::__libc_exit_fini();
         _Exit(s)
     }
 }
@@ -16,11 +16,6 @@ pub extern "C" fn exit(s: i32) -> ! {
 #[no_mangle]
 pub unsafe extern "C" fn _Exit(s: i32) -> ! {
     solvent::task::exit(s as usize);
-}
-
-#[link(name = "ldso")]
-extern "C" {
-    fn __libc_exit_fini();
 }
 
 /// # Safety

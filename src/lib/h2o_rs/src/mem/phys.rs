@@ -6,7 +6,7 @@ use core::slice;
 use super::PAGE_SIZE;
 use crate::{
     dev::MemRes,
-    error::{Error, Result},
+    error::{Result, ERANGE},
     obj::Object,
 };
 
@@ -110,7 +110,7 @@ impl Phys {
                 .into_res()?;
             Ok(Phys { len, inner: handle })
         } else {
-            Err(Error::ERANGE)
+            Err(ERANGE)
         }
     }
 }

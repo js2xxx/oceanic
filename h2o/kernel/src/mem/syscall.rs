@@ -20,7 +20,7 @@ use crate::{
 
 fn check_flags(flags: Flags) -> Result<Flags> {
     if !flags.contains(Flags::USER_ACCESS) {
-        return Err(Error::EPERM);
+        return Err(EPERM);
     }
     Ok(flags)
 }
@@ -60,7 +60,7 @@ fn phys_check(hdl: Handle, offset: usize, len: usize) -> Result<(Feature, space:
     hdl.check_null()?;
     let offset_end = offset.wrapping_add(len);
     if offset_end < offset {
-        return Err(Error::ERANGE);
+        return Err(ERANGE);
     }
     let (feat, phys) = SCHED.with_current(|cur| {
         cur.space()
@@ -69,7 +69,7 @@ fn phys_check(hdl: Handle, offset: usize, len: usize) -> Result<(Feature, space:
             .map(|obj| (obj.features(), space::Phys::clone(&obj)))
     })?;
     if offset_end > phys.len() {
-        return Err(Error::ERANGE);
+        return Err(ERANGE);
     }
     Ok((feat, phys))
 }
@@ -79,10 +79,10 @@ fn phys_read(hdl: Handle, offset: usize, len: usize, buffer: UserPtr<Out, u8>) -
     buffer.check_slice(len)?;
     let (feat, phys) = phys_check(hdl, offset, len)?;
     if phys == VDSO.1 {
-        return Err(Error::EACCES);
+        return Err(EACCES);
     }
     if !feat.contains(Feature::READ) {
-        return Err(Error::EPERM);
+        return Err(EPERM);
     }
     if len > 0 {
         unsafe {
@@ -99,10 +99,10 @@ fn phys_write(hdl: Handle, offset: usize, len: usize, buffer: UserPtr<In, u8>) -
     buffer.check_slice(len)?;
     let (feat, phys) = phys_check(hdl, offset, len)?;
     if phys == VDSO.1 {
-        return Err(Error::EACCES);
+        return Err(EACCES);
     }
     if !feat.contains(Feature::WRITE) {
-        return Err(Error::EPERM);
+        return Err(EPERM);
     }
     if len > 0 {
         unsafe {
@@ -117,10 +117,10 @@ fn phys_write(hdl: Handle, offset: usize, len: usize, buffer: UserPtr<In, u8>) -
 fn phys_sub(hdl: Handle, offset: usize, len: usize, copy: bool) -> Result<Handle> {
     let (feat, phys) = phys_check(hdl, offset, len)?;
     if phys == VDSO.1 {
-        return Err(Error::EACCES);
+        return Err(EACCES);
     }
     if !feat.contains(Feature::READ) {
-        return Err(Error::EPERM);
+        return Err(EPERM);
     }
 
     let sub = phys.create_sub(offset, len, copy)?;
@@ -158,7 +158,7 @@ fn virt_alloc(hdl: Handle, offset: usize, size: usize, align: usize) -> Result<H
     hdl.check_null()?;
     SCHED.with_current(|cur| {
         let virt = cur.space().handles().get::<Weak<space::Virt>>(hdl)?;
-        let virt = virt.upgrade().ok_or(Error::EKILLED)?;
+        let virt = virt.upgrade().ok_or(EKILLED)?;
         let sub = virt.allocate(
             (offset != usize::MAX).then(|| offset),
             Layout::from_size_align(size, align)?,
@@ -172,7 +172,7 @@ fn virt_info(hdl: Handle, size: UserPtr<Out, usize>) -> Result<*mut u8> {
     hdl.check_null()?;
     SCHED.with_current(|cur| {
         let virt = cur.space().handles().get::<Weak<space::Virt>>(hdl)?;
-        let virt = virt.upgrade().ok_or(Error::EKILLED)?;
+        let virt = virt.upgrade().ok_or(EKILLED)?;
         let base = virt.range().start;
         if !size.as_ptr().is_null() {
             unsafe { size.write(virt.len()) }?;
@@ -186,7 +186,7 @@ fn virt_drop(hdl: Handle) -> Result {
     hdl.check_null()?;
     SCHED.with_current(|cur| {
         let virt = cur.space().handles().get::<Weak<space::Virt>>(hdl)?;
-        let virt = virt.upgrade().ok_or(Error::EKILLED)?;
+        let virt = virt.upgrade().ok_or(EKILLED)?;
         virt.destroy()
     })
 }
@@ -198,11 +198,11 @@ fn virt_map(hdl: Handle, mi: UserPtr<In, VirtMapInfo>) -> Result<*mut u8> {
     let flags = check_flags(mi.flags)?;
     SCHED.with_current(|cur| {
         let virt = cur.space().handles().get::<Weak<space::Virt>>(hdl)?;
-        let virt = virt.upgrade().ok_or(Error::EKILLED)?;
+        let virt = virt.upgrade().ok_or(EKILLED)?;
         let phys = cur.space().handles().remove::<space::Phys>(mi.phys)?;
         let offset = (mi.offset != usize::MAX).then(|| mi.offset);
         if flags.intersects(!features_to_flags(phys.features())) {
-            return Err(Error::EPERM);
+            return Err(EPERM);
         }
 
         let addr = virt.map(
@@ -223,7 +223,7 @@ fn virt_reprot(hdl: Handle, base: UserPtr<In, u8>, len: usize, flags: Flags) -> 
     let flags = check_flags(flags)?;
     SCHED.with_current(|cur| {
         let virt = cur.space().handles().get::<Weak<space::Virt>>(hdl)?;
-        let virt = virt.upgrade().ok_or(Error::EKILLED)?;
+        let virt = virt.upgrade().ok_or(EKILLED)?;
         virt.reprotect(LAddr::new(base.as_ptr()), len, flags)
     })
 }
@@ -234,7 +234,7 @@ fn virt_unmap(hdl: Handle, base: UserPtr<In, u8>, len: usize, drop_child: bool) 
     base.check()?;
     SCHED.with_current(|cur| {
         let virt = cur.space().handles().get::<Weak<space::Virt>>(hdl)?;
-        let virt = virt.upgrade().ok_or(Error::EKILLED)?;
+        let virt = virt.upgrade().ok_or(EKILLED)?;
         virt.unmap(LAddr::new(base.as_ptr()), len, drop_child)
     })
 }
@@ -255,7 +255,7 @@ fn mem_info(info: UserPtr<Out, MemInfo>) -> Result {
 #[syscall]
 fn phys_acq(res: Handle, addr: usize, size: usize) -> Result<Handle> {
     if addr.contains_bit(paging::PAGE_MASK) || size.contains_bit(paging::PAGE_MASK) {
-        return Err(Error::EINVAL);
+        return Err(EINVAL);
     }
 
     SCHED.with_current(|cur| {
@@ -267,7 +267,7 @@ fn phys_acq(res: Handle, addr: usize, size: usize) -> Result<Handle> {
             let phys = space::Phys::new(paging::PAddr::new(addr), size)?;
             unsafe { cur.space().handles().insert(phys, None) }
         } else {
-            Err(Error::EPERM)
+            Err(EPERM)
         }
     })
 }

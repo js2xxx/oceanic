@@ -167,7 +167,7 @@ impl Frame {
         if !archop::canonical(LAddr::from(gpr.fs_base))
             || !archop::canonical(LAddr::from(gpr.gs_base))
         {
-            return Err(sv_call::Error::EINVAL);
+            return Err(sv_call::EINVAL);
         }
         self.gs_base = gpr.gs_base;
         self.fs_base = gpr.fs_base;

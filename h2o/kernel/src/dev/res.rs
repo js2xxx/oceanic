@@ -93,9 +93,9 @@ mod syscall {
         SCHED.with_current(|cur| {
             let res = cur.space().handles().get::<Arc<Resource<T>>>(hdl)?;
             if !res.features().contains(Feature::SYNC) {
-                return Err(Error::EPERM);
+                return Err(EPERM);
             }
-            let sub = res.allocate(base..(base + size)).ok_or(Error::ENOMEM)?;
+            let sub = res.allocate(base..(base + size)).ok_or(ENOMEM)?;
             cur.space().handles().insert(sub, None)
         })
     }
@@ -106,7 +106,7 @@ mod syscall {
             res::RES_MEM => res_alloc_typed(hdl, base, size),
             res::RES_PIO => res_alloc_typed(hdl, u16::try_from(base)?, u16::try_from(size)?),
             res::RES_GSI => res_alloc_typed(hdl, u32::try_from(base)?, u32::try_from(size)?),
-            _ => Err(Error::ETYPE),
+            _ => Err(ETYPE),
         }
     }
 }

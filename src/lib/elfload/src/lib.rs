@@ -24,8 +24,8 @@ pub struct LoadedElf {
     pub is_dyn: bool,
     pub virt: Virt,
     pub range: Range<usize>,
-    /// Note: The size of the stack can be zero and the caller should check it before allocating
-    /// memory for the stack.
+    /// Note: The size of the stack can be zero and the caller should check it
+    /// before allocating memory for the stack.
     pub stack: Option<(usize, Flags)>,
     pub entry: usize,
     pub dynamic: Option<ProgramHeader>,

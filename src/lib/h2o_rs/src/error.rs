@@ -1,1 +1,1 @@
-pub use sv_call::{Error, Result};
+pub use sv_call::error::*;

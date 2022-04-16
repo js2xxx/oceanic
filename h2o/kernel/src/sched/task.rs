@@ -35,7 +35,7 @@ impl Type {
     #[inline]
     pub fn pass(this: Option<Self>, cur_ty: Type) -> sv_call::Result<Type> {
         match (this, cur_ty) {
-            (Some(Self::Kernel), Self::User) => Err(sv_call::Error::EPERM),
+            (Some(Self::Kernel), Self::User) => Err(sv_call::EPERM),
             (Some(ty), _) => Ok(ty),
             _ => Ok(cur_ty),
         }
@@ -80,7 +80,7 @@ fn exec_inner(
         .build()
         .unwrap();
 
-    let tid = tid::allocate(ti).map_err(|_| sv_call::Error::EBUSY)?;
+    let tid = tid::allocate(ti).map_err(|_| sv_call::EBUSY)?;
 
     let entry = ctx::Entry {
         entry: s.entry,
@@ -127,7 +127,7 @@ fn create(name: Option<String>, space: Arsc<Space>) -> sv_call::Result<(Init, sv
         .build()
         .unwrap();
 
-    let tid = tid::allocate(ti).map_err(|_| sv_call::Error::EBUSY)?;
+    let tid = tid::allocate(ti).map_err(|_| sv_call::EBUSY)?;
 
     let kstack = ctx::Kstack::new(None, ty);
     let ext_frame = ctx::ExtFrame::zeroed();

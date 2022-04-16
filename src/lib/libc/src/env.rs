@@ -58,5 +58,5 @@ pub(crate) extern "C" fn __libc_panic(info: &PanicInfo) -> ! {
 #[link(name = "ldso")]
 extern "C" {
     fn __libc_start_init();
-    fn __libc_exit_fini();
+    pub(crate) fn __libc_exit_fini();
 }

@@ -50,7 +50,7 @@ fn offset_sub<T>(slice: &[T], parent: &[T]) -> Option<usize> {
 }
 
 fn sub_phys(bin_data: &[u8], bootfs: Directory, bootfs_phys: &Phys) -> Result<Phys> {
-    let offset = offset_sub(bin_data, bootfs.image()).ok_or(Error::ERANGE)?;
+    let offset = offset_sub(bin_data, bootfs.image()).ok_or(ERANGE)?;
     bootfs_phys.create_sub(offset, bin_data.len().next_multiple_of(PAGE_SIZE), false)
 }
 
@@ -84,7 +84,7 @@ fn serve_load(load_rpc: Channel, bootfs: Directory, bootfs_phys: &Phys) -> Error
         });
         match res {
             Ok(()) => hint::spin_loop(),
-            Err(Error::ENOENT) => match load_rpc.try_wait(Duration::MAX, true, SIG_READ) {
+            Err(ENOENT) => match load_rpc.try_wait(Duration::MAX, true, SIG_READ) {
                 Ok(_) => {}
                 Err(err) => break err,
             },

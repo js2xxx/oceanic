@@ -20,7 +20,7 @@ fn gen_bindings(sysroot: &Path, ffi: &Path) -> Result<(), Box<dyn Error>> {
             .find_map(|name| name.rsplit('_').next())
             .unwrap();
         let mut config = cbindgen::Config {
-            sys_includes: vec!["stddef.h".into(), "stdint.h".into()],
+            sys_includes: vec!["stddef.h".into(), "stdint.h".into(), "h2o.h".into()],
             include_guard: Some(format!("_CO2_{}_H_", name.to_ascii_uppercase())),
             language: cbindgen::Language::C,
             style: cbindgen::Style::Tag,

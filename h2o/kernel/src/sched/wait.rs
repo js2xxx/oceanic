@@ -37,7 +37,7 @@ impl WaitObject {
             if !timer.is_fired() {
                 Ok(())
             } else {
-                Err(sv_call::Error::ETIME)
+                Err(sv_call::ETIME)
             }
         })
     }
