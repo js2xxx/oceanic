@@ -11,7 +11,9 @@ use core::{
     time::Duration,
 };
 
+use canary::Canary;
 use cstr_core::{cstr, CStr, CString};
+use elfload::LoadedElf;
 use rpc::load::{GetObject, GetObjectResponse as Response};
 use solvent::prelude::{Channel, Object, Phys};
 use spin::{Lazy, Mutex, Once};
@@ -92,6 +94,8 @@ struct DsoLink {
 
 #[derive(Debug)]
 pub struct Dso {
+    pub(crate) canary: Canary<Dso>,
+
     link: UnsafeCell<DsoLink>,
     fini_link: UnsafeCell<DsoLink>,
 
@@ -101,7 +105,7 @@ pub struct Dso {
 
     dynamic: &'static [Dyn],
     syms: Symbols<'static>,
-    tls: Option<(*mut u8, usize)>,
+    tls: Option<usize>,
 
     relocate: Once,
     init: Once,
@@ -147,6 +151,7 @@ impl Dso {
         let syms = Symbols::from_dynamic(&base, dynamic, None).ok_or(Error::SymbolLoad)?;
 
         Ok(Dso {
+            canary: Canary::new(),
             link: Default::default(),
             fini_link: Default::default(),
             _id: Self::next_id(),
@@ -161,7 +166,11 @@ impl Dso {
         })
     }
 
-    pub fn load(phys: &Phys, name: CString, prog: bool) -> Result<elfload::LoadedElf, Error> {
+    pub fn load(
+        phys: &Phys,
+        name: CString,
+        prog: bool,
+    ) -> Result<(LoadedElf, NonNull<Dso>), Error> {
         let mut dso_list = dso_list().lock();
         let names = dso_list.names.clone();
         Self::load_dso(phys, name, prog, &mut dso_list).inspect_err(|_| dso_list.names = names)
@@ -172,7 +181,7 @@ impl Dso {
         name: CString,
         prog: bool,
         dso_list: &mut DsoList,
-    ) -> Result<elfload::LoadedElf, Error> {
+    ) -> Result<(LoadedElf, NonNull<Dso>), Error> {
         let elf = elfload::load(phys, true, &*svrt::root_virt()).map_err(Error::ElfLoad)?;
 
         let base = DsoBase::new(elf.range.start, if elf.is_dyn { ET_DYN } else { ET_EXEC });
@@ -200,6 +209,7 @@ impl Dso {
         let name = unsafe { CStr::from_ptr(CString::into_raw(name)) };
 
         let mut dso = Dso {
+            canary: Canary::new(),
             link: Default::default(),
             fini_link: Default::default(),
             _id: Self::next_id(),
@@ -215,8 +225,8 @@ impl Dso {
         if let Some(ref tls) = elf.tls {
             dso_list.load_tls(&mut dso, tls, prog)?
         }
-        dso_list.push(dso, prog);
-        Ok(elf)
+        let ptr = dso_list.push(dso, prog);
+        Ok((elf, ptr))
     }
 
     fn load_deps(dynamic: &[Dyn], syms: &Symbols, dso_list: &mut DsoList) -> Result<(), Error> {
@@ -229,18 +239,7 @@ impl Dso {
             })
             .collect::<Vec<_>>();
         log::debug!("Dependencies: {:?}", deps);
-        let ldrpc = LDRPC
-            .as_ref()
-            .ok_or(Error::DepGet(solvent::error::ENOENT))?;
-        let resp = rpc::call::<GetObject>(ldrpc, deps.clone().into(), Duration::MAX)
-            .map_err(Error::DepGet)?;
-        let objs = match resp {
-            Response::Success(objs) => objs,
-            Response::Error { not_found_index } => {
-                log::error!("DT_NEEDED Library at index {} not found", not_found_index);
-                return Err(Error::DepGet(solvent::error::ENOENT));
-            }
-        };
+        let objs = get_object(deps.clone())?;
         for (phys, name) in objs.into_iter().zip(deps.into_iter()) {
             Self::load_dso(&phys, name, false, dso_list)?;
         }
@@ -351,13 +350,6 @@ impl DsoList {
         except: Option<&Dso>,
         needs_def: bool,
     ) -> Option<(&Dso, Sym)> {
-        fn check_type(st_type: u8) -> bool {
-            st_type == STT_NOTYPE
-                || st_type == STT_COMMON
-                || st_type == STT_FUNC
-                || st_type == STT_OBJECT
-                || st_type == STT_TLS
-        }
         fn check_bind(st_bind: u8) -> bool {
             st_bind == STB_GLOBAL || st_bind == STB_WEAK || st_bind == STB_GNU_UNIQUE
         }
@@ -399,6 +391,35 @@ impl DsoList {
             }
         }
         ret
+    }
+
+    fn get_symbol_value_hashed(&self, dso: &Dso, name: &CStr, ghash: u32) -> Option<*mut u8> {
+        match dso.syms.get_by_name_hashed(name, ghash) {
+            Some(sym) if st_type(sym.st_info) == STT_TLS => {
+                let base = self.tls.get(dso.tls?)?.as_ptr();
+                Some(unsafe { base.add(sym.st_value as usize) })
+            }
+            Some(sym) if check_type(st_type(sym.st_info)) => {
+                Some(dso.base.ptr::<u8>(sym.st_value as usize))
+            }
+            _ => None, // TODO: Find the symbol is its dependencies.
+        }
+    }
+
+    pub fn get_symbol_value(&self, dso: Option<&Dso>, name: &CStr) -> Option<*mut u8> {
+        if let Some(dso) = dso {
+            let ghash = GnuHash::hash(name.to_bytes());
+
+            return self.get_symbol_value_hashed(dso, name, ghash);
+        }
+
+        let (dso, sym) = self.find_symbol(name, None, false)?;
+        if st_type(sym.st_info) == STT_TLS {
+            let base = self.tls.get(dso.tls?)?.as_ptr();
+            Some(unsafe { base.add(sym.st_value as usize) })
+        } else {
+            Some(dso.base.ptr::<u8>(sym.st_value as usize))
+        }
     }
 
     fn relocate_one(&self, dso: &Dso, reloc: Reloc) -> bool {
@@ -448,13 +469,15 @@ impl DsoList {
                 R_X86_64_PC32 => *reloc_ptr = sym_val as usize + reloc.addend - reloc_ptr as usize,
                 R_X86_64_DTPOFF64 => {
                     let (dso, sym) = def.expect("No definition found for TPOFF64");
-                    let (_, size) = dso.tls.expect("No TLS available");
+                    let size = self.tls[dso.tls.expect("No TLS available")]
+                        .chunk_layout()
+                        .size();
                     let tls_addend = 0usize.wrapping_sub(size);
                     *reloc_ptr = (sym.st_value as usize + reloc.addend).wrapping_add(tls_addend)
                 }
                 R_X86_64_TPOFF64 => {
                     let (dso, sym) = def.expect("No definition found for TPOFF64");
-                    let (start, _) = dso.tls.expect("No TLS available");
+                    let start = self.tls[dso.tls.expect("No TLS available")].as_ptr();
                     let tls_addend =
                         (start as usize).wrapping_sub(Tcb::current().static_base as usize);
                     *reloc_ptr = (sym.st_value as usize + reloc.addend).wrapping_add(tls_addend)
@@ -484,7 +507,7 @@ impl DsoList {
         });
     }
 
-    pub fn push(&mut self, dso: Dso, prog: bool) {
+    pub fn push(&mut self, dso: Dso, prog: bool) -> NonNull<Dso> {
         let dso = Box::leak(Box::new(dso));
 
         unsafe {
@@ -505,6 +528,57 @@ impl DsoList {
 
         if prog {
             self.prog = Some(dso.into());
+        }
+        dso.into()
+    }
+
+    pub fn pop(&mut self, dso: NonNull<Dso>) -> Option<Dso> {
+        if unsafe { dso == LDSO.assume_init_ref().into() || dso == VDSO.assume_init_ref().into() } {
+            return None;
+        }
+
+        let mut cur = self.head;
+        loop {
+            cur = match cur {
+                Some(mut cur) if cur == dso => {
+                    // SAFETY: The pointer is ours.
+                    unsafe {
+                        // These two are ours now, and we can create &mut s.
+                        let link = &mut *(cur.as_mut().link.get());
+
+                        // Not creating new mutable (unique!) references overlapping `element`.
+                        match link.prev {
+                            Some(mut prev) => unsafe {
+                                (*(prev.as_mut().link.get())).next = link.next
+                            },
+                            // These nodes start with the head.
+                            None => self.head = link.next,
+                        }
+
+                        match link.next {
+                            Some(mut next) => unsafe {
+                                (*(next.as_mut().link.get())).prev = link.prev
+                            },
+                            // These nodes end with the tail.
+                            None => self.tail = link.prev,
+                        }
+
+                        link.prev = None;
+                        link.next = None;
+                    };
+
+                    // SAFETY: The pointer will be no longer read again and the ownership is moved
+                    // to `value`.
+                    let value = unsafe { cur.as_ptr().read() };
+                    // SAFETY: The pointer is ours.
+                    let _ = unsafe { Box::from_raw(cur.as_ptr()) };
+
+                    break Some(value);
+                }
+                // SAFETY: The pointer is allocated from the arena.
+                Some(cur) => unsafe { (*cur.as_ref().link.get()).next },
+                None => break None,
+            }
         }
     }
 
@@ -577,12 +651,12 @@ impl DsoList {
 
         let tls = Tls::new(init_data, layout)
             .map_err(|_| Error::Memory(layout.size(), layout.align()))?;
-        dso.tls = Some((tls.as_ptr(), tls.chunk_layout().size()));
         if prog {
             unsafe {
                 Tcb::current().static_base = tls.static_base();
             }
         }
+        dso.tls = Some(self.tls.len());
         self.tls.push(tls);
 
         Ok(())
@@ -625,4 +699,26 @@ pub fn init() -> Result<(), Error> {
         Tcb::init_current(0);
     }
     Ok(())
+}
+
+pub fn get_object(path: Vec<CString>) -> Result<Vec<Phys>, Error> {
+    let ldrpc = LDRPC
+        .as_ref()
+        .ok_or(Error::DepGet(solvent::error::ENOENT))?;
+    let resp = rpc::call::<GetObject>(ldrpc, path.into(), Duration::MAX).map_err(Error::DepGet)?;
+    match resp {
+        Response::Success(objs) => Ok(objs),
+        Response::Error { not_found_index } => {
+            log::error!("DT_NEEDED Library at index {} not found", not_found_index);
+            Err(Error::DepGet(solvent::error::ENOENT))
+        }
+    }
+}
+
+fn check_type(st_type: u8) -> bool {
+    st_type == STT_NOTYPE
+        || st_type == STT_COMMON
+        || st_type == STT_FUNC
+        || st_type == STT_OBJECT
+        || st_type == STT_TLS
 }
