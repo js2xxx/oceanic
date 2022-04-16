@@ -319,14 +319,14 @@ impl Tls {
 
     pub fn get(&self, index: usize) -> Option<&[u8]> {
         let size = self.chunk_layout.size();
-        let (_, start) = self.chunk_layout.repeat(index).ok()?;
+        let start = self.chunk_layout.pad_to_align().size().checked_mul(index)?;
         (size + start <= self.layout.size())
             .then(|| unsafe { slice::from_raw_parts(self.data.as_ptr().add(start), size) })
     }
 
     pub fn get_mut(&mut self, index: usize) -> Option<&mut [u8]> {
         let size = self.chunk_layout.size();
-        let (_, start) = self.chunk_layout.repeat(index).ok()?;
+        let start = self.chunk_layout.pad_to_align().size().checked_mul(index)?;
         (size + start <= self.layout.size())
             .then(|| unsafe { slice::from_raw_parts_mut(self.data.as_ptr().add(start), size) })
     }

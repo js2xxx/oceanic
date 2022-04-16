@@ -344,6 +344,10 @@ impl DsoList {
         unsafe { self.prog.map(|p| p.as_ref()) }
     }
 
+    pub fn tls(&self) -> &[Tls] {
+        &self.tls
+    }
+
     pub fn find_symbol(
         &self,
         name: &CStr,
@@ -467,8 +471,12 @@ impl DsoList {
                     (reloc_ptr as *mut u8).copy_from_nonoverlapping(sym_val, sym.st_size as usize);
                 }
                 R_X86_64_PC32 => *reloc_ptr = sym_val as usize + reloc.addend - reloc_ptr as usize,
+                R_X86_64_DTPMOD64 => {
+                    let dso = def.map(|(dso, _)| dso).unwrap_or(dso);
+                    *reloc_ptr = dso.tls.expect("No TLS available");
+                }
                 R_X86_64_DTPOFF64 => {
-                    let (dso, sym) = def.expect("No definition found for TPOFF64");
+                    let (dso, sym) = def.expect("No definition found for DTPOFF64");
                     let size = self.tls[dso.tls.expect("No TLS available")]
                         .chunk_layout()
                         .size();
@@ -489,6 +497,16 @@ impl DsoList {
     }
 
     fn relocate_dso(&self, dso: &Dso) {
+        fn r<T: Into<Reloc>>(list: &DsoList, dso: &Dso, iter: Option<impl IntoIterator<Item = T>>) {
+            if let Some(iter) = iter {
+                for reloc in iter {
+                    if list.relocate_one(dso, reloc.into()) {
+                        break;
+                    }
+                }
+            }
+        }
+
         dso.relocate.call_once(|| {
             if dso.base.get() != load_address() {
                 if let Some((offset, size)) = dso.dyn_val(DT_RELR).zip(dso.dyn_val(DT_RELRSZ)) {
@@ -496,13 +514,16 @@ impl DsoList {
                 }
             }
 
-            let rel = unsafe { dso.dyn_slice::<Rel>(DT_REL, DT_RELSZ) }.unwrap_or(&[]);
-            let rela = unsafe { dso.dyn_slice::<Rela>(DT_RELA, DT_RELASZ) }.unwrap_or(&[]);
+            unsafe {
+                r(self, dso, dso.dyn_slice::<Rel>(DT_REL, DT_RELSZ));
+                r(self, dso, dso.dyn_slice::<Rela>(DT_RELA, DT_RELASZ));
 
-            for reloc in { rel.iter().map(Reloc::from) }.chain(rela.iter().map(Reloc::from)) {
-                if self.relocate_one(dso, reloc) {
-                    break;
-                }
+                match dso.dyn_val(DT_PLTREL).unwrap_or_default() as u64 {
+                    DT_RELA => r(self, dso, dso.dyn_slice::<Rela>(DT_JMPREL, DT_PLTRELSZ)),
+                    DT_REL => r(self, dso, dso.dyn_slice::<Rel>(DT_JMPREL, DT_PLTRELSZ)),
+                    v if v > 0 => log::warn!("Unknown DT_PLTREL value: {}", v),
+                    _ => {}
+                };
             }
         });
     }

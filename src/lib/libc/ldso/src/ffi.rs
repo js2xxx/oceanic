@@ -7,7 +7,10 @@ use core::{
 use cstr_core::{CStr, CString};
 use solvent::{c_ty::Status, prelude::EINVAL};
 
-use crate::dso::{self, dso_list, get_object, Dso};
+use crate::{
+    dso::{self, dso_list, get_object, Dso},
+    elf::Tcb,
+};
 
 pub const RTLD_NOW: c_int = 2;
 
@@ -119,4 +122,23 @@ pub extern "C" fn dlclose(handle: *const c_void) -> Status {
 #[no_mangle]
 pub extern "C" fn dlerror() -> *const c_char {
     STATUS.swap(ptr::null_mut(), SeqCst)
+}
+
+#[repr(C)]
+struct TlsGetAddr {
+    id: usize,
+    offset: usize,
+}
+
+#[no_mangle]
+unsafe extern "C" fn __tls_get_addr(arg: *const TlsGetAddr) -> *mut c_void {
+    fn tls_get_addr(id: usize, offset: usize) -> Option<*mut c_void> {
+        let list = dso_list().lock();
+        let tls = list.tls().get(id)?;
+        let chunk = tls.get(unsafe { Tcb::current().index })?;
+        chunk.get(offset).map(|r| r as *const _ as *mut _)
+    }
+
+    let TlsGetAddr { id, offset } = ptr::read(arg);
+    tls_get_addr(id, offset).unwrap_or(ptr::null_mut())
 }

@@ -143,7 +143,7 @@ extern "C" fn tmain(init_chan: sv_call::Handle) {
     let vdso_base = virt
         .map_vdso(Phys::clone(&vdso_phys))
         .expect("Failed to load VDSO");
-    log::debug!("{:?} {:?} {:?}", entry, stack, vdso_base);
+    log::debug!("E {:?}; S {:?}; V {:?}", entry, stack, vdso_base);
 
     let (me, child) = Channel::new();
     let child = child
