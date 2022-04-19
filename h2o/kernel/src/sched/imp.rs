@@ -3,7 +3,14 @@ pub mod epoch;
 pub mod waiter;
 
 use alloc::{boxed::Box, vec::Vec};
-use core::{assert_matches::assert_matches, cell::UnsafeCell, mem, ptr::NonNull, time::Duration};
+use core::{
+    assert_matches::assert_matches,
+    cell::UnsafeCell,
+    hint, mem,
+    ptr::NonNull,
+    sync::atomic::{AtomicU64, Ordering::*},
+    time::Duration,
+};
 
 use archop::{Azy, PreemptState, PreemptStateGuard};
 use canary::Canary;
@@ -19,9 +26,11 @@ use crate::cpu::{
 pub(super) const MIN_TIME_GRAN: Duration = Duration::from_millis(30);
 const WAKE_TIME_GRAN: Duration = Duration::from_millis(1);
 
-static MIGRATION_QUEUE: Azy<Vec<Injector<task::Ready>>> = Azy::new(|| {
+static SCHED_INFO: Azy<Vec<SchedInfo>> = Azy::new(|| {
     let count = crate::cpu::count();
-    core::iter::repeat_with(Injector::new).take(count).collect()
+    core::iter::repeat_with(SchedInfo::default)
+        .take(count)
+        .collect()
 });
 
 #[thread_local]
@@ -34,6 +43,18 @@ pub static SCHED: Lazy<Scheduler> = Lazy::new(|| Scheduler {
 
 #[thread_local]
 pub static PREEMPT: PreemptState = PreemptState::new();
+
+#[derive(Default)]
+struct SchedInfo {
+    migration_queue: Injector<task::Ready>,
+    expected_runtime: AtomicU64,
+}
+
+impl SchedInfo {
+    fn expected_runtime(&self) -> u64 {
+        self.expected_runtime.load(Acquire)
+    }
+}
 
 pub struct Scheduler {
     canary: Canary<Scheduler>,
@@ -55,12 +76,15 @@ impl Scheduler {
         if cpu == self.cpu {
             self.enqueue(task, PREEMPT.lock(), preempt);
         } else {
-            MIGRATION_QUEUE[cpu].push(task);
+            SCHED_INFO[cpu].migration_queue.push(task);
             unsafe { crate::cpu::arch::apic::ipi::task_migrate(cpu) };
         }
     }
 
     fn enqueue(&self, task: task::Ready, pree: PreemptStateGuard, preempt: bool) {
+        SCHED_INFO[self.cpu]
+            .expected_runtime
+            .fetch_add(task.time_slice.as_millis() as u64, Release);
         // SAFETY: We have `pree`, which means preemption is disabled.
         match unsafe { &*self.current.get() } {
             Some(ref cur) if preempt && Self::should_preempt(cur, &task) => {
@@ -117,6 +141,13 @@ impl Scheduler {
             unsafe { &*self.current.get() }.as_ref().unwrap().tid.raw(),
             PREEMPT.raw(),
         );
+
+        if let Some(current) = unsafe { &*self.current() } {
+            SCHED_INFO[self.cpu]
+                .expected_runtime
+                .fetch_sub(current.time_slice.as_micros() as u64, Release);
+        }
+
         self.schedule_impl(Instant::now(), pree, None, |task| {
             let blocked = task::Ready::block(task, block_desc);
             let blocked = unsafe { NonNull::new_unchecked(Box::into_raw(box blocked)) };
@@ -151,6 +182,13 @@ impl Scheduler {
             unsafe { &*self.current.get() }.as_ref().unwrap().tid.raw(),
             PREEMPT.raw(),
         );
+
+        if let Some(current) = unsafe { &*self.current() } {
+            SCHED_INFO[self.cpu]
+                .expected_runtime
+                .fetch_sub(current.time_slice.as_micros() as u64, Release);
+        }
+
         let _ = self.schedule_impl(Instant::now(), pree, None, |task| {
             task::Ready::exit(task, retval);
             Ok(())
@@ -198,6 +236,11 @@ impl Scheduler {
         match ti.with_signal(|sig| sig.take()) {
             Some(task::Signal::Kill) => {
                 log::trace!("Killing task {:?}, P{}", cur.tid.raw(), PREEMPT.raw());
+
+                SCHED_INFO[self.cpu]
+                    .expected_runtime
+                    .fetch_sub(cur.time_slice.as_micros() as u64, Release);
+
                 let _ = self.schedule_impl(cur_time, pree, None, |task| {
                     task::Ready::exit(task, sv_call::EKILLED.into_retval());
                     Ok(())
@@ -206,6 +249,11 @@ impl Scheduler {
             }
             Some(task::Signal::Suspend(slot)) => {
                 log::trace!("Suspending task {:?}, P{}", cur.tid.raw(), PREEMPT.raw());
+
+                SCHED_INFO[self.cpu]
+                    .expected_runtime
+                    .fetch_sub(cur.time_slice.as_micros() as u64, Release);
+
                 let ret = self.schedule_impl(cur_time, pree, None, |task| {
                     *slot.lock() = Some(task::Ready::block(task, "task_ctl_suspend"));
                     Ok(())
@@ -282,7 +330,7 @@ impl Scheduler {
                 None => return Err(sv_call::ENOENT),
             },
         };
-        log::trace!("Switching to {:?}, P{}", next.tid.raw(), PREEMPT.raw());
+        log::trace!("Switching to task {:?}, P{}", next.tid.raw(), PREEMPT.raw());
 
         next.running_state = task::RunningState::running(cur_time);
         next.cpu = self.cpu;
@@ -311,12 +359,53 @@ impl Scheduler {
 fn select_cpu(
     affinity: &crate::cpu::CpuMask,
     cur_cpu: usize,
-    _last_cpu: Option<usize>,
+    last_cpu: Option<usize>,
 ) -> Option<usize> {
-    match affinity.get(cur_cpu) {
-        Some(slot) if *slot => Some(cur_cpu),
-        _ => affinity.iter_ones().next(),
+    let mut iter = affinity.iter_ones();
+    let mut ret = iter.next()?;
+
+    if ret == cur_cpu && SCHED_INFO[ret].expected_runtime() == 0 {
+        return Some(ret);
     }
+
+    for b in iter {
+        if b == cur_cpu && SCHED_INFO[b].expected_runtime() == 0 {
+            return Some(b);
+        }
+
+        let a = ret;
+
+        let wlast_cpu = match last_cpu {
+            Some(last_cpu) if a == last_cpu && b != last_cpu => 1,
+            Some(last_cpu) if a != last_cpu && b == last_cpu => -1,
+            _ => 0,
+        };
+
+        let wcur_cpu = if a == cur_cpu && b != cur_cpu {
+            1
+        } else if a != cur_cpu && b == cur_cpu {
+            -1
+        } else {
+            0
+        };
+
+        let wruntime = {
+            let ra = SCHED_INFO[a].expected_runtime.load(Acquire);
+            let rb = SCHED_INFO[b].expected_runtime.load(Acquire);
+            let diff = ra.abs_diff(rb);
+            if diff <= 1 {
+                0
+            } else {
+                (diff + 1).log2() as i32 * if ra > rb { -1 } else { 1 }
+            }
+        };
+
+        let weight = wlast_cpu * 10 + wcur_cpu * 2 + wruntime * 50;
+
+        ret = if weight > 0 { a } else { b };
+    }
+
+    Some(ret)
 }
 
 fn block_callback(_: Arsc<Timer>, _: Instant, arg: CallbackArg) {
@@ -328,10 +417,18 @@ fn block_callback(_: Arsc<Timer>, _: Instant, arg: CallbackArg) {
 ///
 /// This function must be called only in task-migrate IPI handlers.
 pub unsafe fn task_migrate_handler() {
-    loop {
-        match MIGRATION_QUEUE[SCHED.cpu].steal_batch(&SCHED.run_queue) {
-            Steal::Empty | Steal::Success(_) => break,
-            Steal::Retry => {}
+    crate::cpu::arch::apic::lapic(|lapic| lapic.eoi());
+
+    const MAX_TRIAL: usize = 50;
+    for _ in 0..MAX_TRIAL {
+        match SCHED_INFO[SCHED.cpu].migration_queue.steal() {
+            Steal::Empty => break,
+            Steal::Retry => hint::spin_loop(),
+            Steal::Success(task) => {
+                log::trace!("Migrating task {:?}, P{}", task.tid.raw(), PREEMPT.raw());
+                let pree = PREEMPT.lock();
+                SCHED.enqueue(task, pree, true);
+            }
         }
     }
 }

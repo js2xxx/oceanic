@@ -1,7 +1,7 @@
 #![no_std]
 #![feature(core_intrinsics)]
 
-use core::{intrinsics as ci, ops::*};
+use core::{intrinsics as ci, num::Wrapping, ops::*};
 
 use num_traits::{Num, NumCast};
 
@@ -16,24 +16,29 @@ pub trait BitOpEx:
     + Shl<Output = Self>
     + Shr<Output = Self>
     + Not<Output = Self>
+where
+    Wrapping<Self>: Add<Output = Wrapping<Self>>
+        + Sub<Output = Wrapping<Self>>
+        + Mul<Output = Wrapping<Self>>
+        + Div<Output = Wrapping<Self>>
+        + Rem<Output = Wrapping<Self>>,
 {
     const BIT_SIZE: usize = core::mem::size_of::<Self>() * 8;
 
     #[inline]
     #[must_use]
     fn round_up_bit(&self, bit: Self) -> Self {
-        let val = Self::one() << bit;
-        ci::wrapping_add(
-            ci::wrapping_sub(*self, Self::one()) | ci::wrapping_sub(val, Self::one()),
-            Self::one(),
-        )
+        let val = Wrapping(Self::one() << bit);
+        let this = Wrapping(*self);
+        let one = Wrapping(Self::one());
+        (Wrapping((this - one).0 | (val - one).0) + one).0
     }
 
     #[inline]
     #[must_use]
     fn round_down_bit(&self, bit: Self) -> Self {
         let val = Self::one() << bit;
-        *self & !ci::wrapping_sub(val, Self::one())
+        *self & !(Wrapping(val) - Wrapping(Self::one())).0
     }
 
     #[inline]
@@ -51,10 +56,7 @@ pub trait BitOpEx:
     #[inline]
     #[must_use]
     fn msb(&self) -> Self {
-        ci::wrapping_sub(
-            Self::from(Self::BIT_SIZE).unwrap(),
-            ci::ctlz(*self) + Self::one(),
-        )
+        (Wrapping(Self::from(Self::BIT_SIZE).unwrap()) - Wrapping(ci::ctlz(*self) + Self::one())).0
     }
 
     #[inline]
@@ -76,7 +78,8 @@ pub trait BitOpEx:
     }
 }
 
-impl<T> BitOpEx for T where
+impl<T> BitOpEx for T
+where
     T: Sized
         + Num
         + NumCast
@@ -86,6 +89,11 @@ impl<T> BitOpEx for T where
         + BitXor<Output = Self>
         + Shl<Output = Self>
         + Shr<Output = Self>
-        + Not<Output = Self>
+        + Not<Output = Self>,
+    Wrapping<Self>: Add<Output = Wrapping<Self>>
+        + Sub<Output = Wrapping<Self>>
+        + Mul<Output = Wrapping<Self>>
+        + Div<Output = Wrapping<Self>>
+        + Rem<Output = Wrapping<Self>>,
 {
 }

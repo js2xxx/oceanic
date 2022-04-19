@@ -344,8 +344,8 @@ impl DsoList {
         unsafe { self.prog.map(|p| p.as_ref()) }
     }
 
-    pub fn tls(&self) -> &[Tls] {
-        &self.tls
+    pub fn tls(&mut self, id: usize) -> Option<&mut Tls> {
+        self.tls.get_mut(id)
     }
 
     pub fn find_symbol(
@@ -477,11 +477,10 @@ impl DsoList {
                 }
                 R_X86_64_DTPOFF64 => {
                     let (dso, sym) = def.expect("No definition found for DTPOFF64");
-                    let size = self.tls[dso.tls.expect("No TLS available")]
+                    let tls_subtrahend = self.tls[dso.tls.expect("No TLS available")]
                         .chunk_layout()
                         .size();
-                    let tls_addend = 0usize.wrapping_sub(size);
-                    *reloc_ptr = (sym.st_value as usize + reloc.addend).wrapping_add(tls_addend)
+                    *reloc_ptr = (sym.st_value as usize + reloc.addend).wrapping_sub(tls_subtrahend)
                 }
                 R_X86_64_TPOFF64 => {
                     let (dso, sym) = def.expect("No definition found for TPOFF64");
@@ -497,8 +496,11 @@ impl DsoList {
     }
 
     fn relocate_dso(&self, dso: &Dso) {
-        fn r<T: Into<Reloc>>(list: &DsoList, dso: &Dso, iter: Option<impl IntoIterator<Item = T>>) {
-            if let Some(iter) = iter {
+        fn r<T>(list: &DsoList, dso: &Dso, tag_offset: u64, tag_size: u64)
+        where
+            for<'a> &'a T: Into<Reloc>,
+        {
+            if let Some(iter) = unsafe { dso.dyn_slice::<T>(tag_offset, tag_size) } {
                 for reloc in iter {
                     if list.relocate_one(dso, reloc.into()) {
                         break;
@@ -515,12 +517,12 @@ impl DsoList {
             }
 
             unsafe {
-                r(self, dso, dso.dyn_slice::<Rel>(DT_REL, DT_RELSZ));
-                r(self, dso, dso.dyn_slice::<Rela>(DT_RELA, DT_RELASZ));
+                r::<Rel>(self, dso, DT_REL, DT_RELSZ);
+                r::<Rela>(self, dso, DT_RELA, DT_RELASZ);
 
                 match dso.dyn_val(DT_PLTREL).unwrap_or_default() as u64 {
-                    DT_RELA => r(self, dso, dso.dyn_slice::<Rela>(DT_JMPREL, DT_PLTRELSZ)),
-                    DT_REL => r(self, dso, dso.dyn_slice::<Rel>(DT_JMPREL, DT_PLTRELSZ)),
+                    DT_RELA => r::<Rela>(self, dso, DT_JMPREL, DT_PLTRELSZ),
+                    DT_REL => r::<Rel>(self, dso, DT_JMPREL, DT_PLTRELSZ),
                     v if v > 0 => log::warn!("Unknown DT_PLTREL value: {}", v),
                     _ => {}
                 };

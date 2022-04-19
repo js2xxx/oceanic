@@ -243,7 +243,7 @@ impl<'a> GnuHash<'a> {
         None
     }
 
-    fn maybe_contains(&self, hash: u32) -> bool {
+    fn may_contain(&self, hash: u32) -> bool {
         const MASK: u32 = u64::BITS - 1;
         let hash2 = hash >> self.bloom_shift;
         // `x & (N - 1)` is equivalent to `x % N` iff `N = 2^y`.
@@ -254,7 +254,7 @@ impl<'a> GnuHash<'a> {
     }
 
     pub fn get_hashed(&self, name: &CStr, hash: u32) -> Option<&'a Sym> {
-        self.maybe_contains(hash)
+        self.may_contain(hash)
             .then(|| self.lookup(name, hash))
             .flatten()
     }

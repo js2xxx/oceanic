@@ -42,8 +42,7 @@ pub unsafe fn set_id(bsp: bool) -> usize {
 /// This function is only called after [`set_id`].
 #[inline]
 pub unsafe fn id() -> usize {
-    use archop::msr;
-    msr::read(msr::TSC_AUX) as usize
+    archop::msr::rdtscp().1 as usize
 }
 
 #[inline]

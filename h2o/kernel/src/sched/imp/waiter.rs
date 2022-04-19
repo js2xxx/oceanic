@@ -33,10 +33,12 @@ impl Blocker {
     }
 
     pub fn wait<T>(&self, guard: T, timeout: Duration) -> sv_call::Result {
-        if timeout.is_zero() || PREEMPT.scope(|| self.status.lock().1 != 0) {
+        let pree = PREEMPT.lock();
+        let status = self.status.lock();
+        if timeout.is_zero() || status.1 != 0 {
             Ok(())
         } else {
-            self.wo.wait(guard, timeout, "Blocker::wait")
+            self.wo.wait((guard, status, pree), timeout, "Blocker::wait")
         }
     }
 

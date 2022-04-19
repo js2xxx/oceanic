@@ -5,6 +5,12 @@ use core::fmt::{self, Write};
 use solvent::prelude::Instant;
 use spin::Mutex;
 
+fn cur_cpu() -> usize {
+    let mut ret;
+    unsafe { core::arch::asm!("rdtscp", out("rcx") ret, options(nostack)) };
+    ret
+}
+
 static LOGGER: Logger = Logger;
 
 static BUFFER: Mutex<Buffer> = Mutex::new(Buffer([0; 128], 0));
@@ -48,9 +54,10 @@ impl log::Log for Logger {
             let line = record.line().unwrap_or(0);
             write!(
                 &mut *buffer,
-                "[{}] {}: [#us {}:{}] {}",
+                "[{}] {}: [#{} {}:{}] {}",
                 cur_time,
                 record.level(),
+                cur_cpu(),
                 file,
                 line,
                 record.args(),

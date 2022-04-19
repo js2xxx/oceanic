@@ -133,10 +133,10 @@ struct TlsGetAddr {
 #[no_mangle]
 unsafe extern "C" fn __tls_get_addr(arg: *const TlsGetAddr) -> *mut c_void {
     fn tls_get_addr(id: usize, offset: usize) -> Option<*mut c_void> {
-        let list = dso_list().lock();
-        let tls = list.tls().get(id)?;
-        let chunk = tls.get(unsafe { Tcb::current().index })?;
-        chunk.get(offset).map(|r| r as *const _ as *mut _)
+        let mut list = dso_list().lock();
+        let tls = list.tls(id)?;
+        let chunk = tls.get_mut(unsafe { Tcb::current().index })?;
+        chunk.get_mut(offset).map(|r| r as *mut _ as *mut _)
     }
 
     let TlsGetAddr { id, offset } = ptr::read(arg);

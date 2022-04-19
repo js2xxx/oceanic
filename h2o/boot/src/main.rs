@@ -88,6 +88,7 @@ unsafe fn init_services(img: Handle, syst: &SystemTable<Boot>) {
     {
         use archop::reg::cr4;
         cr4::set(cr4::FSGSBASE);
+        cr4::unset(cr4::TSD);
     }
 }
 

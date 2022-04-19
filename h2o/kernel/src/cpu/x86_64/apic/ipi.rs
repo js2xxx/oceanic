@@ -206,15 +206,15 @@ pub unsafe fn start_cpus(aps: &[acpi::platform::Processor]) -> usize {
 /// This function must be called only by the scheduler of the current CPU and
 /// the caller must ensure that `cpu` is valid.
 pub unsafe fn task_migrate(cpu: usize) {
-    lapic(|lapic| {
-        match PREEMPT.scope(|| super::LAPIC_ID.read().get(&cpu).copied()) {
-            Some(id) => lapic.send_ipi(
+    match PREEMPT.scope(|| super::LAPIC_ID.read().get(&cpu).copied()) {
+        Some(id) => lapic(|lapic| {
+            lapic.send_ipi(
                 intr::def::ApicVec::IpiTaskMigrate as u8,
                 DelivMode::Fixed,
                 Shorthand::None,
                 id,
-            ),
-            None => log::warn!("CPU #{} not present", cpu),
-        };
-    });
+            )
+        }),
+        None => log::warn!("CPU #{} not present", cpu),
+    };
 }

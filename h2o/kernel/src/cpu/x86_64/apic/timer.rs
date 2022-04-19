@@ -23,7 +23,7 @@ pub const DIV: Range<u8> = 0..8;
 ///
 /// The caller must ensure that IDT is initialized before LAPIC Timer's
 /// activation and that `div` is within the range [`DIV`].
-pub unsafe fn activate(lapic: &mut super::Lapic, mode: TimerMode, div: u8, init_value: u64) {
+pub unsafe fn activate(lapic: &mut super::Lapic, mode: TimerMode, div: u8, init_value: u32) {
     /// # Safety
     ///
     /// The caller must ensure that `div` is within the range [`DIV`].
@@ -47,9 +47,9 @@ pub unsafe fn activate(lapic: &mut super::Lapic, mode: TimerMode, div: u8, init_
         Lapic::write_reg_32(&mut lapic.ty, msr::X2APIC_DIV_CONF, encdiv.into());
         Lapic::write_reg_32(&mut lapic.ty, msr::X2APIC_LVT_TIMER, timer_val.into());
         if matches!(mode, TimerMode::TscDeadline) {
-            msr::write(msr::TSC_DEADLINE, init_value);
+            msr::write(msr::TSC_DEADLINE, init_value.into());
         } else {
-            Lapic::write_reg_64(&mut lapic.ty, msr::X2APIC_INIT_COUNT, init_value);
+            Lapic::write_reg_32(&mut lapic.ty, msr::X2APIC_INIT_COUNT, init_value);
         }
     }
 }

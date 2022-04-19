@@ -44,12 +44,11 @@ unsafe extern "C" fn func(_: Handle, arg: u32) {
 
 unsafe fn join(normal: Handle, fault: Handle) {
     log::trace!("join: normal = {:?}, fault = {:?}", normal, fault);
+    let mut ret = Default::default();
 
     sv_obj_wait(normal, u64::MAX, false, SIG_READ)
         .into_res()
         .expect("Failed to wait for the task");
-
-    let mut ret = Default::default();
     sv_task_join(normal, &mut ret)
         .into_res()
         .expect("Failed to join the task");
