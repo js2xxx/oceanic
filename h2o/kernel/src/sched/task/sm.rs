@@ -16,7 +16,7 @@ use crate::{
 };
 
 #[derive(Debug, Builder)]
-#[builder(no_std)]
+#[builder(no_std, pattern = "owned")]
 pub struct TaskInfo {
     from: Option<Tid>,
     #[builder(setter(skip))]
@@ -76,14 +76,6 @@ impl TaskInfo {
     #[inline]
     pub fn excep_chan(&self) -> Arsc<Mutex<Option<Channel>>> {
         Arsc::clone(&self.excep_chan)
-    }
-
-    #[inline]
-    pub fn with_excep_chan<F, R>(&self, func: F) -> R
-    where
-        F: FnOnce(&mut Option<Channel>) -> R,
-    {
-        PREEMPT.scope(|| func(&mut self.excep_chan.lock()))
     }
 }
 
@@ -210,12 +202,7 @@ impl IntoReady for Init {
 }
 
 impl Init {
-    pub fn new(
-        tid: Tid,
-        space: Arc<Space>,
-        kstack: ctx::Kstack,
-        ext_frame: ctx::ExtFrame,
-    ) -> Self {
+    pub fn new(tid: Tid, space: Arc<Space>, kstack: ctx::Kstack, ext_frame: ctx::ExtFrame) -> Self {
         Init {
             ctx: Box::new(Context {
                 tid,

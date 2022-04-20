@@ -1,10 +1,13 @@
 pub mod flags;
 mod serial;
 
-use core::{fmt::*, mem::MaybeUninit};
+use core::{
+    fmt::*,
+    mem::MaybeUninit,
+    sync::atomic::{AtomicBool, Ordering::*},
+};
 
-use archop::IntrMutex;
-use spin::RwLock;
+use spin::Mutex;
 
 pub use self::serial::COM_LOG;
 use crate::{cpu::time::Instant, sched::PREEMPT};
@@ -21,17 +24,17 @@ impl core::fmt::Display for OptionU32Display {
     }
 }
 
-pub static HAS_TIME: RwLock<bool> = RwLock::new(false);
+pub static HAS_TIME: AtomicBool = AtomicBool::new(false);
 
 struct Logger {
-    output: IntrMutex<serial::Output>,
+    output: Mutex<serial::Output>,
     level: log::Level,
 }
 
 impl Logger {
     pub fn new(level: log::Level) -> Logger {
         Logger {
-            output: IntrMutex::new(unsafe { serial::Output::new(COM_LOG) }),
+            output: Mutex::new(unsafe { serial::Output::new(COM_LOG) }),
             level,
         }
     }
@@ -51,7 +54,7 @@ impl log::Log for Logger {
         let _pree = PREEMPT.lock();
         let mut os = self.output.lock();
         let cur_time = HAS_TIME
-            .read()
+            .load(Acquire)
             .then(Instant::now)
             .unwrap_or(unsafe { Instant::from_raw(0) });
 

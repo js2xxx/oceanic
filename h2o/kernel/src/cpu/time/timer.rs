@@ -23,10 +23,17 @@ impl TimerQueue {
         }
     }
 
+    #[inline]
+    fn with_inner<F, R>(&self, func: F) -> R
+    where
+        F: FnOnce(&mut LinkedList<Arsc<Timer>>) -> R,
+    {
+        PREEMPT.scope(|| func(unsafe { &mut *self.inner.get() }))
+    }
+
     fn push(&self, timer: Arsc<Timer>) {
         let ddl = timer.deadline;
-        PREEMPT.scope(|| {
-            let queue = unsafe { &mut *self.inner.get() };
+        self.with_inner(|queue| {
             let mut cur = queue.cursor_front_mut();
             loop {
                 match cur.current() {
@@ -45,8 +52,7 @@ impl TimerQueue {
     }
 
     fn pop(&self, timer: &Arsc<Timer>) -> bool {
-        PREEMPT.scope(|| {
-            let queue = unsafe { &mut *self.inner.get() };
+        self.with_inner(|queue| {
             let mut cur = queue.cursor_front_mut();
             loop {
                 match cur.current() {
@@ -153,8 +159,7 @@ impl Timer {
 
 pub unsafe fn tick() {
     let now = Instant::now();
-    PREEMPT.scope(|| {
-        let queue = unsafe { &mut *TIMER_QUEUE.inner.get() };
+    TIMER_QUEUE.with_inner(|queue| {
         let mut cur = queue.cursor_front_mut();
         loop {
             match cur.current() {

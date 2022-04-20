@@ -369,7 +369,8 @@ fn select_cpu(
     }
 
     for b in iter {
-        if b == cur_cpu && SCHED_INFO[b].expected_runtime() == 0 {
+        let rb = SCHED_INFO[b].expected_runtime();
+        if b == cur_cpu && rb == 0 {
             return Some(b);
         }
 
@@ -390,8 +391,7 @@ fn select_cpu(
         };
 
         let wruntime = {
-            let ra = SCHED_INFO[a].expected_runtime.load(Acquire);
-            let rb = SCHED_INFO[b].expected_runtime.load(Acquire);
+            let ra = SCHED_INFO[a].expected_runtime();
             let diff = ra.abs_diff(rb);
             if diff <= 1 {
                 0
@@ -400,7 +400,7 @@ fn select_cpu(
             }
         };
 
-        let weight = wlast_cpu * 10 + wcur_cpu * 2 + wruntime * 50;
+        let weight = wlast_cpu * 10 + wcur_cpu * 2 + wruntime * 20;
 
         ret = if weight > 0 { a } else { b };
     }
@@ -408,7 +408,7 @@ fn select_cpu(
     Some(ret)
 }
 
-fn block_callback(_: Arsc<Timer>, _: Instant, arg: CallbackArg) {
+fn block_callback(arg: CallbackArg) {
     let blocked = unsafe { Box::from_raw(arg.as_ptr()) };
     SCHED.unblock(Box::into_inner(blocked), true);
 }

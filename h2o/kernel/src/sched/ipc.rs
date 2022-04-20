@@ -176,7 +176,7 @@ mod syscall {
         let event = obj.event().upgrade().ok_or(EPIPE)?;
 
         let blocker = Blocker::new(&event, wake_all, signal);
-        blocker.wait(pree, time::from_us(timeout_us))?;
+        blocker.wait(Some(pree), time::from_us(timeout_us))?;
 
         let (detach_ret, signal) = blocker.detach();
         if !detach_ret {
@@ -205,7 +205,7 @@ mod syscall {
         let cur = unsafe { (*SCHED.current()).as_ref().ok_or(ESRCH) }?;
 
         let blocker = cur.space().handles().get::<Blocker>(waiter)?;
-        blocker.wait(pree, time::from_us(timeout_us))?;
+        blocker.wait(Some(pree), time::from_us(timeout_us))?;
 
         let (detach_ret, signal) = Arc::clone(&blocker).detach();
         SCHED.with_current(|cur| cur.space().handles().remove::<Blocker>(waiter))?;

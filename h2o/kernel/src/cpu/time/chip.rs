@@ -1,5 +1,7 @@
 use archop::Azy;
 
+use core::sync::atomic::Ordering::Release;
+
 use super::Instant;
 use crate::{cpu::arch::tsc::TSC_CLOCK, dev::hpet::HPET_CLOCK};
 
@@ -8,7 +10,7 @@ pub static CLOCK: Azy<&'static dyn ClockChip> = Azy::new(|| {
         Some(ref tsc) => tsc,
         None => HPET_CLOCK.as_ref().expect("No available clock"),
     };
-    *crate::log::HAS_TIME.write() = true;
+    crate::log::HAS_TIME.store(true, Release);
     ret
 });
 

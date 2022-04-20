@@ -159,7 +159,7 @@ fn chan_crecv(
     } else {
         let pree = PREEMPT.lock();
         let blocker = crate::sched::Blocker::new(&call_event, true, SIG_READ);
-        blocker.wait(pree, time::from_us(timeout_us))?;
+        blocker.wait(Some(pree), time::from_us(timeout_us))?;
         Some(blocker)
     };
 

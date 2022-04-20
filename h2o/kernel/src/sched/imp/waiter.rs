@@ -1,6 +1,7 @@
 use alloc::sync::{Arc, Weak};
 use core::{fmt::Debug, time::Duration};
 
+use archop::PreemptStateGuard;
 use spin::Mutex;
 use sv_call::Feature;
 
@@ -32,13 +33,16 @@ impl Blocker {
         ret
     }
 
-    pub fn wait<T>(&self, guard: T, timeout: Duration) -> sv_call::Result {
-        let pree = PREEMPT.lock();
+    pub fn wait(&self, pree: Option<PreemptStateGuard>, timeout: Duration) -> sv_call::Result {
+        let pree = match pree {
+            Some(pree) => pree,
+            None => PREEMPT.lock(),
+        };
         let status = self.status.lock();
         if timeout.is_zero() || status.1 != 0 {
             Ok(())
         } else {
-            self.wo.wait((guard, status, pree), timeout, "Blocker::wait")
+            self.wo.wait((status, pree), timeout, "Blocker::wait")
         }
     }
 
