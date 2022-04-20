@@ -125,7 +125,7 @@ fn load_elf(space: &Arc<Space>, file: &Elf, image: &[u8]) -> sv_call::Result<(LA
 
 pub fn from_elf(
     image: &[u8],
-    space: Arsc<super::Space>,
+    space: Arc<super::Space>,
     name: String,
     affinity: CpuMask,
     init_chan: hdl::Ref,

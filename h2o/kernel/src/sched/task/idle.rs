@@ -28,7 +28,7 @@ pub(super) static IDLE: Lazy<Tid> = Lazy::new(|| {
         .build()
         .unwrap();
 
-    let space = super::Space::new_current().expect("Failed to create space");
+    let space = super::Space::new_current();
     let stack = space::init_stack(space.mem(), DEFAULT_STACK_SIZE)
         .expect("Failed to initialize stack for IDLE");
 

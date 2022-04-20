@@ -269,7 +269,11 @@ unsafe impl DefaultFeature for Channel {
 impl Drop for Channel {
     fn drop(&mut self) {
         if let Some(peer) = self.peer.upgrade() {
-            peer.event.notify(0, usize::MAX);
+            peer.event.cancel();
+            let _pree = PREEMPT.lock();
+            for (_, caller) in peer.callers.lock().iter() {
+                caller.event.cancel();
+            }
         }
     }
 }

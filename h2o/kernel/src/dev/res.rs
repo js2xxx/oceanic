@@ -71,14 +71,13 @@ impl<T: Ord + Copy> Drop for Resource<T> {
     }
 }
 
-unsafe impl<T: Ord + Copy + Send + Sync + Any> DefaultFeature for Arc<Resource<T>> {
+unsafe impl<T: Ord + Copy + Send + Sync + Any> DefaultFeature for Resource<T> {
     fn default_features() -> Feature {
         Feature::SEND | Feature::SYNC | Feature::READ | Feature::WRITE
     }
 }
 
 mod syscall {
-    use alloc::sync::Arc;
     use core::{any::Any, ops::Add};
 
     use sv_call::*;
@@ -91,12 +90,12 @@ mod syscall {
         size: T,
     ) -> Result<Handle> {
         SCHED.with_current(|cur| {
-            let res = cur.space().handles().get::<Arc<Resource<T>>>(hdl)?;
+            let res = cur.space().handles().get::<Resource<T>>(hdl)?;
             if !res.features().contains(Feature::SYNC) {
                 return Err(EPERM);
             }
             let sub = res.allocate(base..(base + size)).ok_or(ENOMEM)?;
-            cur.space().handles().insert(sub, None)
+            cur.space().handles().insert_raw(sub, None)
         })
     }
 

@@ -91,7 +91,7 @@ impl TaskInfo {
 pub struct Context {
     pub(in crate::sched) tid: Tid,
 
-    pub(in crate::sched) space: Arsc<Space>,
+    pub(in crate::sched) space: Arc<Space>,
     pub(in crate::sched) kstack: ctx::Kstack,
     pub(in crate::sched) ext_frame: ctx::ExtFrame,
     pub(in crate::sched) io_bitmap: Option<BitVec>,
@@ -107,7 +107,7 @@ impl Context {
     }
 
     #[inline]
-    pub fn space(&self) -> &Arsc<Space> {
+    pub fn space(&self) -> &Arc<Space> {
         &self.space
     }
 
@@ -212,7 +212,7 @@ impl IntoReady for Init {
 impl Init {
     pub fn new(
         tid: Tid,
-        space: Arsc<Space>,
+        space: Arc<Space>,
         kstack: ctx::Kstack,
         ext_frame: ctx::ExtFrame,
     ) -> Self {
@@ -325,7 +325,7 @@ impl Blocked {
     }
 
     #[inline]
-    pub fn space(&self) -> &Arsc<Space> {
+    pub fn space(&self) -> &Arc<Space> {
         &self.ctx.space
     }
 

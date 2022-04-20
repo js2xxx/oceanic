@@ -140,7 +140,7 @@ fn space_new(root_virt: UserPtr<Out, Handle>) -> Result<Handle> {
     SCHED.with_current(|cur| {
         let space = TaskSpace::new(cur.tid().ty())?;
         let virt = Arc::downgrade(space.mem().root());
-        let ret = cur.space().handles().insert(space, None)?;
+        let ret = cur.space().handles().insert_raw(space, None)?;
         unsafe {
             let virt = cur.space().handles().insert_unchecked(
                 virt,
@@ -259,7 +259,7 @@ fn phys_acq(res: Handle, addr: usize, size: usize) -> Result<Handle> {
     }
 
     SCHED.with_current(|cur| {
-        let res = cur.space().handles().get::<Arc<Resource<usize>>>(res)?;
+        let res = cur.space().handles().get::<Resource<usize>>(res)?;
         if res.magic_eq(super::mem_resource())
             && res.range().start <= addr
             && addr + size <= res.range().end

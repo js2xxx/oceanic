@@ -66,7 +66,7 @@ fn exec_inner(
     name: Option<String>,
     ty: Option<Type>,
     affinity: Option<CpuMask>,
-    space: Arsc<Space>,
+    space: Arc<Space>,
     init_chan: sv_call::Handle,
     s: &Starter,
 ) -> sv_call::Result<Init> {
@@ -98,7 +98,7 @@ fn exec_inner(
 #[inline]
 fn exec(
     name: Option<String>,
-    space: Arsc<Space>,
+    space: Arc<Space>,
     init_chan: sv_call::Handle,
     starter: &Starter,
 ) -> sv_call::Result<(Init, sv_call::Handle)> {
@@ -114,7 +114,7 @@ fn exec(
     })
 }
 
-fn create(name: Option<String>, space: Arsc<Space>) -> sv_call::Result<(Init, sv_call::Handle)> {
+fn create(name: Option<String>, space: Arc<Space>) -> sv_call::Result<(Init, sv_call::Handle)> {
     let cur = super::SCHED.with_current(|cur| Ok(cur.tid.clone()))?;
 
     let ty = cur.ty();

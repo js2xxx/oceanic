@@ -2,15 +2,32 @@
 //!
 //! ## Adding a syscall (`fn cast_init(k: *mut K) -> *const L`)
 //!
-//! Just create a private submodule `syscall` in a file and write the processing
-//! code:
+//! 1. Add a new JSON file in the target directory of the kernel source root
+//! with the following content as the prototype, or append it to an existing
+//! file:
+//!
+//! ```json
+//! {
+//!     "name": "sv_cast_init",
+//!     "returns": "*const L",
+//!     "args": [
+//!         {
+//!             "name": "k",
+//!             "ty": "*mut K"
+//!         }
+//!     ]
+//! }
+//! ```
+//!
+//! 2. Create a private submodule `syscall` in a source file and write the
+//! processing code:
 //!
 //! ```rust,no_run
 //! mod syscall {
 //!       use sv_call::*;
 //!       #[syscall]
-//!       fn cast_init(k: *mut K) -> *const L {
-//!             init(k);
+//!       fn cast_init(k: *mut K) -> Result<*const L> {
+//!             // init(k);
 //!             Ok(k.cast())
 //!       }
 //! }
@@ -55,6 +72,6 @@ mod syscall {
 
     #[syscall]
     fn int_get(hdl: Handle) -> Result<u64> {
-        SCHED.with_current(|cur| cur.space().handles().get::<u64>(hdl).map(|obj| **obj))
+        SCHED.with_current(|cur| cur.space().handles().get::<u64>(hdl).map(|obj| ***obj))
     }
 }

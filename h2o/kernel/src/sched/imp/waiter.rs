@@ -77,7 +77,7 @@ impl Waiter for Blocker {
     }
 }
 
-unsafe impl DefaultFeature for Arc<Blocker> {
+unsafe impl DefaultFeature for Blocker {
     fn default_features() -> sv_call::Feature {
         Feature::SEND | Feature::WAIT
     }

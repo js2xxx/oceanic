@@ -5,7 +5,10 @@ use paging::LAddr;
 use spin::Mutex;
 use sv_call::*;
 
-use super::{hdl::DefaultFeature, Blocked, RunningState, Signal, Space, Tid};
+use super::{
+    hdl::{DefaultFeature, Ref},
+    Blocked, RunningState, Signal, Space, Tid,
+};
 use crate::{
     cpu::time::Instant,
     sched::{imp::MIN_TIME_GRAN, Arsc, PREEMPT, SCHED},
@@ -96,10 +99,10 @@ fn task_exec(ci: UserPtr<In, task::ExecInfo>) -> Result<Handle> {
             Some(handles.remove::<crate::sched::ipc::Channel>(ci.init_chan)?)
         };
         if ci.space == Handle::NULL {
-            Ok((init_chan, Arsc::clone(cur.space())))
+            Ok((init_chan, Arc::clone(cur.space())))
         } else {
-            let space = handles.remove::<Arsc<Space>>(ci.space)?;
-            Ok((init_chan, Arsc::clone(&space)))
+            let space = handles.remove::<Space>(ci.space)?;
+            Ok((init_chan, Ref::into_raw(space)))
         }
     })?;
 
@@ -133,18 +136,18 @@ fn task_new(
     let name = get_name(name, name_len)?;
 
     let new_space = if space == Handle::NULL {
-        SCHED.with_current(|cur| Ok(Arsc::clone(cur.space())))?
+        SCHED.with_current(|cur| Ok(Arc::clone(cur.space())))?
     } else {
         SCHED.with_current(|cur| {
             cur.space()
                 .handles()
-                .remove::<Arsc<Space>>(space)
-                .map(|space| Arsc::clone(&space))
+                .remove::<Space>(space)
+                .map(Ref::into_raw)
         })?
     };
     let mut sus_slot = Arsc::try_new_uninit()?;
 
-    let (task, hdl) = super::create(name, Arsc::clone(&new_space))?;
+    let (task, hdl) = super::create(name, Arc::clone(&new_space))?;
 
     let task = super::Ready::block(
         super::IntoReady::into_ready(task, unsafe { crate::cpu::id() }, MIN_TIME_GRAN),
@@ -185,7 +188,7 @@ fn task_join(hdl: Handle, retval: UserPtr<Out, usize>) -> Result {
 fn task_ctl(hdl: Handle, op: u32, data: UserPtr<InOut, Handle>) -> Result {
     hdl.check_null()?;
 
-    let cur = SCHED.with_current(|cur| Ok(Arsc::clone(cur.space())))?;
+    let cur = SCHED.with_current(|cur| Ok(Arc::clone(cur.space())))?;
 
     match op {
         task::TASK_CTL_KILL => {
