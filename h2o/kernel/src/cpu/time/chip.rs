@@ -1,6 +1,6 @@
-use archop::Azy;
-
 use core::sync::atomic::Ordering::Release;
+
+use archop::Azy;
 
 use super::Instant;
 use crate::{cpu::arch::tsc::TSC_CLOCK, dev::hpet::HPET_CLOCK};

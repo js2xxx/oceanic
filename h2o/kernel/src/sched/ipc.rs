@@ -10,7 +10,7 @@ use core::{
 };
 
 use spin::Mutex;
-pub use sv_call::ipc::{SIG_GENERIC, SIG_READ, SIG_WRITE};
+pub use sv_call::ipc::{SIG_GENERIC, SIG_READ, SIG_WRITE, SIG_TIMER};
 
 pub use self::{
     arsc::Arsc,

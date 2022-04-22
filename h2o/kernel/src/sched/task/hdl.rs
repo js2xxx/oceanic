@@ -1,6 +1,6 @@
 mod node;
 
-use alloc::sync::{Weak, Arc};
+use alloc::sync::{Arc, Weak};
 use core::{any::Any, pin::Pin, ptr::NonNull};
 
 use archop::Azy;

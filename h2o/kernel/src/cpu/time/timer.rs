@@ -1,13 +1,15 @@
-use alloc::collections::LinkedList;
+use alloc::{collections::LinkedList, sync::Weak};
 use core::{
     cell::UnsafeCell,
-    ptr::NonNull,
     sync::atomic::{AtomicBool, Ordering::*},
     time::Duration,
 };
 
+use spin::RwLock;
+use sv_call::ipc::SIG_TIMER;
+
 use super::Instant;
-use crate::sched::{ipc::Arsc, task, PREEMPT};
+use crate::sched::{ipc::Arsc, task, Event, PREEMPT, SCHED};
 
 #[thread_local]
 static TIMER_QUEUE: TimerQueue = TimerQueue::new();
@@ -68,59 +70,65 @@ impl TimerQueue {
     }
 }
 
-pub type CallbackArg = NonNull<task::Blocked>;
-
-type CallbackFn = fn(Arsc<Timer>, Instant, CallbackArg);
-
 #[derive(Debug)]
-pub struct Callback {
-    func: CallbackFn,
-    arg: CallbackArg,
-    fired: AtomicBool,
+pub enum Callback {
+    Task(task::Blocked),
+    Event(Weak<dyn Event>),
+}
+
+impl From<task::Blocked> for Callback {
+    fn from(task: task::Blocked) -> Self {
+        Self::Task(task)
+    }
+}
+
+impl From<Weak<dyn Event>> for Callback {
+    fn from(event: Weak<dyn Event>) -> Self {
+        Self::Event(event)
+    }
 }
 
 impl Callback {
-    pub fn new(func: CallbackFn, arg: CallbackArg) -> Self {
-        Callback {
-            fired: AtomicBool::new(false),
-            func,
-            arg,
+    fn call(self, timer: &Timer) {
+        timer.fired.store(true, Release);
+        match self {
+            Callback::Task(task) => SCHED.unblock(task, true),
+            Callback::Event(event) => {
+                if let Some(event) = event.upgrade() {
+                    event.notify(0, SIG_TIMER)
+                }
+            }
         }
     }
 
-    pub fn call(&self, timer: Arsc<Timer>, cur_time: Instant) {
-        (self.func)(timer, cur_time, self.arg);
-        self.fired.store(true, Release);
+    fn cancel(self, preempt: bool) {
+        match self {
+            Callback::Task(task) => SCHED.unblock(task, preempt),
+            Callback::Event(event) => {
+                if let Some(event) = event.upgrade() {
+                    event.cancel()
+                }
+            }
+        }
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Type {
-    Oneshot,
-    // Periodic,
 }
 
 #[derive(Debug)]
 pub struct Timer {
-    ty: Type,
-    callback: Callback,
-    duration: Duration,
+    callback: RwLock<Option<Callback>>,
     deadline: Instant,
-    cancel: AtomicBool,
+    fired: AtomicBool,
 }
 
 impl Timer {
-    pub fn activate(
-        ty: Type,
+    pub fn activate<C: Into<Callback>>(
         duration: Duration,
-        callback: Callback,
+        callback: C,
     ) -> sv_call::Result<Arsc<Self>> {
         let ret = Arsc::try_new(Timer {
-            ty,
-            callback,
-            duration,
+            callback: RwLock::new(Some(callback.into())),
             deadline: Instant::now() + duration,
-            cancel: AtomicBool::new(false),
+            fired: AtomicBool::new(false),
         })?;
         if duration < Duration::MAX {
             TIMER_QUEUE.push(Arsc::clone(&ret));
@@ -128,32 +136,25 @@ impl Timer {
         Ok(ret)
     }
 
-    #[inline]
-    pub fn ty(&self) -> Type {
-        self.ty
-    }
-
-    #[inline]
-    pub fn duration(&self) -> Duration {
-        self.duration
-    }
-
-    pub fn cancel(self: &Arsc<Self>) -> bool {
-        let ret = self.cancel.swap(true, AcqRel);
+    pub fn cancel(self: &Arsc<Self>, preempt: bool) -> bool {
         TIMER_QUEUE.pop(self);
-        ret
+        match PREEMPT.scope(|| self.callback.write().take()) {
+            Some(callback) => {
+                callback.cancel(preempt);
+                true
+            }
+            None => false,
+        }
     }
 
-    pub fn is_canceled(&self) -> bool {
-        self.cancel.load(Acquire)
+    pub fn fire(&self) {
+        if let Some(callback) = PREEMPT.scope(|| self.callback.write().take()) {
+            callback.call(self);
+        }
     }
 
     pub fn is_fired(&self) -> bool {
-        self.callback.fired.load(Acquire)
-    }
-
-    pub fn callback_arg(&self) -> CallbackArg {
-        self.callback.arg
+        self.fired.load(Acquire)
     }
 }
 
@@ -163,17 +164,90 @@ pub unsafe fn tick() {
         let mut cur = queue.cursor_front_mut();
         loop {
             match cur.current() {
-                Some(t) if t.is_canceled() => {
+                Some(timer) if timer.callback.try_read().map_or(false, |r| r.is_none()) => {
                     cur.remove_current();
                 }
-                Some(t) if t.deadline <= now => {
+                Some(timer) if timer.deadline <= now => {
                     let timer = cur.remove_current().unwrap();
-                    if !timer.cancel() {
-                        timer.callback.call(Arsc::clone(&timer), now);
-                    }
+                    timer.fire();
                 }
                 _ => break,
             }
         }
     })
+}
+
+mod syscall {
+    use alloc::sync::{Arc, Weak};
+
+    use spin::Mutex;
+    use sv_call::*;
+
+    use super::Timer;
+    use crate::{
+        cpu::time,
+        sched::{task::hdl::DefaultFeature, Arsc, Event, EventData, SCHED},
+    };
+
+    #[derive(Debug, Default)]
+    struct TimerEvent {
+        event_data: EventData,
+        timer: Mutex<Option<Arsc<Timer>>>,
+    }
+
+    unsafe impl Send for TimerEvent {}
+    unsafe impl Sync for TimerEvent {}
+
+    impl Event for TimerEvent {
+        fn event_data(&self) -> &EventData {
+            &self.event_data
+        }
+    }
+
+    impl Drop for TimerEvent {
+        fn drop(&mut self) {
+            match self.timer.get_mut().take() {
+                Some(timer) => {
+                    timer.cancel(false);
+                }
+                None => self.cancel(),
+            }
+        }
+    }
+
+    unsafe impl DefaultFeature for TimerEvent {
+        fn default_features() -> sv_call::Feature {
+            Feature::SEND | Feature::SYNC | Feature::WAIT | Feature::WRITE
+        }
+    }
+
+    #[syscall]
+    fn timer_new() -> Result<Handle> {
+        let event = Arc::new(TimerEvent::default());
+        let e = Arc::downgrade(&event);
+        SCHED.with_current(|cur| cur.space().handles().insert_raw(event, Some(e)))
+    }
+
+    #[syscall]
+    fn timer_set(handle: Handle, duration_us: u64) -> Result {
+        SCHED.with_current(|cur| {
+            let event = cur.space().handles().get::<TimerEvent>(handle)?;
+
+            if !event.features().contains(Feature::WRITE) {
+                return Err(EPERM);
+            }
+
+            let mut timer = event.timer.lock();
+            if let Some(timer) = timer.take() {
+                timer.cancel(false);
+            }
+            if duration_us > 0 {
+                *timer = Some(Timer::activate(
+                    time::from_us(duration_us),
+                    Weak::clone(event.event()),
+                )?);
+            }
+            Ok(())
+        })
+    }
 }

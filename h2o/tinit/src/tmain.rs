@@ -80,7 +80,7 @@ fn serve_load(load_rpc: Channel, bootfs: Directory, bootfs_phys: &Phys) -> Error
                     None => return GetObjectResponse::Error { not_found_index: i },
                 }
             }
-            rpc::load::GetObjectResponse::Success(objs)
+            GetObjectResponse::Success(objs)
         });
         match res {
             Ok(()) => hint::spin_loop(),
@@ -194,6 +194,7 @@ extern "C" fn tmain(init_chan: sv_call::Handle) {
     };
 
     me.send(exe_args).expect("Failed to send executable args");
+    drop(me);
 
     let task = Task::exec(
         Some("PROGMGR"),

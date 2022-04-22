@@ -177,6 +177,6 @@ pub unsafe fn exit(retval: usize) -> ! {
     unreachable!("The task failed to exit");
 }
 
-pub fn sleep(ms: u32) -> Result {
-    unsafe { sv_call::sv_task_sleep(ms).into_res() }
+pub fn sleep(duration: Duration) -> Result {
+    unsafe { sv_call::sv_task_sleep(duration.as_millis().try_into()?).into_res() }
 }

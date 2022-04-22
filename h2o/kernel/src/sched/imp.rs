@@ -2,12 +2,11 @@ pub mod deque;
 pub mod epoch;
 pub mod waiter;
 
-use alloc::{boxed::Box, vec::Vec};
+use alloc::vec::Vec;
 use core::{
     assert_matches::assert_matches,
     cell::UnsafeCell,
     hint, mem,
-    ptr::NonNull,
     sync::atomic::{AtomicU64, Ordering::*},
     time::Duration,
 };
@@ -19,7 +18,7 @@ use deque::{Injector, Steal, Worker};
 
 use super::{ipc::Arsc, task};
 use crate::cpu::{
-    time::{CallbackArg, Instant, Timer, TimerCallback, TimerType},
+    time::{Instant, Timer},
     Lazy,
 };
 
@@ -150,12 +149,7 @@ impl Scheduler {
 
         self.schedule_impl(Instant::now(), pree, None, |task| {
             let blocked = task::Ready::block(task, block_desc);
-            let blocked = unsafe { NonNull::new_unchecked(Box::into_raw(box blocked)) };
-            let timer = Timer::activate(
-                TimerType::Oneshot,
-                duration,
-                TimerCallback::new(block_callback, blocked),
-            )?;
+            let timer = Timer::activate(duration, blocked)?;
             if let Some(wq) = wq {
                 wq.push(Arsc::clone(&timer));
             }
@@ -406,11 +400,6 @@ fn select_cpu(
     }
 
     Some(ret)
-}
-
-fn block_callback(arg: CallbackArg) {
-    let blocked = unsafe { Box::from_raw(arg.as_ptr()) };
-    SCHED.unblock(Box::into_inner(blocked), true);
 }
 
 /// # Safety

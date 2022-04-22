@@ -41,6 +41,8 @@ impl Blocker {
         let status = self.status.lock();
         if timeout.is_zero() || status.1 != 0 {
             Ok(())
+        } else if self.event.strong_count() == 0 {
+            Err(sv_call::EPIPE)
         } else {
             self.wo.wait((status, pree), timeout, "Blocker::wait")
         }
@@ -83,6 +85,6 @@ impl Waiter for Blocker {
 
 unsafe impl DefaultFeature for Blocker {
     fn default_features() -> sv_call::Feature {
-        Feature::SEND | Feature::WAIT
+        Feature::SEND
     }
 }

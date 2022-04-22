@@ -8,5 +8,24 @@
                 "ty": "*mut ()"
             }
         ]
+    },
+    {
+        "name": "sv_timer_new",
+        "returns": "Handle",
+        "args": []
+    },
+    {
+        "name": "sv_timer_set",
+        "returns": "()",
+        "args": [
+            {
+                "name": "handle",
+                "ty": "Handle"
+            },
+            {
+                "name": "duration_us",
+                "ty": "u64"
+            }
+        ]
     }
 ]

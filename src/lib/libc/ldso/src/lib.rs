@@ -14,7 +14,6 @@
 
 extern crate alloc;
 
-#[cfg(target_arch = "x86_64")]
 #[cfg_attr(target_arch = "x86_64", path = "arch/x86_64.rs")]
 mod arch;
 mod dso;
