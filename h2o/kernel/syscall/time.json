@@ -2,6 +2,7 @@
     {
         "name": "sv_time_get",
         "returns": "()",
+        "no_call": true,
         "args": [
             {
                 "name": "ptr",

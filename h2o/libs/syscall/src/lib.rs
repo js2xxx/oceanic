@@ -1,6 +1,7 @@
 #![no_std]
 #![warn(clippy::missing_panics_doc)]
 #![feature(allocator_api)]
+#![feature(asm_const)]
 #![feature(lang_items)]
 #![feature(linkage)]
 
@@ -26,8 +27,51 @@ pub use self::{
     feat::*,
 };
 
+#[derive(Debug, Copy, Clone)]
+#[repr(C)]
+pub struct Constants {
+    pub ticks_offset: u64,
+    pub ticks_multiplier: u128,
+    pub ticks_shift: u128,
+}
+
+impl Constants {
+    pub const fn new() -> Constants {
+        Constants {
+            ticks_offset: 0,
+            ticks_multiplier: 0,
+            ticks_shift: 0,
+        }
+    }
+}
+
+#[cfg(feature = "vdso")]
+const CONSTANTS_SIZE: usize = core::mem::size_of::<Constants>();
+#[cfg(feature = "vdso")]
+core::arch::global_asm!("
+    .section .rodata
+    .global CONSTANTS
+    .type CONSTANTS, object
+CONSTANTS:
+    .fill {CONSTANTS_SIZE}, 1, 0xcc", 
+    CONSTANTS_SIZE = const CONSTANTS_SIZE
+);
+
+#[cfg(feature = "vdso")]
+fn constants() -> Constants {
+    let mut addr: *const Constants;
+
+    unsafe {
+        core::arch::asm!(
+            "lea {}, [rip + CONSTANTS]",
+            out(reg) addr
+        );
+        core::ptr::read(addr)
+    }
+}
+
 #[cfg(all(not(feature = "call"), feature = "vdso"))]
-compile_error!("The VDSO feature is onlye supported with call feature");
+compile_error!("The VDSO feature is only supported with call feature");
 
 #[cfg(feature = "vdso")]
 #[panic_handler]

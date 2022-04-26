@@ -69,6 +69,8 @@ impl Dist {
             let cd = src_root.join(H2O_SYSCALL);
             let ldscript = cd.join("syscall.ld");
 
+            println!("Building VDSO");
+
             let mut cmd = Command::new(&cargo);
             let cmd = cmd.current_dir(&cd).arg("rustc").args([
                 "--crate-type=cdylib",
@@ -93,19 +95,40 @@ impl Dist {
 
             // Copy the binary to target.
             let bin_dir = Path::new(&target_root).join("x86_64-pc-oceanic/release");
-            fs::copy(
-                bin_dir.join("libsv_call.so"),
-                src_root.join(H2O_KERNEL).join("target/vdso"),
-            )?;
+            let path = src_root.join(H2O_KERNEL).join("target/vdso");
+            fs::copy(bin_dir.join("libsv_call.so"), &path)?;
             Command::new("llvm-ifs")
                 .arg("--input-format=ELF")
                 .arg(format!(
                     "--output-elf={}/sysroot/usr/lib/libh2o.so",
                     target_root
                 ))
-                .arg(src_root.join(H2O_KERNEL).join("target/vdso"))
+                .arg(&path)
                 .status()?
                 .exit_ok()?;
+
+            let out = Command::new("llvm-objdump")
+                .arg("--syms")
+                .arg(&path)
+                .output()?
+                .stdout;
+            let s = String::from_utf8_lossy(&out);
+            let (constants_offset, _) = s
+                .split('\n')
+                .find(|s| s.ends_with("CONSTANTS"))
+                .and_then(|s| s.split_once(' '))
+                .expect("Failed to get CONSTANTS");
+
+            fs::write(
+                src_root.join(H2O_KERNEL).join("target/constant_offset.rs"),
+                format!("0x{}", constants_offset),
+            )?;
+
+            self.gen_debug(
+                "vdso",
+                src_root.join(H2O_KERNEL).join("target"),
+                DEBUG_DIR,
+            )?;
         }
 
         // Build h2o_kernel

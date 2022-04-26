@@ -120,7 +120,8 @@ impl Virt {
         layout: Layout,
         flags: Flags,
     ) -> Result<LAddr> {
-        if phys == VDSO.1
+        let set_vdso = phys == VDSO.1;
+        if set_vdso
             && (offset.is_some()
                 || phys_offset != 0
                 || layout.size() != VDSO.1.len()
@@ -143,9 +144,10 @@ impl Virt {
         let mut children = self.children.lock();
         let space = self.space.upgrade().ok_or(EKILLED)?;
 
-        let set_vdso = phys == VDSO.1;
         if set_vdso {
-            check_set_vdso(&space.vdso, phys_offset, layout, flags)?;
+            if PREEMPT.scope(|| space.vdso.lock().is_some()) {
+                return Err(EACCES);
+            }
             if self as *const _ != Arc::as_ptr(&space.root) {
                 return Err(EACCES);
             }
@@ -179,7 +181,7 @@ impl Virt {
         let children = self.children.lock();
         let space = self.space.upgrade().ok_or(EKILLED)?;
 
-        let vdso = { *space.vdso.lock() };
+        let vdso = *space.vdso.lock();
         for (&base, child) in children
             .range(..end)
             .take_while(|(&base, child)| start <= child.end(base))
@@ -222,7 +224,7 @@ impl Virt {
         let mut children = self.children.lock();
         let space = self.space.upgrade().ok_or(EKILLED)?;
 
-        let vdso = { *space.vdso.lock() };
+        let vdso = *space.vdso.lock();
         for (&base, child) in children
             .range(..end)
             .take_while(|(&base, child)| start <= child.end(base))
@@ -305,31 +307,6 @@ fn check_layout(layout: Layout) -> Result<Layout> {
         return Err(EALIGN);
     }
     Ok(layout.pad_to_align())
-}
-
-fn check_set_vdso(
-    vdso: &Mutex<Option<LAddr>>,
-    phys_offset: usize,
-    layout: Layout,
-    flags: Flags,
-) -> Result {
-    if PREEMPT.scope(|| vdso.lock().is_some()) {
-        return Err(EACCES);
-    }
-
-    if phys_offset != 0 {
-        return Err(EACCES);
-    }
-
-    if layout.size() != VDSO.1.len() || layout.align() != PAGE_SIZE {
-        return Err(EACCES);
-    }
-
-    if flags != VDSO.0 {
-        return Err(EACCES);
-    }
-
-    Ok(())
 }
 
 fn check_vdso(vdso: Option<LAddr>, base: LAddr, end: LAddr) -> bool {

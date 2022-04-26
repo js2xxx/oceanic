@@ -18,6 +18,8 @@ pub struct SyscallFn {
     pub name: String,
     returns: String,
     args: Vec<SyscallArg>,
+    #[serde(default)]
+    no_call: bool,
 }
 
 fn parse_file(file: impl AsRef<Path>) -> Result<Vec<SyscallFn>, Box<dyn Error>> {
@@ -59,6 +61,10 @@ pub fn gen_rust_calls(funcs: &[SyscallFn], output: impl AsRef<Path>) -> Result<(
     let mut output = BufWriter::new(fs::File::create(output)?);
 
     for (i, func) in funcs.iter().enumerate() {
+        if func.no_call {
+            write!(output, "#[cfg(not(feature = \"vdso\"))] ")?;
+        }
+
         write!(
             output,
             "#[no_mangle] pub unsafe extern \"C\" fn {}(",
