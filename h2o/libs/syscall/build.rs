@@ -1,7 +1,7 @@
 use std::error::Error;
 
 fn main() -> Result<(), Box<dyn Error>> {
-    #[cfg(all(feature = "call", not(feature = "vdso")))]
+    #[cfg(all(feature = "call", feature = "vdso"))]
     {
         let config = cbindgen::Config::from_file("cbindgen.toml")?;
         println!("cargo:rerun-if-changed=cbindgen.toml");

@@ -168,12 +168,13 @@ impl Dso {
 
     pub fn load(
         phys: &Phys,
-        name: CString,
+        name: impl Into<CString>,
         prog: bool,
     ) -> Result<(LoadedElf, NonNull<Dso>), Error> {
         let mut dso_list = dso_list().lock();
         let names = dso_list.names.clone();
-        Self::load_dso(phys, name, prog, &mut dso_list).inspect_err(|_| dso_list.names = names)
+        Self::load_dso(phys, name.into(), prog, &mut dso_list)
+            .inspect_err(|_| dso_list.names = names)
     }
 
     fn load_dso(

@@ -2,7 +2,6 @@ use core::mem::size_of;
 
 use archop::{msr, reg};
 use paging::LAddr;
-use sv_call::SerdeReg;
 
 use super::seg::ndt::{INTR_CODE, USR_CODE_X86};
 use crate::sched::task::ctx::arch::Frame;
@@ -39,9 +38,7 @@ unsafe extern "C" fn hdl_syscall(frame: *const Frame) {
     archop::pause_intr();
 
     let _ = crate::sched::SCHED.with_current(|cur| {
-        cur.kstack_mut()
-            .task_frame_mut()
-            .set_syscall_retval(res.encode());
+        cur.kstack_mut().task_frame_mut().set_syscall_retval(res);
         Ok(())
     });
 }

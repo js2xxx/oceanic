@@ -270,16 +270,91 @@ pub unsafe extern "C" fn memchr(ptr: *const c_void, ch: c_int, count: usize) -> 
     pos.map_or(ptr::null(), |pos| unsafe { ptr.add(pos) })
 }
 
-// Defined in `compiler_builtins`. TODO: implement this self with SIMD
-// optimizations.
-extern "C" {
-    pub fn memcmp(lhs: *const c_void, rhs: *const c_void, count: usize) -> c_int;
+// TODO: implement these with SIMD optimizations.
 
-    pub fn memset(dest: *mut c_void, ch: c_int, count: usize) -> *mut c_void;
+#[no_mangle]
+pub unsafe extern "C" fn memcmp(lhs: *const c_void, rhs: *const c_void, count: usize) -> c_int {
+    let (lhs, rhs) = (lhs as *const u8, rhs as *const u8);
+    let mut i = 0;
+    while i < count {
+        let a = *lhs.add(i);
+        let b = *rhs.add(i);
+        if a != b {
+            return a as i32 - b as i32;
+        }
+        i += 1;
+    }
+    0
+}
 
-    pub fn memcpy(dest: *mut c_void, src: *const c_void, count: usize) -> *mut c_void;
+#[no_mangle]
+pub unsafe extern "C" fn memset(dest: *mut c_void, ch: c_int, count: usize) -> *mut c_void {
+    let qword_count = count >> 3;
+    let byte_count = count & 0b111;
+    core::arch::asm!(
+        "repe stosq %rax, (%rdi)",
+        "mov {byte_count:e}, %ecx",
+        "repe stosb %al, (%rdi)",
+        byte_count = in(reg) byte_count,
+        inout("rcx") qword_count => _,
+        inout("rdi") dest => _,
+        in("rax") (ch as u64) * 0x0101010101010101,
+        options(att_syntax, nostack, preserves_flags)
+    );
+    dest
+}
 
-    pub fn memmove(dest: *mut c_void, src: *const c_void, count: usize) -> *mut c_void;
+#[no_mangle]
+pub unsafe extern "C" fn memcpy(
+    dest: *mut c_void,
+    src: *const c_void,
+    count: usize,
+) -> *mut c_void {
+    let qword_count = count >> 3;
+    let byte_count = count & 0b111;
+    core::arch::asm!(
+        "repe movsq (%rsi), (%rdi)",
+        "mov {byte_count:e}, %ecx",
+        "repe movsb (%rsi), (%rdi)",
+        byte_count = in(reg) byte_count,
+        inout("rcx") qword_count => _,
+        inout("rdi") dest => _,
+        inout("rsi") src => _,
+        options(att_syntax, nostack, preserves_flags)
+    );
+    dest
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn memmove(
+    dest: *mut c_void,
+    src: *const c_void,
+    count: usize,
+) -> *mut c_void {
+    let delta = (dest as usize).wrapping_sub(src as usize);
+    if delta >= count {
+        // We can copy forwards because either dest is far enough ahead of src,
+        // or src is ahead of dest (and delta overflowed).
+        memcpy(dest, src, count)
+    } else {
+        let qword_count = count >> 3;
+        let byte_count = count & 0b111;
+        core::arch::asm!(
+            "std",
+            "repe movsq (%rsi), (%rdi)",
+            "movl {byte_count:e}, %ecx",
+            "addq $7, %rdi",
+            "addq $7, %rsi",
+            "repe movsb (%rsi), (%rdi)",
+            "cld",
+            byte_count = in(reg) byte_count,
+            inout("rcx") qword_count => _,
+            inout("rdi") dest.add(count).wrapping_sub(8) => _,
+            inout("rsi") src.add(count).wrapping_sub(8) => _,
+            options(att_syntax, nostack)
+        );
+        dest
+    }
 }
 
 #[no_mangle]
