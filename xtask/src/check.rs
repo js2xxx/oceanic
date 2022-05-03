@@ -9,7 +9,7 @@ use std::{
 use crate::{H2O_BOOT, H2O_KERNEL, H2O_TINIT, OC_BIN, OC_LIB};
 
 pub(crate) fn check() -> Result<(), Box<dyn Error>> {
-    let cargo = env::var("CARGO").unwrap_or_else(|_| "cargo".to_string());
+    let cargo = "cargo".to_string();
     let src_root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .ancestors()
         .nth(1)
@@ -18,6 +18,7 @@ pub(crate) fn check() -> Result<(), Box<dyn Error>> {
     let check = |dir: PathBuf| -> Result<(), Box<dyn Error>> {
         Command::new(&cargo)
             .current_dir(dir)
+            .arg("+oceanic")
             .args(["clippy", "--message-format=json-diagnostic-short"])
             .status()?
             .exit_ok()

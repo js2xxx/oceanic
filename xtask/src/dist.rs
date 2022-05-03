@@ -35,7 +35,7 @@ impl Dist {
     }
 
     pub fn build(self) -> Result<(), Box<dyn Error>> {
-        let cargo = env::var("CARGO").unwrap_or_else(|_| "cargo".to_string());
+        let cargo = "cargo".to_string();
         let src_root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
         let target_root = env::var("CARGO_TARGET_DIR")
             .unwrap_or_else(|_| src_root.join("target").to_string_lossy().to_string());
@@ -65,19 +65,16 @@ impl Dist {
 
         // Build the VDSO
         {
-            let target_triple = src_root.join(".cargo/x86_64-pc-oceanic.json");
             let cd = src_root.join(H2O_SYSCALL);
             let ldscript = cd.join("syscall.ld");
 
             println!("Building VDSO");
 
             let mut cmd = Command::new(&cargo);
-            let cmd = cmd.current_dir(&cd).arg("rustc").args([
-                "--crate-type=cdylib",
-                &format!("--target={}", target_triple.to_string_lossy()),
+            let cmd = cmd.current_dir(&cd).arg("+oceanic").arg("rustc").args([
                 "-Zunstable-options",
-                "-Zbuild-std=core,compiler_builtins,alloc,panic_abort",
-                "-Zbuild-std-features=compiler-builtins-mem",
+                "--crate-type=cdylib",
+                "--target=x86_64-pc-oceanic",
                 "--release", /* VDSO can always be the release version and discard the debug
                               * symbols. */
                 "--no-default-features",
@@ -262,7 +259,7 @@ impl Dist {
         println!("Building {:?}", dst_name.as_ref());
 
         let mut cmd = Command::new(cargo);
-        let cmd = cmd.current_dir(src_dir).arg("build");
+        let cmd = cmd.current_dir(src_dir).arg("+oceanic").arg("build");
         if self.release {
             cmd.arg("--release");
         }

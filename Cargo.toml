@@ -11,3 +11,6 @@ members = [
 ]
 
 exclude = ["src/bin/.cargo"]
+
+[patch.crates-io]
+libc = {path = "../toolchains/rust-libc"}
