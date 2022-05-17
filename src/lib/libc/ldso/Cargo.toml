@@ -15,7 +15,6 @@ rpc = {path = "../../rpc"}
 solvent = {path = "../../h2o_rs"}
 svrt = {path = "../../svrt"}
 # External crates
-cstr_core = "0.2"
 goblin = {version = "0.5", default-features = false, features = ["elf32", "elf64", "endian_fd"]}
 log = "0.4"
 spin = {version = "0.9", features = ["use_ticket_mutex"]}

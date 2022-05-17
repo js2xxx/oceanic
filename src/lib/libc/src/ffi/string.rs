@@ -1,7 +1,6 @@
 use core::{ffi::*, ptr, slice};
 
 use bitvec::prelude::*;
-use cstr_core::CStr;
 
 #[allow(non_camel_case_types)]
 pub type size_t = usize;
@@ -272,6 +271,10 @@ pub unsafe extern "C" fn memchr(ptr: *const c_void, ch: c_int, count: usize) -> 
 
 // TODO: implement these with SIMD optimizations.
 
+/// # Safety
+///
+/// The caller must ensure that `lhs` and `rhs` contain valid byte slices with a
+/// length of at least `count`.
 #[no_mangle]
 pub unsafe extern "C" fn memcmp(lhs: *const c_void, rhs: *const c_void, count: usize) -> c_int {
     let (lhs, rhs) = (lhs as *const u8, rhs as *const u8);
@@ -287,6 +290,10 @@ pub unsafe extern "C" fn memcmp(lhs: *const c_void, rhs: *const c_void, count: u
     0
 }
 
+/// # Safety
+///
+/// The caller must ensure that `dest` contains a valid and writable byte slice
+/// with a length of at least `count`.
 #[no_mangle]
 pub unsafe extern "C" fn memset(dest: *mut c_void, ch: c_int, count: usize) -> *mut c_void {
     let qword_count = count >> 3;
@@ -304,6 +311,9 @@ pub unsafe extern "C" fn memset(dest: *mut c_void, ch: c_int, count: usize) -> *
     dest
 }
 
+/// # Safety
+///
+/// Same as [`core::ptr::copy_nonoverlapping`].
 #[no_mangle]
 pub unsafe extern "C" fn memcpy(
     dest: *mut c_void,
@@ -325,6 +335,9 @@ pub unsafe extern "C" fn memcpy(
     dest
 }
 
+/// # Safety
+///
+/// Same as [`core::ptr::copy`].
 #[no_mangle]
 pub unsafe extern "C" fn memmove(
     dest: *mut c_void,
@@ -360,4 +373,25 @@ pub unsafe extern "C" fn memmove(
 #[no_mangle]
 pub extern "C" fn strerror(errnum: c_int) -> *const c_char {
     solvent::error::Error::desc_by_index(errnum).map_or(ptr::null(), |s| s.as_ptr().cast())
+}
+
+/// # Safety
+///
+/// The caller must ensure that `buf` contains a valid and writable byte slice
+/// with a length of at least `buflen`.
+#[no_mangle]
+pub unsafe extern "C" fn strerror_r(errnum: c_int, buf: *mut c_char, buflen: usize) -> c_int {
+    match solvent::error::Error::desc_by_index(errnum) {
+        Some(desc) => {
+            let desc = desc.as_bytes();
+            if buflen <= desc.len() {
+                return solvent::error::EBUFFER.raw();
+            }
+            buf.copy_from_nonoverlapping(desc.as_ptr() as _, desc.len());
+            buf.add(desc.len()).write(0);
+
+            solvent::error::OK.raw()
+        }
+        None => solvent::error::EINVAL.raw(),
+    }
 }

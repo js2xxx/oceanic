@@ -8,7 +8,6 @@
 #![feature(alloc_error_handler)]
 #![feature(allocator_api)]
 #![feature(assert_matches)]
-#![feature(bool_to_option)]
 #![feature(box_into_inner)]
 #![feature(box_syntax)]
 #![feature(coerce_unsized)]

@@ -46,7 +46,7 @@ impl Constants {
 }
 
 #[cfg(feature = "vdso")]
-const CONSTANTS_SIZE: usize = core::mem::size_of::<Constants>();
+pub const CONSTANTS_SIZE: usize = core::mem::size_of::<Constants>();
 #[cfg(feature = "vdso")]
 core::arch::global_asm!("
     .section .rodata

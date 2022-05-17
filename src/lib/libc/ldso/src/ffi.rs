@@ -1,10 +1,10 @@
+use alloc::ffi::CString;
 use core::{
-    ffi::{c_char, c_int, c_void},
+    ffi::{c_char, c_int, c_void, CStr},
     ptr,
     sync::atomic::{AtomicPtr, Ordering::SeqCst},
 };
 
-use cstr_core::{CStr, CString};
 use solvent::{c_ty::Status, prelude::EINVAL};
 
 use crate::{

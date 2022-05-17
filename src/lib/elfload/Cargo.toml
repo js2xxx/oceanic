@@ -11,6 +11,5 @@ default = ["solvent/default"]
 # Local crates
 solvent = {path = "../h2o_rs", default_features = false}
 # External crates
-cstr_core = "0.2"
 goblin = {version = "0.5", default-features = false, features = ["elf32", "elf64", "endian_fd"]}
 log = "0.4"

@@ -124,11 +124,7 @@ impl Dist {
                 format!("0x{}", constants_offset),
             )?;
 
-            self.gen_debug(
-                "vdso",
-                src_root.join(H2O_KERNEL).join("target"),
-                DEBUG_DIR,
-            )?;
+            self.gen_debug("vdso", src_root.join(H2O_KERNEL).join("target"), DEBUG_DIR)?;
         }
 
         // Build h2o_kernel

@@ -10,7 +10,6 @@ use crate::{
 #[derive(Debug)]
 pub enum TryFromError {
     SignatureMismatch([u8; 4]),
-    StringParseError(cstr_core::FromBytesWithNulError),
     BufferTooShort,
     Other(Error),
 }
@@ -21,17 +20,10 @@ impl From<TryFromSliceError> for TryFromError {
     }
 }
 
-impl From<cstr_core::FromBytesWithNulError> for TryFromError {
-    fn from(err: cstr_core::FromBytesWithNulError) -> Self {
-        Self::StringParseError(err)
-    }
-}
-
 impl From<TryFromError> for Error {
     fn from(val: TryFromError) -> Self {
         match val {
             TryFromError::SignatureMismatch(_) => ETYPE,
-            TryFromError::StringParseError(_) => ETYPE,
             TryFromError::BufferTooShort => EBUFFER,
             TryFromError::Other(err) => err,
         }

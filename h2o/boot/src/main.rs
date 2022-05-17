@@ -10,7 +10,6 @@
 #![no_main]
 #![feature(abi_efiapi)]
 #![feature(alloc_error_handler)]
-#![feature(bool_to_option)]
 #![feature(box_syntax)]
 #![feature(nonnull_slice_from_raw_parts)]
 #![feature(panic_info_message)]

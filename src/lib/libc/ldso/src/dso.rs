@@ -1,4 +1,4 @@
-use alloc::{boxed::Box, collections::BTreeSet, vec::Vec};
+use alloc::{boxed::Box, collections::BTreeSet, vec::Vec, ffi::CString};
 use core::{
     alloc::Layout,
     cell::UnsafeCell,
@@ -8,18 +8,17 @@ use core::{
     ptr::{self, NonNull},
     slice,
     sync::atomic::{self, AtomicU32, Ordering::*},
-    time::Duration,
+    time::Duration, ffi::CStr,
 };
 
 use canary::Canary;
-use cstr_core::{cstr, CStr, CString};
 use elfload::LoadedElf;
 use rpc::load::{GetObject, GetObjectResponse as Response};
 use solvent::prelude::{Channel, Object, Phys};
 use spin::{Lazy, Mutex, Once};
 use svrt::{HandleInfo, HandleType};
 
-use crate::{elf::*, load_address, vdso_map};
+use crate::{elf::*, load_address, vdso_map,cstr};
 
 static mut LDSO: MaybeUninit<Dso> = MaybeUninit::uninit();
 static mut VDSO: MaybeUninit<Dso> = MaybeUninit::uninit();

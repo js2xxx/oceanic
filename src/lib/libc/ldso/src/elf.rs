@@ -1,12 +1,12 @@
 use alloc::{alloc::Global, boxed::Box};
 use core::{
     alloc::{AllocError, Allocator, Layout},
+    ffi::CStr,
     mem, ptr,
     ptr::NonNull,
     slice,
 };
 
-use cstr_core::CStr;
 pub use goblin::elf64::{
     dynamic::*, header::*, program_header::*, reloc::*, section_header::*, sym::*, Note,
 };
@@ -334,7 +334,7 @@ impl Tls {
 
 impl Drop for Tls {
     fn drop(&mut self) {
-        let _ = unsafe { Global.deallocate(self.data, self.layout) };
+        unsafe { Global.deallocate(self.data, self.layout) };
     }
 }
 

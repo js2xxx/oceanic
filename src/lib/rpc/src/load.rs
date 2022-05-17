@@ -1,7 +1,6 @@
-use alloc::vec::Vec;
+use alloc::{ffi::CString, vec::Vec};
 use core::mem;
 
-use cstr_core::CString;
 use solvent::prelude::{Error, Object, Packet, PacketTyped, Phys, EBUFFER, ETYPE};
 
 use crate::{from_cstr_vec, parse_cstr_vec, Byted, Carrier};
