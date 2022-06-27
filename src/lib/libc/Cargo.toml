@@ -10,6 +10,7 @@ crate-type = ["cdylib"]
 # Local crates
 solvent = {path = "../h2o_rs"}
 svrt = {path = "../svrt"}
+heap = {path = "../../../h2o/libs/heap", features = ["tcache"]}
 # External crates
 bitvec = {version = "0.22", default-features = false, features = ["atomic"]}
 log = "0.4"

@@ -2,6 +2,7 @@
 #![allow(unused_unsafe)]
 #![feature(alloc_c_string)]
 #![feature(alloc_error_handler)]
+#![feature(allocator_api)]
 #![feature(c_variadic)]
 #![feature(core_c_str)]
 #![feature(core_ffi_c)]

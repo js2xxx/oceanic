@@ -49,7 +49,7 @@ impl Kframe {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(C)]
 pub struct Frame {
     gs_base: u64,

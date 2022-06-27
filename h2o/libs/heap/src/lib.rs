@@ -49,6 +49,7 @@
 #![feature(result_option_inspect)]
 #![feature(slice_ptr_get)]
 #![feature(slice_ptr_len)]
+#![feature(thread_local)]
 
 mod alloc;
 mod page;
@@ -56,21 +57,28 @@ mod stat;
 
 mod pool;
 mod slab;
+mod tcache;
 
+#[cfg(not(feature = "tcache"))]
+pub use self::alloc::Allocator;
 pub use self::{
-    alloc::Allocator,
     page::{AllocPages, DeallocPages, Page, MAX_OBJ_SIZE, OBJ_SIZES},
     pool::unwrap_layout,
     stat::Stat,
+    tcache::ThreadCache,
 };
+
+#[cfg(feature = "tcache")]
+#[thread_local]
+static mut TCACHE: tcache::ThreadCache = tcache::ThreadCache::new();
 
 cfg_if::cfg_if! { if #[cfg(feature = "global")] {
 
 #[global_allocator]
-static GLOBAL_ALLOC: Allocator = Allocator::new_null();
+static GLOBAL_ALLOC: alloc::Allocator = alloc::Allocator::new_null();
 
 /// Set the functions for allocating and deallocating pages.
-pub unsafe fn set_alloc(alloc_pages: AllocPages, dealloc_pages: DeallocPages) {
+pub unsafe fn set_alloc(alloc_pages: page::AllocPages, dealloc_pages: page::DeallocPages) {
     GLOBAL_ALLOC.set_alloc(alloc_pages, dealloc_pages)
 }
 

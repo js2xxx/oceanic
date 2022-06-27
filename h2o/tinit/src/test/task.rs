@@ -31,8 +31,7 @@ unsafe extern "C" fn func(_: Handle, arg: u32) {
             }
         }
         1 => unsafe {
-            let addr: usize = PF_ADDR;
-            let ptr: *mut u64 = core::mem::transmute(addr);
+            let ptr = PF_ADDR as *mut u64;
             *ptr = 1;
         },
         _ => {}

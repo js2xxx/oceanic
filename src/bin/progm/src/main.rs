@@ -11,6 +11,8 @@ unsafe extern "C" fn _start(init_chan: Handle) {
 
 #[no_mangle]
 unsafe extern "C" fn main(_: u32, _: *mut *mut i8, _: *mut *mut i8) -> i32 {
+    let ptr = malloc(core::mem::size_of::<u128>());
+    assert!(!ptr.is_null());
     0
 }
 
@@ -19,6 +21,8 @@ type Main = unsafe extern "C" fn(argc: u32, argv: *mut *mut i8, environ: *mut *m
 #[link(name = "co2")]
 extern "C" {
     fn __libc_start_main(init_chan: Handle, main: Main) -> !;
+
+    fn malloc(size: usize) -> *mut u8;
 }
 
 #[panic_handler]

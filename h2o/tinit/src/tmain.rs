@@ -12,7 +12,6 @@
 #![feature(slice_ptr_get)]
 #![feature(slice_ptr_len)]
 #![feature(thread_local)]
-#![feature(toowned_clone_into)]
 #![feature(vec_into_raw_parts)]
 
 mod load;
