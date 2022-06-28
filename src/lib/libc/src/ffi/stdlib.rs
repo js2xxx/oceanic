@@ -2,7 +2,7 @@ use alloc::alloc::Global;
 use core::{
     alloc::{Allocator, Layout},
     ffi::*,
-    ptr,
+    ptr::{self, NonNull},
 };
 
 pub const MIN_ALIGN: usize = 0x10;
@@ -37,43 +37,50 @@ pub unsafe extern "C" fn abort() -> ! {
 ///
 /// * `ptr` must denote a block of memory via this allocator.
 #[no_mangle]
-pub unsafe extern "C" fn free(_ptr: *mut c_void) {}
+pub unsafe extern "C" fn aligned_free(ptr: *mut c_void, align: usize, size: usize) {
+    let layout = Layout::from_size_align(size, align).unwrap();
+    let ptr = NonNull::new(ptr.cast::<u8>()).unwrap();
+    Global.deallocate(ptr, layout)
+}
+
+macro_rules! ok_or_null {
+    ($e:expr) => {
+        match $e {
+            Ok(x) => x,
+            Err(_) => return ptr::null_mut(),
+        }
+    };
+}
 
 /// # Safety
 ///
 /// * `ptr` must denote a block of memory via this allocator.
 #[no_mangle]
-pub unsafe extern "C" fn realloc(_ptr: *mut c_void, _new_size: usize) -> *mut c_void {
-    ptr::null_mut()
-}
+pub unsafe extern "C" fn aligned_realloc(
+    ptr: *mut c_void,
+    align: usize,
+    size: usize,
+    new_align: usize,
+    new_size: usize,
+) -> *mut c_void {
+    let ptr = ok_or_null!(NonNull::new(ptr.cast::<u8>()).ok_or(()));
+    let layout = ok_or_null!(Layout::from_size_align(size, align));
+    let new_layout = ok_or_null!(Layout::from_size_align(new_size, new_align));
 
-#[no_mangle]
-pub extern "C" fn calloc(num: usize, size: usize) -> *mut c_void {
-    let actual = num * size;
-    let ptr = match malloc(actual) {
-        ptr if ptr.is_null() => return ptr::null_mut(),
-        ptr => ptr,
+    let res = if new_size <= layout.size() {
+        Global.shrink(ptr, layout, new_layout)
+    } else {
+        Global.grow(ptr, layout, new_layout)
     };
-    // SAFETY: The memory is freshly allocated and has at least `actual` bytes.
-    unsafe { ptr.write_bytes(0, actual) };
-    ptr
+    res.map_or(ptr::null_mut(), |ptr| ptr.as_ptr().cast())
 }
 
 #[no_mangle]
-pub extern "C" fn malloc(size: usize) -> *mut c_void {
-    aligned_alloc(MIN_ALIGN, size)
-}
+pub extern "C" fn aligned_alloc(align: usize, size: usize) -> *mut c_void {
+    let layout = ok_or_null!(Layout::from_size_align(size, align));
 
-#[no_mangle]
-pub extern "C" fn aligned_alloc(alignment: usize, size: usize) -> *mut c_void {
-    let layout = match Layout::from_size_align(size, alignment) {
-        Ok(layout) => layout,
-        Err(_) => return ptr::null_mut(),
-    };
-
-    Global
-        .allocate(layout)
-        .map_or(ptr::null_mut(), |ptr| ptr.as_ptr().cast())
+    let res = Global.allocate(layout);
+    res.map_or(ptr::null_mut(), |ptr| ptr.as_ptr().cast())
 }
 
 /// # Safety
