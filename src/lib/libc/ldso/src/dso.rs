@@ -182,7 +182,7 @@ impl Dso {
         prog: bool,
         dso_list: &mut DsoList,
     ) -> Result<(LoadedElf, NonNull<Dso>), Error> {
-        let elf = elfload::load(phys, true, &*svrt::root_virt()).map_err(Error::ElfLoad)?;
+        let elf = elfload::load(phys, true, &svrt::root_virt()).map_err(Error::ElfLoad)?;
 
         let base = DsoBase::new(elf.range.start, if elf.is_dyn { ET_DYN } else { ET_EXEC });
         log::debug!("{:?}", base);
@@ -536,7 +536,7 @@ impl DsoList {
         unsafe {
             dso.link.get_mut().next = None;
             dso.link.get_mut().prev = self.tail;
-            let node = Some((&*dso).into());
+            let node = Some(NonNull::from(&*dso));
 
             match self.tail {
                 None => self.head = node,

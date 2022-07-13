@@ -6,9 +6,9 @@ use super::Instant;
 use crate::{cpu::arch::tsc::TSC_CLOCK, dev::hpet::HPET_CLOCK};
 
 pub static CLOCK: Azy<&'static dyn ClockChip> = Azy::new(|| {
-    let ret: &'static dyn ClockChip = &*TSC_CLOCK;
+    let ret: &crate::cpu::arch::tsc::TscClock = &TSC_CLOCK;
     crate::log::HAS_TIME.store(true, Release);
-    ret
+    ret as _
 });
 
 static CALIB_CLOCK: Azy<&'static dyn CalibrationClock> =

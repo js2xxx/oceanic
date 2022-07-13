@@ -30,10 +30,10 @@ static PLATFORM_INFO: Azy<acpi::PlatformInfo> =
 
 #[inline]
 pub fn tables() -> &'static acpi::AcpiTables<Handler> {
-    &*TABLES
+    &TABLES
 }
 
 #[inline]
 pub fn platform_info() -> &'static acpi::PlatformInfo {
-    &*PLATFORM_INFO
+    &PLATFORM_INFO
 }

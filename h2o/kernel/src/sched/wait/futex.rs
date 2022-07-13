@@ -30,7 +30,7 @@ impl Futex {
 
     fn wait<T>(&self, guard: T, val: u64, timeout: Duration) -> Result {
         let ptr = self.key.as_ptr();
-        if unsafe { intrinsics::atomic_load(ptr) } == val {
+        if unsafe { intrinsics::atomic_load_seqcst(ptr) } == val {
             self.wo.wait(guard, timeout, "Futex::wait")
         } else {
             Err(EINVAL)
