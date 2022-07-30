@@ -160,7 +160,7 @@ fn virt_alloc(hdl: Handle, offset: usize, size: usize, align: usize) -> Result<H
         let virt = cur.space().handles().get::<Weak<space::Virt>>(hdl)?;
         let virt = virt.upgrade().ok_or(EKILLED)?;
         let sub = virt.allocate(
-            (offset != usize::MAX).then(|| offset),
+            (offset != usize::MAX).then_some(offset),
             Layout::from_size_align(size, align)?,
         )?;
         cur.space().handles().insert(sub, None)
@@ -200,7 +200,7 @@ fn virt_map(hdl: Handle, mi: UserPtr<In, VirtMapInfo>) -> Result<*mut u8> {
         let virt = cur.space().handles().get::<Weak<space::Virt>>(hdl)?;
         let virt = virt.upgrade().ok_or(EKILLED)?;
         let phys = cur.space().handles().remove::<space::Phys>(mi.phys)?;
-        let offset = (mi.offset != usize::MAX).then(|| mi.offset);
+        let offset = (mi.offset != usize::MAX).then_some(mi.offset);
         if flags.intersects(!features_to_flags(phys.features())) {
             return Err(EPERM);
         }

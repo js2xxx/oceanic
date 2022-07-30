@@ -1,6 +1,4 @@
 #![no_std]
-#![feature(alloc_c_string)]
-#![feature(core_c_str)]
 #![feature(iterator_try_collect)]
 
 pub mod load;
