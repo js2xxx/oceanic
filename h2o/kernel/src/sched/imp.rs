@@ -390,7 +390,7 @@ fn select_cpu(
             if diff <= 1 {
                 0
             } else {
-                (diff + 1).log2() as i32 * if ra > rb { -1 } else { 1 }
+                (diff + 1).ilog2() as i32 * if ra > rb { -1 } else { 1 }
             }
         };
 

@@ -66,7 +66,9 @@ impl AtomicDoubleU64 {
 
     #[inline]
     pub fn load_acquire(&self) -> (u64, u64) {
-        self.compare_exchange_acqrel((0, 0), (0, 0))
-            .into_ok_or_err()
+        match self.compare_exchange_acqrel((0, 0), (0, 0)) {
+            Ok(res) => res,
+            Err(res) => res,
+        }
     }
 }

@@ -25,7 +25,6 @@
 #![feature(once_cell)]
 #![feature(ptr_metadata)]
 #![feature(receiver_trait)]
-#![feature(result_into_ok_or_err)]
 #![feature(result_option_inspect)]
 #![feature(slice_ptr_get)]
 #![feature(slice_ptr_len)]

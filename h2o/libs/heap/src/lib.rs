@@ -45,7 +45,6 @@
 #![feature(allocator_api)]
 #![feature(lang_items)]
 #![feature(nonnull_slice_from_raw_parts)]
-#![feature(result_into_ok_or_err)]
 #![feature(result_option_inspect)]
 #![feature(slice_ptr_get)]
 #![feature(slice_ptr_len)]
