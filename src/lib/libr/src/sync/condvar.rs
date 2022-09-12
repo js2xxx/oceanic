@@ -1,10 +1,11 @@
-use core::{time::Duration, fmt};
+use core::{fmt, time::Duration};
 
 use solvent::time::Instant;
 
 use super::{imp::RawCondvar, mutex::MutexGuard};
 
-
+/// Condition variable based on Rust `std`'s implementation without poison
+/// detection.
 pub struct Condvar {
     inner: RawCondvar,
 }

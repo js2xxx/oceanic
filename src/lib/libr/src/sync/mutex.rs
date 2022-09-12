@@ -1,8 +1,14 @@
-use core::{cell::UnsafeCell, marker::PhantomData, ops::{Deref, DerefMut}, fmt};
+use core::{
+    cell::UnsafeCell,
+    fmt,
+    marker::PhantomData,
+    ops::{Deref, DerefMut},
+};
 
 use super::imp::RawMutex;
 
-
+/// Mutual exclusion based on Rust `std`'s implementation without poison
+/// detection.
 pub struct Mutex<T: ?Sized> {
     inner: RawMutex,
     data: UnsafeCell<T>,

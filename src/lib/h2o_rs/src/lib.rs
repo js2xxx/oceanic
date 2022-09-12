@@ -12,9 +12,9 @@ pub mod error;
 pub mod ipc;
 pub mod mem;
 pub mod obj;
+pub mod sync;
 pub mod task;
 pub mod time;
-pub mod sync;
 
 #[cfg(feature = "alloc")]
 extern crate alloc;
