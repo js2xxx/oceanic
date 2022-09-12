@@ -1,5 +1,5 @@
 use alloc::{collections::BTreeMap, vec::Vec};
-use core::{array::TryFromSliceError, mem};
+use core::mem;
 
 use solvent::prelude::{Error, Handle, Object, Packet, PacketTyped, Phys, Virt, EBUFFER, ETYPE};
 
@@ -10,21 +10,15 @@ use crate::{
 #[derive(Debug)]
 pub enum TryFromError {
     SignatureMismatch([u8; 4]),
-    BufferTooShort,
+    BufferTooShort(usize),
     Other(Error),
-}
-
-impl From<TryFromSliceError> for TryFromError {
-    fn from(_: TryFromSliceError) -> Self {
-        Self::BufferTooShort
-    }
 }
 
 impl From<TryFromError> for Error {
     fn from(val: TryFromError) -> Self {
         match val {
             TryFromError::SignatureMismatch(_) => ETYPE,
-            TryFromError::BufferTooShort => EBUFFER,
+            TryFromError::BufferTooShort(_) => EBUFFER,
             TryFromError::Other(err) => err,
         }
     }
@@ -70,8 +64,8 @@ impl PacketTyped for StartupArgs {
         let mut env = self.env;
 
         let handle_info_offset = STARTUP_ARGS_HEADER_SIZE;
-        let args_offset = handle_info_offset + args.len();
-        let env_offset = args_offset + env.len();
+        let args_offset = handle_info_offset + handles.len() * mem::size_of::<HandleInfo>();
+        let env_offset = args_offset + args.len();
 
         let header = StartupArgsHeader {
             signature: PACKET_SIG_STARTUP_ARGS,
@@ -98,7 +92,7 @@ impl PacketTyped for StartupArgs {
     fn try_from_packet(packet: &mut Packet) -> Result<Self, TryFromError> {
         let header = { packet.buffer.get(..STARTUP_ARGS_HEADER_SIZE) }
             .and_then(StartupArgsHeader::from_bytes)
-            .ok_or(TryFromError::BufferTooShort)?;
+            .ok_or(TryFromError::BufferTooShort(STARTUP_ARGS_HEADER_SIZE))?;
         if header.signature != PACKET_SIG_STARTUP_ARGS {
             return Err(TryFromError::SignatureMismatch(header.signature));
         }
@@ -107,19 +101,24 @@ impl PacketTyped for StartupArgs {
             .buffer
             .get(header.handle_info_offset..)
             .and_then(|data| data.get(..header.handle_count * mem::size_of::<HandleInfo>()))
-            .ok_or(TryFromError::BufferTooShort)?
+            .ok_or(TryFromError::BufferTooShort(
+                header.handle_info_offset + header.handle_count * mem::size_of::<HandleInfo>(),
+            ))?
             .chunks(mem::size_of::<HandleInfo>())
             .map(|slice| slice.try_into().map(HandleInfo::from_bytes))
             .zip(packet.handles.iter())
             .map(|(info, &handle)| info.map(|info| (info, handle)))
-            .try_collect::<BTreeMap<_, _>>()?;
+            .try_collect::<BTreeMap<_, _>>()
+            .map_err(|_| TryFromError::BufferTooShort(0))?;
 
         let args = Vec::from(
             packet
                 .buffer
                 .get(header.args_offset..)
                 .and_then(|data| data.get(..header.args_len))
-                .ok_or(TryFromError::BufferTooShort)?,
+                .ok_or(TryFromError::BufferTooShort(
+                    header.args_offset + header.args_len,
+                ))?,
         );
 
         let env = Vec::from(
@@ -127,7 +126,9 @@ impl PacketTyped for StartupArgs {
                 .buffer
                 .get(header.env_offset..)
                 .and_then(|data| data.get(..header.env_len))
-                .ok_or(TryFromError::BufferTooShort)?,
+                .ok_or(TryFromError::BufferTooShort(
+                    header.env_offset + header.env_len,
+                ))?,
         );
 
         *packet = Default::default();

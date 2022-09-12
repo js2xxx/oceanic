@@ -57,7 +57,6 @@ pub fn lang_start<R: Termination>(channel: Channel, main: fn() -> R) -> R {
 
     unsafe {
         __libc_start_init();
-        crate::alloc2::init();
         ARGS = args;
 
         // TODO: Remove this in the future.

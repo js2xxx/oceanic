@@ -7,7 +7,7 @@ version = "0.1.0"
 [dependencies]
 # Local crates
 dbglog = {path = "../dbglog"}
-heap = {path = "../../../h2o/libs/heap", features = ["tcache"]}
+heap = {path = "../../../h2o/libs/heap", default-features = false}
 solvent = {path = "../h2o_rs"}
 svrt = {path = "../svrt"}
 # External crates

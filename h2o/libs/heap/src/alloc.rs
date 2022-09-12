@@ -43,6 +43,7 @@ pub struct Allocator {
 }
 
 impl Allocator {
+    #[inline]
     pub const fn new(alloc_pages: crate::AllocPages, dealloc_pages: crate::DeallocPages) -> Self {
         Allocator {
             pool: Mutex::new(pool::Pool::new()),
@@ -50,12 +51,26 @@ impl Allocator {
         }
     }
 
+    #[inline]
     pub const fn new_null() -> Self {
         Self::new(null_alloc_pages, null_dealloc_pages)
     }
 
+    #[inline]
     pub fn stat(&self) -> crate::stat::Stat {
         self.pool.lock().stat()
+    }
+
+    #[inline]
+    #[allow(dead_code)]
+    pub fn pool(&self) -> &Mutex<pool::Pool> {
+        &self.pool
+    }
+
+    #[inline]
+    #[allow(dead_code)]
+    pub fn pager(&self) -> &Mutex<Pager> {
+        &self.pager
     }
 
     /// # Safety
