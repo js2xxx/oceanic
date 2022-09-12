@@ -188,7 +188,7 @@ extern "C" fn tmain(init_chan: sv_call::Handle) {
         )]
         .into_iter()
         .collect(),
-        args: vec![0],
+        args: Vec::from(b"progm\0" as &[u8]),
         env: vec![0],
     };
 
@@ -212,7 +212,7 @@ extern "C" fn tmain(init_chan: sv_call::Handle) {
     log::debug!("Waiting for the task");
 
     let retval = task.join().expect("Failed to join the task");
-    log::debug!("{} {:?}", retval, Error::try_from_retval(retval));
+    log::debug!("{:x} {:?}", retval, Error::try_from_retval(retval));
 
     log::debug!("Reaching end of TINIT");
 }
