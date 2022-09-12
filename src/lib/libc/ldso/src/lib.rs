@@ -59,7 +59,6 @@ extern "C" fn __libc_exit_fini() {
     dso::dso_list().lock().do_fini();
 }
 
-
 #[inline]
 const fn bytes_are_valid(bytes: &[u8]) -> bool {
     if bytes.is_empty() || bytes[bytes.len() - 1] != 0 {

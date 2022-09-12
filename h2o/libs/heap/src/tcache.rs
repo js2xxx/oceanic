@@ -127,7 +127,7 @@ impl TcSlab {
             self.count -= 1;
 
             let addr = unsafe { memory.as_ptr().add(self.count).read() };
-            
+
             page = pool.deallocate(addr, layout).unwrap_or(None);
         }
 

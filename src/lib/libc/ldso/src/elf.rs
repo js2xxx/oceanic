@@ -81,16 +81,16 @@ impl<'a> Symbols<'a> {
         let sym_ptr = base.ptr(
             dynamic
                 .iter()
-                .find_map(|d| (d.d_tag == DT_SYMTAB).then(|| d.d_val as usize))?,
+                .find_map(|d| (d.d_tag == DT_SYMTAB).then_some(d.d_val as usize))?,
         );
         let str_ptr = base.ptr(
             dynamic
                 .iter()
-                .find_map(|d| (d.d_tag == DT_STRTAB).then(|| d.d_val as usize))?,
+                .find_map(|d| (d.d_tag == DT_STRTAB).then_some(d.d_val as usize))?,
         );
         let gnu_hash = dynamic
             .iter()
-            .find_map(|d| (d.d_tag == DT_GNU_HASH).then(|| d.d_val as usize))
+            .find_map(|d| (d.d_tag == DT_GNU_HASH).then_some(d.d_val as usize))
             .map(|offset| base.ptr(offset));
 
         gnu_hash

@@ -1,14 +1,15 @@
-use alloc::{boxed::Box, collections::BTreeSet, vec::Vec, ffi::CString};
+use alloc::{boxed::Box, collections::BTreeSet, ffi::CString, vec::Vec};
 use core::{
     alloc::Layout,
     cell::UnsafeCell,
+    ffi::CStr,
     fmt,
     marker::PhantomData,
     mem::{self, MaybeUninit},
     ptr::{self, NonNull},
     slice,
     sync::atomic::{self, AtomicU32, Ordering::*},
-    time::Duration, ffi::CStr,
+    time::Duration,
 };
 
 use canary::Canary;
@@ -18,7 +19,7 @@ use solvent::prelude::{Channel, Object, Phys};
 use spin::{Lazy, Mutex, Once};
 use svrt::{HandleInfo, HandleType};
 
-use crate::{elf::*, load_address, vdso_map,cstr};
+use crate::{cstr, elf::*, load_address, vdso_map};
 
 static mut LDSO: MaybeUninit<Dso> = MaybeUninit::uninit();
 static mut VDSO: MaybeUninit<Dso> = MaybeUninit::uninit();
@@ -256,7 +257,7 @@ impl Dso {
     fn dyn_val(&self, tag: u64) -> Option<usize> {
         self.dynamic
             .iter()
-            .find_map(|d| (d.d_tag == tag).then(|| d.d_val as usize))
+            .find_map(|d| (d.d_tag == tag).then_some(d.d_val as usize))
     }
 
     fn dyn_ptr<T>(&self, tag: u64) -> Option<*mut T> {
@@ -441,7 +442,7 @@ impl DsoList {
         } else {
             let def = self.find_symbol(
                 name,
-                (reloc.ty == R_X86_64_COPY).then(|| dso),
+                (reloc.ty == R_X86_64_COPY).then_some(dso),
                 reloc.ty == R_X86_64_JUMP_SLOT,
             );
             if def.is_none()

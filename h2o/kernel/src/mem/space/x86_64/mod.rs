@@ -125,11 +125,7 @@ impl Space {
             id_off: minfo::ID_OFFSET,
         };
 
-        paging::reprotect(
-            &mut self.root_table.lock(),
-            &reprotect_info,
-            &mut PageAlloc,
-        )
+        paging::reprotect(&mut self.root_table.lock(), &reprotect_info, &mut PageAlloc)
     }
 
     #[allow(dead_code)]

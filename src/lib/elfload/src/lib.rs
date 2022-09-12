@@ -231,8 +231,9 @@ pub fn load(phys: &Phys, dyn_only: bool, root_virt: &Virt) -> Result<LoadedElf, 
     let sym_len = sections
         .into_iter()
         .find_map(|section| {
-            (section.sh_type == SHT_DYNSYM)
-                .then_some((section.sh_size / section.sh_entsize) as usize)
+            #[allow(clippy::unnecessary_lazy_evaluations)]
+            (section.sh_type == SHT_DYNSYM && section.sh_entsize != 0)
+                .then(|| (section.sh_size / section.sh_entsize) as usize)
         })
         .unwrap_or_default();
 
