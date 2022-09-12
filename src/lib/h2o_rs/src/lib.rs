@@ -1,5 +1,6 @@
 #![no_std]
 #![allow(unused_unsafe)]
+#![feature(atomic_mut_ptr)]
 #![feature(int_roundings)]
 #![feature(nonnull_slice_from_raw_parts)]
 #![feature(slice_ptr_get)]
@@ -13,6 +14,7 @@ pub mod mem;
 pub mod obj;
 pub mod task;
 pub mod time;
+pub mod sync;
 
 #[cfg(feature = "alloc")]
 extern crate alloc;

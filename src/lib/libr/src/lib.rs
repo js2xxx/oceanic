@@ -13,3 +13,4 @@ extern crate alloc;
 mod alloc2;
 pub mod env;
 pub mod rt;
+pub mod sync;

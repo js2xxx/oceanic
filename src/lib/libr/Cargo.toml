@@ -11,4 +11,5 @@ heap = {path = "../../../h2o/libs/heap", default-features = false}
 solvent = {path = "../h2o_rs"}
 svrt = {path = "../svrt"}
 # External crates
+crossbeam = {version = "0.8", default-features = false}
 log = "0.4"
