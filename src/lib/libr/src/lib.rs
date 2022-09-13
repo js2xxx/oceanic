@@ -9,6 +9,8 @@
 #![feature(never_type)]
 #![feature(nonnull_slice_from_raw_parts)]
 #![feature(receiver_trait)]
+#![feature(result_option_inspect)]
+#![feature(slice_ptr_get)]
 #![feature(thread_local)]
 #![feature(unsize)]
 
@@ -18,3 +20,4 @@ mod alloc2;
 pub mod env;
 pub mod rt;
 pub mod sync;
+pub mod task;
