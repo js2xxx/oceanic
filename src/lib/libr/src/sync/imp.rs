@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use core::{
     pin::Pin,
     sync::atomic::{AtomicU64, Ordering::*},
@@ -110,11 +108,6 @@ impl Parker {
     const EMPTY: u64 = 0;
     const PARKED: u64 = u64::MAX;
     const NOTIFIED: u64 = 1;
-    pub unsafe fn init(ptr: *mut Parker) {
-        ptr.write(Parker {
-            futex: AtomicU64::new(Self::EMPTY),
-        })
-    }
 
     #[inline]
     pub const fn new() -> Self {

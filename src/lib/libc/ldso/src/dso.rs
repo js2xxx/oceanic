@@ -714,6 +714,7 @@ impl DsoList {
             tcb_id: index,
 
             data: Vec::new(),
+            dtors: Vec::new(),
         });
         unsafe {
             crate::arch::set_tls_reg(self.threads.back_mut().unwrap() as *mut Tcb as u64);

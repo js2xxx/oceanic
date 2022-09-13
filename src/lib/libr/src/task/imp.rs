@@ -3,7 +3,7 @@ use core::{mem, ptr::NonNull, time::Duration};
 
 use solvent::{
     error::Result,
-    prelude::{Flags, Object, Phys, Virt, PAGE_SIZE},
+    prelude::{Flags, Phys, Virt, PAGE_SIZE},
     task::{exit, sleep, Task},
 };
 
@@ -79,11 +79,6 @@ impl Thread {
         let res = self.inner.join();
         assert_eq!(res, Ok(0), "Failed to join thread");
         let _ = self.stack.destroy();
-    }
-
-    #[inline]
-    pub fn id(&self) -> u32 {
-        unsafe { self.inner.raw().raw() }
     }
 }
 

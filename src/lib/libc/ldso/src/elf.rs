@@ -286,8 +286,14 @@ impl Tls {
 
     #[inline]
     pub fn push(&self, tcb: &mut Tcb) {
-        tcb.data
-            .extend_from_slice(unsafe { self.init_data.as_ref() });
+        let data = &mut tcb.data;
+
+        let new_len = self.offset + self.layout.pad_to_align().size();
+        if new_len > data.len() {
+            data.resize(new_len, 0);
+        }
+        data[self.offset..][..self.init_data.len()]
+            .copy_from_slice(unsafe { self.init_data.as_ref() });
     }
 }
 
@@ -297,6 +303,7 @@ pub struct Tcb {
     pub tcb_id: usize,
 
     pub data: Vec<u8>,
+    pub dtors: Vec<(*mut u8, *mut ())>,
 }
 
 impl Tcb {

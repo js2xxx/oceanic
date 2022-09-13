@@ -1,4 +1,5 @@
-pub mod imp;
+mod imp;
+pub mod local;
 
 use alloc::{boxed::Box, fmt, string::String};
 use core::{
@@ -84,7 +85,7 @@ impl Builder {
         let p2 = packet.clone();
 
         let main = move || {
-            let _ = t2;
+            current::set(t2);
             *p2.lock() = Some(f());
         };
 
@@ -107,6 +108,18 @@ where
     T: Send + 'static,
 {
     Builder::new().spawn(f).expect("failed to spawn thread")
+}
+
+pub fn current() -> Thread {
+    current::current().expect("Internal error")
+}
+
+pub fn park() {
+    current().inner.as_ref().parker().park()
+}
+
+pub fn park_timeout(timeout: Duration) -> bool {
+    current().inner.as_ref().parker().park_timeout(timeout)
 }
 
 #[inline]
@@ -224,6 +237,30 @@ fn _assert_sync_and_send() {
     _assert_both::<Thread>();
 }
 
-mod current {
+pub(crate) mod current {
+    use core::cell::RefCell;
 
+    use super::*;
+    use crate::thread_local;
+
+    thread_local!(static CURRENT: RefCell<Option<Thread>> = RefCell::new(None));
+
+    fn with_current<F, R>(f: F) -> Option<R>
+    where
+        F: FnOnce(&mut Thread) -> R,
+    {
+        CURRENT.try_with(move |current| {
+            let mut current = current.borrow_mut();
+            f(current.get_or_insert_with(|| Thread::new(None)))
+        })
+    }
+
+    #[inline]
+    pub fn current() -> Option<Thread> {
+        with_current(|cur| cur.clone())
+    }
+
+    pub fn set(thread: Thread) {
+        CURRENT.with_borrow_mut(move |current| *current = Some(thread))
+    }
 }

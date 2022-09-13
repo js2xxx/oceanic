@@ -1,7 +1,7 @@
 use alloc::{ffi::CString, vec::Vec};
 use core::{
     ffi::{c_char, c_int, c_void, CStr},
-    ptr,
+    mem, ptr,
     sync::atomic::{AtomicPtr, Ordering::SeqCst},
 };
 
@@ -149,10 +149,22 @@ pub extern "C" fn __libc_allocate_tcb() {
     list.push_thread(true);
 }
 
+/// # Safety
+///
+/// `data` and `dtor` must be valid.
+#[no_mangle]
+pub unsafe extern "C" fn __libc_register_tcb_dtor(data: *mut c_void, dtor: *mut c_void) {
+    Tcb::current().dtors.push((data.cast(), dtor.cast()));
+}
+
 #[no_mangle]
 pub extern "C" fn __libc_deallocate_tcb() {
     unsafe {
         let tcb = Tcb::current();
+        mem::take(&mut tcb.dtors).into_iter().for_each(|dtor| {
+            type Dtor = unsafe extern "C" fn(*mut u8);
+            mem::transmute::<_, Dtor>(dtor.1)(dtor.0)
+        });
         tcb.static_base = ptr::null_mut();
         tcb.tcb_id = 0;
         tcb.data = Vec::new();

@@ -2,6 +2,7 @@
 #![feature(alloc_error_handler)]
 #![feature(alloc_layout_extra)]
 #![feature(allocator_api)]
+#![feature(allow_internal_unstable)]
 #![feature(coerce_unsized)]
 #![feature(int_roundings)]
 #![feature(lang_items)]
