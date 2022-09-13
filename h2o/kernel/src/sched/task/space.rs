@@ -24,11 +24,11 @@ unsafe impl Sync for Space {}
 impl Space {
     pub fn new(ty: super::Type) -> sv_call::Result<Arc<Self>> {
         let mem = mem::space::Space::try_new(ty)?;
-        Ok(Arc::new(Space {
+        Ok(Arc::try_new(Space {
             mem,
             handles: HandleMap::new(),
             futexes: Futexes::new(Default::default()),
-        }))
+        })?)
     }
 
     pub fn new_current() -> Arc<Self> {

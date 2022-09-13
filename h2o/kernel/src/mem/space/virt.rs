@@ -84,13 +84,13 @@ impl Virt {
         let range = find_range(&children, &self.range, offset, layout)?;
         let base = range.start;
 
-        let child = Arc::new(Virt {
+        let child = Arc::try_new(Virt {
             ty: self.ty,
             range,
             space: Weak::clone(&self.space),
             parent: Arc::downgrade(self),
             children: Mutex::new(BTreeMap::new()),
-        });
+        })?;
         let ret = Arc::downgrade(&child);
         let _ = children.insert(base, Child::Virt(child));
         Ok(ret)
@@ -355,6 +355,9 @@ fn check_alloc(map: &ChildMap, request: Range<LAddr>) -> bool {
 
 #[inline]
 fn find_alloc(map: &ChildMap, range: &Range<LAddr>, layout: Layout) -> Option<LAddr> {
+    #[cfg(debug_assertions)]
+    const ASLR_BIT: usize = 1;
+    #[cfg(not(debug_assertions))]
     const ASLR_BIT: usize = 35;
     let mask = (1 << ASLR_BIT) - 1;
     let (ret, cnt) = try_find_alloc(map, range, layout, rand() & mask);

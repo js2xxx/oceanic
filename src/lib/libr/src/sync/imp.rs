@@ -116,8 +116,11 @@ impl Parker {
         })
     }
 
+    #[inline]
     pub const fn new() -> Self {
-        Parker { futex: AtomicU64::new(Self::EMPTY) }
+        Parker {
+            futex: AtomicU64::new(Self::EMPTY),
+        }
     }
 
     pub fn park(self: Pin<&Self>) {

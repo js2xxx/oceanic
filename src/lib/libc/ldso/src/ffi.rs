@@ -1,4 +1,4 @@
-use alloc::ffi::CString;
+use alloc::{ffi::CString, vec::Vec};
 use core::{
     ffi::{c_char, c_int, c_void, CStr},
     ptr,
@@ -125,20 +125,36 @@ pub extern "C" fn dlerror() -> *const c_char {
 }
 
 #[repr(C)]
-struct TlsGetAddr {
-    id: usize,
-    offset: usize,
+pub(crate) struct TlsGetAddr {
+    pub id: usize,
+    pub offset: usize,
 }
 
 #[no_mangle]
-unsafe extern "C" fn __tls_get_addr(arg: *const TlsGetAddr) -> *mut c_void {
-    fn tls_get_addr(id: usize, offset: usize) -> Option<*mut c_void> {
+pub(crate) unsafe extern "C" fn __tls_get_addr(arg: *const TlsGetAddr) -> *mut c_void {
+    fn tls_get_addr(id: usize, offset_in_tls: usize) -> Option<*mut c_void> {
         let mut list = dso_list().lock();
-        let tls = list.tls(id)?;
-        let chunk = tls.get_mut(unsafe { Tcb::current().index })?;
-        chunk.get_mut(offset).map(|r| r as *mut _ as *mut _)
+        let offset = list.tls(id)?.offset();
+        let ptr = unsafe { Tcb::current().data.get_mut(offset).map(|s| s as *mut u8) }?;
+        Some(unsafe { ptr.add(offset_in_tls) as _ })
     }
 
     let TlsGetAddr { id, offset } = ptr::read(arg);
     tls_get_addr(id, offset).unwrap_or(ptr::null_mut())
+}
+
+#[no_mangle]
+pub extern "C" fn __libc_allocate_tcb() -> *mut u8 {
+    let mut list = dso_list().lock();
+    list.push_thread(true) as _
+}
+
+#[no_mangle]
+pub extern "C" fn __libc_deallocate_tcb(ptr: *mut u8) {
+    unsafe {
+        let tcb = &mut *(ptr as *mut Tcb);
+        tcb.static_base = ptr::null_mut();
+        tcb.tcb_id = 0;
+        tcb.data = Vec::new();
+    }
 }

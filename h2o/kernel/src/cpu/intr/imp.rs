@@ -46,12 +46,12 @@ impl Interrupt {
     #[inline]
     pub fn new(res: &Resource<u32>, gsi: u32, level_triggered: bool) -> sv_call::Result<Arc<Self>> {
         if res.magic_eq(super::gsi_resource()) && res.range().contains(&gsi) {
-            Ok(Arc::new(Interrupt {
+            Ok(Arc::try_new(Interrupt {
                 gsi,
                 last_time: Mutex::new(None),
                 level_triggered,
                 event_data: EventData::new(0),
-            }))
+            })?)
         } else {
             Err(sv_call::EPERM)
         }

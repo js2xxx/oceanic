@@ -63,7 +63,7 @@ impl DlAlloc {
     fn dealloc(&self, _: *mut u8, _: Layout, _: &Virt) {}
 }
 
-const BUFFER_SIZE: usize = 512;
+const BUFFER_SIZE: usize = 4096;
 #[repr(align(4096))]
 struct Buffer([u8; BUFFER_SIZE]);
 pub struct DlAlloc2 {

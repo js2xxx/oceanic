@@ -223,7 +223,7 @@ mod syscall {
 
     #[syscall]
     fn timer_new() -> Result<Handle> {
-        let event = Arc::new(TimerEvent::default());
+        let event = Arc::try_new(TimerEvent::default())?;
         let e = Arc::downgrade(&event);
         SCHED.with_current(|cur| cur.space().handles().insert_raw(event, Some(e)))
     }

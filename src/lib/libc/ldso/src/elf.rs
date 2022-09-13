@@ -1,11 +1,5 @@
-use alloc::{alloc::Global, boxed::Box};
-use core::{
-    alloc::{AllocError, Allocator, Layout},
-    ffi::CStr,
-    mem, ptr,
-    ptr::NonNull,
-    slice,
-};
+use alloc::vec::Vec;
+use core::{alloc::Layout, ffi::CStr, mem, ptr, ptr::NonNull, slice};
 
 pub use goblin::elf64::{
     dynamic::*, header::*, program_header::*, reloc::*, section_header::*, sym::*, Note,
@@ -265,98 +259,47 @@ impl<'a> GnuHash<'a> {
 }
 
 pub struct Tls {
-    chunk_layout: Layout,
-    init_data: NonNull<[u8]>,
     layout: Layout,
-    data: NonNull<u8>,
+    init_data: NonNull<[u8]>,
+    offset: usize,
 }
 
 impl Tls {
-    pub fn new(init_data: NonNull<[u8]>, layout: Layout) -> Result<Self, AllocError> {
-        let data = Global.allocate_zeroed(layout)?.as_non_null_ptr();
-        unsafe {
-            data.as_ptr()
-                .copy_from_nonoverlapping(init_data.as_mut_ptr(), init_data.len())
-        }
-        log::debug!("TLS at: {:p}", data);
-        Ok(Tls {
+    #[inline]
+    pub fn new(init_data: NonNull<[u8]>, layout: Layout, offset: usize) -> Self {
+        Tls {
             init_data,
-            chunk_layout: layout,
             layout,
-            data,
-        })
+            offset,
+        }
     }
 
-    pub fn as_ptr(&self) -> *mut u8 {
-        self.data.as_ptr()
-    }
-
+    #[inline]
     pub fn chunk_layout(&self) -> Layout {
-        self.chunk_layout
+        self.layout
     }
 
-    pub fn static_base(&self) -> *mut u8 {
-        unsafe {
-            let ptr = self.data.as_ptr();
-            let size = self.chunk_layout.size();
-            ptr.add(size)
-        }
+    #[inline]
+    pub fn offset(&self) -> usize {
+        self.offset
     }
 
-    pub fn add_new(&mut self) -> usize {
-        let (layout, offset) = self.layout.extend(self.chunk_layout).unwrap();
-        let data = unsafe { Global.grow_zeroed(self.data, self.layout, layout).unwrap() }
-            .as_non_null_ptr();
-        unsafe {
-            data.as_ptr()
-                .add(offset)
-                .copy_from_nonoverlapping(self.init_data.as_mut_ptr(), self.init_data.len())
-        }
-        self.layout = layout;
-        self.data = data;
-        offset / self.chunk_layout.pad_to_align().size()
-    }
-
-    pub fn get(&self, index: usize) -> Option<&[u8]> {
-        let size = self.chunk_layout.size();
-        let start = self.chunk_layout.pad_to_align().size().checked_mul(index)?;
-        (size + start <= self.layout.size())
-            .then(|| unsafe { slice::from_raw_parts(self.data.as_ptr().add(start), size) })
-    }
-
-    pub fn get_mut(&mut self, index: usize) -> Option<&mut [u8]> {
-        let size = self.chunk_layout.size();
-        let start = self.chunk_layout.pad_to_align().size().checked_mul(index)?;
-        (size + start <= self.layout.size())
-            .then(|| unsafe { slice::from_raw_parts_mut(self.data.as_ptr().add(start), size) })
-    }
-}
-
-impl Drop for Tls {
-    fn drop(&mut self) {
-        unsafe { Global.deallocate(self.data, self.layout) };
+    #[inline]
+    pub fn push(&self, tcb: &mut Tcb) {
+        tcb.data
+            .extend_from_slice(unsafe { self.init_data.as_ref() });
     }
 }
 
 #[repr(C)]
 pub struct Tcb {
     pub static_base: *mut u8,
-    pub index: usize,
+    pub tcb_id: usize,
+
+    pub data: Vec<u8>,
 }
 
 impl Tcb {
-    /// # Safety
-    ///
-    /// The caller must ensure that the current TCB is not present.
-    pub unsafe fn init_current(index: usize) -> &'static mut Tcb {
-        let mem = Box::new(Tcb {
-            static_base: ptr::null_mut(),
-            index,
-        });
-        let ret = Box::leak(mem);
-        crate::arch::set_tls_reg(ret as *mut Tcb as u64);
-        ret
-    }
     /// # Safety
     ///
     /// The caller must ensure that the current TCB is present.

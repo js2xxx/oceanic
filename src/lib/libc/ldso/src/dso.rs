@@ -19,7 +19,12 @@ use solvent::prelude::{Channel, Object, Phys};
 use spin::{Lazy, Mutex, Once};
 use svrt::{HandleInfo, HandleType};
 
-use crate::{cstr, elf::*, load_address, vdso_map};
+use crate::{
+    cstr,
+    elf::*,
+    ffi::{TlsGetAddr, __tls_get_addr},
+    load_address, vdso_map,
+};
 
 static mut LDSO: MaybeUninit<Dso> = MaybeUninit::uninit();
 static mut VDSO: MaybeUninit<Dso> = MaybeUninit::uninit();
@@ -224,7 +229,10 @@ impl Dso {
             fini: Once::new(),
         };
         if let Some(ref tls) = elf.tls {
-            dso_list.load_tls(&mut dso, tls, prog)?
+            dso_list.load_tls(&mut dso, tls)?;
+            if prog {
+                dso_list.init_thread(0);
+            }
         }
         let ptr = dso_list.push(dso, prog);
         Ok((elf, ptr))
@@ -310,6 +318,7 @@ pub struct DsoList {
 
     names: BTreeSet<CString>,
     tls: Vec<Tls>,
+    threads: Vec<Tcb>,
 
     preinit: Once,
 }
@@ -327,6 +336,7 @@ impl DsoList {
             fini: None,
             names: BTreeSet::new(),
             tls: Vec::new(),
+            threads: Vec::new(),
             preinit: Once::new(),
         };
         list.relocate_dso(head);
@@ -400,10 +410,13 @@ impl DsoList {
 
     fn get_symbol_value_hashed(&self, dso: &Dso, name: &CStr, ghash: u32) -> Option<*mut u8> {
         match dso.syms.get_by_name_hashed(name, ghash) {
-            Some(sym) if st_type(sym.st_info) == STT_TLS => {
-                let base = self.tls.get(dso.tls?)?.as_ptr();
-                Some(unsafe { base.add(sym.st_value as usize) })
-            }
+            Some(sym) if st_type(sym.st_info) == STT_TLS => Some(unsafe {
+                __tls_get_addr(&TlsGetAddr {
+                    id: dso.tls?,
+                    offset: sym.st_value as usize,
+                } as _)
+                .cast()
+            }),
             Some(sym) if check_type(st_type(sym.st_info)) => {
                 Some(dso.base.ptr::<u8>(sym.st_value as usize))
             }
@@ -419,12 +432,17 @@ impl DsoList {
         }
 
         let (dso, sym) = self.find_symbol(name, None, false)?;
-        if st_type(sym.st_info) == STT_TLS {
-            let base = self.tls.get(dso.tls?)?.as_ptr();
-            Some(unsafe { base.add(sym.st_value as usize) })
+        Some(if st_type(sym.st_info) == STT_TLS {
+            unsafe {
+                __tls_get_addr(&TlsGetAddr {
+                    id: dso.tls?,
+                    offset: sym.st_value as usize,
+                } as _)
+                .cast()
+            }
         } else {
-            Some(dso.base.ptr::<u8>(sym.st_value as usize))
-        }
+            dso.base.ptr::<u8>(sym.st_value as usize)
+        })
     }
 
     fn relocate_one(&self, dso: &Dso, reloc: Reloc) -> bool {
@@ -485,9 +503,8 @@ impl DsoList {
                 }
                 R_X86_64_TPOFF64 => {
                     let (dso, sym) = def.expect("No definition found for TPOFF64");
-                    let start = self.tls[dso.tls.expect("No TLS available")].as_ptr();
-                    let tls_addend =
-                        (start as usize).wrapping_sub(Tcb::current().static_base as usize);
+                    let start = self.tls[dso.tls.expect("No TLS available")].offset();
+                    let tls_addend = start.wrapping_sub(self.tls[0].offset());
                     *reloc_ptr = (sym.st_value as usize + reloc.addend).wrapping_add(tls_addend)
                 }
                 _ => unimplemented!("relocate other types: {:?}", reloc.ty),
@@ -663,7 +680,7 @@ impl DsoList {
         }
     }
 
-    fn load_tls(&mut self, dso: &mut Dso, tls: &ProgramHeader, prog: bool) -> Result<(), Error> {
+    fn load_tls(&mut self, dso: &mut Dso, tls: &ProgramHeader) -> Result<(), Error> {
         let layout = Layout::from_size_align(tls.p_memsz as usize, tls.p_align as usize)
             .map_err(|_| Error::Memory(tls.p_memsz as usize, tls.p_align as usize))?;
 
@@ -673,17 +690,38 @@ impl DsoList {
             tls.p_filesz as usize,
         );
 
-        let tls = Tls::new(init_data, layout)
-            .map_err(|_| Error::Memory(layout.size(), layout.align()))?;
-        if prog {
-            unsafe {
-                Tcb::current().static_base = tls.static_base();
-            }
-        }
+        let offset = match self.tls.last() {
+            Some(last) => last.offset() + last.chunk_layout().pad_to_align().size(),
+            None => 0,
+        };
+        let tls = Tls::new(init_data, layout, offset);
         dso.tls = Some(self.tls.len());
         self.tls.push(tls);
 
         Ok(())
+    }
+
+    pub fn push_thread(&mut self, init: bool) -> *mut Tcb {
+        let index = self.threads.len();
+        self.threads.push(Tcb {
+            static_base: ptr::null_mut(),
+            tcb_id: index,
+
+            data: Vec::new(),
+        });
+        unsafe {
+            crate::arch::set_tls_reg(&mut self.threads[index] as *mut Tcb as u64);
+        }
+        if init {
+            self.init_thread(index);
+        }
+        &mut self.threads[index] as _
+    }
+
+    fn init_thread(&mut self, index: usize) {
+        let tcb = &mut self.threads[index];
+        self.tls.iter().for_each(|tls| tls.push(tcb));
+        tcb.static_base = tcb.data.as_mut_ptr_range().end.cast();
     }
 }
 
@@ -720,7 +758,7 @@ pub fn init() -> Result<(), Error> {
             .names
             .extend([cstr!("libldso.so").into(), cstr!("libh2o.so").into()]);
 
-        Tcb::init_current(0);
+        dso_list.push_thread(false);
     }
     Ok(())
 }
