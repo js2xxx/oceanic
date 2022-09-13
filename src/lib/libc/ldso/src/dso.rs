@@ -1,4 +1,9 @@
-use alloc::{boxed::Box, collections::BTreeSet, ffi::CString, vec::Vec};
+use alloc::{
+    boxed::Box,
+    collections::{BTreeSet, LinkedList},
+    ffi::CString,
+    vec::Vec,
+};
 use core::{
     alloc::Layout,
     cell::UnsafeCell,
@@ -231,7 +236,8 @@ impl Dso {
         if let Some(ref tls) = elf.tls {
             dso_list.load_tls(&mut dso, tls)?;
             if prog {
-                dso_list.init_thread(0);
+                // SAFETY: Only one program is allowed to be loaded.
+                unsafe { dso_list.init_back_thread() };
             }
         }
         let ptr = dso_list.push(dso, prog);
@@ -318,7 +324,7 @@ pub struct DsoList {
 
     names: BTreeSet<CString>,
     tls: Vec<Tls>,
-    threads: Vec<Tcb>,
+    threads: LinkedList<Tcb>,
 
     preinit: Once,
 }
@@ -336,7 +342,7 @@ impl DsoList {
             fini: None,
             names: BTreeSet::new(),
             tls: Vec::new(),
-            threads: Vec::new(),
+            threads: LinkedList::new(),
             preinit: Once::new(),
         };
         list.relocate_dso(head);
@@ -701,25 +707,24 @@ impl DsoList {
         Ok(())
     }
 
-    pub fn push_thread(&mut self, init: bool) -> *mut Tcb {
+    pub fn push_thread(&mut self, init: bool) {
         let index = self.threads.len();
-        self.threads.push(Tcb {
+        self.threads.push_back(Tcb {
             static_base: ptr::null_mut(),
             tcb_id: index,
 
             data: Vec::new(),
         });
         unsafe {
-            crate::arch::set_tls_reg(&mut self.threads[index] as *mut Tcb as u64);
+            crate::arch::set_tls_reg(self.threads.back_mut().unwrap() as *mut Tcb as u64);
         }
         if init {
-            self.init_thread(index);
+            unsafe { self.init_back_thread() };
         }
-        &mut self.threads[index] as _
     }
 
-    fn init_thread(&mut self, index: usize) {
-        let tcb = &mut self.threads[index];
+    unsafe fn init_back_thread(&mut self) {
+        let tcb = self.threads.back_mut().unwrap();
         self.tls.iter().for_each(|tls| tls.push(tcb));
         tcb.static_base = tcb.data.as_mut_ptr_range().end.cast();
     }

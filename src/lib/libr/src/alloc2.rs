@@ -1,9 +1,9 @@
 use alloc::alloc::handle_alloc_error;
 use core::{
-    alloc::{Allocator, GlobalAlloc, Layout},
+    alloc::{GlobalAlloc, Layout},
     cell::UnsafeCell,
     mem,
-    ptr::{self, NonNull},
+    ptr::NonNull,
     sync::atomic::{AtomicUsize, Ordering::Relaxed},
 };
 
@@ -51,10 +51,7 @@ unsafe impl GlobalAlloc for Alloc {
         match svrt::try_get_root_virt() {
             Ok(_) => match TCACHE.allocate(layout, self.memory.pool()) {
                 Ok(addr) => *addr,
-                Err(_) => self
-                    .memory
-                    .allocate(layout)
-                    .map_or(ptr::null_mut(), |ptr| ptr.as_ptr() as _),
+                Err(_) => self.memory.alloc(layout),
             },
             Err(_) => {
                 let index = self.temp_index.load(Relaxed);

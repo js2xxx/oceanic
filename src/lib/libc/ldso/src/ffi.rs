@@ -144,15 +144,15 @@ pub(crate) unsafe extern "C" fn __tls_get_addr(arg: *const TlsGetAddr) -> *mut c
 }
 
 #[no_mangle]
-pub extern "C" fn __libc_allocate_tcb() -> *mut u8 {
+pub extern "C" fn __libc_allocate_tcb() {
     let mut list = dso_list().lock();
-    list.push_thread(true) as _
+    list.push_thread(true);
 }
 
 #[no_mangle]
-pub extern "C" fn __libc_deallocate_tcb(ptr: *mut u8) {
+pub extern "C" fn __libc_deallocate_tcb() {
     unsafe {
-        let tcb = &mut *(ptr as *mut Tcb);
+        let tcb = Tcb::current();
         tcb.static_base = ptr::null_mut();
         tcb.tcb_id = 0;
         tcb.data = Vec::new();

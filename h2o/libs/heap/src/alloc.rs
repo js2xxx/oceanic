@@ -229,14 +229,14 @@ unsafe impl GlobalAlloc for Allocator {
 unsafe impl AllocTrait for Allocator {
     fn allocate(&self, layout: Layout) -> Result<NonNull<[u8]>, AllocError> {
         let size = layout.size();
-        let ptr = unsafe { (self as &dyn GlobalAlloc).alloc(layout) };
+        let ptr = unsafe { GlobalAlloc::alloc(self, layout) };
         NonNull::new(ptr)
             .map(|ptr| NonNull::slice_from_raw_parts(ptr, size))
             .ok_or(AllocError)
     }
 
     unsafe fn deallocate(&self, ptr: NonNull<u8>, layout: Layout) {
-        (self as &dyn GlobalAlloc).dealloc(ptr.as_ptr(), layout)
+        GlobalAlloc::dealloc(self, ptr.as_ptr(), layout)
     }
 }
 
