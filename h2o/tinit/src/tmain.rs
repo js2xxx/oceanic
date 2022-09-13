@@ -197,7 +197,7 @@ extern "C" fn tmain(init_chan: sv_call::Handle) {
 
     let task = Task::exec(
         Some("PROGMGR"),
-        space,
+        Some(space),
         entry,
         stack,
         Some(child),

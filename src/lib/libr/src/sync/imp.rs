@@ -1,4 +1,7 @@
+#![allow(dead_code)]
+
 use core::{
+    pin::Pin,
     sync::atomic::{AtomicU64, Ordering::*},
     time::Duration,
 };
@@ -96,5 +99,54 @@ impl RawCondvar {
         let ret = futex_wait(&self.futex, value, timeout);
         mutex.lock();
         ret
+    }
+}
+
+pub struct Parker {
+    futex: AtomicU64,
+}
+
+impl Parker {
+    const EMPTY: u64 = 0;
+    const PARKED: u64 = u64::MAX;
+    const NOTIFIED: u64 = 1;
+    pub unsafe fn init(ptr: *mut Parker) {
+        ptr.write(Parker {
+            futex: AtomicU64::new(Self::EMPTY),
+        })
+    }
+
+    pub const fn new() -> Self {
+        Parker { futex: AtomicU64::new(Self::EMPTY) }
+    }
+
+    pub fn park(self: Pin<&Self>) {
+        if self.futex.fetch_sub(1, Acquire) == Self::NOTIFIED {
+            return;
+        }
+        loop {
+            futex_wait(&self.futex, Self::PARKED, Duration::MAX);
+            if self
+                .futex
+                .compare_exchange(Self::NOTIFIED, Self::EMPTY, Acquire, Acquire)
+                .is_ok()
+            {
+                break;
+            }
+        }
+    }
+
+    pub fn park_timeout(self: Pin<&Self>, timeout: Duration) -> bool {
+        if self.futex.fetch_sub(1, Acquire) == Self::NOTIFIED {
+            return true;
+        }
+        futex_wait(&self.futex, Self::PARKED, timeout);
+        self.futex.swap(Self::EMPTY, Acquire) == Self::NOTIFIED
+    }
+
+    pub fn unpark(self: Pin<&Self>) {
+        if self.futex.swap(Self::NOTIFIED, Release) == Self::PARKED {
+            futex_wake(&self.futex);
+        }
     }
 }

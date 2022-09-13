@@ -53,6 +53,11 @@ impl<T: ?Sized> Mutex<T> {
             })
         }
     }
+
+    #[inline]
+    pub fn get_mut(&mut self) -> &mut T {
+        self.data.get_mut()
+    }
 }
 
 impl<'a, T: ?Sized> MutexGuard<'a, T> {

@@ -87,7 +87,6 @@ fn get_name(ptr: UserPtr<In, u8>, len: usize) -> Result<Option<String>> {
 #[syscall]
 fn task_exec(ci: UserPtr<In, task::ExecInfo>) -> Result<Handle> {
     let ci = unsafe { ci.read()? };
-    ci.init_chan.check_null()?;
 
     let name = get_name(UserPtr::<In, _>::new(ci.name as *mut u8), ci.name_len)?;
 

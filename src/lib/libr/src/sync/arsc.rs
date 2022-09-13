@@ -6,6 +6,7 @@ use core::{
     marker::{PhantomData, Unsize},
     mem::{self, ManuallyDrop, MaybeUninit},
     ops::{CoerceUnsized, Deref, Receiver},
+    pin::Pin,
     ptr::{self, NonNull},
     sync::atomic::{self, AtomicUsize, Ordering::*},
 };
@@ -74,6 +75,16 @@ impl<T> Arsc<T, Global> {
     #[inline]
     pub fn try_new(data: T) -> Result<Self, AllocError> {
         Self::try_new_in(data, Global)
+    }
+
+    #[inline]
+    pub fn new(data: T) -> Self {
+        Self::try_new(data).expect("Failed to create an Arsc")
+    }
+
+    #[inline]
+    pub fn pin(data: T) -> Pin<Self> {
+        unsafe { Pin::new_unchecked(Self::new(data)) }
     }
 
     #[inline]
@@ -160,6 +171,11 @@ impl<T, A: Allocator> Arsc<T, A> {
         // SAFETY: Allowed immutable reference.
         let alloc = unsafe { &this.inner.as_ref().alloc };
         Self::try_make_mut_with(this, |t| Ok((T::clone(t), A::clone(alloc))))
+    }
+
+    #[inline]
+    pub fn count(this: &Self) -> usize {
+        unsafe { this.inner.as_ref().ref_count.load(Acquire) }
     }
 }
 

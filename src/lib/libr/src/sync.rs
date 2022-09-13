@@ -2,7 +2,7 @@ mod arsc;
 mod condvar;
 mod mutex;
 
-mod imp;
+pub(crate) mod imp;
 
 pub use alloc::sync::{Arc, Weak};
 

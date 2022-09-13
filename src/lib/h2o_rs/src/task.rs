@@ -18,14 +18,14 @@ crate::impl_obj!(Task);
 crate::impl_obj!(@DROP, Task);
 
 impl Task {
-    pub fn try_new(name: Option<&str>, space: Space) -> Result<(Self, SuspendToken)> {
+    pub fn try_new(name: Option<&str>, space: Option<Space>) -> Result<(Self, SuspendToken)> {
         let name = name.map(|name| name.as_bytes());
         let mut st = Handle::NULL;
         let handle = unsafe {
             sv_call::sv_task_new(
                 name.map_or(null(), |name| name.as_ptr()),
                 name.map_or(0, |name| name.len()),
-                Space::into_raw(space),
+                space.map_or(Handle::NULL, Space::into_raw),
                 &mut st,
             )
             .into_res()?
@@ -34,13 +34,13 @@ impl Task {
         Ok(unsafe { (Self::from_raw(handle), SuspendToken::from_raw(st)) })
     }
 
-    pub fn new(name: Option<&str>, space: Space) -> (Self, SuspendToken) {
+    pub fn new(name: Option<&str>, space: Option<Space>) -> (Self, SuspendToken) {
         Self::try_new(name, space).expect("Failed to create a task")
     }
 
     pub fn exec(
         name: Option<&str>,
-        space: Space,
+        space: Option<Space>,
         entry: NonNull<u8>,
         stack: NonNull<u8>,
         init_chan: Option<Channel>,
@@ -50,7 +50,7 @@ impl Task {
         let ci = ExecInfo {
             name: name.map_or(null(), |name| name.as_ptr()),
             name_len: name.map_or(0, |name| name.len()),
-            space: Space::into_raw(space),
+            space: space.map_or(Handle::NULL, Space::into_raw),
             entry: entry.as_ptr(),
             stack: stack.as_ptr(),
             init_chan: init_chan.map_or(Handle::NULL, Channel::into_raw),
@@ -165,6 +165,11 @@ impl SuspendToken {
             )
             .into_res()
         }
+    }
+
+    #[inline]
+    pub fn wake(self) {
+        let _ = self;
     }
 }
 
