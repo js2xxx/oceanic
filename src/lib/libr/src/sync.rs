@@ -1,6 +1,8 @@
 mod arsc;
 mod cell;
 mod condvar;
+mod deque;
+pub mod epoch;
 mod mutex;
 mod once;
 
@@ -12,6 +14,7 @@ pub use self::{
     arsc::Arsc,
     cell::{Lazy, OnceCell},
     condvar::Condvar,
+    deque::{Injector, Steal, Stealer, Worker},
     mutex::{Mutex, MutexGuard},
     once::Once,
 };

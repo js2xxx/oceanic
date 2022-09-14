@@ -9,6 +9,7 @@
 #![feature(int_roundings)]
 #![feature(lang_items)]
 #![feature(layout_for_ptr)]
+#![feature(once_cell)]
 #![feature(never_type)]
 #![feature(nonnull_slice_from_raw_parts)]
 #![feature(receiver_trait)]

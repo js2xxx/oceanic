@@ -17,6 +17,8 @@ use solvent::error::Result;
 pub use self::scope::scope;
 use crate::sync::{imp::Parker, Arsc};
 
+pub use crossbeam::utils::Backoff;
+
 #[derive(Debug)]
 pub struct Builder {
     stack: usize,
