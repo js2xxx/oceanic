@@ -136,6 +136,12 @@ impl Timer {
         unsafe { sv_call::sv_timer_set(unsafe { self.raw() }, try_into_us(duration)?) }.into_res()
     }
 
+    /// See [`Timer::set`] for more information.
+    #[inline]
+    pub fn set_deadline(&self, deadline: Instant) -> Result {
+        self.set(deadline - Instant::now())
+    }
+
     /// Shorthand for `set(Duration::ZERO)`.
     pub fn reset(&self) -> Result {
         self.set(Duration::ZERO)

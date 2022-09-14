@@ -21,4 +21,4 @@ mod alloc2;
 pub mod env;
 pub mod rt;
 pub mod sync;
-pub mod task;
+pub mod thread;

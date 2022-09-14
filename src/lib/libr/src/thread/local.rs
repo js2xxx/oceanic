@@ -8,7 +8,8 @@ pub struct LocalKey<T: 'static> {
 #[allow_internal_unstable(thread_local)]
 macro_rules! thread_local {
     (@INNER $(#[$attr:meta])* $vis:vis static $name:ident: $type:ty = $init:expr) => {
-        $(#[$attr])* $vis static $name: $crate::task::local::LocalKey<$type> = $crate::task::local::LocalKey::new(
+        $(#[$attr])* $vis static $name: $crate::thread::local::LocalKey<$type>
+            = $crate::thread::local::LocalKey::new(
             {
                 unsafe fn get_key() -> Option<&'static $type> {
                     #[thread_local]

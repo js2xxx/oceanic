@@ -3,7 +3,7 @@ use alloc::vec::Vec;
 use solvent::prelude::Channel;
 use svrt::StartupArgs;
 
-use crate::task::{self, Thread};
+use crate::thread::{self, Thread};
 
 pub(crate) static mut ARGS: Vec<u8> = Vec::new();
 
@@ -64,7 +64,7 @@ pub fn lang_start<R: Termination>(channel: Channel, main: fn() -> R) -> R {
         // TODO: Remove this in the future.
         dbglog::init(log::Level::Debug);
 
-        task::current::set(Thread::new(None));
+        thread::current::set(Thread::new(None));
     }
 
     let ret = main();

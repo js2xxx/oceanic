@@ -4,18 +4,18 @@
 use alloc::vec;
 use core::time::Duration;
 
-use libr::{sync::Mutex, task::sleep};
+use solvent_std::{sync::Mutex, thread::sleep};
 
 extern crate alloc;
 
 fn main() {
     log::debug!("Hello world!");
-    libr::env::args().for_each(|arg| log::debug!("{arg}"));
+    solvent_std::env::args().for_each(|arg| log::debug!("{arg}"));
 
     let vec = Mutex::new(vec![]);
     let vr = &vec;
     // Sleep sort.
-    libr::task::scope(|s| {
+    solvent_std::thread::scope(|s| {
         for i in 0..10 {
             s.spawn(move || {
                 sleep(Duration::from_millis((100 - i) * 10));
@@ -26,4 +26,4 @@ fn main() {
     log::debug!("{vec:?}");
 }
 
-libr::entry!(main);
+solvent_std::entry!(main);

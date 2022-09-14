@@ -14,9 +14,8 @@ use core::{
 
 use solvent::error::Result;
 
-use crate::sync::{imp::Parker, Arsc};
-
 pub use self::scope::scope;
+use crate::sync::{imp::Parker, Arsc};
 
 #[derive(Debug)]
 pub struct Builder {

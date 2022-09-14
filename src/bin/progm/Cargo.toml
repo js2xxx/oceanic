@@ -5,7 +5,7 @@ version = "0.1.0"
 
 [dependencies]
 # Local crates
-libr = {path = "../../lib/libr"}
+solvent-std = {path = "../../lib/libr"}
 solvent = {path = "../../lib/h2o_rs"}
 # External crates
 log = "0.4"

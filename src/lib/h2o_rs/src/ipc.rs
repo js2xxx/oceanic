@@ -4,6 +4,8 @@ mod packet;
 
 use core::time::Duration;
 
+pub use sv_call::ipc::*;
+
 pub use self::chan::Channel;
 #[cfg(feature = "alloc")]
 pub use self::packet::*;
