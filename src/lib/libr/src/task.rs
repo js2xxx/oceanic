@@ -1,9 +1,10 @@
 mod imp;
 pub mod local;
+mod scope;
 
 use alloc::{boxed::Box, fmt, string::String};
 use core::{
-    marker::PhantomData,
+    cell::UnsafeCell,
     mem,
     num::NonZeroU64,
     pin::Pin,
@@ -13,7 +14,9 @@ use core::{
 
 use solvent::error::Result;
 
-use crate::sync::{imp::Parker, Arsc, Mutex};
+use crate::sync::{imp::Parker, Arsc};
+
+pub use self::scope::scope;
 
 #[derive(Debug)]
 pub struct Builder {
@@ -25,6 +28,20 @@ impl Default for Builder {
     #[inline]
     fn default() -> Self {
         Self::new()
+    }
+}
+
+struct Packet<'scope, T> {
+    scope_data: Option<&'scope scope::ScopeData>,
+    result: UnsafeCell<Option<T>>,
+}
+unsafe impl<'scope, T: Sync> Sync for Packet<'scope, T> {}
+
+impl<T> Drop for Packet<'_, T> {
+    fn drop(&mut self) {
+        if let Some(scope_data) = self.scope_data {
+            scope_data.decrement_num_running_threads()
+        }
     }
 }
 
@@ -68,11 +85,15 @@ impl Builder {
         F: Send + 'a,
         T: Send + 'a,
     {
-        let inner = unsafe { self.spawn_inner(f) }?;
+        let inner = unsafe { self.spawn_inner(f, None) }?;
         Ok(JoinHandle(inner))
     }
 
-    unsafe fn spawn_inner<'a, 'scope, F, T>(self, f: F) -> Result<JoinInner<'scope, T>>
+    unsafe fn spawn_inner<'a, 'scope, F, T>(
+        self,
+        f: F,
+        scope_data: Option<&'scope scope::ScopeData>,
+    ) -> Result<JoinInner<'scope, T>>
     where
         F: FnOnce() -> T + 'a,
         T: 'a,
@@ -81,22 +102,29 @@ impl Builder {
         let thread = Thread::new(self.name);
         let t2 = thread.clone();
 
-        let packet = Arsc::new(Mutex::new(None::<T>));
+        let packet = Arsc::new(Packet {
+            scope_data,
+            result: UnsafeCell::new(None),
+        });
         let p2 = packet.clone();
 
         let main = move || {
             current::set(t2);
-            *p2.lock() = Some(f());
+            unsafe { *p2.result.get() = Some(f()) };
         };
 
         let native = imp::Thread::new(thread.inner.name.as_deref(), self.stack, unsafe {
             mem::transmute::<Box<dyn FnOnce() + 'a>, Box<dyn FnOnce() + 'static>>(Box::new(main))
         })?;
+
+        if let Some(scope_data) = scope_data {
+            scope_data.increment_num_running_threads();
+        }
+
         Ok(JoinInner {
             native,
             thread,
             packet,
-            _marker: PhantomData,
         })
     }
 }
@@ -135,8 +163,7 @@ pub fn yield_now() {
 struct JoinInner<'a, T> {
     native: imp::Thread,
     thread: Thread,
-    packet: Arsc<Mutex<Option<T>>>,
-    _marker: PhantomData<&'a T>,
+    packet: Arsc<Packet<'a, T>>,
 }
 
 impl<'a, T> JoinInner<'a, T> {
@@ -144,6 +171,7 @@ impl<'a, T> JoinInner<'a, T> {
         self.native.join();
         Arsc::get_mut(&mut self.packet)
             .unwrap()
+            .result
             .get_mut()
             .take()
             .unwrap()

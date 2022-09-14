@@ -1,6 +1,6 @@
 use alloc::{collections::LinkedList, sync::Weak};
 use core::{
-    cell::UnsafeCell,
+    cell::RefCell,
     sync::atomic::{AtomicBool, Ordering::*},
     time::Duration,
 };
@@ -15,22 +15,31 @@ use crate::sched::{ipc::Arsc, task, Event, PREEMPT, SCHED};
 static TIMER_QUEUE: TimerQueue = TimerQueue::new();
 
 struct TimerQueue {
-    inner: UnsafeCell<LinkedList<Arsc<Timer>>>,
+    inner: RefCell<LinkedList<Arsc<Timer>>>,
 }
 
 impl TimerQueue {
     const fn new() -> Self {
         TimerQueue {
-            inner: UnsafeCell::new(LinkedList::new()),
+            inner: RefCell::new(LinkedList::new()),
         }
     }
 
     #[inline]
+    #[track_caller]
     fn with_inner<F, R>(&self, func: F) -> R
     where
         F: FnOnce(&mut LinkedList<Arsc<Timer>>) -> R,
     {
-        PREEMPT.scope(|| func(unsafe { &mut *self.inner.get() }))
+        PREEMPT.scope(|| func(&mut self.inner.borrow_mut()))
+    }
+
+    #[inline]
+    fn try_with_inner<F, R>(&self, func: F) -> Option<R>
+    where
+        F: FnOnce(&mut LinkedList<Arsc<Timer>>) -> R,
+    {
+        PREEMPT.scope(|| self.inner.try_borrow_mut().ok().map(|mut r| func(&mut r)))
     }
 
     fn push(&self, timer: Arsc<Timer>) {
@@ -159,22 +168,27 @@ impl Timer {
 }
 
 pub unsafe fn tick() {
-    let now = Instant::now();
-    TIMER_QUEUE.with_inner(|queue| {
-        let mut cur = queue.cursor_front_mut();
-        loop {
-            match cur.current() {
-                Some(timer) if timer.callback.try_read().map_or(false, |r| r.is_none()) => {
-                    cur.remove_current();
+    loop {
+        let now = Instant::now();
+        let timer = TIMER_QUEUE.try_with_inner(|queue| {
+            let mut cur = queue.cursor_front_mut();
+            loop {
+                match cur.current() {
+                    Some(timer) if timer.callback.try_read().map_or(false, |r| r.is_none()) => {
+                        cur.remove_current();
+                    }
+                    Some(timer) if timer.deadline <= now => {
+                        break cur.remove_current();
+                    }
+                    _ => break None,
                 }
-                Some(timer) if timer.deadline <= now => {
-                    let timer = cur.remove_current().unwrap();
-                    timer.fire();
-                }
-                _ => break,
             }
+        });
+        match timer {
+            Some(Some(timer)) => timer.fire(),
+            _ => break,
         }
-    })
+    }
 }
 
 mod syscall {

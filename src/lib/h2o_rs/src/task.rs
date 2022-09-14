@@ -1,4 +1,5 @@
 use core::{
+    convert::TryInto,
     mem,
     ptr::{null, null_mut, NonNull},
     time::Duration,
@@ -183,5 +184,6 @@ pub unsafe fn exit(retval: usize) -> ! {
 }
 
 pub fn sleep(duration: Duration) -> Result {
-    unsafe { sv_call::sv_task_sleep(duration.as_millis().try_into()?).into_res() }
+    let millis = duration.as_millis().try_into()?;
+    unsafe { sv_call::sv_task_sleep(millis).into_res() }
 }
