@@ -4,6 +4,8 @@
 #![feature(allocator_api)]
 #![feature(allow_internal_unstable)]
 #![feature(coerce_unsized)]
+#![feature(const_trait_impl)]
+#![feature(dropck_eyepatch)]
 #![feature(int_roundings)]
 #![feature(lang_items)]
 #![feature(layout_for_ptr)]
