@@ -86,5 +86,46 @@
                 "ty": "u64"
             }
         ]
+    },
+    {
+        "name": "sv_disp_new",
+        "returns": "Handle",
+        "args": []
+    },
+    {
+        "name": "sv_obj_await2",
+        "returns": "usize",
+        "args": [
+            {
+                "name": "hdl",
+                "ty": "Handle"
+            },
+            {
+                "name": "level_triggered",
+                "ty": "bool"
+            },
+            {
+                "name": "signal",
+                "ty": "usize"
+            },
+            {
+                "name": "disp",
+                "ty": "Handle"
+            }
+        ]
+    },
+    {
+        "name": "sv_obj_awend2",
+        "returns": "usize",
+        "args": [
+            {
+                "name": "disp",
+                "ty": "Handle"
+            },
+            {
+                "name": "canceled",
+                "ty": "*mut bool"
+            }
+        ]
     }
 ]

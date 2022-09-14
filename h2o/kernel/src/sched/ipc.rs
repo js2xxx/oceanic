@@ -53,9 +53,10 @@ pub trait Event: Debug + Send + Sync {
     }
 
     fn wait_impl(&self, waiter: Arc<dyn Waiter>) {
-        if waiter.waiter_data().trigger_mode == TriggerMode::Level {
+        let waiter_data = waiter.waiter_data();
+        if waiter_data.trigger_mode == TriggerMode::Level {
             let signal = self.event_data().signal().load(SeqCst);
-            if signal & waiter.waiter_data().signal != 0 {
+            if signal & waiter_data.signal != 0 {
                 waiter.on_notify(signal);
                 return;
             }
@@ -116,15 +117,14 @@ pub trait Event: Debug + Send + Sync {
         };
         PREEMPT.scope(|| {
             let mut waiters = self.event_data().waiters.lock();
-            let waiters = waiters.drain_filter(|w| signal & w.waiter_data().signal != 0);
-            for waiter in waiters {
-                waiter.on_notify(signal);
-            }
+            waiters
+                .drain_filter(|w| signal & w.waiter_data().signal != 0)
+                .for_each(|waiter| waiter.on_notify(signal));
         });
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct WaiterData {
     trigger_mode: TriggerMode,
     signal: usize,
@@ -148,7 +148,7 @@ impl WaiterData {
 }
 
 pub trait Waiter: Debug + Send + Sync {
-    fn waiter_data(&self) -> &WaiterData;
+    fn waiter_data(&self) -> WaiterData;
 
     fn on_cancel(&self, signal: usize);
 
@@ -161,7 +161,8 @@ mod syscall {
     use super::*;
     use crate::{
         cpu::time,
-        sched::{Blocker, SCHED},
+        sched::{Blocker, Dispatcher, SCHED},
+        syscall::{Out, UserPtr},
     };
 
     #[syscall]
@@ -187,6 +188,7 @@ mod syscall {
 
     #[syscall]
     fn obj_await(hdl: Handle, wake_all: bool, signal: usize) -> Result<Handle> {
+        hdl.check_null()?;
         SCHED.with_current(|cur| {
             let obj = cur.space().handles().get_ref(hdl)?;
             if !obj.features().contains(Feature::WAIT) {
@@ -215,5 +217,59 @@ mod syscall {
         } else {
             Ok(signal)
         }
+    }
+
+    #[syscall]
+    fn disp_new() -> Result<Handle> {
+        let disp = Dispatcher::new();
+        let event = disp.event();
+        SCHED.with_current(|cur| cur.space().handles().insert(disp, Some(event)))
+    }
+
+    #[syscall]
+    fn obj_await2(
+        hdl: Handle,
+        level_triggered: bool,
+        signal: usize,
+        disp: Handle,
+    ) -> Result<usize> {
+        hdl.check_null()?;
+        disp.check_null()?;
+        SCHED.with_current(|cur| {
+            let obj = cur.space().handles().get_ref(hdl)?;
+            let disp = cur.space().handles().get::<Dispatcher>(disp)?;
+            if !obj.features().contains(Feature::WAIT) {
+                return Err(EPERM);
+            }
+            if !disp.features().contains(Feature::WRITE) {
+                return Err(EPERM);
+            }
+            let event = obj.event().upgrade().ok_or(EPIPE)?;
+
+            let waiter_data = WaiterData::new(
+                if level_triggered {
+                    TriggerMode::Level
+                } else {
+                    TriggerMode::Edge
+                },
+                signal,
+            );
+            Ok(disp.push(&event, waiter_data))
+        })
+    }
+
+    #[syscall]
+    fn obj_awend2(disp: Handle, canceled: UserPtr<Out, bool>) -> Result<usize> {
+        disp.check_null()?;
+        canceled.check()?;
+        SCHED.with_current(|cur| {
+            let disp = cur.space().handles().get::<Dispatcher>(disp)?;
+            if !disp.features().contains(Feature::READ) {
+                return Err(EPERM);
+            }
+            let (key, c) = disp.pop().ok_or(ENOENT)?;
+            canceled.write(c)?;
+            Ok(key)
+        })
     }
 }

@@ -94,5 +94,23 @@
                 "ty": "bool"
             }
         ]
+    },
+    {
+        "name": "sv_chan_acrecv2",
+        "returns": "usize",
+        "args": [
+            {
+                "name": "hdl",
+                "ty": "Handle"
+            },
+            {
+                "name": "id",
+                "ty": "usize"
+            },
+            {
+                "name": "disp",
+                "ty": "Handle"
+            }
+        ]
     }
 ]

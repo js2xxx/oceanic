@@ -60,8 +60,11 @@ impl Future for WaitUntil<'_> {
         let last_time = self.intr.last_time()?;
 
         if self.now > last_time {
-            let waiter = self.intr.inner.try_wait_async(false, SIG_GENERIC)?;
-            push_task(waiter, cx.waker());
+            let key = self
+                .intr
+                .inner
+                .try_wait_async2(false, SIG_GENERIC, crate::disp())?;
+            push_task(key, cx.waker());
             Poll::Pending
         } else {
             Poll::Ready(Ok(last_time))

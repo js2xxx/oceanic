@@ -61,12 +61,28 @@ pub trait Object {
         }
     }
 
-    fn try_wait_async(&self, wake_all: bool, signal: usize) -> Result<crate::ipc::Waiter> {
+    fn try_wait_async(&self, wake_all: bool, signal: usize) -> Result<crate::ipc::Blocker> {
         // SAFETY: We don't move the ownership of the handle.
         let handle =
             unsafe { sv_call::sv_obj_await(unsafe { self.raw() }, wake_all, signal).into_res()? };
         // SAFETY: The handle is freshly allocated.
         Ok(unsafe { Object::from_raw(handle) })
+    }
+
+    fn try_wait_async2(
+        &self,
+        level_triggered: bool,
+        signal: usize,
+        disp: &crate::ipc::Dispatcher,
+    ) -> Result<usize> {
+        let key = unsafe {
+            // SAFETY: We don't move the ownership of the handle.
+            let disp = unsafe { disp.raw() };
+            // SAFETY: We don't move the ownership of the handle.
+            sv_call::sv_obj_await2(unsafe { self.raw() }, level_triggered, signal, disp)
+        }
+        .into_res()?;
+        Ok(key as usize)
     }
 
     fn reduce_features(self, features: Feature) -> Result<Self>

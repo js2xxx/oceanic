@@ -1,14 +1,22 @@
-use alloc::sync::{Arc, Weak};
-use core::{fmt::Debug, time::Duration};
+use alloc::{
+    sync::{Arc, Weak},
+    vec::Vec,
+};
+use core::{
+    fmt::Debug,
+    sync::atomic::{AtomicUsize, Ordering::AcqRel},
+    time::Duration,
+};
 
 use archop::PreemptStateGuard;
+use crossbeam_queue::SegQueue;
 use spin::Mutex;
-use sv_call::Feature;
+use sv_call::{ipc::SIG_READ, Feature};
 
 use super::PREEMPT;
 use crate::{
     cpu::arch::apic::TriggerMode,
-    sched::{task::hdl::DefaultFeature, wait::WaitObject, Event, Waiter, WaiterData},
+    sched::{task::hdl::DefaultFeature, wait::WaitObject, BasicEvent, Event, Waiter, WaiterData},
 };
 
 #[derive(Debug)]
@@ -66,8 +74,8 @@ impl Blocker {
 
 impl Waiter for Blocker {
     #[inline]
-    fn waiter_data(&self) -> &WaiterData {
-        &self.waiter_data
+    fn waiter_data(&self) -> WaiterData {
+        self.waiter_data
     }
 
     fn on_cancel(&self, signal: usize) {
@@ -84,7 +92,103 @@ impl Waiter for Blocker {
 }
 
 unsafe impl DefaultFeature for Blocker {
+    #[inline]
     fn default_features() -> sv_call::Feature {
         Feature::SEND
+    }
+}
+
+#[derive(Debug)]
+pub struct Dispatcher {
+    next_key: AtomicUsize,
+    event: Arc<BasicEvent>,
+
+    #[allow(clippy::type_complexity)]
+    waiters: Mutex<Vec<(usize, Weak<dyn Event>, WaiterData)>>,
+    triggered: SegQueue<(usize, Weak<dyn Event>, bool)>,
+}
+
+impl Dispatcher {
+    pub fn new() -> Self {
+        Dispatcher {
+            next_key: AtomicUsize::new(1),
+            event: BasicEvent::new(0),
+            waiters: Mutex::new(Vec::new()),
+            triggered: SegQueue::new(),
+        }
+    }
+
+    #[inline]
+    pub fn event(&self) -> Weak<dyn Event> {
+        Arc::downgrade(&self.event) as _
+    }
+
+    pub fn push(self: &Arc<Self>, event: &Arc<dyn Event>, data: WaiterData) -> usize {
+        let key = self.next_key.fetch_add(1, AcqRel);
+        PREEMPT.scope(|| {
+            let mut waiters = self.waiters.lock();
+            waiters.push((key, Arc::downgrade(event), data));
+        });
+        event.wait(Arc::clone(self) as _);
+        key
+    }
+
+    #[inline]
+    pub fn pop(self: &Arc<Self>) -> Option<(usize, bool)> {
+        let (key, event, canceled) = self.triggered.pop()?;
+        if let Some(event) = event.upgrade() {
+            event.unwait(&(Arc::clone(self) as _));
+        }
+        Some((key, canceled))
+    }
+}
+
+impl Waiter for Dispatcher {
+    fn waiter_data(&self) -> WaiterData {
+        let (trig, signal) = PREEMPT.scope(|| {
+            let waiters = self.waiters.lock();
+            let iter = waiters.iter();
+            iter.fold((TriggerMode::Edge, 0), |(trig, signal), (_, _, data)| {
+                (trig | data.trigger_mode(), signal | data.signal())
+            })
+        });
+        WaiterData::new(trig, signal)
+    }
+
+    fn on_cancel(&self, signal: usize) {
+        let mut has_cancel = false;
+        PREEMPT.scope(|| {
+            let mut waiters = self.waiters.lock();
+            let iter = waiters.drain_filter(|(_, _, data)| data.signal() & !signal == 0);
+            iter.for_each(|(key, event, _)| {
+                self.triggered.push((key, event.clone(), false));
+                has_cancel = true;
+            })
+        });
+        if has_cancel {
+            self.event.notify(0, SIG_READ)
+        }
+    }
+
+    fn on_notify(&self, signal: usize) {
+        let mut has_notify = false;
+        PREEMPT.scope(|| {
+            let mut waiters = self.waiters.lock();
+            let iter = waiters.drain_filter(|(_, _, data)| data.signal() & !signal == 0);
+            iter.for_each(|(key, event, _)| {
+                self.triggered.push((key, event.clone(), true));
+                has_notify = true
+            })
+        });
+        if has_notify {
+            self.event.notify(0, SIG_READ)
+        }
+    }
+}
+
+unsafe impl DefaultFeature for Dispatcher {
+    #[inline]
+    fn default_features() -> Feature {
+        Feature::SEND | Feature::SYNC | Feature::READ | Feature::WRITE | Feature::WAIT
     }
 }

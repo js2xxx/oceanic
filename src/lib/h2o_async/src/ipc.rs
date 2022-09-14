@@ -143,8 +143,11 @@ impl Future for Receive<'_> {
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let ret = self.channel.poll_receive(self.packet);
         if ret.is_pending() {
-            let waiter = self.channel.inner.try_wait_async(false, SIG_READ)?;
-            push_task(waiter, cx.waker());
+            let key = self
+                .channel
+                .inner
+                .try_wait_async2(true, SIG_READ, crate::disp())?;
+            push_task(key, cx.waker());
         }
         ret
     }
@@ -163,8 +166,11 @@ impl Future for CallReceive<'_> {
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let ret = self.channel.poll_call_receive(self.id, self.packet);
         if ret.is_pending() {
-            let waiter = self.channel.inner.call_receive_async(self.id, false)?;
-            push_task(waiter, cx.waker());
+            let key = self
+                .channel
+                .inner
+                .call_receive_async2(self.id, crate::disp())?;
+            push_task(key, cx.waker());
         }
         ret
     }

@@ -2,7 +2,10 @@ pub mod ipi;
 pub mod timer;
 
 use alloc::collections::BTreeMap;
-use core::arch::asm;
+use core::{
+    arch::asm,
+    ops::{BitOr, BitOrAssign},
+};
 
 use archop::{msr, Azy};
 use modular_bitfield::prelude::*;
@@ -68,6 +71,28 @@ pub enum Polarity {
 pub enum TriggerMode {
     Edge = 0,
     Level = 1,
+}
+
+impl BitOr for TriggerMode {
+    type Output = Self;
+
+    #[inline]
+    fn bitor(self, rhs: TriggerMode) -> Self::Output {
+        if matches!((self as u64) | (rhs as u64), 0) {
+            TriggerMode::Edge
+        } else {
+            TriggerMode::Level
+        }
+    }
+}
+
+impl BitOrAssign for TriggerMode {
+    #[inline]
+    fn bitor_assign(&mut self, rhs: Self) {
+        if let (Self::Edge, Self::Level) = (*self, rhs) {
+            *self = Self::Level
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
