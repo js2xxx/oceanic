@@ -25,3 +25,18 @@ pub unsafe fn syscall(
     );
     ret
 }
+
+#[inline]
+pub fn pack_syscall(
+    num: usize,
+    arg1: usize,
+    arg2: usize,
+    arg3: usize,
+    arg4: usize,
+    arg5: usize,
+) -> crate::Syscall {
+    crate::Syscall {
+        num,
+        args: [arg1, arg2, arg3, arg4, arg5],
+    }
+}

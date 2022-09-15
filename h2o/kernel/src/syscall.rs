@@ -45,13 +45,12 @@ type SyscallWrapper = unsafe extern "C" fn(usize, usize, usize, usize, usize) ->
 static SYSCALL_TABLE: &[SyscallWrapper] =
     &include!(concat!(env!("CARGO_MANIFEST_DIR"), "/target/wrapper.rs"));
 
-pub fn handle(syscall: &mut Syscall) {
+pub fn handle(syscall: Syscall) -> usize {
     let args = syscall.args;
-    let result = match SYSCALL_TABLE.get(syscall.num).copied() {
+    match SYSCALL_TABLE.get(syscall.num).copied() {
         Some(handler) => unsafe { handler(args[0], args[1], args[2], args[3], args[4]) },
         _ => EINVAL.into_retval(),
-    };
-    syscall.result = result
+    }
 }
 
 /// An example of syscall

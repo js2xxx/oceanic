@@ -7,10 +7,10 @@ mod raw;
 pub(crate) mod reg;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+#[repr(C)]
 pub struct Syscall {
     pub num: usize,
     pub args: [usize; 5],
-    pub result: usize,
 }
 
 #[cfg(all(not(feature = "stub"), feature = "call"))]

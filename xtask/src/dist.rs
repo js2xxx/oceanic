@@ -147,8 +147,8 @@ impl Dist {
             &target_root,
         )?;
 
-        self.build_lib(&cargo, &src_root, &target_root)?;
-        self.build_bin(&cargo, &src_root, &target_root)?;
+        self.build_lib(&cargo, src_root, &target_root)?;
+        self.build_bin(&cargo, src_root, &target_root)?;
 
         crate::gen::gen_bootfs(Path::new(BOOTFS).join("../BOOT.fs"))?;
 

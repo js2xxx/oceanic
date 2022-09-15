@@ -87,6 +87,30 @@ pub fn gen_rust_calls(funcs: &[SyscallFn], output: impl AsRef<Path>) -> Result<(
             write!(output, "0, ")?;
         }
         write!(output, ") }}; SerdeReg::decode(ret) }} ")?;
+
+        if !func.no_call {
+            let pack_name = format!("sv_pack_{}", &func.name[3..]);
+            let unpack_name = format!("sv_unpack_{}", &func.name[3..]);
+
+            write!(output, "#[no_mangle] pub extern \"C\" fn {}(", pack_name,)?;
+            for arg in &func.args {
+                write!(output, "{}: {}, ", arg.name, arg.ty)?;
+            }
+            write!(output, ") -> Syscall {{ ")?;
+            write!(output, "raw::pack_syscall({}, ", i)?;
+            for arg in &func.args {
+                write!(output, "<{} as SerdeReg>::encode({}), ", arg.ty, arg.name)?;
+            }
+            for _ in 0..(5 - func.args.len()) {
+                write!(output, "0, ")?;
+            }
+            write!(output, ") }} ")?;
+
+            write!(output, "#[no_mangle] pub extern \"C\" fn {}(", unpack_name,)?;
+            write!(output, "result: usize")?;
+            write!(output, ") -> {} {{ ", c_returns)?;
+            write!(output, "SerdeReg::decode(result) }} ")?;
+        }
     }
 
     output.flush()?;
@@ -108,6 +132,21 @@ pub fn gen_rust_stubs(funcs: &[SyscallFn], output: impl AsRef<Path>) -> Result<(
             _ => "StatusOrValue",
         };
         write!(output, ") -> {}; ", c_returns)?;
+
+        if !func.no_call {
+            let pack_name = format!("sv_pack_{}", &func.name[3..]);
+            let unpack_name = format!("sv_unpack_{}", &func.name[3..]);
+
+            write!(output, "pub fn {}(", pack_name,)?;
+            for arg in &func.args {
+                write!(output, "{}: {}, ", arg.name, arg.ty)?;
+            }
+            write!(output, ") -> Syscall; ")?;
+
+            write!(output, "pub fn {}(", unpack_name,)?;
+            write!(output, "result: usize")?;
+            write!(output, ") -> {}; ", c_returns)?;
+        }
     }
     write!(output, "}}")?;
 

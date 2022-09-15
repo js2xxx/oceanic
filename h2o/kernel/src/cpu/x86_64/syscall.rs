@@ -31,16 +31,14 @@ pub unsafe fn init() -> sv_call::Result<LAddr> {
 
 #[no_mangle]
 unsafe extern "C" fn hdl_syscall(frame: *const Frame) {
-    let mut syscall = (*frame).syscall_args();
+    let syscall = (*frame).syscall_args();
 
     archop::resume_intr(None);
-    crate::syscall::handle(&mut syscall);
+    let res = crate::syscall::handle(syscall);
     archop::pause_intr();
 
     let _ = crate::sched::SCHED.with_current(|cur| {
-        cur.kstack_mut()
-            .task_frame_mut()
-            .set_syscall_retval(&syscall);
+        cur.kstack_mut().task_frame_mut().set_syscall_retval(res);
         Ok(())
     });
 }
