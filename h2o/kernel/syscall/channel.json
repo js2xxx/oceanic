@@ -112,5 +112,27 @@
                 "ty": "Handle"
             }
         ]
+    },
+    {
+        "name": "sv_chan_acrecv3",
+        "returns": "usize",
+        "args": [
+            {
+                "name": "hdl",
+                "ty": "Handle"
+            },
+            {
+                "name": "id",
+                "ty": "usize"
+            },
+            {
+                "name": "disp",
+                "ty": "Handle"
+            },
+            {
+                "name": "syscall",
+                "ty": "*const Syscall"
+            }
+        ]
     }
 ]

@@ -1,12 +1,14 @@
+use core::ptr;
+
 use solvent::prelude::{Instant, SIG_READ};
 use sv_call::{ipc::SIG_TIMER, *};
 
 pub unsafe fn test() {
     let timer = sv_timer_new().into_res().expect("Failed to create timer");
-    let disp = sv_disp_new()
+    let disp = sv_disp_new2(5)
         .into_res()
         .expect("Failed to create dispatcher");
-    let key = sv_obj_await2(timer, true, SIG_TIMER, disp)
+    let key = sv_disp_push(disp, timer, true, SIG_TIMER, ptr::null())
         .into_res()
         .expect("Failed to set wait for timer");
     sv_timer_set(timer, 10000)
@@ -17,7 +19,7 @@ pub unsafe fn test() {
         .into_res()
         .expect("Failed to wait for dispatcher");
     let mut canceled = false;
-    let k2 = sv_obj_awend2(disp, &mut canceled)
+    let k2 = sv_disp_pop(disp, &mut canceled, ptr::null_mut())
         .into_res()
         .expect("Failed to wait for timer");
     assert_eq!(key, k2);

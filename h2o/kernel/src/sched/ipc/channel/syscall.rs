@@ -8,7 +8,7 @@ use sv_call::{
 use super::*;
 use crate::{
     cpu::{arch::apic::TriggerMode, time},
-    sched::{Dispatcher, WaiterData, SIG_READ},
+    sched::{imp::disp, Dispatcher, WaiterData, SIG_READ},
     syscall::{In, InOut, Out, UserPtr},
 };
 
@@ -218,5 +218,43 @@ fn chan_acrecv2(hdl: Handle, id: usize, disp: Handle) -> Result<usize> {
 
         let waiter_data = WaiterData::new(TriggerMode::Level, SIG_READ);
         Ok(disp.push(&event, waiter_data))
+    })
+}
+
+#[syscall]
+fn chan_acrecv3(
+    hdl: Handle,
+    id: usize,
+    disp: Handle,
+    syscall: UserPtr<In, Syscall>,
+) -> Result<usize> {
+    hdl.check_null()?;
+    disp.check_null()?;
+    let syscall = (!syscall.as_ptr().is_null())
+        .then(|| {
+            let syscall = unsafe { syscall.read() }?;
+            if matches!(
+                syscall.num as usize,
+                SV_DISP_NEW2 | SV_DISP_PUSH | SV_DISP_POP
+            ) {
+                return Err(EPERM);
+            }
+            Ok(syscall)
+        })
+        .transpose()?;
+
+    SCHED.with_current(|cur| {
+        let chan = cur.space().handles().get::<Channel>(hdl)?;
+        let disp = cur.space().handles().get::<disp::Dispatcher>(disp)?;
+        if !chan.features().contains(Feature::WAIT) {
+            return Err(EPERM);
+        }
+        if !disp.features().contains(Feature::WRITE) {
+            return Err(EPERM);
+        }
+        let event = chan.call_event(id)? as _;
+
+        let waiter_data = WaiterData::new(TriggerMode::Level, SIG_READ);
+        disp.push(&event, waiter_data, syscall)
     })
 }

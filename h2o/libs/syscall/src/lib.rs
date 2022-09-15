@@ -84,3 +84,5 @@ pub extern "C" fn rust_begin_unwind(_: &core::panic::PanicInfo) -> ! {
         unsafe { core::arch::asm!("pause; ud2") }
     }
 }
+
+include!(concat!(env!("CARGO_MANIFEST_DIR"), "/target/num.rs"));

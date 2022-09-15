@@ -51,6 +51,7 @@ impl Dist {
             src_root.join(H2O_KERNEL).join("target/wrapper.rs"),
             src_root.join("h2o/libs/syscall/target/call.rs"),
             src_root.join("h2o/libs/syscall/target/stub.rs"),
+            src_root.join("h2o/libs/syscall/target/num.rs"),
         )?;
 
         // Build h2o_boot

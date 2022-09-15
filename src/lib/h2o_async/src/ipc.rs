@@ -10,24 +10,26 @@ use solvent::prelude::{
     Handle, PackRecv, Packet, PacketTyped, Result, SerdeReg, Syscall, EBUFFER, ENOENT, EPIPE,
     SIG_READ,
 };
-use solvent_std::sync::channel::{oneshot, oneshot_};
+use solvent_std::sync::{
+    channel::{oneshot, oneshot_},
+    Arsc,
+};
 
-use crate::{disp::PackedSyscall, push_task};
+use crate::disp::{Dispatcher, PackedSyscall};
 
 type Inner = solvent::ipc::Channel;
 
 pub struct Channel {
     inner: Inner,
-}
-
-impl From<Inner> for Channel {
-    #[inline]
-    fn from(inner: Inner) -> Self {
-        Channel { inner }
-    }
+    disp: Arsc<Dispatcher>,
 }
 
 impl Channel {
+    #[inline]
+    pub fn new(inner: Inner, disp: Arsc<Dispatcher>) -> Self {
+        Channel { inner, disp }
+    }
+
     #[inline]
     pub fn send_raw(&self, id: Option<usize>, buffer: &[u8], handles: &[Handle]) -> Result {
         self.inner.send_raw(id, buffer, handles)
@@ -109,6 +111,7 @@ impl Channel {
             channel: self,
             id,
             packet,
+            result: None,
         }
     }
 
@@ -179,7 +182,7 @@ impl<'a> Future for Receive<'a> {
             let pack = self.channel.inner.pack_receive(self.packet);
             let (tx, rx) = oneshot();
             self.result = Some(rx);
-            crate::disp2().push(
+            self.channel.disp.push(
                 &self.channel.inner,
                 true,
                 SIG_READ,
@@ -196,19 +199,36 @@ pub struct CallReceive<'a> {
     channel: &'a Channel,
     id: usize,
     packet: &'a mut Packet,
+    result: Option<oneshot_::Receiver<(Result<usize>, usize, usize)>>,
 }
 
 impl Future for CallReceive<'_> {
     type Output = Result;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        if let Some((result, buffer_size, handle_count)) =
+            self.result.take().and_then(|rx| rx.recv().ok())
+        {
+            match result {
+                Ok(_) => return Poll::Ready(Ok(())),
+                Err(EBUFFER) => {
+                    self.packet.buffer.reserve(buffer_size);
+                    self.packet.handles.reserve(handle_count);
+                }
+                Err(err) => Err(err)?,
+            }
+        }
         let ret = self.channel.poll_call_receive(self.id, self.packet);
         if ret.is_pending() {
-            let key = self
-                .channel
-                .inner
-                .call_receive_async2(self.id, crate::disp())?;
-            push_task(key, cx.waker());
+            let pack = self.channel.inner.pack_call_receive(self.id, self.packet);
+            let (tx, rx) = oneshot();
+            self.result = Some(rx);
+            self.channel.disp.push_chan_acrecv(
+                &self.channel.inner,
+                self.id,
+                Box::new((pack, tx)),
+                cx.waker(),
+            )?;
         }
         ret
     }

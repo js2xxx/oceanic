@@ -311,8 +311,19 @@ mod syscall {
         ) -> Result<usize> {
             hdl.check_null()?;
             disp.check_null()?;
-            let syscall = unsafe { syscall.read()? };
-            // if syscall.num == 
+            let syscall = (!syscall.as_ptr().is_null())
+                .then(|| {
+                    let syscall = unsafe { syscall.read() }?;
+                    if matches!(
+                        syscall.num as usize,
+                        SV_DISP_NEW2 | SV_DISP_PUSH | SV_DISP_POP
+                    ) {
+                        return Err(EPERM);
+                    }
+                    Ok(syscall)
+                })
+                .transpose()?;
+
             SCHED.with_current(|cur| {
                 let obj = cur.space().handles().get_ref(hdl)?;
                 let disp = cur.space().handles().get::<Dispatcher>(disp)?;
@@ -343,16 +354,18 @@ mod syscall {
             result: UserPtr<Out, usize>,
         ) -> Result<usize> {
             disp.check_null()?;
-            canceled.check()?;
-            result.check()?;
             SCHED.with_current(|cur| {
                 let disp = cur.space().handles().get::<Dispatcher>(disp)?;
                 if !disp.features().contains(Feature::READ) {
                     return Err(EPERM);
                 }
                 let (c, key, r) = disp.pop().ok_or(ENOENT)?;
-                canceled.write(c)?;
-                result.write(r)?;
+                if !canceled.as_ptr().is_null() {
+                    canceled.write(c)?;
+                }
+                if !result.as_ptr().is_null() {
+                    result.write(r)?;
+                }
                 Ok(key)
             })
         }

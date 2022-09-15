@@ -2,7 +2,7 @@
     {
         "name": "sv_time_get",
         "returns": "()",
-        "no_call": true,
+        "vdso_specific": true,
         "args": [
             {
                 "name": "ptr",
@@ -13,7 +13,8 @@
     {
         "name": "sv_random",
         "returns": "u64",
-        "no_call": true,
+        "vdso_specific": true,
+        "vdso_only": true,
         "args": []
     },
     {

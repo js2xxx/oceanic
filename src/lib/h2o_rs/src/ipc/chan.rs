@@ -7,7 +7,7 @@ use sv_call::{c_ty::Status, ipc::RawPacket, Syscall};
 use super::Dispatcher;
 #[cfg(feature = "alloc")]
 use super::{Packet, PacketTyped};
-use crate::{error::*, obj::Object};
+use crate::{error::*, obj::Object, prelude::Disp2};
 
 #[repr(transparent)]
 pub struct Channel(sv_call::Handle);
@@ -188,6 +188,26 @@ impl Channel {
         (res, packet.buffer_size, packet.handle_count)
     }
 
+    pub fn pack_call_receive(&self, id: usize, packet: &mut Packet) -> PackRecv {
+        let buffer = &mut packet.buffer;
+        let handles = packet.handles.spare_capacity_mut();
+        let mut packet = RawPacket {
+            id: 0,
+            handles: handles.as_mut_ptr().cast(),
+            handle_count: handles.len(),
+            handle_cap: handles.len(),
+            buffer: buffer.as_mut_ptr(),
+            buffer_size: buffer.len(),
+            buffer_cap: buffer.len(),
+        };
+        let syscall =
+            unsafe { sv_call::sv_pack_chan_crecv(unsafe { self.raw() }, id, &mut packet, 0) };
+        PackRecv {
+            raw_packet: packet,
+            syscall,
+        }
+    }
+
     #[cfg(feature = "alloc")]
     pub fn call_receive_into(
         &self,
@@ -220,6 +240,14 @@ impl Channel {
         let key =
             unsafe { sv_call::sv_chan_acrecv2(unsafe { self.raw() }, id, unsafe { disp.raw() }) }
                 .into_res()?;
+        Ok(key as usize)
+    }
+
+    pub fn call_receive_async3(&self, id: usize, disp: &Disp2, syscall: &Syscall) -> Result<usize> {
+        let key = unsafe {
+            sv_call::sv_chan_acrecv3(unsafe { self.raw() }, id, unsafe { disp.raw() }, syscall)
+                .into_res()
+        }?;
         Ok(key as usize)
     }
 

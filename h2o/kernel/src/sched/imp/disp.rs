@@ -9,7 +9,7 @@ use core::{
 
 use crossbeam_queue::ArrayQueue;
 use spin::Mutex;
-use sv_call::{call::Syscall, Feature, Result, ENOSPC};
+use sv_call::{call::Syscall, ipc::SIG_READ, Feature, Result, ENOSPC};
 
 use super::PREEMPT;
 use crate::{
@@ -22,7 +22,7 @@ struct Request {
     key: usize,
     event: Weak<dyn Event>,
     waiter_data: WaiterData,
-    syscall: Syscall,
+    syscall: Option<Syscall>,
 }
 
 #[derive(Debug)]
@@ -59,7 +59,7 @@ impl Dispatcher {
         self: &Arc<Self>,
         event: &Arc<dyn Event>,
         waiter_data: WaiterData,
-        syscall: Syscall,
+        syscall: Option<Syscall>,
     ) -> Result<usize> {
         let key = self.next_key.fetch_add(1, AcqRel);
         let req = Request {
@@ -70,7 +70,7 @@ impl Dispatcher {
         };
         PREEMPT.scope(|| {
             let mut pending = self.pending.lock();
-            if pending.len() >= self.capacity - self.ready.capacity() {
+            if pending.len() >= self.capacity - self.ready.len() {
                 return Err(ENOSPC);
             }
             pending.push(req);
@@ -87,7 +87,7 @@ impl Dispatcher {
             event.unwait(&(Arc::clone(self) as _));
         }
         let res = if !canceled {
-            syscall::handle(req.syscall)
+            req.syscall.map_or(0, syscall::handle)
         } else {
             0
         };
@@ -115,7 +115,9 @@ impl Waiter for Dispatcher {
             });
         });
 
-        if has_cancel {}
+        if has_cancel {
+            self.event.notify(0, SIG_READ)
+        }
     }
 
     fn on_notify(&self, _: usize) {
@@ -141,7 +143,9 @@ impl Waiter for Dispatcher {
             pending.is_empty()
         });
 
-        if has_notify {}
+        if has_notify {
+            self.event.notify(0, SIG_READ)
+        }
         empty
     }
 }

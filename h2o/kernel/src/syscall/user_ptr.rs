@@ -52,7 +52,7 @@ impl<T: Type, D> UserPtr<T, D> {
     pub fn check_slice(&self, len: usize) -> Result<()> {
         check_ptr(
             self.data.cast(),
-            mem::size_of::<T>() * len,
+            mem::size_of::<D>() * len,
             mem::align_of::<D>(),
         )
     }

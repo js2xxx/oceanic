@@ -19,7 +19,9 @@ pub struct SyscallFn {
     returns: String,
     args: Vec<SyscallArg>,
     #[serde(default)]
-    no_call: bool,
+    vdso_specific: bool,
+    #[serde(default)]
+    vdso_only: bool,
 }
 
 fn parse_file(file: impl AsRef<Path>) -> Result<Vec<SyscallFn>, Box<dyn Error>> {
@@ -45,11 +47,17 @@ pub fn gen_wrappers(funcs: &[SyscallFn], output: impl AsRef<Path>) -> Result<(),
     let mut output = BufWriter::new(fs::File::create(output)?);
 
     write!(output, "[")?;
-    for func in funcs.iter().filter(|f| !f.no_call) {
+    for func in funcs {
         let wrapper_name = format!("wrapper_{}", &func.name[3..]);
-        write!(output, "{{ extern \"C\" {{ fn {}(", wrapper_name)?;
-        write!(output, "a: usize, b: usize, c: usize, d: usize, e: usize")?;
-        write!(output, ") -> usize; }} {} }},", wrapper_name)?;
+        if !func.vdso_only {
+            write!(output, "{{ extern \"C\" {{ fn {}(", wrapper_name)?;
+            write!(output, "a: usize, b: usize, c: usize, d: usize, e: usize")?;
+            write!(output, ") -> usize; }} {} }},", wrapper_name)?;
+        } else {
+            write!(output, "{{ extern \"C\" fn {}(", wrapper_name)?;
+            write!(output, "_: usize, _: usize, _: usize, _: usize, _: usize")?;
+            write!(output, ") -> usize {{ 0 }} {} }},", wrapper_name)?;
+        }
     }
     write!(output, "]")?;
 
@@ -61,34 +69,36 @@ pub fn gen_rust_calls(funcs: &[SyscallFn], output: impl AsRef<Path>) -> Result<(
     let mut output = BufWriter::new(fs::File::create(output)?);
 
     for (i, func) in funcs.iter().enumerate() {
-        if func.no_call {
-            write!(output, "#[cfg(not(feature = \"vdso\"))] ")?;
-        }
-
-        write!(
-            output,
-            "#[no_mangle] pub unsafe extern \"C\" fn {}(",
-            func.name
-        )?;
-        for arg in &func.args {
-            write!(output, "{}: {}, ", arg.name, arg.ty)?;
-        }
         let c_returns = match &*func.returns {
             "()" => "Status",
             "Handle" => "StatusOrHandle",
             _ => "StatusOrValue",
         };
-        write!(output, ") -> {} {{ ", c_returns)?;
-        write!(output, "let ret = unsafe {{ raw::syscall({}, ", i)?;
-        for arg in &func.args {
-            write!(output, "<{} as SerdeReg>::encode({}), ", arg.ty, arg.name)?;
-        }
-        for _ in 0..(5 - func.args.len()) {
-            write!(output, "0, ")?;
-        }
-        write!(output, ") }}; SerdeReg::decode(ret) }} ")?;
+        if !func.vdso_only {
+            if func.vdso_specific {
+                write!(output, "#[cfg(not(feature = \"vdso\"))] ")?;
+            }
 
-        if !func.no_call {
+            write!(
+                output,
+                "#[no_mangle] pub unsafe extern \"C\" fn {}(",
+                func.name
+            )?;
+            for arg in &func.args {
+                write!(output, "{}: {}, ", arg.name, arg.ty)?;
+            }
+            write!(output, ") -> {} {{ ", c_returns)?;
+            write!(output, "let ret = unsafe {{ raw::syscall({}, ", i)?;
+            for arg in &func.args {
+                write!(output, "<{} as SerdeReg>::encode({}), ", arg.ty, arg.name)?;
+            }
+            for _ in 0..(5 - func.args.len()) {
+                write!(output, "0, ")?;
+            }
+            write!(output, ") }}; SerdeReg::decode(ret) }} ")?;
+        }
+
+        if !func.vdso_specific {
             let pack_name = format!("sv_pack_{}", &func.name[3..]);
             let unpack_name = format!("sv_unpack_{}", &func.name[3..]);
 
@@ -133,7 +143,7 @@ pub fn gen_rust_stubs(funcs: &[SyscallFn], output: impl AsRef<Path>) -> Result<(
         };
         write!(output, ") -> {}; ", c_returns)?;
 
-        if !func.no_call {
+        if !func.vdso_specific {
             let pack_name = format!("sv_pack_{}", &func.name[3..]);
             let unpack_name = format!("sv_unpack_{}", &func.name[3..]);
 
@@ -149,6 +159,22 @@ pub fn gen_rust_stubs(funcs: &[SyscallFn], output: impl AsRef<Path>) -> Result<(
         }
     }
     write!(output, "}}")?;
+
+    output.flush()?;
+    Ok(())
+}
+
+pub fn gen_rust_nums(funcs: &[SyscallFn], output: impl AsRef<Path>) -> Result<(), Box<dyn Error>> {
+    let mut output = BufWriter::new(fs::File::create(output)?);
+
+    for (i, func) in funcs.iter().enumerate() {
+        write!(
+            output,
+            "pub const SV_{}: usize = {}; ",
+            func.name[3..].to_uppercase(),
+            i
+        )?;
+    }
 
     output.flush()?;
     Ok(())

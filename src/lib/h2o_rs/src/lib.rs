@@ -19,6 +19,7 @@ pub mod time;
 #[cfg(feature = "alloc")]
 extern crate alloc;
 
+#[cfg(feature = "stub")]
 #[inline]
 pub fn random() -> u64 {
     unsafe { sv_call::sv_random().into_res() }.unwrap()

@@ -5,17 +5,17 @@ use futures::task::AtomicWaker;
 use solvent::prelude::{Disp2, Object, Result, Syscall, ENOENT, ETIME};
 use solvent_std::sync::Mutex;
 
-struct Task<'a> {
-    pack: Box<dyn PackedSyscall + 'a>,
+struct Task {
+    pack: Box<dyn PackedSyscall>,
     waker: AtomicWaker,
 }
 
-pub struct Dispatcher<'a> {
+pub struct Dispatcher {
     inner: Disp2,
-    tasks: Mutex<BTreeMap<usize, Task<'a>>>,
+    tasks: Mutex<BTreeMap<usize, Task>>,
 }
 
-impl<'a> Dispatcher<'a> {
+impl Dispatcher {
     #[inline]
     pub fn new(capacity: usize) -> Self {
         Dispatcher {
@@ -49,6 +49,24 @@ impl<'a> Dispatcher<'a> {
         let key = self
             .inner
             .push_raw(obj, level_triggered, signal, &syscall)?;
+        let task = Task {
+            pack,
+            waker: AtomicWaker::new(),
+        };
+        task.waker.register(waker);
+        self.tasks.lock().insert(key, task);
+        Ok(())
+    }
+
+    pub fn push_chan_acrecv(
+        &self,
+        obj: &solvent::prelude::Channel,
+        id: usize,
+        pack: Box<dyn PackedSyscall>,
+        waker: &Waker,
+    ) -> Result {
+        let syscall = pack.raw();
+        let key = obj.call_receive_async3(id, &self.inner, &syscall)?;
         let task = Task {
             pack,
             waker: AtomicWaker::new(),
