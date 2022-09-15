@@ -11,6 +11,12 @@
         ]
     },
     {
+        "name": "sv_random",
+        "returns": "u64",
+        "no_call": true,
+        "args": []
+    },
+    {
         "name": "sv_timer_new",
         "returns": "Handle",
         "args": []

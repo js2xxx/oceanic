@@ -33,3 +33,8 @@ pub fn get() -> u64 {
     let ret = crate::msr::rdtsc();
     ret.wrapping_mul(0xc345c6b72fd16123)
 }
+
+#[inline]
+pub fn has_builtin() -> bool {
+    *RAND_AVAILABLE
+}

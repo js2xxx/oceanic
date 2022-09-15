@@ -42,5 +42,38 @@ pub unsafe extern "C" fn sv_time_get(ptr: *mut ()) -> crate::c_ty::Status {
     Status::from_res(Ok(()))
 }
 
+#[cfg(feature = "vdso")]
+#[no_mangle]
+pub extern "C" fn sv_random() -> crate::c_ty::StatusOrValue {
+    let c = crate::constants();
+    if c.has_builtin_rand {
+        for _ in 0..10 {
+            let ret;
+            let flags: u64;
+            unsafe {
+                core::arch::asm!(
+                      "rdrand {}",
+                      "pushfq",
+                      "pop {}",
+                      out(reg) ret,
+                      out(reg) flags
+                );
+                if flags & 1 != 0 {
+                    return crate::c_ty::StatusOrValue::from_res(Ok(ret));
+                }
+            }
+        }
+    }
+
+    // Fall back to time-based randomization.
+    let ticks = unsafe {
+        let (eax, edx): (u32, u32);
+        core::arch::asm!("rdtsc", out("eax")eax, out("edx")edx);
+        ((edx as u64) << 32) | (eax as u64)
+    };
+    let ret = ticks.wrapping_mul(0xb7123c2fd16c6345);
+    crate::c_ty::StatusOrValue::from_res(Ok(ret))
+}
+
 #[cfg(all(not(feature = "stub"), feature = "call"))]
 include!(concat!(env!("CARGO_MANIFEST_DIR"), "/target/call.rs"));

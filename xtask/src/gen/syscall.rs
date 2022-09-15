@@ -45,7 +45,7 @@ pub fn gen_wrappers(funcs: &[SyscallFn], output: impl AsRef<Path>) -> Result<(),
     let mut output = BufWriter::new(fs::File::create(output)?);
 
     write!(output, "[")?;
-    for func in funcs {
+    for func in funcs.iter().filter(|f| !f.no_call) {
         let wrapper_name = format!("wrapper_{}", &func.name[3..]);
         write!(output, "{{ extern \"C\" {{ fn {}(", wrapper_name)?;
         write!(output, "a: usize, b: usize, c: usize, d: usize, e: usize")?;

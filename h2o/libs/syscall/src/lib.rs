@@ -33,6 +33,7 @@ pub struct Constants {
     pub ticks_offset: u64,
     pub ticks_multiplier: u128,
     pub ticks_shift: u128,
+    pub has_builtin_rand: bool,
 }
 
 impl Constants {
@@ -41,6 +42,7 @@ impl Constants {
             ticks_offset: 0,
             ticks_multiplier: 0,
             ticks_shift: 0,
+            has_builtin_rand: false,
         }
     }
 }

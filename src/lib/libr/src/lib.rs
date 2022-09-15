@@ -6,6 +6,7 @@
 #![feature(coerce_unsized)]
 #![feature(const_trait_impl)]
 #![feature(dropck_eyepatch)]
+#![feature(hashmap_internals)]
 #![feature(int_roundings)]
 #![feature(lang_items)]
 #![feature(layout_for_ptr)]
@@ -22,6 +23,7 @@ extern crate alloc;
 
 mod alloc2;
 pub mod env;
+pub mod hash;
 pub mod rt;
 pub mod sync;
 pub mod thread;

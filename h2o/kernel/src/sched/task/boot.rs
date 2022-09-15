@@ -55,6 +55,7 @@ pub fn setup() {
             ticks_offset: TSC_CLOCK.initial,
             ticks_multiplier: TSC_CLOCK.mul,
             ticks_shift: TSC_CLOCK.sft,
+            has_builtin_rand: archop::rand::has_builtin(),
         };
 
         #[allow(clippy::zero_prefixed_literal)]
