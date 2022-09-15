@@ -5,7 +5,7 @@ use sv_call::{ipc::SIG_TIMER, *};
 
 pub unsafe fn test() {
     let timer = sv_timer_new().into_res().expect("Failed to create timer");
-    let disp = sv_disp_new2(5)
+    let disp = sv_disp_new(5)
         .into_res()
         .expect("Failed to create dispatcher");
     let key = sv_disp_push(disp, timer, true, SIG_TIMER, ptr::null())

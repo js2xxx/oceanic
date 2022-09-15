@@ -8,7 +8,7 @@ use sv_call::{
 use super::*;
 use crate::{
     cpu::{arch::apic::TriggerMode, time},
-    sched::{imp::disp, Dispatcher, WaiterData, SIG_READ},
+    sched::{Dispatcher, WaiterData, SIG_READ},
     syscall::{In, InOut, Out, UserPtr},
 };
 
@@ -187,42 +187,7 @@ fn chan_crecv(
 }
 
 #[syscall]
-fn chan_acrecv(hdl: Handle, id: usize, wake_all: bool) -> Result<Handle> {
-    SCHED.with_current(|cur| {
-        let chan = cur.space().handles().get::<Channel>(hdl)?;
-        if !{ chan.features() }.contains(Feature::READ | Feature::WAIT) {
-            return Err(EPERM);
-        }
-        let event = chan.call_event(id)? as _;
-
-        let blocker = crate::sched::Blocker::new(&event, wake_all, SIG_READ);
-        cur.space().handles().insert(blocker, None)
-    })
-}
-
-#[syscall]
-fn chan_acrecv2(hdl: Handle, id: usize, disp: Handle) -> Result<usize> {
-    hdl.check_null()?;
-    disp.check_null()?;
-
-    SCHED.with_current(|cur| {
-        let chan = cur.space().handles().get::<Channel>(hdl)?;
-        let disp = cur.space().handles().get::<Dispatcher>(disp)?;
-        if !{ chan.features() }.contains(Feature::READ | Feature::WAIT) {
-            return Err(EPERM);
-        }
-        if !disp.features().contains(Feature::WRITE) {
-            return Err(EPERM);
-        }
-        let event = chan.call_event(id)? as _;
-
-        let waiter_data = WaiterData::new(TriggerMode::Level, SIG_READ);
-        Ok(disp.push(&event, waiter_data))
-    })
-}
-
-#[syscall]
-fn chan_acrecv3(
+fn chan_acrecv(
     hdl: Handle,
     id: usize,
     disp: Handle,
@@ -235,7 +200,7 @@ fn chan_acrecv3(
             let syscall = unsafe { syscall.read() }?;
             if matches!(
                 syscall.num as usize,
-                SV_DISP_NEW2 | SV_DISP_PUSH | SV_DISP_POP
+                SV_DISP_NEW | SV_DISP_PUSH | SV_DISP_POP
             ) {
                 return Err(EPERM);
             }
@@ -245,7 +210,7 @@ fn chan_acrecv3(
 
     SCHED.with_current(|cur| {
         let chan = cur.space().handles().get::<Channel>(hdl)?;
-        let disp = cur.space().handles().get::<disp::Dispatcher>(disp)?;
+        let disp = cur.space().handles().get::<Dispatcher>(disp)?;
         if !chan.features().contains(Feature::WAIT) {
             return Err(EPERM);
         }

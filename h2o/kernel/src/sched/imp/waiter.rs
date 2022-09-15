@@ -3,20 +3,22 @@ use alloc::{
     vec::Vec,
 };
 use core::{
+    alloc::AllocError,
     fmt::Debug,
-    sync::atomic::{AtomicUsize, Ordering::AcqRel},
+    sync::atomic::{AtomicUsize, Ordering::*},
     time::Duration,
 };
 
 use archop::PreemptStateGuard;
-use crossbeam_queue::SegQueue;
+use crossbeam_queue::ArrayQueue;
 use spin::Mutex;
-use sv_call::{ipc::SIG_READ, Feature};
+use sv_call::{call::Syscall, ipc::SIG_READ, Feature, Result, ENOSPC};
 
 use super::PREEMPT;
 use crate::{
     cpu::arch::apic::TriggerMode,
     sched::{task::hdl::DefaultFeature, wait::WaitObject, BasicEvent, Event, Waiter, WaiterData},
+    syscall,
 };
 
 #[derive(Debug)]
@@ -99,90 +101,135 @@ unsafe impl DefaultFeature for Blocker {
 }
 
 #[derive(Debug)]
+struct Request {
+    key: usize,
+    event: Weak<dyn Event>,
+    waiter_data: WaiterData,
+    syscall: Option<Syscall>,
+}
+
+#[derive(Debug)]
 pub struct Dispatcher {
     next_key: AtomicUsize,
     event: Arc<BasicEvent>,
 
-    #[allow(clippy::type_complexity)]
-    waiters: Mutex<Vec<(usize, Weak<dyn Event>, WaiterData)>>,
-    triggered: SegQueue<(usize, Weak<dyn Event>, bool)>,
+    capacity: usize,
+    pending: Mutex<Vec<Request>>,
+    ready: ArrayQueue<(bool, Request)>,
 }
 
 impl Dispatcher {
-    pub fn new() -> Self {
-        Dispatcher {
+    pub fn new(capacity: usize) -> Result<Arc<Self>> {
+        let mut pending = Vec::new();
+        pending
+            .try_reserve_exact(capacity)
+            .map_err(|_| AllocError)?;
+        Ok(Arc::try_new(Dispatcher {
             next_key: AtomicUsize::new(1),
             event: BasicEvent::new(0),
-            waiters: Mutex::new(Vec::new()),
-            triggered: SegQueue::new(),
-        }
+
+            capacity,
+            pending: Mutex::new(pending),
+            ready: ArrayQueue::new(capacity),
+        })?)
     }
 
-    #[inline]
     pub fn event(&self) -> Weak<dyn Event> {
         Arc::downgrade(&self.event) as _
     }
 
-    pub fn push(self: &Arc<Self>, event: &Arc<dyn Event>, data: WaiterData) -> usize {
+    pub fn push(
+        self: &Arc<Self>,
+        event: &Arc<dyn Event>,
+        waiter_data: WaiterData,
+        syscall: Option<Syscall>,
+    ) -> Result<usize> {
         let key = self.next_key.fetch_add(1, AcqRel);
+        let req = Request {
+            key,
+            event: Arc::downgrade(event),
+            waiter_data,
+            syscall,
+        };
         PREEMPT.scope(|| {
-            let mut waiters = self.waiters.lock();
-            waiters.push((key, Arc::downgrade(event), data));
-        });
+            let mut pending = self.pending.lock();
+            if pending.len() >= self.capacity - self.ready.len() {
+                return Err(ENOSPC);
+            }
+            pending.push(req);
+            Ok(())
+        })?;
+
         event.wait(Arc::clone(self) as _);
-        key
+        Ok(key)
     }
 
-    #[inline]
-    pub fn pop(self: &Arc<Self>) -> Option<(usize, bool)> {
-        let (key, event, canceled) = self.triggered.pop()?;
-        if let Some(event) = event.upgrade() {
+    pub fn pop(self: &Arc<Self>) -> Option<(bool, usize, usize)> {
+        let (canceled, req) = self.ready.pop()?;
+        if let Some(event) = req.event.upgrade() {
             event.unwait(&(Arc::clone(self) as _));
         }
-        Some((key, canceled))
+        let res = if !canceled {
+            req.syscall.map_or(0, syscall::handle)
+        } else {
+            0
+        };
+        Some((canceled, req.key, res))
     }
 }
 
 impl Waiter for Dispatcher {
     fn waiter_data(&self) -> WaiterData {
-        let (trig, signal) = PREEMPT.scope(|| {
-            let waiters = self.waiters.lock();
-            let iter = waiters.iter();
-            iter.fold((TriggerMode::Edge, 0), |(trig, signal), (_, _, data)| {
-                (trig | data.trigger_mode(), signal | data.signal())
-            })
-        });
-        WaiterData::new(trig, signal)
+        unimplemented!()
     }
 
-    fn on_cancel(&self, _: *const (), signal: usize) {
+    fn on_cancel(&self, event: *const (), signal: usize) {
         let mut has_cancel = false;
+
         PREEMPT.scope(|| {
-            let mut waiters = self.waiters.lock();
-            let iter = waiters.drain_filter(|(_, _, data)| data.signal() & !signal == 0);
-            iter.for_each(|(key, event, _)| {
-                self.triggered.push((key, event.clone(), true));
+            let mut pending = self.pending.lock();
+            let iter = pending.drain_filter(|req| {
+                let (e, _) = req.event.as_ptr().to_raw_parts();
+                e == event && req.waiter_data.can_signal(signal, false)
+            });
+            iter.for_each(|req| {
+                self.ready.push((false, req)).unwrap();
                 has_cancel = true;
-            })
+            });
         });
+
         if has_cancel {
             self.event.notify(0, SIG_READ)
         }
     }
 
-    fn on_notify(&self, signal: usize) {
+    fn on_notify(&self, _: usize) {
+        unimplemented!()
+    }
+
+    fn try_on_notify(&self, event: *const (), signal: usize, on_wait: bool) -> bool {
+        if self.ready.is_full() {
+            return false;
+        }
         let mut has_notify = false;
-        PREEMPT.scope(|| {
-            let mut waiters = self.waiters.lock();
-            let iter = waiters.drain_filter(|(_, _, data)| data.signal() & !signal == 0);
-            iter.for_each(|(key, event, _)| {
-                self.triggered.push((key, event.clone(), false));
-                has_notify = true
-            })
+
+        let empty = PREEMPT.scope(|| {
+            let mut pending = self.pending.lock();
+            let iter = pending.drain_filter(|req| {
+                let (e, _) = req.event.as_ptr().to_raw_parts();
+                e == event && req.waiter_data.can_signal(signal, on_wait)
+            });
+            iter.for_each(|req| {
+                self.ready.push((false, req)).unwrap();
+                has_notify = true;
+            });
+            pending.is_empty()
         });
+
         if has_notify {
             self.event.notify(0, SIG_READ)
         }
+        empty
     }
 }
 

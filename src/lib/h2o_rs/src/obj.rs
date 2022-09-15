@@ -61,30 +61,6 @@ pub trait Object {
         }
     }
 
-    fn try_wait_async(&self, wake_all: bool, signal: usize) -> Result<crate::ipc::Blocker> {
-        // SAFETY: We don't move the ownership of the handle.
-        let handle =
-            unsafe { sv_call::sv_obj_await(unsafe { self.raw() }, wake_all, signal).into_res()? };
-        // SAFETY: The handle is freshly allocated.
-        Ok(unsafe { Object::from_raw(handle) })
-    }
-
-    fn try_wait_async2(
-        &self,
-        level_triggered: bool,
-        signal: usize,
-        disp: &crate::ipc::Dispatcher,
-    ) -> Result<usize> {
-        let key = unsafe {
-            // SAFETY: We don't move the ownership of the handle.
-            let disp = unsafe { disp.raw() };
-            // SAFETY: We don't move the ownership of the handle.
-            sv_call::sv_obj_await2(unsafe { self.raw() }, level_triggered, signal, disp)
-        }
-        .into_res()?;
-        Ok(key as usize)
-    }
-
     fn reduce_features(self, features: Feature) -> Result<Self>
     where
         Self: Sized,
@@ -183,10 +159,10 @@ impl<'a, T: ?Sized> Deref for Ref<'a, T> {
 }
 
 #[repr(transparent)]
-pub struct Disp2(sv_call::Handle);
-impl_obj!(Disp2);
-impl_obj!(@CLONE, Disp2);
-impl_obj!(@DROP, Disp2);
+pub struct Dispatcher(sv_call::Handle);
+impl_obj!(Dispatcher);
+impl_obj!(@CLONE, Dispatcher);
+impl_obj!(@DROP, Dispatcher);
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct PopRes {
@@ -195,9 +171,9 @@ pub struct PopRes {
     pub result: usize,
 }
 
-impl Disp2 {
+impl Dispatcher {
     pub fn try_new(capacity: usize) -> Result<Self> {
-        let handle = unsafe { sv_call::sv_disp_new2(capacity) }.into_res()?;
+        let handle = unsafe { sv_call::sv_disp_new(capacity) }.into_res()?;
         Ok(unsafe { Self::from_raw(handle) })
     }
 

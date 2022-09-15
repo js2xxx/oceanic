@@ -1,6 +1,6 @@
 [
     {
-        "name": "sv_disp_new2",
+        "name": "sv_disp_new",
         "returns": "Handle",
         "args": [
             {

@@ -4,10 +4,9 @@ use core::{mem::MaybeUninit, time::Duration};
 
 use sv_call::{c_ty::Status, ipc::RawPacket, Syscall};
 
-use super::Dispatcher;
 #[cfg(feature = "alloc")]
 use super::{Packet, PacketTyped};
-use crate::{error::*, obj::Object, prelude::Disp2};
+use crate::{error::*, obj::Object, prelude::Dispatcher};
 
 #[repr(transparent)]
 pub struct Channel(sv_call::Handle);
@@ -228,24 +227,14 @@ impl Channel {
         self.call_receive_into(id, &mut packet.buffer, &mut packet.handles, timeout)
     }
 
-    pub fn call_receive_async(&self, id: usize, wake_all: bool) -> Result<super::Blocker> {
-        // SAFETY: We don't move the ownership of the handle.
-        let handle =
-            unsafe { sv_call::sv_chan_acrecv(unsafe { self.raw() }, id, wake_all).into_res()? };
-        // SAFETY: The handle is freshly allocated.
-        Ok(unsafe { super::Blocker::from_raw(handle) })
-    }
-
-    pub fn call_receive_async2(&self, id: usize, disp: &Dispatcher) -> Result<usize> {
-        let key =
-            unsafe { sv_call::sv_chan_acrecv2(unsafe { self.raw() }, id, unsafe { disp.raw() }) }
-                .into_res()?;
-        Ok(key as usize)
-    }
-
-    pub fn call_receive_async3(&self, id: usize, disp: &Disp2, syscall: &Syscall) -> Result<usize> {
+    pub fn call_receive_async(
+        &self,
+        id: usize,
+        disp: &Dispatcher,
+        syscall: &Syscall,
+    ) -> Result<usize> {
         let key = unsafe {
-            sv_call::sv_chan_acrecv3(unsafe { self.raw() }, id, unsafe { disp.raw() }, syscall)
+            sv_call::sv_chan_acrecv(unsafe { self.raw() }, id, unsafe { disp.raw() }, syscall)
                 .into_res()
         }?;
         Ok(key as usize)

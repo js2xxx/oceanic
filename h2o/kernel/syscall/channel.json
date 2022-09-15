@@ -79,42 +79,6 @@
     },
     {
         "name": "sv_chan_acrecv",
-        "returns": "Handle",
-        "args": [
-            {
-                "name": "hdl",
-                "ty": "Handle"
-            },
-            {
-                "name": "id",
-                "ty": "usize"
-            },
-            {
-                "name": "wake_all",
-                "ty": "bool"
-            }
-        ]
-    },
-    {
-        "name": "sv_chan_acrecv2",
-        "returns": "usize",
-        "args": [
-            {
-                "name": "hdl",
-                "ty": "Handle"
-            },
-            {
-                "name": "id",
-                "ty": "usize"
-            },
-            {
-                "name": "disp",
-                "ty": "Handle"
-            }
-        ]
-    },
-    {
-        "name": "sv_chan_acrecv3",
         "returns": "usize",
         "args": [
             {

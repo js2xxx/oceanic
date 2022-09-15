@@ -2,7 +2,7 @@ use alloc::{boxed::Box, collections::BTreeMap};
 use core::task::{Poll, Waker};
 
 use futures::task::AtomicWaker;
-use solvent::prelude::{Disp2, Object, Result, Syscall, ENOENT, ETIME};
+use solvent::prelude::{Dispatcher as Inner, Object, Result, Syscall, ENOENT, ETIME};
 use solvent_std::sync::Mutex;
 
 struct Task {
@@ -11,7 +11,7 @@ struct Task {
 }
 
 pub struct Dispatcher {
-    inner: Disp2,
+    inner: Inner,
     tasks: Mutex<BTreeMap<usize, Task>>,
 }
 
@@ -19,7 +19,7 @@ impl Dispatcher {
     #[inline]
     pub fn new(capacity: usize) -> Self {
         Dispatcher {
-            inner: Disp2::new(capacity),
+            inner: Inner::new(capacity),
             tasks: Mutex::new(BTreeMap::new()),
         }
     }
@@ -66,7 +66,7 @@ impl Dispatcher {
         waker: &Waker,
     ) -> Result {
         let syscall = pack.raw();
-        let key = obj.call_receive_async3(id, &self.inner, &syscall)?;
+        let key = obj.call_receive_async(id, &self.inner, &syscall)?;
         let task = Task {
             pack,
             waker: AtomicWaker::new(),
