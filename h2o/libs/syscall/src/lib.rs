@@ -22,7 +22,7 @@ pub use self::call::*;
 #[cfg(feature = "stub")]
 pub use self::stub::*;
 pub use self::{
-    call::{hdl::Handle, Syscall, reg::*},
+    call::{hdl::Handle, reg::*, Syscall},
     error::*,
     feat::*,
 };

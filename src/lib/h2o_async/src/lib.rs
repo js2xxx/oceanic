@@ -1,17 +1,20 @@
 #![no_std]
 
 mod dev;
+mod disp;
 mod ipc;
 
 extern crate alloc;
 
 use core::task::Waker;
 
-use solvent::prelude::Dispatcher;
+pub use self::{dev::Interrupt, disp::Dispatcher, ipc::Channel};
 
-pub use self::{dev::Interrupt, ipc::Channel};
+fn disp<'a>() -> &'a solvent::prelude::Dispatcher {
+    todo!()
+}
 
-fn disp<'a>() -> &'a Dispatcher {
+fn disp2<'a>() -> &'a Dispatcher<'a> {
     todo!()
 }
 

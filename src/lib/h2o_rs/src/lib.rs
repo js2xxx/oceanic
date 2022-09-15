@@ -19,6 +19,11 @@ pub mod time;
 #[cfg(feature = "alloc")]
 extern crate alloc;
 
+#[inline]
+pub fn random() -> u64 {
+    unsafe { sv_call::sv_random().into_res() }.unwrap()
+}
+
 pub mod prelude {
     pub use crate::{dev::*, error::*, ipc::*, mem::*, obj::*, task::*, time::*};
 }

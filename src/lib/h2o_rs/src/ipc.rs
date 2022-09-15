@@ -6,7 +6,7 @@ use core::time::Duration;
 
 pub use sv_call::ipc::*;
 
-pub use self::chan::Channel;
+pub use self::chan::*;
 #[cfg(feature = "alloc")]
 pub use self::packet::*;
 use crate::{error::Result, obj::Object};

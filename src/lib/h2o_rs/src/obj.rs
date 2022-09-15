@@ -1,6 +1,6 @@
 use core::{marker::PhantomData, mem, mem::ManuallyDrop, ops::Deref, time::Duration};
 
-pub use sv_call::{Feature, Handle, Syscall};
+pub use sv_call::{Feature, Handle, SerdeReg, Syscall};
 
 use crate::error::Result;
 

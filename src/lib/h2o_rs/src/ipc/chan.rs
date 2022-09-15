@@ -2,7 +2,7 @@
 use alloc::vec::Vec;
 use core::{mem::MaybeUninit, time::Duration};
 
-use sv_call::ipc::RawPacket;
+use sv_call::{c_ty::Status, ipc::RawPacket, Syscall};
 
 use super::Dispatcher;
 #[cfg(feature = "alloc")]
@@ -79,6 +79,25 @@ impl Channel {
             packet.buffer_size,
             packet.handle_count,
         )
+    }
+
+    pub fn pack_receive(&self, packet: &mut Packet) -> PackRecv {
+        let buffer = &mut packet.buffer;
+        let handles = packet.handles.spare_capacity_mut();
+        let mut packet = RawPacket {
+            id: 0,
+            handles: handles.as_mut_ptr().cast(),
+            handle_count: handles.len(),
+            handle_cap: handles.len(),
+            buffer: buffer.as_mut_ptr(),
+            buffer_size: buffer.len(),
+            buffer_cap: buffer.len(),
+        };
+        let syscall = unsafe { sv_call::sv_pack_chan_recv(unsafe { self.raw() }, &mut packet) };
+        PackRecv {
+            raw_packet: packet,
+            syscall,
+        }
     }
 
     #[cfg(feature = "alloc")]
@@ -282,5 +301,21 @@ where
             }
             (Err(err), ..) => break Err(err),
         }
+    }
+}
+
+pub struct PackRecv {
+    pub raw_packet: RawPacket,
+    pub syscall: Syscall,
+}
+
+impl PackRecv {
+    pub fn receive(&self, res: Status) -> (Result<usize>, usize, usize) {
+        let res = res.into_res();
+        (
+            res.map(|_| self.raw_packet.id),
+            self.raw_packet.buffer_size,
+            self.raw_packet.handle_count,
+        )
     }
 }

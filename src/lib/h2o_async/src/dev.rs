@@ -1,3 +1,4 @@
+use alloc::boxed::Box;
 use core::{
     pin::Pin,
     task::{Context, Poll},
@@ -6,11 +7,12 @@ use core::{
 
 use futures::Future;
 use solvent::{
-    prelude::{Result, SIG_GENERIC},
+    prelude::{PackIntrWait, Result, SerdeReg, Syscall, EPIPE, SIG_GENERIC},
     time::Instant,
 };
+use solvent_std::sync::channel::{oneshot, oneshot_};
 
-use crate::push_task;
+use crate::disp::PackedSyscall;
 
 type Inner = solvent::dev::Interrupt;
 
@@ -33,7 +35,11 @@ impl Interrupt {
 
     #[inline]
     pub fn wait_until_async(&self, now: Instant) -> WaitUntil<'_> {
-        WaitUntil { intr: self, now }
+        WaitUntil {
+            intr: self,
+            now,
+            result: None,
+        }
     }
 
     #[inline]
@@ -47,21 +53,47 @@ impl Interrupt {
     }
 }
 
+impl PackedSyscall for (PackIntrWait, oneshot_::Sender<Instant>) {
+    #[inline]
+    fn raw(&self) -> Syscall {
+        self.0.syscall
+    }
+
+    #[inline]
+    fn unpack(&self, result: usize) -> Result {
+        let res = self.0.receive(SerdeReg::decode(result))?;
+        self.1.send(res).map_err(|_| EPIPE)
+    }
+}
+
 #[must_use]
 pub struct WaitUntil<'a> {
     intr: &'a Interrupt,
     now: Instant,
+    result: Option<oneshot_::Receiver<Instant>>,
 }
 
 impl Future for WaitUntil<'_> {
     type Output = Result<Instant>;
 
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        if let Some(last_time) = self.result.take().and_then(|rx| rx.recv().ok()) {
+            return Poll::Ready(Ok(last_time));
+        }
+
         let last_time = self.intr.last_time()?;
 
         if self.now > last_time {
-            let key = crate::disp().push(&self.intr.inner, false, SIG_GENERIC)?;
-            push_task(key, cx.waker());
+            let pack = self.intr.inner.pack_wait(self.now - last_time)?;
+            let (tx, rx) = oneshot();
+            self.result = Some(rx);
+            crate::disp2().push(
+                &self.intr.inner,
+                true,
+                SIG_GENERIC,
+                Box::new((pack, tx)),
+                cx.waker(),
+            )?;
             Poll::Pending
         } else {
             Poll::Ready(Ok(last_time))

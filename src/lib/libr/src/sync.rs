@@ -1,5 +1,6 @@
 mod arsc;
 mod cell;
+pub mod channel;
 mod condvar;
 mod deque;
 pub mod epoch;

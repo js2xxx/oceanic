@@ -1,3 +1,4 @@
+use alloc::boxed::Box;
 use core::{
     future::Future,
     pin::Pin,
@@ -5,9 +6,13 @@ use core::{
     time::Duration,
 };
 
-use solvent::prelude::{Handle, Packet, PacketTyped, Result, ENOENT, SIG_READ};
+use solvent::prelude::{
+    Handle, PackRecv, Packet, PacketTyped, Result, SerdeReg, Syscall, EBUFFER, ENOENT, EPIPE,
+    SIG_READ,
+};
+use solvent_std::sync::channel::{oneshot, oneshot_};
 
-use crate::push_task;
+use crate::{disp::PackedSyscall, push_task};
 
 type Inner = solvent::ipc::Channel;
 
@@ -52,6 +57,7 @@ impl Channel {
         Receive {
             channel: self,
             packet,
+            result: None,
         }
     }
 
@@ -131,20 +137,55 @@ impl Channel {
     }
 }
 
+impl PackedSyscall for (PackRecv, oneshot_::Sender<(Result<usize>, usize, usize)>) {
+    fn raw(&self) -> Syscall {
+        self.0.syscall
+    }
+
+    fn unpack(&self, result: usize) -> Result {
+        let result = self.0.receive(SerdeReg::decode(result));
+        self.1.send(result).map_err(|_| EPIPE)
+    }
+}
+
 #[must_use]
 pub struct Receive<'a> {
     channel: &'a Channel,
     packet: &'a mut Packet,
+    result: Option<oneshot_::Receiver<(Result<usize>, usize, usize)>>,
 }
 
-impl Future for Receive<'_> {
+impl<'a> Future for Receive<'a> {
     type Output = Result;
 
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result> {
+        if let Some((result, buffer_size, handle_count)) =
+            self.result.take().and_then(|rx| rx.recv().ok())
+        {
+            match result {
+                Ok(id) => {
+                    self.packet.id = Some(id);
+                    return Poll::Ready(Ok(()));
+                }
+                Err(EBUFFER) => {
+                    self.packet.buffer.reserve(buffer_size);
+                    self.packet.handles.reserve(handle_count);
+                }
+                Err(err) => Err(err)?,
+            }
+        }
         let ret = self.channel.poll_receive(self.packet);
         if ret.is_pending() {
-            let key = crate::disp().push(&self.channel.inner, true, SIG_READ)?;
-            push_task(key, cx.waker());
+            let pack = self.channel.inner.pack_receive(self.packet);
+            let (tx, rx) = oneshot();
+            self.result = Some(rx);
+            crate::disp2().push(
+                &self.channel.inner,
+                true,
+                SIG_READ,
+                Box::new((pack, tx)),
+                cx.waker(),
+            )?;
         }
         ret
     }
