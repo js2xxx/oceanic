@@ -37,7 +37,7 @@
 
 mod user_ptr;
 
-use sv_call::*;
+use sv_call::{call::Syscall, *};
 
 pub use self::user_ptr::*;
 
@@ -45,11 +45,13 @@ type SyscallWrapper = unsafe extern "C" fn(usize, usize, usize, usize, usize) ->
 static SYSCALL_TABLE: &[SyscallWrapper] =
     &include!(concat!(env!("CARGO_MANIFEST_DIR"), "/target/wrapper.rs"));
 
-pub fn handler(num: usize, args: &[usize; 5]) -> usize {
-    match SYSCALL_TABLE.get(num).copied() {
+pub fn handle(syscall: &mut Syscall) {
+    let args = syscall.args;
+    let result = match SYSCALL_TABLE.get(syscall.num).copied() {
         Some(handler) => unsafe { handler(args[0], args[1], args[2], args[3], args[4]) },
         _ => EINVAL.into_retval(),
-    }
+    };
+    syscall.result = result
 }
 
 /// An example of syscall

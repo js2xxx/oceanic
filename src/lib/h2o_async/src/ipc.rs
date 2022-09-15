@@ -5,7 +5,7 @@ use core::{
     time::Duration,
 };
 
-use solvent::prelude::{Handle, Object, Packet, PacketTyped, Result, ENOENT, SIG_READ};
+use solvent::prelude::{Handle, Packet, PacketTyped, Result, ENOENT, SIG_READ};
 
 use crate::push_task;
 
@@ -143,10 +143,7 @@ impl Future for Receive<'_> {
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let ret = self.channel.poll_receive(self.packet);
         if ret.is_pending() {
-            let key = self
-                .channel
-                .inner
-                .try_wait_async2(true, SIG_READ, crate::disp())?;
+            let key = crate::disp().push(&self.channel.inner, true, SIG_READ)?;
             push_task(key, cx.waker());
         }
         ret

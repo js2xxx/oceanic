@@ -2,6 +2,7 @@ use alloc::sync::Arc;
 use core::{alloc::Layout, mem::size_of};
 
 use paging::LAddr;
+use sv_call::call::Syscall;
 
 use super::Entry;
 use crate::{
@@ -108,22 +109,23 @@ impl Frame {
     }
 
     #[inline]
-    pub fn syscall_args(&self) -> (usize, [usize; 5]) {
-        (
-            self.rax as usize,
-            [
+    pub fn syscall_args(&self) -> Syscall {
+        Syscall {
+            num: self.rax as usize,
+            args: [
                 self.rdi as usize,
                 self.rsi as usize,
                 self.rdx as usize,
                 self.r8 as usize,
                 self.r9 as usize,
             ],
-        )
+            ..Default::default()
+        }
     }
 
     #[inline]
-    pub fn set_syscall_retval(&mut self, retval: usize) {
-        self.rax = retval as u64;
+    pub fn set_syscall_retval(&mut self, syscall: &Syscall) {
+        self.rax = syscall.result as u64;
     }
 
     #[inline]

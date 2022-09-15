@@ -6,6 +6,13 @@ pub(crate) mod hdl;
 mod raw;
 pub(crate) mod reg;
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub struct Syscall {
+    pub num: usize,
+    pub args: [usize; 5],
+    pub result: usize,
+}
+
 #[cfg(all(not(feature = "stub"), feature = "call"))]
 use crate::{
     c_ty::*,

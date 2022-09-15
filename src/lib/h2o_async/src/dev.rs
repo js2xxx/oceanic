@@ -6,7 +6,7 @@ use core::{
 
 use futures::Future;
 use solvent::{
-    prelude::{Object, Result, SIG_GENERIC},
+    prelude::{Result, SIG_GENERIC},
     time::Instant,
 };
 
@@ -60,10 +60,7 @@ impl Future for WaitUntil<'_> {
         let last_time = self.intr.last_time()?;
 
         if self.now > last_time {
-            let key = self
-                .intr
-                .inner
-                .try_wait_async2(false, SIG_GENERIC, crate::disp())?;
+            let key = crate::disp().push(&self.intr.inner, false, SIG_GENERIC)?;
             push_task(key, cx.waker());
             Poll::Pending
         } else {

@@ -43,13 +43,11 @@ impl Dispatcher {
         Self::try_new().expect("Failed to create object dispatcher")
     }
 
+    /// Note: This method only registers `obj`'s peered event, and does not
+    /// cares about other events like [`Channel`]'s call event.
+    #[inline]
     pub fn push(&self, obj: &impl Object, level_triggered: bool, signal: usize) -> Result<usize> {
-        let key = unsafe {
-            let disp = unsafe { self.raw() };
-            sv_call::sv_obj_await2(unsafe { obj.raw() }, level_triggered, signal, disp)
-        }
-        .into_res()?;
-        Ok(key as usize)
+        obj.try_wait_async2(level_triggered, signal, self)
     }
 
     pub fn pop(&self) -> Result<(usize, bool)> {

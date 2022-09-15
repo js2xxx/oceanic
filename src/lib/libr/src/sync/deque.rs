@@ -1,8 +1,11 @@
-use alloc::{vec::Vec, sync::Arc, boxed::Box};
+use alloc::{boxed::Box, sync::Arc, vec::Vec};
 use core::{
-    mem::{ManuallyDrop, MaybeUninit, self},
+    cell::{Cell, UnsafeCell},
+    cmp, fmt,
+    marker::PhantomData,
+    mem::{self, ManuallyDrop, MaybeUninit},
     ptr,
-    sync::atomic::{AtomicIsize, Ordering, self, AtomicPtr, AtomicUsize}, cell::{Cell, UnsafeCell}, marker::PhantomData, fmt, cmp,
+    sync::atomic::{self, AtomicIsize, AtomicPtr, AtomicUsize, Ordering},
 };
 
 use crossbeam::utils::{Backoff, CachePadded};
