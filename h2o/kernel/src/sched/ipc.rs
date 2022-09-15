@@ -53,13 +53,9 @@ pub trait Event: Debug + Send + Sync {
     }
 
     fn wait_impl(&self, waiter: Arc<dyn Waiter>) {
-        let waiter_data = waiter.waiter_data();
-        if waiter_data.trigger_mode == TriggerMode::Level {
-            let signal = self.event_data().signal().load(SeqCst);
-            if signal & waiter_data.signal != 0 {
-                waiter.on_notify(signal);
-                return;
-            }
+        let signal = self.event_data().signal().load(SeqCst);
+        if waiter.try_on_notify(self as *const _ as _, signal, true) {
+            return;
         }
         PREEMPT.scope(|| self.event_data().waiters.lock().push(waiter));
     }
@@ -89,7 +85,7 @@ pub trait Event: Debug + Send + Sync {
 
         let waiters = PREEMPT.scope(|| mem::take(&mut *self.event_data().waiters.lock()));
         for waiter in waiters {
-            waiter.on_cancel(signal);
+            waiter.on_cancel(self as *const _ as _, signal);
         }
     }
 
@@ -117,9 +113,7 @@ pub trait Event: Debug + Send + Sync {
         };
         PREEMPT.scope(|| {
             let mut waiters = self.event_data().waiters.lock();
-            waiters
-                .drain_filter(|w| signal & w.waiter_data().signal != 0)
-                .for_each(|waiter| waiter.on_notify(signal));
+            waiters.retain(|waiter| !waiter.try_on_notify(self as *const _ as _, signal, false))
         });
     }
 }
@@ -145,14 +139,32 @@ impl WaiterData {
     pub fn signal(&self) -> usize {
         self.signal
     }
+
+    #[inline]
+    pub fn can_signal(&self, signal: usize, on_wait: bool) -> bool {
+        if on_wait && self.trigger_mode == TriggerMode::Edge {
+            false
+        } else {
+            self.signal & !signal == 0
+        }
+    }
 }
 
 pub trait Waiter: Debug + Send + Sync {
     fn waiter_data(&self) -> WaiterData;
 
-    fn on_cancel(&self, signal: usize);
+    fn on_cancel(&self, event: *const (), signal: usize);
 
     fn on_notify(&self, signal: usize);
+
+    #[inline]
+    fn try_on_notify(&self, _: *const (), signal: usize, on_wait: bool) -> bool {
+        let ret = self.waiter_data().can_signal(signal, on_wait);
+        if ret {
+            self.on_notify(signal);
+        }
+        ret
+    }
 }
 
 mod syscall {
@@ -271,5 +283,78 @@ mod syscall {
             canceled.write(c)?;
             Ok(key)
         })
+    }
+
+    mod asd {
+        use sv_call::{call::Syscall, *};
+
+        use crate::{
+            cpu::arch::apic::TriggerMode,
+            sched::{imp::disp::Dispatcher, WaiterData, SCHED},
+            syscall::{In, Out, UserPtr},
+        };
+
+        #[syscall]
+        fn disp_new2(capacity: usize) -> Result<Handle> {
+            let disp = Dispatcher::new(capacity)?;
+            let event = disp.event();
+            SCHED.with_current(|cur| cur.space().handles().insert_raw(disp, Some(event)))
+        }
+
+        #[syscall]
+        fn disp_push(
+            disp: Handle,
+            hdl: Handle,
+            level_triggered: bool,
+            signal: usize,
+            syscall: UserPtr<In, Syscall>,
+        ) -> Result<usize> {
+            hdl.check_null()?;
+            disp.check_null()?;
+            let syscall = unsafe { syscall.read()? };
+            // if syscall.num == 
+            SCHED.with_current(|cur| {
+                let obj = cur.space().handles().get_ref(hdl)?;
+                let disp = cur.space().handles().get::<Dispatcher>(disp)?;
+                if !obj.features().contains(Feature::WAIT) {
+                    return Err(EPERM);
+                }
+                if !disp.features().contains(Feature::WRITE) {
+                    return Err(EPERM);
+                }
+                let event = obj.event().upgrade().ok_or(EPIPE)?;
+
+                let waiter_data = WaiterData::new(
+                    if level_triggered {
+                        TriggerMode::Level
+                    } else {
+                        TriggerMode::Edge
+                    },
+                    signal,
+                );
+                disp.push(&event, waiter_data, syscall)
+            })
+        }
+
+        #[syscall]
+        fn disp_pop(
+            disp: Handle,
+            canceled: UserPtr<Out, bool>,
+            result: UserPtr<Out, usize>,
+        ) -> Result<usize> {
+            disp.check_null()?;
+            canceled.check()?;
+            result.check()?;
+            SCHED.with_current(|cur| {
+                let disp = cur.space().handles().get::<Dispatcher>(disp)?;
+                if !disp.features().contains(Feature::READ) {
+                    return Err(EPERM);
+                }
+                let (c, key, r) = disp.pop().ok_or(ENOENT)?;
+                canceled.write(c)?;
+                result.write(r)?;
+                Ok(key)
+            })
+        }
     }
 }

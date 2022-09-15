@@ -1,6 +1,6 @@
 use core::{marker::PhantomData, mem, mem::ManuallyDrop, ops::Deref, time::Duration};
 
-pub use sv_call::{Feature, Handle};
+pub use sv_call::{Feature, Handle, Syscall};
 
 use crate::error::Result;
 
@@ -179,5 +179,55 @@ impl<'a, T: ?Sized> Deref for Ref<'a, T> {
 
     fn deref(&self) -> &Self::Target {
         &self.inner
+    }
+}
+
+#[repr(transparent)]
+pub struct Disp2(sv_call::Handle);
+impl_obj!(Disp2);
+impl_obj!(@CLONE, Disp2);
+impl_obj!(@DROP, Disp2);
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub struct PopRes {
+    pub canceled: bool,
+    pub key: usize,
+    pub result: usize,
+}
+
+impl Disp2 {
+    pub fn try_new(capacity: usize) -> Result<Self> {
+        let handle = unsafe { sv_call::sv_disp_new2(capacity) }.into_res()?;
+        Ok(unsafe { Self::from_raw(handle) })
+    }
+
+    #[inline]
+    pub fn new(capacity: usize) -> Self {
+        Self::try_new(capacity).expect("Failed to create new dispatcher")
+    }
+
+    pub fn push_raw(
+        &self,
+        obj: &impl Object,
+        level_triggered: bool,
+        signal: usize,
+        syscall: &Syscall,
+    ) -> Result<usize> {
+        let obj = unsafe { obj.raw() };
+        let key = unsafe {
+            sv_call::sv_disp_push(unsafe { self.raw() }, obj, level_triggered, signal, syscall)
+        }
+        .into_res()?;
+        Ok(key as usize)
+    }
+
+    pub fn pop_raw(&self) -> Result<PopRes> {
+        let mut res = PopRes::default();
+        let key = unsafe {
+            sv_call::sv_disp_pop(unsafe { self.raw() }, &mut res.canceled, &mut res.result)
+        }
+        .into_res()?;
+        res.key = key as usize;
+        Ok(res)
     }
 }

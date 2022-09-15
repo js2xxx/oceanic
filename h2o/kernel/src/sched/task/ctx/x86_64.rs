@@ -119,13 +119,12 @@ impl Frame {
                 self.r8 as usize,
                 self.r9 as usize,
             ],
-            ..Default::default()
         }
     }
 
     #[inline]
-    pub fn set_syscall_retval(&mut self, syscall: &Syscall) {
-        self.rax = syscall.result as u64;
+    pub fn set_syscall_retval(&mut self, res: usize) {
+        self.rax = res as u64;
     }
 
     #[inline]

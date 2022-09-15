@@ -78,7 +78,7 @@ impl Waiter for Blocker {
         self.waiter_data
     }
 
-    fn on_cancel(&self, signal: usize) {
+    fn on_cancel(&self, _: *const (), signal: usize) {
         PREEMPT.scope(|| *self.status.lock() = (false, signal));
         let num = if self.wake_all { usize::MAX } else { 1 };
         self.wo.notify(num, false);
@@ -155,13 +155,13 @@ impl Waiter for Dispatcher {
         WaiterData::new(trig, signal)
     }
 
-    fn on_cancel(&self, signal: usize) {
+    fn on_cancel(&self, _: *const (), signal: usize) {
         let mut has_cancel = false;
         PREEMPT.scope(|| {
             let mut waiters = self.waiters.lock();
             let iter = waiters.drain_filter(|(_, _, data)| data.signal() & !signal == 0);
             iter.for_each(|(key, event, _)| {
-                self.triggered.push((key, event.clone(), false));
+                self.triggered.push((key, event.clone(), true));
                 has_cancel = true;
             })
         });
@@ -176,7 +176,7 @@ impl Waiter for Dispatcher {
             let mut waiters = self.waiters.lock();
             let iter = waiters.drain_filter(|(_, _, data)| data.signal() & !signal == 0);
             iter.for_each(|(key, event, _)| {
-                self.triggered.push((key, event.clone(), true));
+                self.triggered.push((key, event.clone(), false));
                 has_notify = true
             })
         });
