@@ -13,21 +13,20 @@ use solvent::prelude::{
 };
 use solvent_std::sync::{
     channel::{oneshot, oneshot_},
-    Arsc,
 };
 
-use crate::disp::{Dispatcher, PackedSyscall};
+use crate::disp::{PackedSyscall, DispSender};
 
 type Inner = solvent::ipc::Channel;
 
 pub struct Channel {
     inner: Inner,
-    disp: Arsc<Dispatcher>,
+    disp: DispSender,
 }
 
 impl Channel {
     #[inline]
-    pub fn new(inner: Inner, disp: Arsc<Dispatcher>) -> Self {
+    pub fn new(inner: Inner, disp: DispSender) -> Self {
         Channel { inner, disp }
     }
 
@@ -189,7 +188,7 @@ impl<'a> Future for Receive<'a> {
                 let pack = self.channel.inner.pack_receive(packet);
                 let (tx, rx) = oneshot();
                 self.result = Some(rx);
-                self.channel.disp.push(
+                self.channel.disp.send(
                     &self.channel.inner,
                     true,
                     SIG_READ,
@@ -242,7 +241,7 @@ impl Future for CallReceive<'_> {
                 let pack = self.channel.inner.pack_call_receive(self.id, packet);
                 let (tx, rx) = oneshot();
                 self.result = Some(rx);
-                self.channel.disp.push_chan_acrecv(
+                self.channel.disp.send_chan_acrecv(
                     &self.channel.inner,
                     self.id,
                     Box::new((pack, tx)),

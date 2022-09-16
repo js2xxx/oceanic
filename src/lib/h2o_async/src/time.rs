@@ -10,22 +10,19 @@ use solvent::{
     prelude::{Result, Syscall, EPIPE, ETIME, SIG_TIMER},
     time::{Instant, Timer as Inner},
 };
-use solvent_std::sync::{
-    channel::{oneshot, oneshot_},
-    Arsc,
-};
+use solvent_std::sync::channel::{oneshot, oneshot_};
 
-use crate::disp::{Dispatcher, PackedSyscall};
+use crate::disp::{DispSender, PackedSyscall};
 
 #[derive(Clone)]
 pub struct Timer {
     inner: Inner,
-    disp: Arsc<Dispatcher>,
+    disp: DispSender,
 }
 
 impl Timer {
     #[inline]
-    pub fn new(inner: Inner, disp: Arsc<Dispatcher>) -> Self {
+    pub fn new(inner: Inner, disp: DispSender) -> Self {
         Timer { inner, disp }
     }
 
@@ -79,7 +76,7 @@ impl Future for TimerWait<'_> {
             Ok(()) => {
                 let (tx, rx) = oneshot();
                 self.result = Some(rx);
-                self.timer.disp.push(
+                self.timer.disp.send(
                     &self.timer.inner,
                     true,
                     SIG_TIMER,

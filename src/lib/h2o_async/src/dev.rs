@@ -10,23 +10,20 @@ use solvent::{
     prelude::{PackIntrWait, Result, SerdeReg, Syscall, EPIPE, SIG_GENERIC},
     time::Instant,
 };
-use solvent_std::sync::{
-    channel::{oneshot, oneshot_},
-    Arsc,
-};
+use solvent_std::sync::channel::{oneshot, oneshot_};
 
-use crate::disp::{Dispatcher, PackedSyscall};
+use crate::disp::{DispSender, PackedSyscall};
 
 type Inner = solvent::dev::Interrupt;
 
 pub struct Interrupt {
     inner: Inner,
-    disp: Arsc<Dispatcher>,
+    disp: DispSender,
 }
 
 impl Interrupt {
     #[inline]
-    pub fn new(inner: Inner, disp: Arsc<Dispatcher>) -> Self {
+    pub fn new(inner: Inner, disp: DispSender) -> Self {
         Interrupt { inner, disp }
     }
 
@@ -89,7 +86,7 @@ impl Future for WaitUntil<'_> {
             let pack = self.intr.inner.pack_wait(self.now - last_time)?;
             let (tx, rx) = oneshot();
             self.result = Some(rx);
-            self.intr.disp.push(
+            self.intr.disp.send(
                 &self.intr.inner,
                 true,
                 SIG_GENERIC,

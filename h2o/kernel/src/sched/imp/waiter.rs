@@ -12,7 +12,7 @@ use core::{
 use archop::PreemptStateGuard;
 use crossbeam_queue::ArrayQueue;
 use spin::Mutex;
-use sv_call::{call::Syscall, ipc::SIG_READ, Feature, Result, ENOSPC};
+use sv_call::{call::Syscall, ipc::{SIG_READ, SIG_WRITE}, Feature, Result, ENOSPC};
 
 use super::PREEMPT;
 use crate::{
@@ -169,6 +169,7 @@ impl Dispatcher {
             event.unwait(&(Arc::clone(self) as _));
         }
         let res = if !canceled { req.syscall } else { None };
+        self.event.notify(0, SIG_WRITE);
         Some((canceled, req.key, res))
     }
 }

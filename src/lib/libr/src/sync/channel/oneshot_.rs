@@ -1,7 +1,7 @@
 use core::{
     cell::UnsafeCell,
     fmt, ptr,
-    sync::atomic::{AtomicPtr, Ordering},
+    sync::atomic::{AtomicPtr, Ordering::SeqCst},
 };
 
 use solvent::time::Instant;
@@ -65,14 +65,14 @@ impl<T> Packet<T> {
             assert!((*self.data.get()).is_none());
             ptr::write(self.data.get(), Some(t));
 
-            match self.state.swap(DATA, Ordering::SeqCst) {
+            match self.state.swap(DATA, SeqCst) {
                 // Sent the data, no one was waiting
                 EMPTY => Ok(()),
 
                 // Couldn't send the data, the port hung up first. Return the data
                 // back up the stack.
                 DISCONNECTED => {
-                    self.state.swap(DISCONNECTED, Ordering::SeqCst);
+                    self.state.swap(DISCONNECTED, SeqCst);
                     Err((*self.data.get()).take().unwrap())
                 }
 
@@ -92,21 +92,21 @@ impl<T> Packet<T> {
     pub fn recv(&self, deadline: Option<Instant>) -> Result<T, Failure> {
         // Attempt to not block the thread (it's a little expensive). If it looks
         // like we're not empty, then immediately go through to `try_recv`.
-        if self.state.load(Ordering::SeqCst) == EMPTY {
+        if self.state.load(SeqCst) == EMPTY {
             let (wait_token, signal_token) = blocking::tokens();
             let ptr = unsafe { signal_token.into_raw() };
 
             // race with senders to enter the blocking state
             if self
                 .state
-                .compare_exchange(EMPTY, ptr, Ordering::SeqCst, Ordering::SeqCst)
+                .compare_exchange(EMPTY, ptr, SeqCst, SeqCst)
                 .is_ok()
             {
                 if let Some(deadline) = deadline {
                     wait_token.wait_max_until(deadline);
                 } else {
                     wait_token.wait();
-                    debug_assert!(self.state.load(Ordering::SeqCst) != EMPTY);
+                    debug_assert!(self.state.load(SeqCst) != EMPTY);
                 }
             } else {
                 // drop the signal token, since we never blocked
@@ -119,16 +119,11 @@ impl<T> Packet<T> {
 
     pub fn try_recv(&self) -> Result<T, Failure> {
         unsafe {
-            match self.state.load(Ordering::SeqCst) {
+            match self.state.load(SeqCst) {
                 EMPTY => Err(Empty),
 
                 DATA => {
-                    let _ = self.state.compare_exchange(
-                        DATA,
-                        EMPTY,
-                        Ordering::SeqCst,
-                        Ordering::SeqCst,
-                    );
+                    let _ = self.state.compare_exchange(DATA, EMPTY, SeqCst, SeqCst);
                     match (*self.data.get()).take() {
                         Some(data) => Ok(data),
                         None => unreachable!(),
@@ -148,7 +143,7 @@ impl<T> Packet<T> {
     }
 
     pub fn drop_chan(&self) {
-        match self.state.swap(DISCONNECTED, Ordering::SeqCst) {
+        match self.state.swap(DISCONNECTED, SeqCst) {
             DATA | DISCONNECTED | EMPTY => {}
 
             // If someone's waiting, we gotta wake them up
@@ -159,7 +154,7 @@ impl<T> Packet<T> {
     }
 
     pub fn drop_port(&self) {
-        match self.state.swap(DISCONNECTED, Ordering::SeqCst) {
+        match self.state.swap(DISCONNECTED, SeqCst) {
             // An empty channel has nothing to do, and a remotely disconnected
             // channel also has nothing to do b/c we're about to run the drop
             // glue
@@ -180,7 +175,7 @@ impl<T> Packet<T> {
 
 impl<T> Drop for Packet<T> {
     fn drop(&mut self) {
-        assert_eq!(self.state.load(Ordering::SeqCst), DISCONNECTED);
+        assert_eq!(self.state.load(SeqCst), DISCONNECTED);
     }
 }
 
