@@ -11,7 +11,7 @@ use solvent::prelude::{
     SIG_READ,
 };
 use solvent_std::{
-    sync::channel::{oneshot, oneshot_},
+    sync::channel::{oneshot, oneshot_, TryRecvError},
     thread::Backoff,
 };
 
@@ -165,22 +165,10 @@ impl<'a> Future for Receive<'a> {
     type Output = Result<Packet>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<Packet>> {
-        let mut packet = match self.result.take().and_then(|rx| rx.recv().ok()) {
-            Some(send_data) => match send_data.id {
-                Ok(id) => {
-                    let mut packet = send_data.packet;
-                    packet.id = Some(id);
-                    return Poll::Ready(Ok(packet));
-                }
-                Err(EBUFFER) => {
-                    let mut packet = send_data.packet;
-                    packet.buffer.reserve(send_data.buffer_size);
-                    packet.handles.reserve(send_data.handle_count);
-                    packet
-                }
-                Err(err) => return Poll::Ready(Err(err)),
-            },
-            None => mem::take(&mut self.packet),
+        let mut packet = match result_recv(&mut self.result) {
+            Ok(Some(packet)) => packet,
+            Ok(None) => mem::take(&mut self.packet),
+            Err(immediate) => return immediate,
         };
 
         let backoff = Backoff::new();
@@ -226,22 +214,10 @@ impl Future for CallReceive<'_> {
     type Output = Result<Packet>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let mut packet = match self.result.take().and_then(|rx| rx.recv().ok()) {
-            Some(send_data) => match send_data.id {
-                Ok(id) => {
-                    let mut packet = send_data.packet;
-                    packet.id = Some(id);
-                    return Poll::Ready(Ok(packet));
-                }
-                Err(EBUFFER) => {
-                    let mut packet = send_data.packet;
-                    packet.buffer.reserve(send_data.buffer_size);
-                    packet.handles.reserve(send_data.handle_count);
-                    packet
-                }
-                Err(err) => return Poll::Ready(Err(err)),
-            },
-            None => mem::take(&mut self.packet),
+        let mut packet = match result_recv(&mut self.result) {
+            Ok(Some(packet)) => packet,
+            Ok(None) => mem::take(&mut self.packet),
+            Err(immediate) => return immediate,
         };
 
         let backoff = Backoff::new();
@@ -275,5 +251,48 @@ impl Future for CallReceive<'_> {
                 res => Poll::Ready(res.map(|_| packet)),
             };
         }
+    }
+}
+
+/// # Returns
+///
+/// `Err` indicates an immediate returning, while `Ok` indicates continuation
+/// (or restart) of polling.
+fn result_recv(
+    result: &mut Option<oneshot_::Receiver<SendData>>,
+) -> core::result::Result<Option<Packet>, Poll<Result<Packet>>> {
+    match result.take() {
+        Some(rx) => match rx.try_recv() {
+            // Has a result
+            Ok(send_data) => match send_data.id {
+                // Packet transferring successful, return it
+                Ok(id) => {
+                    let mut packet = send_data.packet;
+                    packet.id = Some(id);
+                    Err(Poll::Ready(Ok(packet)))
+                }
+
+                // Packet buffer too small, reserve enough memory and restart polling
+                Err(EBUFFER) => {
+                    let mut packet = send_data.packet;
+                    packet.buffer.reserve(send_data.buffer_size);
+                    packet.handles.reserve(send_data.handle_count);
+                    Ok(Some(packet))
+                }
+
+                // Actual error occurred, return it
+                Err(err) => Err(Poll::Ready(Err(err))),
+            },
+
+            // Not yet, continue waiting
+            Err(TryRecvError::Empty) => {
+                *result = Some(rx);
+                Err(Poll::Pending)
+            }
+
+            // Channel early disconnected, restart the default process
+            Err(TryRecvError::Disconnected) => Ok(None),
+        },
+        None => Ok(None),
     }
 }

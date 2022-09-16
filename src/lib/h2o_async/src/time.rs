@@ -68,14 +68,14 @@ impl Future for TimerWait<'_> {
     type Output = Result;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        if let Some(value) = crate::utils::simple_recv(&mut self.result) {
+            return value;
+        }
+
         let backoff = Backoff::new();
         let (mut tx, rx) = oneshot();
         self.result = Some(rx);
         loop {
-            if let Some(res) = self.result.take().and_then(|rx| rx.recv().ok()) {
-                break Poll::Ready(res);
-            }
-
             break match self.timer.inner.set_deadline(self.deadline) {
                 Err(ETIME) => Poll::Ready(Ok(())),
                 Err(err) => Poll::Ready(Err(err)),

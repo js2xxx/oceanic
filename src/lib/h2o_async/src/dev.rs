@@ -78,14 +78,14 @@ impl Future for WaitUntil<'_> {
     type Output = Result<Instant>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        if let Some(value) = crate::utils::simple_recv(&mut self.result) {
+            return value;
+        }
+
         let backoff = Backoff::new();
         let (mut tx, rx) = oneshot();
         self.result = Some(rx);
         loop {
-            if let Some(last_time) = self.result.take().and_then(|rx| rx.recv().ok()) {
-                return Poll::Ready(last_time);
-            }
-
             let last_time = self.intr.last_time()?;
 
             if self.now > last_time {

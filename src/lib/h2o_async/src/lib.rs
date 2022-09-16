@@ -4,6 +4,7 @@ pub mod dev;
 pub mod disp;
 pub mod ipc;
 pub mod time;
+mod utils;
 
 extern crate alloc;
 
