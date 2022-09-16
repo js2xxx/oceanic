@@ -17,6 +17,7 @@ use solvent_std::sync::{
 
 use crate::disp::{Dispatcher, PackedSyscall};
 
+#[derive(Clone)]
 pub struct Timer {
     inner: Inner,
     disp: Arsc<Dispatcher>,

@@ -1,4 +1,4 @@
-use core::{marker::PhantomData, mem, mem::ManuallyDrop, ops::Deref, time::Duration, ptr};
+use core::{marker::PhantomData, mem, mem::ManuallyDrop, ops::Deref, ptr, time::Duration};
 
 pub use sv_call::{Feature, Handle, SerdeReg, Syscall};
 

@@ -36,7 +36,7 @@ fn dl_main(init_chan: Channel) -> rxx::DlReturn {
 
     let _args = init_rt(startup_args).expect("Failed to initialize runtime");
 
-    let prog = take_startup_handle(HandleInfo::new().with_handle_type(HandleType::ProgramPhys));
+    let prog = take_startup_handle(HandleType::ProgramPhys.into());
     let prog = unsafe { Phys::from_raw(prog) };
 
     let (elf, _) = dso::Dso::load(&prog, cstr!("<PROGRAM>"), true).expect("Failed to load program");

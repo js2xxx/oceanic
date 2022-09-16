@@ -32,16 +32,12 @@ pub struct StartupArgs {
 
 impl StartupArgs {
     pub fn root_virt(&mut self) -> Option<Virt> {
-        let handle = self
-            .handles
-            .remove(&HandleInfo::new().with_handle_type(HandleType::RootVirt))?;
+        let handle = self.handles.remove(&HandleType::RootVirt.into())?;
         Some(unsafe { Virt::from_raw(handle) })
     }
 
     pub fn vdso_phys(&mut self) -> Option<Phys> {
-        let handle = self
-            .handles
-            .remove(&HandleInfo::new().with_handle_type(HandleType::VdsoPhys))?;
+        let handle = self.handles.remove(&HandleType::VdsoPhys.into())?;
         Some(unsafe { Phys::from_raw(handle) })
     }
 }

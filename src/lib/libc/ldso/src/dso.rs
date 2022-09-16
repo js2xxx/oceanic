@@ -22,7 +22,7 @@ use elfload::LoadedElf;
 use rpc::load::{GetObject, GetObjectResponse as Response};
 use solvent::prelude::{Channel, Object, Phys};
 use spin::{Lazy, Mutex, Once};
-use svrt::{HandleInfo, HandleType};
+use svrt::HandleType;
 
 use crate::{
     cstr,
@@ -34,9 +34,7 @@ use crate::{
 static mut LDSO: MaybeUninit<Dso> = MaybeUninit::uninit();
 static mut VDSO: MaybeUninit<Dso> = MaybeUninit::uninit();
 static LDRPC: Lazy<Option<Channel>> = Lazy::new(|| {
-    let handle =
-        svrt::try_take_startup_handle(HandleInfo::new().with_handle_type(HandleType::LoadRpc))
-            .ok()?;
+    let handle = svrt::try_take_startup_handle(HandleType::LoadRpc.into()).ok()?;
     Some(unsafe { Channel::from_raw(handle) })
 });
 

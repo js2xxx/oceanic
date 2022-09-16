@@ -26,7 +26,7 @@ use bootfs::parse::Directory;
 use rpc::load::{GetObject, GetObjectResponse};
 use solvent::prelude::*;
 use sv_call::ipc::SIG_READ;
-use svrt::{HandleInfo, HandleType, StartupArgs};
+use svrt::{HandleType, StartupArgs};
 use targs::{HandleIndex, Targs};
 
 extern crate alloc;
@@ -156,22 +156,10 @@ extern "C" fn tmain(init_chan: sv_call::Handle) {
 
     let dl_args = StartupArgs {
         handles: [
-            (
-                HandleInfo::new().with_handle_type(HandleType::RootVirt),
-                Virt::into_raw(virt.clone()),
-            ),
-            (
-                HandleInfo::new().with_handle_type(HandleType::VdsoPhys),
-                Phys::into_raw(vdso_phys),
-            ),
-            (
-                HandleInfo::new().with_handle_type(HandleType::ProgramPhys),
-                Phys::into_raw(bin),
-            ),
-            (
-                HandleInfo::new().with_handle_type(HandleType::LoadRpc),
-                Channel::into_raw(load_rpc.1),
-            ),
+            (HandleType::RootVirt.into(), Virt::into_raw(virt.clone())),
+            (HandleType::VdsoPhys.into(), Phys::into_raw(vdso_phys)),
+            (HandleType::ProgramPhys.into(), Phys::into_raw(bin)),
+            (HandleType::LoadRpc.into(), Channel::into_raw(load_rpc.1)),
         ]
         .into_iter()
         .collect(),
@@ -182,12 +170,9 @@ extern "C" fn tmain(init_chan: sv_call::Handle) {
     me.send(dl_args).expect("Failed to send dyn loader args");
 
     let exe_args = StartupArgs {
-        handles: [(
-            HandleInfo::new().with_handle_type(HandleType::RootVirt),
-            Virt::into_raw(virt),
-        )]
-        .into_iter()
-        .collect(),
+        handles: [(HandleType::RootVirt.into(), Virt::into_raw(virt))]
+            .into_iter()
+            .collect(),
         args: Vec::from(b"progm\0" as &[u8]),
         env: vec![0],
     };

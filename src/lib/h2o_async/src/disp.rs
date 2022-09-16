@@ -27,9 +27,10 @@ impl Dispatcher {
         match self.inner.pop_raw() {
             Ok(res) => {
                 let Task { waker, mut pack } = self.tasks.lock().remove(&res.key).ok_or(ETIME)?;
-                pack.unpack(res.result, res.canceled)?;
+                // We need to inform the task where an internal error occurred.
+                let res = pack.unpack(res.result, res.canceled);
                 waker.wake();
-                Poll::Ready(Ok(()))
+                Poll::Ready(res)
             }
             Err(ENOENT) => Poll::Pending,
             Err(err) => Err(err)?,
