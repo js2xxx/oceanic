@@ -1,4 +1,3 @@
-use alloc::boxed::Box;
 use core::{
     future::Future,
     mem,
@@ -11,11 +10,12 @@ use solvent::prelude::{
     Handle, PackRecv, Packet, PacketTyped, Result, SerdeReg, Syscall, EBUFFER, ENOENT, EPIPE,
     SIG_READ,
 };
-use solvent_std::sync::{
-    channel::{oneshot, oneshot_},
+use solvent_std::{
+    sync::channel::{oneshot, oneshot_},
+    thread::Backoff,
 };
 
-use crate::disp::{PackedSyscall, DispSender};
+use crate::disp::{DispSender, PackedSyscall};
 
 type Inner = solvent::ipc::Channel;
 
@@ -183,21 +183,33 @@ impl<'a> Future for Receive<'a> {
             None => mem::take(&mut self.packet),
         };
 
-        match self.channel.inner.receive_packet(&mut packet) {
-            Err(ENOENT) => {
-                let pack = self.channel.inner.pack_receive(packet);
-                let (tx, rx) = oneshot();
-                self.result = Some(rx);
-                self.channel.disp.send(
-                    &self.channel.inner,
-                    true,
-                    SIG_READ,
-                    Box::new((pack, tx)),
-                    cx.waker(),
-                )?;
-                Poll::Pending
-            }
-            res => Poll::Ready(res.map(|_| packet)),
+        let backoff = Backoff::new();
+        let (mut tx, rx) = oneshot();
+        self.result = Some(rx);
+        loop {
+            break match self.channel.inner.receive_packet(&mut packet) {
+                Err(ENOENT) => {
+                    let pack = self.channel.inner.pack_receive(packet);
+                    let res = self.channel.disp.poll_send(
+                        &self.channel.inner,
+                        true,
+                        SIG_READ,
+                        (pack, tx),
+                        cx.waker(),
+                    );
+                    match res {
+                        Err(pack) => {
+                            packet = pack.0.packet;
+                            tx = pack.1;
+                            backoff.snooze();
+                            continue;
+                        }
+                        Ok(Err(err)) => Poll::Ready(Err(err)),
+                        Ok(Ok(())) => Poll::Pending,
+                    }
+                }
+                res => Poll::Ready(res.map(|_| packet)),
+            };
         }
     }
 }
@@ -232,24 +244,36 @@ impl Future for CallReceive<'_> {
             None => mem::take(&mut self.packet),
         };
 
-        match self
-            .channel
-            .inner
-            .call_receive(self.id, &mut packet, Duration::ZERO)
-        {
-            Err(ENOENT) => {
-                let pack = self.channel.inner.pack_call_receive(self.id, packet);
-                let (tx, rx) = oneshot();
-                self.result = Some(rx);
-                self.channel.disp.send_chan_acrecv(
-                    &self.channel.inner,
-                    self.id,
-                    Box::new((pack, tx)),
-                    cx.waker(),
-                )?;
-                Poll::Pending
-            }
-            res => Poll::Ready(res.map(|_| packet)),
+        let backoff = Backoff::new();
+        let (mut tx, rx) = oneshot();
+        self.result = Some(rx);
+        loop {
+            break match self
+                .channel
+                .inner
+                .call_receive(self.id, &mut packet, Duration::ZERO)
+            {
+                Err(ENOENT) => {
+                    let pack = self.channel.inner.pack_call_receive(self.id, packet);
+                    let res = self.channel.disp.poll_chan_acrecv(
+                        &self.channel.inner,
+                        self.id,
+                        (pack, tx),
+                        cx.waker(),
+                    );
+                    match res {
+                        Err(pack) => {
+                            packet = pack.0.packet;
+                            tx = pack.1;
+                            backoff.snooze();
+                            continue;
+                        }
+                        Ok(Err(err)) => Poll::Ready(Err(err)),
+                        Ok(Ok(())) => Poll::Pending,
+                    }
+                }
+                res => Poll::Ready(res.map(|_| packet)),
+            };
         }
     }
 }

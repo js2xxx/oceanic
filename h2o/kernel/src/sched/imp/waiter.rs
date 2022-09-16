@@ -3,16 +3,19 @@ use alloc::{
     vec::Vec,
 };
 use core::{
-    alloc::AllocError,
     fmt::Debug,
     sync::atomic::{AtomicUsize, Ordering::*},
     time::Duration,
 };
 
 use archop::PreemptStateGuard;
-use crossbeam_queue::ArrayQueue;
+use crossbeam_queue::SegQueue;
 use spin::Mutex;
-use sv_call::{call::Syscall, ipc::{SIG_READ, SIG_WRITE}, Feature, Result, ENOSPC};
+use sv_call::{
+    call::Syscall,
+    ipc::{SIG_READ, SIG_WRITE},
+    Feature, Result, ENOSPC,
+};
 
 use super::PREEMPT;
 use crate::{
@@ -114,22 +117,18 @@ pub struct Dispatcher {
 
     capacity: usize,
     pending: Mutex<Vec<Request>>,
-    ready: ArrayQueue<(bool, Request)>,
+    ready: SegQueue<(bool, Request)>,
 }
 
 impl Dispatcher {
     pub fn new(capacity: usize) -> Result<Arc<Self>> {
-        let mut pending = Vec::new();
-        pending
-            .try_reserve_exact(capacity)
-            .map_err(|_| AllocError)?;
         Ok(Arc::try_new(Dispatcher {
             next_key: AtomicUsize::new(1),
             event: BasicEvent::new(0),
 
             capacity,
-            pending: Mutex::new(pending),
-            ready: ArrayQueue::new(capacity),
+            pending: Mutex::new(Vec::new()),
+            ready: SegQueue::new(),
         })?)
     }
 
@@ -189,7 +188,7 @@ impl Waiter for Dispatcher {
                 e == event && req.waiter_data.can_signal(signal, false)
             });
             iter.for_each(|req| {
-                self.ready.push((false, req)).unwrap();
+                self.ready.push((false, req));
                 has_cancel = true;
             });
         });
@@ -204,7 +203,7 @@ impl Waiter for Dispatcher {
     }
 
     fn try_on_notify(&self, event: *const (), signal: usize, on_wait: bool) -> bool {
-        if self.ready.is_full() {
+        if self.ready.len() >= self.capacity {
             return false;
         }
         let mut has_notify = false;
@@ -216,7 +215,7 @@ impl Waiter for Dispatcher {
                 e == event && req.waiter_data.can_signal(signal, on_wait)
             });
             iter.for_each(|req| {
-                self.ready.push((false, req)).unwrap();
+                self.ready.push((false, req));
                 has_notify = true;
             });
             pending.is_empty()

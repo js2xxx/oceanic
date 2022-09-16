@@ -1,4 +1,3 @@
-use alloc::boxed::Box;
 use core::{
     pin::Pin,
     task::{Context, Poll},
@@ -10,7 +9,10 @@ use solvent::{
     prelude::{Result, Syscall, EPIPE, ETIME, SIG_TIMER},
     time::{Instant, Timer as Inner},
 };
-use solvent_std::sync::channel::{oneshot, oneshot_};
+use solvent_std::{
+    sync::channel::{oneshot, oneshot_},
+    thread::Backoff,
+};
 
 use crate::disp::{DispSender, PackedSyscall};
 
@@ -66,26 +68,36 @@ impl Future for TimerWait<'_> {
     type Output = Result;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        if let Some(res) = self.result.take().and_then(|rx| rx.recv().ok()) {
-            return Poll::Ready(res);
-        }
-
-        match self.timer.inner.set_deadline(self.deadline) {
-            Err(ETIME) => Poll::Ready(Ok(())),
-            Err(err) => Poll::Ready(Err(err)),
-            Ok(()) => {
-                let (tx, rx) = oneshot();
-                self.result = Some(rx);
-                self.timer.disp.send(
-                    &self.timer.inner,
-                    true,
-                    SIG_TIMER,
-                    Box::new((PackedTimer, tx)),
-                    cx.waker(),
-                )?;
-
-                Poll::Pending
+        let backoff = Backoff::new();
+        let (mut tx, rx) = oneshot();
+        self.result = Some(rx);
+        loop {
+            if let Some(res) = self.result.take().and_then(|rx| rx.recv().ok()) {
+                break Poll::Ready(res);
             }
+
+            break match self.timer.inner.set_deadline(self.deadline) {
+                Err(ETIME) => Poll::Ready(Ok(())),
+                Err(err) => Poll::Ready(Err(err)),
+                Ok(()) => {
+                    let res = self.timer.disp.poll_send(
+                        &self.timer.inner,
+                        true,
+                        SIG_TIMER,
+                        (PackedTimer, tx),
+                        cx.waker(),
+                    );
+                    match res {
+                        Err((_, pack)) => {
+                            tx = pack;
+                            backoff.snooze();
+                            continue;
+                        }
+                        Ok(Err(err)) => Poll::Ready(Err(err)),
+                        Ok(Ok(())) => Poll::Pending,
+                    }
+                }
+            };
         }
     }
 }

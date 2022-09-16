@@ -5,7 +5,9 @@ use core::{
     task::{Poll, Waker},
 };
 
-use solvent::prelude::{Dispatcher as Inner, Object, Result, Syscall, ENOENT, EPIPE, ETIME};
+use solvent::prelude::{
+    Dispatcher as Inner, Object, Result, Syscall, ENOENT, ENOSPC, EPIPE, ETIME,
+};
 use solvent_std::sync::{Arsc, Mutex};
 
 struct Task {
@@ -54,22 +56,56 @@ impl Dispatcher {
         }
     }
 
-    fn send<K>(&self, key: K, pack: Box<dyn PackedSyscall>, waker: &Waker) -> Result
+    #[inline]
+    fn poll_send_raw(
+        &self,
+        obj: &impl Object,
+        level_triggered: bool,
+        signal: usize,
+        syscall: Option<&Syscall>,
+    ) -> Poll<Result<usize>> {
+        match self.inner.push_raw(obj, level_triggered, signal, syscall) {
+            Err(ENOSPC) => Poll::Pending,
+            res => Poll::Ready(res),
+        }
+    }
+
+    #[inline]
+    fn poll_chan_acrecv(
+        &self,
+        obj: &solvent::prelude::Channel,
+        id: usize,
+        syscall: Option<&Syscall>,
+    ) -> Poll<Result<usize>> {
+        match obj.call_receive_async(id, &self.inner, syscall) {
+            Err(ENOSPC) => Poll::Pending,
+            res => Poll::Ready(res),
+        }
+    }
+
+    fn poll_send<K, P>(&self, key: K, pack: P, waker: &Waker) -> core::result::Result<Result, P>
     where
-        K: FnOnce(Option<&Syscall>) -> Result<usize>,
+        K: Fn(Option<&Syscall>) -> Poll<Result<usize>>,
+        P: PackedSyscall + 'static,
     {
         if self.state.load(SeqCst) == DISCONNECTED {
-            return Err(EPIPE);
+            return Ok(Err(EPIPE));
         }
 
         let syscall = pack.raw();
-        let key = key(syscall.as_ref())?;
+        let key = match key(syscall.as_ref()) {
+            Poll::Pending => return Err(pack),
+            Poll::Ready(key) => match key {
+                Ok(key) => key,
+                Err(err) => return Ok(Err(err)),
+            },
+        };
         let task = Task {
-            pack,
+            pack: Box::new(pack),
             waker: waker.clone(),
         };
         self.tasks.lock().insert(key, task);
-        Ok(())
+        Ok(Ok(()))
     }
 }
 
@@ -84,20 +120,28 @@ impl DispSender {
         DispSender { disp }
     }
 
+    /// # Returns
+    ///
+    /// The outer result indicates whether the dispatcher queue is full, with
+    /// the same meaning as [`Poll`], while the inner one indicates whether some
+    /// actual error occurred, and should (not) be immediately passed to the
+    /// outer context.
     #[inline]
-    pub fn send(
+    pub fn poll_send<P>(
         &self,
         obj: &impl Object,
         level_triggered: bool,
         signal: usize,
-        pack: Box<dyn PackedSyscall>,
+        pack: P,
         waker: &Waker,
-    ) -> Result {
-        self.disp.send(
+    ) -> core::result::Result<Result, P>
+    where
+        P: PackedSyscall + 'static,
+    {
+        self.disp.poll_send(
             |syscall| {
                 self.disp
-                    .inner
-                    .push_raw(obj, level_triggered, signal, syscall)
+                    .poll_send_raw(obj, level_triggered, signal, syscall)
             },
             pack,
             waker,
@@ -105,15 +149,18 @@ impl DispSender {
     }
 
     #[inline]
-    pub(crate) fn send_chan_acrecv(
+    pub(crate) fn poll_chan_acrecv<P>(
         &self,
         obj: &solvent::prelude::Channel,
         id: usize,
-        pack: Box<dyn PackedSyscall>,
+        pack: P,
         waker: &Waker,
-    ) -> Result {
-        self.disp.send(
-            |syscall| obj.call_receive_async(id, &self.disp.inner, syscall),
+    ) -> core::result::Result<Result, P>
+    where
+        P: PackedSyscall + 'static,
+    {
+        self.disp.poll_send(
+            |syscall| self.disp.poll_chan_acrecv(obj, id, syscall),
             pack,
             waker,
         )

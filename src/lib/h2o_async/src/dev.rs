@@ -1,4 +1,3 @@
-use alloc::boxed::Box;
 use core::{
     pin::Pin,
     task::{Context, Poll},
@@ -10,7 +9,10 @@ use solvent::{
     prelude::{PackIntrWait, Result, SerdeReg, Syscall, EPIPE, SIG_GENERIC},
     time::Instant,
 };
-use solvent_std::sync::channel::{oneshot, oneshot_};
+use solvent_std::{
+    sync::channel::{oneshot, oneshot_},
+    thread::Backoff,
+};
 
 use crate::disp::{DispSender, PackedSyscall};
 
@@ -76,26 +78,37 @@ impl Future for WaitUntil<'_> {
     type Output = Result<Instant>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        if let Some(last_time) = self.result.take().and_then(|rx| rx.recv().ok()) {
-            return Poll::Ready(last_time);
-        }
+        let backoff = Backoff::new();
+        let (mut tx, rx) = oneshot();
+        self.result = Some(rx);
+        loop {
+            if let Some(last_time) = self.result.take().and_then(|rx| rx.recv().ok()) {
+                return Poll::Ready(last_time);
+            }
 
-        let last_time = self.intr.last_time()?;
+            let last_time = self.intr.last_time()?;
 
-        if self.now > last_time {
-            let pack = self.intr.inner.pack_wait(self.now - last_time)?;
-            let (tx, rx) = oneshot();
-            self.result = Some(rx);
-            self.intr.disp.send(
-                &self.intr.inner,
-                true,
-                SIG_GENERIC,
-                Box::new((pack, tx)),
-                cx.waker(),
-            )?;
-            Poll::Pending
-        } else {
-            Poll::Ready(Ok(last_time))
+            if self.now > last_time {
+                let pack = self.intr.inner.pack_wait(self.now - last_time)?;
+                let res = self.intr.disp.poll_send(
+                    &self.intr.inner,
+                    true,
+                    SIG_GENERIC,
+                    (pack, tx),
+                    cx.waker(),
+                );
+                break match res {
+                    Err((_, pack)) => {
+                        tx = pack;
+                        backoff.snooze();
+                        continue;
+                    }
+                    Ok(Err(err)) => Poll::Ready(Err(err)),
+                    Ok(Ok(())) => Poll::Pending,
+                };
+            } else {
+                break Poll::Ready(Ok(last_time));
+            }
         }
     }
 }
