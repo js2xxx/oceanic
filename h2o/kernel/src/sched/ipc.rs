@@ -258,19 +258,21 @@ mod syscall {
         result: UserPtr<Out, usize>,
     ) -> Result<usize> {
         disp.check_null()?;
-        SCHED.with_current(|cur| {
+        let (c, key, r) = SCHED.with_current(|cur| {
             let disp = cur.space().handles().get::<Dispatcher>(disp)?;
             if !disp.features().contains(Feature::READ) {
                 return Err(EPERM);
             }
-            let (c, key, r) = disp.pop().ok_or(ENOENT)?;
-            if !canceled.as_ptr().is_null() {
-                canceled.write(c)?;
-            }
-            if !result.as_ptr().is_null() {
-                result.write(r)?;
-            }
-            Ok(key)
-        })
+            disp.pop().ok_or(ENOENT)
+        })?;
+
+        if !canceled.as_ptr().is_null() {
+            canceled.write(c)?;
+        }
+        let r = r.map_or(0, crate::syscall::handle);
+        if !result.as_ptr().is_null() {
+            result.write(r)?;
+        }
+        Ok(key)
     }
 }

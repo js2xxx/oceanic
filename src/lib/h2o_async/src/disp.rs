@@ -27,7 +27,7 @@ impl Dispatcher {
     pub fn poll_next(&self) -> Poll<Result> {
         match self.inner.pop_raw() {
             Ok(res) => {
-                let Task { waker, pack } = self.tasks.lock().remove(&res.key).ok_or(ETIME)?;
+                let Task { waker, mut pack } = self.tasks.lock().remove(&res.key).ok_or(ETIME)?;
                 pack.unpack(res.result)?;
                 waker.wake();
                 Poll::Ready(Ok(()))
@@ -80,5 +80,5 @@ impl Dispatcher {
 pub trait PackedSyscall {
     fn raw(&self) -> Syscall;
 
-    fn unpack(&self, result: usize) -> Result;
+    fn unpack(&mut self, result: usize) -> Result;
 }

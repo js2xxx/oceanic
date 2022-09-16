@@ -1,6 +1,7 @@
 use alloc::boxed::Box;
 use core::{
     future::Future,
+    mem,
     pin::Pin,
     task::{Context, Poll},
     time::Duration,
@@ -47,15 +48,7 @@ impl Channel {
     }
 
     #[inline]
-    fn poll_receive(&self, packet: &mut Packet) -> Poll<Result> {
-        match self.inner.receive_packet(packet) {
-            Err(ENOENT) => Poll::Pending,
-            res => Poll::Ready(res),
-        }
-    }
-
-    #[inline]
-    pub fn receive_async<'a>(&'a self, packet: &'a mut Packet) -> Receive<'a> {
+    pub fn receive_with(&self, packet: Packet) -> Receive {
         Receive {
             channel: self,
             packet,
@@ -63,9 +56,11 @@ impl Channel {
         }
     }
 
-    #[inline]
     pub async fn receive_packet(&self, packet: &mut Packet) -> Result {
-        self.receive_async(packet).await
+        let temp = mem::take(packet);
+        let temp = self.receive_with(temp).await?;
+        *packet = temp;
+        Ok(())
     }
 
     pub async fn try_receive<T: PacketTyped>(
@@ -98,15 +93,7 @@ impl Channel {
     }
 
     #[inline]
-    fn poll_call_receive(&self, id: usize, packet: &mut Packet) -> Poll<Result> {
-        match self.inner.call_receive(id, packet, Duration::ZERO) {
-            Err(ENOENT) => Poll::Pending,
-            res => Poll::Ready(res),
-        }
-    }
-
-    #[inline]
-    pub fn call_receive_async<'a>(&'a self, id: usize, packet: &'a mut Packet) -> CallReceive<'a> {
+    pub fn call_receive_with(&self, id: usize, packet: Packet) -> CallReceive {
         CallReceive {
             channel: self,
             id,
@@ -115,9 +102,11 @@ impl Channel {
         }
     }
 
-    #[inline]
     pub async fn call_receive(&self, id: usize, packet: &mut Packet) -> Result {
-        self.call_receive_async(id, packet).await
+        let temp = mem::take(packet);
+        let temp = self.call_receive_with(id, temp).await?;
+        *packet = temp;
+        Ok(())
     }
 
     #[inline]
@@ -140,57 +129,76 @@ impl Channel {
     }
 }
 
-impl PackedSyscall for (PackRecv, oneshot_::Sender<(Result<usize>, usize, usize)>) {
+pub(crate) struct SendData {
+    pub id: Result<usize>,
+    pub buffer_size: usize,
+    pub handle_count: usize,
+    pub packet: Packet,
+}
+
+impl PackedSyscall for (PackRecv, oneshot_::Sender<SendData>) {
     fn raw(&self) -> Syscall {
         self.0.syscall
     }
 
-    fn unpack(&self, result: usize) -> Result {
-        let result = self.0.receive(SerdeReg::decode(result));
-        self.1.send(result).map_err(|_| EPIPE)
+    fn unpack(&mut self, result: usize) -> Result {
+        let (id, buffer_size, handle_count) = self.0.receive(SerdeReg::decode(result));
+        self.1
+            .send(SendData {
+                id,
+                buffer_size,
+                handle_count,
+                packet: mem::take(&mut self.0.packet),
+            })
+            .map_err(|_| EPIPE)
     }
 }
 
 #[must_use]
 pub struct Receive<'a> {
     channel: &'a Channel,
-    packet: &'a mut Packet,
-    result: Option<oneshot_::Receiver<(Result<usize>, usize, usize)>>,
+    packet: Packet,
+    result: Option<oneshot_::Receiver<SendData>>,
 }
 
 impl<'a> Future for Receive<'a> {
-    type Output = Result;
+    type Output = Result<Packet>;
 
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result> {
-        if let Some((result, buffer_size, handle_count)) =
-            self.result.take().and_then(|rx| rx.recv().ok())
-        {
-            match result {
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<Packet>> {
+        let mut packet = match self.result.take().and_then(|rx| rx.recv().ok()) {
+            Some(send_data) => match send_data.id {
                 Ok(id) => {
-                    self.packet.id = Some(id);
-                    return Poll::Ready(Ok(()));
+                    let mut packet = send_data.packet;
+                    packet.id = Some(id);
+                    return Poll::Ready(Ok(packet));
                 }
                 Err(EBUFFER) => {
-                    self.packet.buffer.reserve(buffer_size);
-                    self.packet.handles.reserve(handle_count);
+                    let mut packet = send_data.packet;
+                    packet.buffer.reserve(send_data.buffer_size);
+                    packet.handles.reserve(send_data.handle_count);
+                    packet
                 }
-                Err(err) => Err(err)?,
+                Err(err) => return Poll::Ready(Err(err)),
+            },
+            None => mem::take(&mut self.packet),
+        };
+
+        match self.channel.inner.receive_packet(&mut packet) {
+            Err(ENOENT) => {
+                let pack = self.channel.inner.pack_receive(packet);
+                let (tx, rx) = oneshot();
+                self.result = Some(rx);
+                self.channel.disp.push(
+                    &self.channel.inner,
+                    true,
+                    SIG_READ,
+                    Box::new((pack, tx)),
+                    cx.waker(),
+                )?;
+                Poll::Pending
             }
+            res => Poll::Ready(res.map(|_| packet)),
         }
-        let ret = self.channel.poll_receive(self.packet);
-        if ret.is_pending() {
-            let pack = self.channel.inner.pack_receive(self.packet);
-            let (tx, rx) = oneshot();
-            self.result = Some(rx);
-            self.channel.disp.push(
-                &self.channel.inner,
-                true,
-                SIG_READ,
-                Box::new((pack, tx)),
-                cx.waker(),
-            )?;
-        }
-        ret
     }
 }
 
@@ -198,38 +206,50 @@ impl<'a> Future for Receive<'a> {
 pub struct CallReceive<'a> {
     channel: &'a Channel,
     id: usize,
-    packet: &'a mut Packet,
-    result: Option<oneshot_::Receiver<(Result<usize>, usize, usize)>>,
+    packet: Packet,
+    result: Option<oneshot_::Receiver<SendData>>,
 }
 
 impl Future for CallReceive<'_> {
-    type Output = Result;
+    type Output = Result<Packet>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        if let Some((result, buffer_size, handle_count)) =
-            self.result.take().and_then(|rx| rx.recv().ok())
-        {
-            match result {
-                Ok(_) => return Poll::Ready(Ok(())),
-                Err(EBUFFER) => {
-                    self.packet.buffer.reserve(buffer_size);
-                    self.packet.handles.reserve(handle_count);
+        let mut packet = match self.result.take().and_then(|rx| rx.recv().ok()) {
+            Some(send_data) => match send_data.id {
+                Ok(id) => {
+                    let mut packet = send_data.packet;
+                    packet.id = Some(id);
+                    return Poll::Ready(Ok(packet));
                 }
-                Err(err) => Err(err)?,
+                Err(EBUFFER) => {
+                    let mut packet = send_data.packet;
+                    packet.buffer.reserve(send_data.buffer_size);
+                    packet.handles.reserve(send_data.handle_count);
+                    packet
+                }
+                Err(err) => return Poll::Ready(Err(err)),
+            },
+            None => mem::take(&mut self.packet),
+        };
+
+        match self
+            .channel
+            .inner
+            .call_receive(self.id, &mut packet, Duration::ZERO)
+        {
+            Err(ENOENT) => {
+                let pack = self.channel.inner.pack_call_receive(self.id, packet);
+                let (tx, rx) = oneshot();
+                self.result = Some(rx);
+                self.channel.disp.push_chan_acrecv(
+                    &self.channel.inner,
+                    self.id,
+                    Box::new((pack, tx)),
+                    cx.waker(),
+                )?;
+                Poll::Pending
             }
+            res => Poll::Ready(res.map(|_| packet)),
         }
-        let ret = self.channel.poll_call_receive(self.id, self.packet);
-        if ret.is_pending() {
-            let pack = self.channel.inner.pack_call_receive(self.id, self.packet);
-            let (tx, rx) = oneshot();
-            self.result = Some(rx);
-            self.channel.disp.push_chan_acrecv(
-                &self.channel.inner,
-                self.id,
-                Box::new((pack, tx)),
-                cx.waker(),
-            )?;
-        }
-        ret
     }
 }

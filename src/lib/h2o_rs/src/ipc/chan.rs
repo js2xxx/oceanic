@@ -80,10 +80,10 @@ impl Channel {
         )
     }
 
-    pub fn pack_receive(&self, packet: &mut Packet) -> PackRecv {
+    pub fn pack_receive(&self, mut packet: Packet) -> PackRecv {
         let buffer = &mut packet.buffer;
         let handles = packet.handles.spare_capacity_mut();
-        let mut packet = RawPacket {
+        let mut raw_packet = RawPacket {
             id: 0,
             handles: handles.as_mut_ptr().cast(),
             handle_count: handles.len(),
@@ -92,9 +92,10 @@ impl Channel {
             buffer_size: buffer.len(),
             buffer_cap: buffer.len(),
         };
-        let syscall = unsafe { sv_call::sv_pack_chan_recv(unsafe { self.raw() }, &mut packet) };
+        let syscall = unsafe { sv_call::sv_pack_chan_recv(unsafe { self.raw() }, &mut raw_packet) };
         PackRecv {
-            raw_packet: packet,
+            packet,
+            raw_packet,
             syscall,
         }
     }
@@ -187,10 +188,10 @@ impl Channel {
         (res, packet.buffer_size, packet.handle_count)
     }
 
-    pub fn pack_call_receive(&self, id: usize, packet: &mut Packet) -> PackRecv {
+    pub fn pack_call_receive(&self, id: usize, mut packet: Packet) -> PackRecv {
         let buffer = &mut packet.buffer;
         let handles = packet.handles.spare_capacity_mut();
-        let mut packet = RawPacket {
+        let mut raw_packet = RawPacket {
             id: 0,
             handles: handles.as_mut_ptr().cast(),
             handle_count: handles.len(),
@@ -200,9 +201,10 @@ impl Channel {
             buffer_cap: buffer.len(),
         };
         let syscall =
-            unsafe { sv_call::sv_pack_chan_crecv(unsafe { self.raw() }, id, &mut packet, 0) };
+            unsafe { sv_call::sv_pack_chan_crecv(unsafe { self.raw() }, id, &mut raw_packet, 0) };
         PackRecv {
-            raw_packet: packet,
+            packet,
+            raw_packet,
             syscall,
         }
     }
@@ -322,6 +324,7 @@ where
 }
 
 pub struct PackRecv {
+    pub packet: Packet,
     pub raw_packet: RawPacket,
     pub syscall: Syscall,
 }

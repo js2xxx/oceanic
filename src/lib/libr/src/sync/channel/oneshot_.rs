@@ -23,13 +23,7 @@ use solvent::time::Instant;
 /// Oneshots are implemented around one atomic usize variable. This variable
 /// indicates both the state of the port/chan but also contains any threads
 /// blocked on the port. All atomic operations happen on this one word.
-///
-/// In order to upgrade a oneshot channel, an upgrade is considered a disconnect
-/// on behalf of the channel side of things (it can be mentally thought of as
-/// consuming the port). This upgrade is then also stored in the shared packet.
-/// The one caveat to consider is that when a port sees a disconnected channel
-/// it must check for data because there is no "data plus upgrade" state.
-pub use self::Failure::*;
+use self::Failure::*;
 use super::{
     blocking::{self, SignalToken},
     RecvError, TryRecvError,
@@ -39,7 +33,7 @@ use crate::sync::Arsc;
 // Various states you can find a port in.
 const EMPTY: *mut u8 = ptr::null_mut(); // initial state: no data, no blocked receiver
 const DATA: *mut u8 = 1 as _; // data ready for receiver to take
-const DISCONNECTED: *mut u8 = 2 as _; // channel is disconnected OR upgraded
+const DISCONNECTED: *mut u8 = 2 as _; // channel is disconnected
                                       // Any other value represents a pointer to a SignalToken value. The
                                       // protocol ensures that when the state moves *to* a pointer,
                                       // ownership of the token is given to the packet, and when the state
@@ -128,12 +122,6 @@ impl<T> Packet<T> {
             match self.state.load(Ordering::SeqCst) {
                 EMPTY => Err(Empty),
 
-                // We saw some data on the channel, but the channel can be used
-                // again to send us an upgrade. As a result, we need to re-insert
-                // into the channel that there's no data available (otherwise we'll
-                // just see DATA next time). This is done as a cmpxchg because if
-                // the state changes under our feet we'd rather just see that state
-                // change.
                 DATA => {
                     let _ = self.state.compare_exchange(
                         DATA,
@@ -147,10 +135,6 @@ impl<T> Packet<T> {
                     }
                 }
 
-                // There's no guarantee that we receive before an upgrade happens,
-                // and an upgrade flags the channel as disconnected, so when we see
-                // this we first need to check if there's data available and *then*
-                // we go through and process the upgrade.
                 DISCONNECTED => match (*self.data.get()).take() {
                     Some(data) => Ok(data),
                     None => Err(Disconnected),

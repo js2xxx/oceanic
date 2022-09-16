@@ -62,7 +62,7 @@ impl PackedSyscall for (PackIntrWait, oneshot_::Sender<Instant>) {
     }
 
     #[inline]
-    fn unpack(&self, result: usize) -> Result {
+    fn unpack(&mut self, result: usize) -> Result {
         let res = self.0.receive(SerdeReg::decode(result))?;
         self.1.send(res).map_err(|_| EPIPE)
     }

@@ -18,7 +18,6 @@ use super::PREEMPT;
 use crate::{
     cpu::arch::apic::TriggerMode,
     sched::{task::hdl::DefaultFeature, wait::WaitObject, BasicEvent, Event, Waiter, WaiterData},
-    syscall,
 };
 
 #[derive(Debug)]
@@ -164,16 +163,12 @@ impl Dispatcher {
         Ok(key)
     }
 
-    pub fn pop(self: &Arc<Self>) -> Option<(bool, usize, usize)> {
+    pub fn pop(self: &Arc<Self>) -> Option<(bool, usize, Option<Syscall>)> {
         let (canceled, req) = self.ready.pop()?;
         if let Some(event) = req.event.upgrade() {
             event.unwait(&(Arc::clone(self) as _));
         }
-        let res = if !canceled {
-            req.syscall.map_or(0, syscall::handle)
-        } else {
-            0
-        };
+        let res = if !canceled { req.syscall } else { None };
         Some((canceled, req.key, res))
     }
 }
