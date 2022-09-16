@@ -1,7 +1,7 @@
 use core::time::Duration;
 
 pub use sv_call::res::IntrConfig;
-use sv_call::{c_ty::Status, Syscall};
+use sv_call::{c_ty::Status, Syscall, ETIME};
 
 use super::GsiRes;
 use crate::{error::Result, obj::Object, time::Instant};
@@ -67,8 +67,8 @@ pub struct PackIntrWait {
 
 impl PackIntrWait {
     #[inline]
-    pub fn receive(&self, result: Status) -> Result<Instant> {
-        result.into_res()?;
+    pub fn receive(&self, res: Status, canceled: bool) -> Result<Instant> {
+        res.into_res().and((!canceled).then_some(()).ok_or(ETIME))?;
         Ok(unsafe { Instant::from_raw(self.ins) })
     }
 }

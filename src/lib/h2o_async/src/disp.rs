@@ -28,7 +28,7 @@ impl Dispatcher {
         match self.inner.pop_raw() {
             Ok(res) => {
                 let Task { waker, mut pack } = self.tasks.lock().remove(&res.key).ok_or(ETIME)?;
-                pack.unpack(res.result)?;
+                pack.unpack(res.result, res.canceled)?;
                 waker.wake();
                 Poll::Ready(Ok(()))
             }
@@ -37,6 +37,22 @@ impl Dispatcher {
         }
     }
 
+    fn push_inner<K>(&self, key: K, pack: Box<dyn PackedSyscall>, waker: &Waker) -> Result
+    where
+        K: FnOnce(&Syscall) -> Result<usize>,
+    {
+        let syscall = pack.raw();
+        let key = key(&syscall)?;
+        let task = Task {
+            pack,
+            waker: AtomicWaker::new(),
+        };
+        task.waker.register(waker);
+        self.tasks.lock().insert(key, task);
+        Ok(())
+    }
+
+    #[inline]
     pub fn push(
         &self,
         obj: &impl Object,
@@ -45,40 +61,31 @@ impl Dispatcher {
         pack: Box<dyn PackedSyscall>,
         waker: &Waker,
     ) -> Result {
-        let syscall = pack.raw();
-        let key = self
-            .inner
-            .push_raw(obj, level_triggered, signal, &syscall)?;
-        let task = Task {
+        self.push_inner(
+            |syscall| self.inner.push_raw(obj, level_triggered, signal, syscall),
             pack,
-            waker: AtomicWaker::new(),
-        };
-        task.waker.register(waker);
-        self.tasks.lock().insert(key, task);
-        Ok(())
+            waker,
+        )
     }
 
-    pub fn push_chan_acrecv(
+    #[inline]
+    pub(crate) fn push_chan_acrecv(
         &self,
         obj: &solvent::prelude::Channel,
         id: usize,
         pack: Box<dyn PackedSyscall>,
         waker: &Waker,
     ) -> Result {
-        let syscall = pack.raw();
-        let key = obj.call_receive_async(id, &self.inner, &syscall)?;
-        let task = Task {
+        self.push_inner(
+            |syscall| obj.call_receive_async(id, &self.inner, syscall),
             pack,
-            waker: AtomicWaker::new(),
-        };
-        task.waker.register(waker);
-        self.tasks.lock().insert(key, task);
-        Ok(())
+            waker,
+        )
     }
 }
 
 pub trait PackedSyscall {
     fn raw(&self) -> Syscall;
 
-    fn unpack(&mut self, result: usize) -> Result;
+    fn unpack(&mut self, result: usize, canceled: bool) -> Result;
 }

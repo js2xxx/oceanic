@@ -141,8 +141,8 @@ impl PackedSyscall for (PackRecv, oneshot_::Sender<SendData>) {
         self.0.syscall
     }
 
-    fn unpack(&mut self, result: usize) -> Result {
-        let (id, buffer_size, handle_count) = self.0.receive(SerdeReg::decode(result));
+    fn unpack(&mut self, result: usize, canceled: bool) -> Result {
+        let (id, buffer_size, handle_count) = self.0.receive(SerdeReg::decode(result), canceled);
         self.1
             .send(SendData {
                 id,

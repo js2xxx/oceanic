@@ -330,8 +330,8 @@ pub struct PackRecv {
 }
 
 impl PackRecv {
-    pub fn receive(&self, res: Status) -> (Result<usize>, usize, usize) {
-        let res = res.into_res();
+    pub fn receive(&self, res: Status, canceled: bool) -> (Result<usize>, usize, usize) {
+        let res = res.into_res().and((!canceled).then_some(()).ok_or(ETIME));
         (
             res.map(|_| self.raw_packet.id),
             self.raw_packet.buffer_size,

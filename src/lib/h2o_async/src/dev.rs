@@ -55,15 +55,15 @@ impl Interrupt {
     }
 }
 
-impl PackedSyscall for (PackIntrWait, oneshot_::Sender<Instant>) {
+impl PackedSyscall for (PackIntrWait, oneshot_::Sender<Result<Instant>>) {
     #[inline]
     fn raw(&self) -> Syscall {
         self.0.syscall
     }
 
     #[inline]
-    fn unpack(&mut self, result: usize) -> Result {
-        let res = self.0.receive(SerdeReg::decode(result))?;
+    fn unpack(&mut self, result: usize, canceled: bool) -> Result {
+        let res = self.0.receive(SerdeReg::decode(result), canceled);
         self.1.send(res).map_err(|_| EPIPE)
     }
 }
@@ -72,7 +72,7 @@ impl PackedSyscall for (PackIntrWait, oneshot_::Sender<Instant>) {
 pub struct WaitUntil<'a> {
     intr: &'a Interrupt,
     now: Instant,
-    result: Option<oneshot_::Receiver<Instant>>,
+    result: Option<oneshot_::Receiver<Result<Instant>>>,
 }
 
 impl Future for WaitUntil<'_> {
@@ -80,7 +80,7 @@ impl Future for WaitUntil<'_> {
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         if let Some(last_time) = self.result.take().and_then(|rx| rx.recv().ok()) {
-            return Poll::Ready(Ok(last_time));
+            return Poll::Ready(last_time);
         }
 
         let last_time = self.intr.last_time()?;
