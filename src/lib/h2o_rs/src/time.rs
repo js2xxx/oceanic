@@ -1,5 +1,7 @@
 use core::{ops::*, time::Duration};
 
+use sv_call::ETIME;
+
 use crate::{
     error::{Error, Result},
     obj::Object,
@@ -139,7 +141,12 @@ impl Timer {
     /// See [`Timer::set`] for more information.
     #[inline]
     pub fn set_deadline(&self, deadline: Instant) -> Result {
-        self.set(deadline - Instant::now())
+        let now = Instant::now();
+        if deadline <= now {
+            Err(ETIME)
+        } else {
+            self.set(deadline - now)
+        }
     }
 
     /// Shorthand for `set(Duration::ZERO)`.

@@ -1,13 +1,12 @@
 use alloc::{boxed::Box, collections::BTreeMap};
 use core::task::{Poll, Waker};
 
-use futures::task::AtomicWaker;
 use solvent::prelude::{Dispatcher as Inner, Object, Result, Syscall, ENOENT, ETIME};
 use solvent_std::sync::Mutex;
 
 struct Task {
     pack: Box<dyn PackedSyscall>,
-    waker: AtomicWaker,
+    waker: Waker,
 }
 
 pub struct Dispatcher {
@@ -39,15 +38,14 @@ impl Dispatcher {
 
     fn push_inner<K>(&self, key: K, pack: Box<dyn PackedSyscall>, waker: &Waker) -> Result
     where
-        K: FnOnce(&Syscall) -> Result<usize>,
+        K: FnOnce(Option<&Syscall>) -> Result<usize>,
     {
         let syscall = pack.raw();
-        let key = key(&syscall)?;
+        let key = key(syscall.as_ref())?;
         let task = Task {
             pack,
-            waker: AtomicWaker::new(),
+            waker: waker.clone(),
         };
-        task.waker.register(waker);
         self.tasks.lock().insert(key, task);
         Ok(())
     }
@@ -85,7 +83,7 @@ impl Dispatcher {
 }
 
 pub trait PackedSyscall {
-    fn raw(&self) -> Syscall;
+    fn raw(&self) -> Option<Syscall>;
 
     fn unpack(&mut self, result: usize, canceled: bool) -> Result;
 }

@@ -1,4 +1,4 @@
-use core::{marker::PhantomData, mem, mem::ManuallyDrop, ops::Deref, time::Duration};
+use core::{marker::PhantomData, mem, mem::ManuallyDrop, ops::Deref, time::Duration, ptr};
 
 pub use sv_call::{Feature, Handle, SerdeReg, Syscall};
 
@@ -187,11 +187,17 @@ impl Dispatcher {
         obj: &impl Object,
         level_triggered: bool,
         signal: usize,
-        syscall: &Syscall,
+        syscall: Option<&Syscall>,
     ) -> Result<usize> {
         let obj = unsafe { obj.raw() };
         let key = unsafe {
-            sv_call::sv_disp_push(unsafe { self.raw() }, obj, level_triggered, signal, syscall)
+            sv_call::sv_disp_push(
+                unsafe { self.raw() },
+                obj,
+                level_triggered,
+                signal,
+                syscall.map_or(ptr::null(), |syscall| syscall as _),
+            )
         }
         .into_res()?;
         Ok(key as usize)

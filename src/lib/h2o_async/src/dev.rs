@@ -57,8 +57,8 @@ impl Interrupt {
 
 impl PackedSyscall for (PackIntrWait, oneshot_::Sender<Result<Instant>>) {
     #[inline]
-    fn raw(&self) -> Syscall {
-        self.0.syscall
+    fn raw(&self) -> Option<Syscall> {
+        Some(self.0.syscall)
     }
 
     #[inline]

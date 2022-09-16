@@ -137,8 +137,9 @@ pub(crate) struct SendData {
 }
 
 impl PackedSyscall for (PackRecv, oneshot_::Sender<SendData>) {
-    fn raw(&self) -> Syscall {
-        self.0.syscall
+    #[inline]
+    fn raw(&self) -> Option<Syscall> {
+        Some(self.0.syscall)
     }
 
     fn unpack(&mut self, result: usize, canceled: bool) -> Result {

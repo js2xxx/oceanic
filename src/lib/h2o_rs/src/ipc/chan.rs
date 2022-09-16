@@ -1,6 +1,6 @@
 #[cfg(feature = "alloc")]
 use alloc::vec::Vec;
-use core::{mem::MaybeUninit, time::Duration};
+use core::{mem::MaybeUninit, ptr, time::Duration};
 
 use sv_call::{c_ty::Status, ipc::RawPacket, Syscall};
 
@@ -233,11 +233,16 @@ impl Channel {
         &self,
         id: usize,
         disp: &Dispatcher,
-        syscall: &Syscall,
+        syscall: Option<&Syscall>,
     ) -> Result<usize> {
         let key = unsafe {
-            sv_call::sv_chan_acrecv(unsafe { self.raw() }, id, unsafe { disp.raw() }, syscall)
-                .into_res()
+            sv_call::sv_chan_acrecv(
+                unsafe { self.raw() },
+                id,
+                unsafe { disp.raw() },
+                syscall.map_or(ptr::null(), |syscall| syscall as _),
+            )
+            .into_res()
         }?;
         Ok(key as usize)
     }
