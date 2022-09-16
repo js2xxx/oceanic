@@ -1,5 +1,5 @@
 #[cfg(feature = "alloc")]
-use alloc::vec::Vec;
+use alloc::{boxed::Box, vec::Vec};
 use core::{mem::MaybeUninit, ptr, time::Duration};
 
 use sv_call::{c_ty::Status, ipc::RawPacket, Syscall};
@@ -80,10 +80,11 @@ impl Channel {
         )
     }
 
+    #[cfg(feature = "alloc")]
     pub fn pack_receive(&self, mut packet: Packet) -> PackRecv {
         let buffer = &mut packet.buffer;
         let handles = packet.handles.spare_capacity_mut();
-        let mut raw_packet = RawPacket {
+        let mut raw_packet = Box::new(RawPacket {
             id: 0,
             handles: handles.as_mut_ptr().cast(),
             handle_count: handles.len(),
@@ -91,8 +92,9 @@ impl Channel {
             buffer: buffer.as_mut_ptr(),
             buffer_size: buffer.len(),
             buffer_cap: buffer.len(),
-        };
-        let syscall = unsafe { sv_call::sv_pack_chan_recv(unsafe { self.raw() }, &mut raw_packet) };
+        });
+        let syscall =
+            unsafe { sv_call::sv_pack_chan_recv(unsafe { self.raw() }, &mut *raw_packet) };
         PackRecv {
             packet,
             raw_packet,
@@ -188,10 +190,11 @@ impl Channel {
         (res, packet.buffer_size, packet.handle_count)
     }
 
+    #[cfg(feature = "alloc")]
     pub fn pack_call_receive(&self, id: usize, mut packet: Packet) -> PackRecv {
         let buffer = &mut packet.buffer;
         let handles = packet.handles.spare_capacity_mut();
-        let mut raw_packet = RawPacket {
+        let mut raw_packet = Box::new(RawPacket {
             id: 0,
             handles: handles.as_mut_ptr().cast(),
             handle_count: handles.len(),
@@ -199,9 +202,9 @@ impl Channel {
             buffer: buffer.as_mut_ptr(),
             buffer_size: buffer.len(),
             buffer_cap: buffer.len(),
-        };
+        });
         let syscall =
-            unsafe { sv_call::sv_pack_chan_crecv(unsafe { self.raw() }, id, &mut raw_packet, 0) };
+            unsafe { sv_call::sv_pack_chan_crecv(unsafe { self.raw() }, id, &mut *raw_packet, 0) };
         PackRecv {
             packet,
             raw_packet,
@@ -277,6 +280,7 @@ fn receive_into_impl<F, R>(
 where
     F: FnMut(&mut [u8], &mut [MaybeUninit<sv_call::Handle>]) -> (Result<R>, usize, usize),
 {
+    buffer.clear();
     handles.clear();
 
     // We use smaller stack-based buffers to avoid dangling pointers in empty
@@ -286,12 +290,16 @@ where
     match receiver(&mut min_buffer, &mut min_handles) {
         (Ok(value), buffer_size, handle_count) => {
             buffer.resize(buffer_size, 0);
-            buffer.copy_from_slice(&min_buffer[..buffer_size]);
+            if buffer_size > 0 {
+                buffer.copy_from_slice(&min_buffer[..buffer_size]);
+            }
 
-            handles.reserve(handle_count);
-            handles
-                .spare_capacity_mut()
-                .copy_from_slice(&min_handles[..handle_count]);
+            if handle_count > 0 {
+                handles.reserve(handle_count - handles.capacity());
+                handles
+                    .spare_capacity_mut()
+                    .copy_from_slice(&min_handles[..handle_count]);
+            }
             // SAFETY: `handles` is ensured to have the given numbers of elements.
             unsafe { handles.set_len(handle_count) };
             return Ok(value);
@@ -328,12 +336,17 @@ where
     }
 }
 
+#[cfg(feature = "alloc")]
 pub struct PackRecv {
     pub packet: Packet,
-    pub raw_packet: RawPacket,
+    pub raw_packet: Box<RawPacket>,
     pub syscall: Syscall,
 }
 
+#[cfg(feature = "alloc")]
+unsafe impl Send for PackRecv {}
+
+#[cfg(feature = "alloc")]
 impl PackRecv {
     pub fn receive(&self, res: Status, canceled: bool) -> (Result<usize>, usize, usize) {
         let res = res.into_res().and((!canceled).then_some(()).ok_or(ETIME));

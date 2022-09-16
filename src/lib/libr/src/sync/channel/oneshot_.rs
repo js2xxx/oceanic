@@ -183,6 +183,8 @@ pub struct Sender<T> {
     inner: Arsc<Packet<T>>,
 }
 
+unsafe impl<T: Send> Send for Sender<T> {}
+
 impl<T> Sender<T> {
     #[inline]
     pub(super) fn new(inner: Arsc<Packet<T>>) -> Self {
@@ -210,6 +212,8 @@ impl<T> fmt::Debug for Sender<T> {
 pub struct Receiver<T> {
     pub(super) inner: Arsc<Packet<T>>,
 }
+
+unsafe impl<T: Send> Send for Receiver<T> {}
 
 impl<T> Receiver<T> {
     #[inline]

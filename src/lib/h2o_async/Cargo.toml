@@ -9,3 +9,4 @@ solvent = {path = "../h2o_rs"}
 solvent-std = {path = "../libr"}
 # External crates
 futures = {version = "0.3", default-features = false, features = ["alloc"]}
+log = "0.4"

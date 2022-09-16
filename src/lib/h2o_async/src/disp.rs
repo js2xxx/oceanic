@@ -223,7 +223,7 @@ pub fn dispatch(capacity: usize) -> (DispSender, DispReceiver) {
     )
 }
 
-pub trait PackedSyscall {
+pub trait PackedSyscall: Send {
     fn raw(&self) -> Option<Syscall>;
 
     fn unpack(&mut self, result: usize, canceled: bool) -> Result;
