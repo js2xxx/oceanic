@@ -75,5 +75,12 @@ pub extern "C" fn sv_random() -> crate::c_ty::StatusOrValue {
     crate::c_ty::StatusOrValue::from_res(Ok(ret))
 }
 
+#[cfg(feature = "vdso")]
+#[no_mangle]
+#[inline(never)]
+pub extern "C" fn sv_cpu_num() -> crate::c_ty::StatusOrValue {
+    crate::c_ty::StatusOrValue::from_res(Ok(crate::constants().num_cpus as u64))
+}
+
 #[cfg(all(not(feature = "stub"), feature = "call"))]
 include!(concat!(env!("CARGO_MANIFEST_DIR"), "/target/call.rs"));

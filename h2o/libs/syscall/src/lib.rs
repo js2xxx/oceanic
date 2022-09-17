@@ -34,15 +34,17 @@ pub struct Constants {
     pub ticks_multiplier: u128,
     pub ticks_shift: u128,
     pub has_builtin_rand: bool,
+    pub num_cpus: usize,
 }
 
 impl Constants {
     pub const fn new() -> Constants {
         Constants {
             ticks_offset: 0,
-            ticks_multiplier: 0,
+            ticks_multiplier: 1,
             ticks_shift: 0,
             has_builtin_rand: false,
+            num_cpus: 1,
         }
     }
 }

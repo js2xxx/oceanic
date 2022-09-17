@@ -1,3 +1,5 @@
+#[cfg(feature = "stub")]
+use core::num::NonZeroUsize;
 use core::{
     convert::TryInto,
     mem,
@@ -186,4 +188,11 @@ pub unsafe fn exit(retval: usize) -> ! {
 pub fn sleep(duration: Duration) -> Result {
     let millis = duration.as_millis().try_into()?;
     unsafe { sv_call::sv_task_sleep(millis).into_res() }
+}
+
+#[cfg(feature = "stub")]
+#[inline]
+pub fn cpu_num() -> NonZeroUsize {
+    let res = unsafe { sv_call::sv_cpu_num().into_res() };
+    NonZeroUsize::new(res.unwrap() as usize).unwrap()
 }

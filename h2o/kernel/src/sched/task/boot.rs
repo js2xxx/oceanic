@@ -56,6 +56,7 @@ pub fn setup() {
             ticks_multiplier: TSC_CLOCK.mul,
             ticks_shift: TSC_CLOCK.sft,
             has_builtin_rand: archop::rand::has_builtin(),
+            num_cpus: crate::cpu::count(),
         };
 
         #[allow(clippy::zero_prefixed_literal)]
@@ -145,7 +146,4 @@ pub fn setup() {
     )
     .expect("Failed to initialize TINIT");
     SCHED.unblock(tinit, true);
-
-    // Get rid of EPIPE in TINIT.
-    mem::forget(me);
 }

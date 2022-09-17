@@ -185,7 +185,12 @@ impl Channel {
         let _pree = PREEMPT.lock();
         let mut head = self.head.lock();
         if head.is_none() {
-            *head = Some(self.me.msgs.pop().ok_or(sv_call::ENOENT)?);
+            let err = if self.peer.strong_count() > 0 {
+                sv_call::ENOENT
+            } else {
+                sv_call::EPIPE
+            };
+            *head = Some(self.me.msgs.pop().ok_or(err)?);
         }
         unsafe { Self::get_packet(&mut head, buffer_cap, handle_cap) }
     }
@@ -241,7 +246,12 @@ impl Channel {
             alloc::collections::btree_map::Entry::Occupied(caller) => caller,
         };
         if caller.get().head.is_none() {
-            let packet = caller.get_mut().cell.take().ok_or(sv_call::ENOENT)?;
+            let err = if self.peer.strong_count() > 0 {
+                sv_call::ENOENT
+            } else {
+                sv_call::EPIPE
+            };
+            let packet = caller.get_mut().cell.take().ok_or(err)?;
             caller.get_mut().head = Some(packet);
         }
         unsafe { Self::get_packet(&mut caller.get_mut().head, buffer_cap, handle_cap) }

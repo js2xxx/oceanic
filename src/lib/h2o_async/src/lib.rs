@@ -85,6 +85,7 @@ pub mod test {
     }
 
     pub fn test_disp() -> Result {
+        log::debug!("Has {} cpus available", solvent::task::cpu_num());
         let (tx, rx) = crate::dispatch(10);
         let j = thread::spawn(move || {
             let backoff = Backoff::new();

@@ -49,7 +49,7 @@ pub fn handle(syscall: Syscall) -> usize {
     let args = syscall.args;
     match SYSCALL_TABLE.get(syscall.num).copied() {
         Some(handler) => unsafe { handler(args[0], args[1], args[2], args[3], args[4]) },
-        _ => EINVAL.into_retval(),
+        _ => ESPRT.into_retval(),
     }
 }
 

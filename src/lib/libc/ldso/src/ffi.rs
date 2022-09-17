@@ -78,6 +78,8 @@ pub unsafe extern "C" fn dlopen(path: *const c_char, mode: c_int) -> *const c_vo
 /// valid pointer returned from `dlopen`.
 #[no_mangle]
 pub unsafe extern "C" fn dlsym(handle: *const c_void, name: *const c_char) -> *mut c_void {
+    let name = CStr::from_ptr(name);
+
     let ptr = handle as *const Dso;
 
     let dso = if handle.is_null() {
@@ -88,8 +90,6 @@ pub unsafe extern "C" fn dlsym(handle: *const c_void, name: *const c_char) -> *m
 
         Some(unsafe { &*ptr })
     };
-
-    let name = CStr::from_ptr(name);
 
     match dso_list().lock().get_symbol_value(dso, name) {
         Some(ret) => ret as _,

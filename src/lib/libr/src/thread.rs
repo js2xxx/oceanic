@@ -6,7 +6,7 @@ use alloc::{boxed::Box, fmt, string::String};
 use core::{
     cell::UnsafeCell,
     mem,
-    num::NonZeroU64,
+    num::{NonZeroU64, NonZeroUsize},
     pin::Pin,
     sync::atomic::{AtomicU64, Ordering::Relaxed},
     time::Duration,
@@ -263,6 +263,11 @@ fn _assert_sync_and_send() {
     fn _assert_both<T: Send + Sync>() {}
     _assert_both::<JoinHandle<()>>();
     _assert_both::<Thread>();
+}
+
+#[inline]
+pub fn available_parallelism() -> NonZeroUsize {
+    solvent::task::cpu_num()
 }
 
 pub(crate) mod current {
