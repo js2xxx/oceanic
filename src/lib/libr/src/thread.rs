@@ -1,3 +1,4 @@
+mod backoff;
 mod imp;
 pub mod local;
 mod scope;
@@ -12,10 +13,9 @@ use core::{
     time::Duration,
 };
 
-pub use crossbeam::utils::Backoff;
 use solvent::error::Result;
 
-pub use self::scope::scope;
+pub use self::{backoff::Backoff, scope::scope};
 use crate::sync::{imp::Parker, Arsc};
 
 #[derive(Debug)]

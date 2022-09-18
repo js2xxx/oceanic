@@ -13,3 +13,4 @@ svrt = {path = "../svrt"}
 # External crates
 crossbeam = {version = "0.8", default-features = false, features = ["alloc"]}
 log = "0.4"
+memoffset = "0.6"

@@ -5,6 +5,7 @@ use core::{
     task::{Poll, Waker},
 };
 
+use futures::task::AtomicWaker;
 use solvent::prelude::{
     Dispatcher as Inner, Object, Result, Syscall, ENOENT, ENOSPC, EPIPE, ETIME,
 };
@@ -12,7 +13,7 @@ use solvent_std::sync::{Arsc, Mutex};
 
 struct Task {
     pack: Box<dyn PackedSyscall>,
-    waker: Waker,
+    waker: AtomicWaker,
 }
 
 const NORMAL: usize = 0;
@@ -83,7 +84,12 @@ impl Dispatcher {
         }
     }
 
-    fn poll_send<K, P>(&self, key: K, pack: P, waker: &Waker) -> core::result::Result<Result, P>
+    fn poll_send<K, P>(
+        &self,
+        key: K,
+        pack: P,
+        waker: &Waker,
+    ) -> core::result::Result<Result<usize>, P>
     where
         K: Fn(Option<&Syscall>) -> Poll<Result<usize>>,
         P: PackedSyscall + 'static,
@@ -102,10 +108,25 @@ impl Dispatcher {
         };
         let task = Task {
             pack: Box::new(pack),
-            waker: waker.clone(),
+            waker: AtomicWaker::new(),
         };
+        task.waker.register(waker);
         self.tasks.lock().insert(key, task);
-        Ok(Ok(()))
+        Ok(Ok(key))
+    }
+
+    fn update(&self, key: usize, waker: &Waker) -> Result {
+        if self.state.load(SeqCst) == DISCONNECTED {
+            return Err(EPIPE);
+        }
+
+        let mut tasks = self.tasks.lock();
+        if let Some(task) = tasks.get_mut(&key) {
+            task.waker.register(waker);
+            Ok(())
+        } else {
+            Err(ENOENT)
+        }
     }
 }
 
@@ -134,7 +155,7 @@ impl DispSender {
         signal: usize,
         pack: P,
         waker: &Waker,
-    ) -> core::result::Result<Result, P>
+    ) -> core::result::Result<Result<usize>, P>
     where
         P: PackedSyscall + 'static,
     {
@@ -149,13 +170,18 @@ impl DispSender {
     }
 
     #[inline]
+    pub fn update(&self, key: usize, waker: &Waker) -> Result {
+        self.disp.update(key, waker)
+    }
+
+    #[inline]
     pub(crate) fn poll_chan_acrecv<P>(
         &self,
         obj: &solvent::prelude::Channel,
         id: usize,
         pack: P,
         waker: &Waker,
-    ) -> core::result::Result<Result, P>
+    ) -> core::result::Result<Result<usize>, P>
     where
         P: PackedSyscall + 'static,
     {

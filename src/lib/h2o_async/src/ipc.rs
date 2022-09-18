@@ -1,6 +1,7 @@
 use core::{
     future::Future,
     mem,
+    ops::ControlFlow,
     pin::Pin,
     task::{Context, Poll},
     time::Duration,
@@ -52,6 +53,7 @@ impl Channel {
             channel: self,
             packet,
             result: None,
+            key: None,
         }
     }
 
@@ -94,10 +96,13 @@ impl Channel {
     #[inline]
     pub fn call_receive_with(&self, id: usize, packet: Packet) -> CallReceive {
         CallReceive {
-            channel: self,
             id,
-            packet,
-            result: None,
+            recv: Receive {
+                channel: self,
+                packet,
+                result: None,
+                key: None,
+            },
         }
     }
 
@@ -159,140 +164,161 @@ pub struct Receive<'a> {
     channel: &'a Channel,
     packet: Packet,
     result: Option<oneshot_::Receiver<SendData>>,
+    key: Option<usize>,
+}
+
+impl<'a> Receive<'a> {
+    fn result_recv(&mut self, cx: &mut Context<'_>) -> ControlFlow<Poll<Result<Packet>>, Packet> {
+        let packet = match self.result.take() {
+            Some(rx) => match rx.try_recv() {
+                // Has a result
+                Ok(send_data) => match send_data.id {
+                    // Packet transferring successful, return it
+                    Ok(id) => {
+                        let mut packet = send_data.packet;
+                        packet.id = Some(id);
+                        return ControlFlow::Break(Poll::Ready(Ok(packet)));
+                    }
+
+                    // Packet buffer too small, reserve enough memory and restart polling
+                    Err(EBUFFER) => {
+                        let mut packet = send_data.packet;
+                        packet.buffer.reserve(send_data.buffer_size);
+                        packet.handles.reserve(send_data.handle_count);
+                        Some(packet)
+                    }
+
+                    // Actual error occurred, return it
+                    Err(err) => return ControlFlow::Break(Poll::Ready(Err(err))),
+                },
+
+                // Not yet, continue waiting
+                Err(TryRecvError::Empty) => {
+                    self.result = Some(rx);
+                    if let Err(err) = self
+                        .key
+                        .ok_or(ENOENT)
+                        .and_then(|key| self.channel.disp.update(key, cx.waker()))
+                    {
+                        return ControlFlow::Break(Poll::Ready(Err(err)));
+                    }
+
+                    return ControlFlow::Break(Poll::Pending);
+                }
+
+                // Channel early disconnected, restart the default process
+                Err(TryRecvError::Disconnected) => None,
+            },
+
+            _ => None,
+        };
+
+        self.key = None;
+        ControlFlow::Continue(packet.unwrap_or_else(|| mem::take(&mut self.packet)))
+    }
+
+    #[inline]
+    fn poll_inner<Recv, PackSend>(
+        &mut self,
+        mut packet: Packet,
+        recv: Recv,
+        pack_send: PackSend,
+    ) -> ControlFlow<Poll<Result<Packet>>, (Packet, oneshot_::Sender<SendData>)>
+    where
+        Recv: FnOnce(&mut Self, &mut Packet) -> Result,
+        PackSend:
+            FnOnce(
+                &mut Self,
+                Packet,
+            )
+                -> core::result::Result<Result<usize>, (PackRecv, oneshot_::Sender<SendData>)>,
+    {
+        match recv(self, &mut packet) {
+            Err(ENOENT) => match pack_send(self, packet) {
+                Err(pack) => ControlFlow::Continue((pack.0.packet, pack.1)),
+                Ok(Err(err)) => ControlFlow::Break(Poll::Ready(Err(err))),
+                Ok(Ok(key)) => {
+                    self.key = Some(key);
+                    ControlFlow::Break(Poll::Pending)
+                }
+            },
+            res => ControlFlow::Break(Poll::Ready(res.map(|_| packet))),
+        }
+    }
 }
 
 impl<'a> Future for Receive<'a> {
     type Output = Result<Packet>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<Packet>> {
-        let mut packet = match result_recv(&mut self.result) {
-            Ok(Some(packet)) => packet,
-            Ok(None) => mem::take(&mut self.packet),
-            Err(immediate) => return immediate,
+        let mut packet = match self.result_recv(cx) {
+            ControlFlow::Continue(packet) => packet,
+            ControlFlow::Break(res) => return res,
         };
 
         let backoff = Backoff::new();
         let (mut tx, rx) = oneshot();
         self.result = Some(rx);
         loop {
-            break match self.channel.inner.receive_packet(&mut packet) {
-                Err(ENOENT) => {
-                    let pack = self.channel.inner.pack_receive(packet);
-                    let res = self.channel.disp.poll_send(
-                        &self.channel.inner,
+            let cf = self.poll_inner(
+                packet,
+                |r, packet| r.channel.inner.receive_packet(packet),
+                |r, packet| {
+                    r.channel.disp.poll_send(
+                        &r.channel.inner,
                         true,
                         SIG_READ,
-                        (pack, tx),
+                        (r.channel.inner.pack_receive(packet), tx),
                         cx.waker(),
-                    );
-                    match res {
-                        Err(pack) => {
-                            packet = pack.0.packet;
-                            tx = pack.1;
-                            backoff.snooze();
-                            continue;
-                        }
-                        Ok(Err(err)) => Poll::Ready(Err(err)),
-                        Ok(Ok(())) => Poll::Pending,
-                    }
-                }
-                res => Poll::Ready(res.map(|_| packet)),
+                    )
+                },
+            );
+            (packet, tx) = match cf {
+                ControlFlow::Break(res) => break res,
+                ControlFlow::Continue(res) => res,
             };
+            backoff.snooze()
         }
     }
 }
 
 #[must_use]
 pub struct CallReceive<'a> {
-    channel: &'a Channel,
     id: usize,
-    packet: Packet,
-    result: Option<oneshot_::Receiver<SendData>>,
+    recv: Receive<'a>,
 }
 
 impl Future for CallReceive<'_> {
     type Output = Result<Packet>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let mut packet = match result_recv(&mut self.result) {
-            Ok(Some(packet)) => packet,
-            Ok(None) => mem::take(&mut self.packet),
-            Err(immediate) => return immediate,
+        let mut packet = match self.recv.result_recv(cx) {
+            ControlFlow::Continue(packet) => packet,
+            ControlFlow::Break(res) => return res,
         };
 
         let backoff = Backoff::new();
         let (mut tx, rx) = oneshot();
-        self.result = Some(rx);
+        self.recv.result = Some(rx);
         loop {
-            break match self
-                .channel
-                .inner
-                .call_receive(self.id, &mut packet, Duration::ZERO)
-            {
-                Err(ENOENT) => {
-                    let pack = self.channel.inner.pack_call_receive(self.id, packet);
-                    let res = self.channel.disp.poll_chan_acrecv(
-                        &self.channel.inner,
-                        self.id,
-                        (pack, tx),
+            let id = self.id;
+            let cf = self.recv.poll_inner(
+                packet,
+                |r, packet| r.channel.inner.call_receive(id, packet, Duration::ZERO),
+                |r, packet| {
+                    r.channel.disp.poll_chan_acrecv(
+                        &r.channel.inner,
+                        id,
+                        (r.channel.inner.pack_call_receive(id, packet), tx),
                         cx.waker(),
-                    );
-                    match res {
-                        Err(pack) => {
-                            packet = pack.0.packet;
-                            tx = pack.1;
-                            backoff.snooze();
-                            continue;
-                        }
-                        Ok(Err(err)) => Poll::Ready(Err(err)),
-                        Ok(Ok(())) => Poll::Pending,
-                    }
-                }
-                res => Poll::Ready(res.map(|_| packet)),
+                    )
+                },
+            );
+            (packet, tx) = match cf {
+                ControlFlow::Break(res) => break res,
+                ControlFlow::Continue(res) => res,
             };
+            backoff.snooze()
         }
-    }
-}
-
-/// # Returns
-///
-/// `Err` indicates an immediate returning, while `Ok` indicates continuation
-/// (or restart) of polling.
-fn result_recv(
-    result: &mut Option<oneshot_::Receiver<SendData>>,
-) -> core::result::Result<Option<Packet>, Poll<Result<Packet>>> {
-    match result.take() {
-        Some(rx) => match rx.try_recv() {
-            // Has a result
-            Ok(send_data) => match send_data.id {
-                // Packet transferring successful, return it
-                Ok(id) => {
-                    let mut packet = send_data.packet;
-                    packet.id = Some(id);
-                    Err(Poll::Ready(Ok(packet)))
-                }
-
-                // Packet buffer too small, reserve enough memory and restart polling
-                Err(EBUFFER) => {
-                    let mut packet = send_data.packet;
-                    packet.buffer.reserve(send_data.buffer_size);
-                    packet.handles.reserve(send_data.handle_count);
-                    Ok(Some(packet))
-                }
-
-                // Actual error occurred, return it
-                Err(err) => Err(Poll::Ready(Err(err))),
-            },
-
-            // Not yet, continue waiting
-            Err(TryRecvError::Empty) => {
-                *result = Some(rx);
-                Err(Poll::Pending)
-            }
-
-            // Channel early disconnected, restart the default process
-            Err(TryRecvError::Disconnected) => Ok(None),
-        },
-        None => Ok(None),
     }
 }

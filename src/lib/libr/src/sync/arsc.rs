@@ -144,6 +144,33 @@ impl<T: ?Sized, A: Allocator> Arsc<T, A> {
     }
 }
 
+impl<T> Arsc<T, Global> {
+    #[must_use]
+    pub fn into_raw(this: Self) -> *const T {
+        let ptr = Self::as_ptr(&this);
+        mem::forget(this);
+        ptr
+    }
+
+    /// # Safety
+    /// 
+    /// The raw pointer must have been previously returned by a call to
+    /// [`Arsc<U>::into_raw`][into_raw] where `U` must have the same size and
+    /// alignment as `T`. This is trivially true if `U` is `T`.
+    /// Note that if `U` is not `T` but has the same size and alignment, this is
+    /// basically like transmuting references of different types. See
+    /// [`mem::transmute`][transmute] for more information on what
+    /// restrictions apply in this case.
+    ///
+    /// [into_raw]: Arsc::into_raw
+    /// [transmute]: core::mem::transmute
+    pub unsafe fn from_raw(ptr: *const T) -> Self {
+        let offset = memoffset::offset_of!(ArscInner<T, Global>, data);
+        let inner = unsafe { ptr.byte_sub(offset) as *mut ArscInner<T, Global> };
+        unsafe { Self::from_inner(NonNull::new_unchecked(inner)) }
+    }
+}
+
 impl<T, A: Allocator> Arsc<T, A> {
     pub fn try_make_mut_with<F, E>(this: &mut Self, clone: F) -> Result<&mut T, E>
     where

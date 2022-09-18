@@ -35,11 +35,12 @@ impl Interrupt {
     }
 
     #[inline]
-    pub fn wait_until_async(&self, now: Instant) -> WaitUntil<'_> {
+    pub fn wait_until_async(&self, deadline: Instant) -> WaitUntil<'_> {
         WaitUntil {
             intr: self,
-            now,
+            deadline,
             result: None,
+            key: None,
         }
     }
 
@@ -70,26 +71,35 @@ impl PackedSyscall for (PackIntrWait, oneshot_::Sender<Result<Instant>>) {
 #[must_use]
 pub struct WaitUntil<'a> {
     intr: &'a Interrupt,
-    now: Instant,
+    deadline: Instant,
     result: Option<oneshot_::Receiver<Result<Instant>>>,
+    key: Option<usize>,
 }
 
 impl Future for WaitUntil<'_> {
     type Output = Result<Instant>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        if let Some(value) = crate::utils::simple_recv(&mut self.result) {
-            return value;
+        if let Some(Poll::Ready(value)) = crate::utils::simple_recv(&mut self.result) {
+            return Poll::Ready(value);
+        }
+
+        if let Some(key) = self.key {
+            self.intr.disp.update(key, cx.waker())?;
+            return Poll::Pending;
+        }
+
+        let mut last_time = self.intr.last_time()?;
+        if self.deadline <= last_time {
+            return Poll::Ready(Ok(last_time));
         }
 
         let backoff = Backoff::new();
         let (mut tx, rx) = oneshot();
         self.result = Some(rx);
         loop {
-            let last_time = self.intr.last_time()?;
-
-            if self.now > last_time {
-                let pack = self.intr.inner.pack_wait(self.now - last_time)?;
+            let pack = if self.deadline > last_time {
+                let pack = self.intr.inner.pack_wait(self.deadline - last_time)?;
                 let res = self.intr.disp.poll_send(
                     &self.intr.inner,
                     true,
@@ -97,18 +107,20 @@ impl Future for WaitUntil<'_> {
                     (pack, tx),
                     cx.waker(),
                 );
-                break match res {
-                    Err((_, pack)) => {
-                        tx = pack;
-                        backoff.snooze();
-                        continue;
+                match res {
+                    Err((_, pack)) => pack,
+                    Ok(Err(err)) => break Poll::Ready(Err(err)),
+                    Ok(Ok(key)) => {
+                        self.key = Some(key);
+                        break Poll::Pending;
                     }
-                    Ok(Err(err)) => Poll::Ready(Err(err)),
-                    Ok(Ok(())) => Poll::Pending,
-                };
+                }
             } else {
                 break Poll::Ready(Ok(last_time));
-            }
+            };
+            tx = pack;
+            backoff.snooze();
+            last_time = self.intr.last_time()?;
         }
     }
 }

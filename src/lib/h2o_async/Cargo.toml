@@ -8,5 +8,7 @@ version = "0.1.0"
 solvent = {path = "../h2o_rs"}
 solvent-std = {path = "../libr"}
 # External crates
+async-task = {version = "4.3", default-features = false}
 futures = {version = "0.3", default-features = false, features = ["alloc"]}
 log = "0.4"
+waker-fn = "1.1"

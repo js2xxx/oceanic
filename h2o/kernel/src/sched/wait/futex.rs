@@ -51,7 +51,7 @@ impl Futex {
 
     #[inline]
     fn wake(&self, num: usize) -> Result<usize> {
-        Ok(self.wo.notify(num, true))
+        Ok(self.wo.notify(num, false))
     }
 
     fn requeue(&self, other: &Self, num: usize) -> Result<usize> {

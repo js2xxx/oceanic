@@ -1,7 +1,7 @@
 #[allow(deprecated)]
 use core::hash::SipHasher13;
 use core::{
-    cell::{Cell, LazyCell},
+    cell::Cell,
     fmt,
     hash::{BuildHasher, Hasher},
 };
@@ -18,8 +18,8 @@ impl RandomState {
     #[inline]
     #[must_use]
     pub fn new() -> RandomState {
-        thread_local!(static KEYS: LazyCell<Cell<(u64, u64)>> = {
-            LazyCell::new(|| Cell::new((solvent::random(), solvent::random())))
+        thread_local!(static KEYS: Cell<(u64, u64)> = {
+            Cell::new((solvent::random(), solvent::random()))
         });
 
         KEYS.with(|keys| {

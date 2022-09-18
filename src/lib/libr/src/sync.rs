@@ -6,6 +6,7 @@ mod deque;
 pub mod epoch;
 mod mutex;
 mod once;
+mod parker;
 
 pub(crate) mod imp;
 
@@ -18,4 +19,5 @@ pub use self::{
     deque::{Injector, Steal, Stealer, Worker},
     mutex::{Mutex, MutexGuard},
     once::Once,
+    parker::{Parker, Unparker},
 };

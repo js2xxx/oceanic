@@ -1,5 +1,3 @@
-use core::cell::LazyCell as Lazy;
-
 pub use crossbeam::epoch::*;
 
 use super::Lazy as SyncLazy;
@@ -8,7 +6,7 @@ use crate::thread_local;
 static COLLECTOR: SyncLazy<Collector> = SyncLazy::new(Collector::new);
 
 thread_local! {
-    static HANDLE: Lazy<LocalHandle> = Lazy::new(|| COLLECTOR.register());
+    static HANDLE: LocalHandle = COLLECTOR.register();
 }
 
 /// Pins the current thread.
