@@ -78,12 +78,12 @@ unsafe impl<K: Sync + Send, V: Sync + Send, S> Sync for CHashMap<K, V, S> {}
 impl<K, V, S: Default> Default for CHashMap<K, V, S> {
     #[inline]
     fn default() -> Self {
-        Self::new(S::default())
+        Self::with_hasher(S::default())
     }
 }
 
 impl<K, V, S> CHashMap<K, V, S> {
-    pub fn new(hasher: S) -> Self {
+    pub fn with_hasher(hasher: S) -> Self {
         CHashMap {
             inner: RwLock::new(inner::Buckets::with_capacity(hasher, MIN_CAPACITY)),
             len: AtomicUsize::new(0),
@@ -99,12 +99,24 @@ impl<K, V, S> CHashMap<K, V, S> {
     }
 }
 
+impl<K, V, S: Clone> CHashMap<K, V, S> {
+    pub fn take(&self) -> CHashMap<K, V, S> {
+        let mut buckets = self.inner.write();
+
+        let mut ret = Self::with_hasher(buckets.hasher().clone());
+        *ret.len.get_mut() = self.len.swap(0, SeqCst);
+        mem::swap(ret.inner.get_mut(), &mut *buckets);
+
+        ret
+    }
+}
+
 impl<K, V, S: BuildHasher + Default> CHashMap<K, V, S> {
-    fn grow(&self, new_len: usize)
+    fn grow(&self, old_len: usize)
     where
         K: Hash,
     {
-        let len = new_len * GROW_FACTOR;
+        let len = old_len * GROW_FACTOR;
         let mut buckets = self.inner.write();
         if buckets.len() < len {
             let new = inner::Buckets::with_capacity(S::default(), len);
@@ -268,10 +280,76 @@ impl<K, V, S: BuildHasher + Default> CHashMap<K, V, S> {
     {
         self.remove_entry(key).map(|ret| ret.1)
     }
+
+    pub fn retain_mut<F>(&self, predicate: F)
+    where
+        F: Fn(&K, &mut V) -> bool,
+    {
+        let buckets = self.inner.read();
+        for ent in buckets.as_inner() {
+            let mut ent = ent.write();
+
+            let remain = match *ent {
+                inner::Entry::Data((ref key, ref mut value)) => predicate(key, value),
+                _ => true,
+            };
+            if !remain {
+                *ent = inner::Entry::Removed;
+                self.len.fetch_sub(1, SeqCst);
+            }
+        }
+    }
+
+    #[inline]
+    pub fn retain<F>(&self, predicate: F)
+    where
+        F: Fn(&K, &V) -> bool,
+    {
+        self.retain_mut(|key, value| predicate(key, value))
+    }
 }
 
 impl<K, V, S: BuildHasher + Default> fmt::Debug for CHashMap<K, V, S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_list().entry(&"..").finish()
+    }
+}
+
+impl<K: Clone, V: Clone, S: Clone> Clone for CHashMap<K, V, S> {
+    fn clone(&self) -> Self {
+        Self {
+            inner: RwLock::new(self.inner.read().clone()),
+            len: self.len.load(SeqCst).into(),
+        }
+    }
+}
+
+pub struct IntoIter<K, V> {
+    inner: alloc::vec::IntoIter<RwLock<inner::Entry<(K, V)>>>,
+}
+
+impl<K, V> Iterator for IntoIter<K, V> {
+    type Item = (K, V);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        for ent in self.inner.by_ref() {
+            if let inner::Entry::Data((key, value)) = ent.into_inner() {
+                return Some((key, value));
+            }
+        }
+        None
+    }
+}
+
+impl<K, V, S> IntoIterator for CHashMap<K, V, S> {
+    type Item = (K, V);
+
+    type IntoIter = IntoIter<K, V>;
+
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter {
+        IntoIter {
+            inner: self.inner.into_inner().into_inner().into_iter(),
+        }
     }
 }

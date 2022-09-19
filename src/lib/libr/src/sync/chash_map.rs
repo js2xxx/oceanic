@@ -286,6 +286,33 @@ impl<K, V, S: BuildHasher + Default> CHashMap<K, V, S> {
     {
         self.remove_entry(key).map(|ret| ret.1)
     }
+
+    pub fn retain_mut<F>(&self, predicate: F)
+    where
+        F: Fn(&K, &mut V) -> bool,
+    {
+        let buckets = self.inner.read();
+        for ent in buckets.as_inner() {
+            let mut ent = ent.write();
+
+            let remain = match *ent {
+                inner::Entry::Data((ref key, ref mut value)) => predicate(key, value),
+                _ => true,
+            };
+            if !remain {
+                *ent = inner::Entry::Removed;
+                self.len.fetch_sub(1, SeqCst);
+            }
+        }
+    }
+
+    #[inline]
+    pub fn retain<F>(&self, predicate: F)
+    where
+        F: Fn(&K, &V) -> bool,
+    {
+        self.retain_mut(|key, value| predicate(key, value))
+    }
 }
 
 impl<K, V, S: BuildHasher + Default> fmt::Debug for CHashMap<K, V, S> {

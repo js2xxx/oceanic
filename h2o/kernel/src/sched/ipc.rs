@@ -2,14 +2,15 @@ mod arsc;
 pub mod basic;
 mod channel;
 
-use alloc::{sync::Arc, vec::Vec};
+use alloc::sync::Arc;
 use core::{
     fmt::Debug,
-    hint, mem,
+    hash::BuildHasherDefault,
+    hint,
     sync::atomic::{AtomicUsize, Ordering::SeqCst},
 };
 
-use spin::Mutex;
+use collection_ex::{CHashMap, FnvHasher};
 pub use sv_call::ipc::{SIG_GENERIC, SIG_READ, SIG_TIMER, SIG_WRITE};
 
 pub use self::{
@@ -19,22 +20,24 @@ pub use self::{
 use super::PREEMPT;
 use crate::cpu::arch::apic::TriggerMode;
 
+type BH = BuildHasherDefault<FnvHasher>;
+
 #[derive(Debug, Default)]
 pub struct EventData {
-    waiters: Mutex<Vec<Arc<dyn Waiter>>>,
+    waiters: CHashMap<usize, Arc<dyn Waiter>, BH>,
     signal: AtomicUsize,
 }
 
 impl EventData {
     pub fn new(init_signal: usize) -> Self {
         EventData {
-            waiters: Mutex::new(Vec::new()),
+            waiters: Default::default(),
             signal: AtomicUsize::new(init_signal),
         }
     }
 
     #[inline]
-    pub fn waiters(&self) -> &Mutex<Vec<Arc<dyn Waiter>>> {
+    pub fn waiters(&self) -> &CHashMap<usize, Arc<dyn Waiter>, BH> {
         &self.waiters
     }
 
@@ -57,25 +60,18 @@ pub trait Event: Debug + Send + Sync {
         if waiter.try_on_notify(self as *const _ as _, signal, true) {
             return;
         }
-        PREEMPT.scope(|| self.event_data().waiters.lock().push(waiter));
+        let (key, _) = Arc::as_ptr(&waiter).to_raw_parts();
+        PREEMPT.scope(|| self.event_data().waiters.insert(key as _, waiter));
     }
 
     fn unwait(&self, waiter: &Arc<dyn Waiter>) -> (bool, usize) {
         let signal = self.event_data().signal().load(SeqCst);
         let ret = PREEMPT.scope(|| {
-            let mut waiters = self.event_data().waiters.lock();
-            let pos = waiters.iter().position(|w| {
-                let (this, _) = Arc::as_ptr(w).to_raw_parts();
-                let (other, _) = Arc::as_ptr(waiter).to_raw_parts();
-                this == other
-            });
-            match pos {
-                Some(pos) => {
-                    waiters.swap_remove(pos);
-                    true
-                }
-                None => false,
-            }
+            let (other, _) = Arc::as_ptr(waiter).to_raw_parts();
+            self.event_data()
+                .waiters
+                .remove(&(other as usize))
+                .is_some()
         });
         (ret, signal)
     }
@@ -83,8 +79,8 @@ pub trait Event: Debug + Send + Sync {
     fn cancel(&self) {
         let signal = self.event_data().signal.load(SeqCst);
 
-        let waiters = PREEMPT.scope(|| mem::take(&mut *self.event_data().waiters.lock()));
-        for waiter in waiters {
+        let waiters = PREEMPT.scope(|| self.event_data().waiters.take());
+        for (_, waiter) in waiters {
             waiter.on_cancel(self as *const _ as _, signal);
         }
     }
@@ -95,8 +91,8 @@ pub trait Event: Debug + Send + Sync {
     }
 
     fn notify_impl(&self, clear: usize, set: usize) {
+        let mut prev = self.event_data().signal.load(SeqCst);
         let signal = loop {
-            let prev = self.event_data().signal.load(SeqCst);
             let new = (prev & !clear) | set;
             if prev == new {
                 return;
@@ -108,12 +104,16 @@ pub trait Event: Debug + Send + Sync {
             {
                 Ok(_) if prev & new == new => return,
                 Ok(_) => break new,
-                _ => hint::spin_loop(),
+                Err(signal) => {
+                    prev = signal;
+                    hint::spin_loop()
+                }
             }
         };
         PREEMPT.scope(|| {
-            let mut waiters = self.event_data().waiters.lock();
-            waiters.retain(|waiter| !waiter.try_on_notify(self as *const _ as _, signal, false))
+            self.event_data()
+                .waiters
+                .retain(|_, waiter| !waiter.try_on_notify(self as *const _ as _, signal, false))
         });
     }
 }

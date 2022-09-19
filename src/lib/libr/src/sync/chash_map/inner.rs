@@ -93,6 +93,10 @@ impl<K, V, S> Buckets<K, V, S> {
         self.data.len()
     }
 
+    pub fn as_inner(&self) -> &[RwLock<Entry<(K, V)>>] {
+        &self.data
+    }
+
     pub fn hasher(&self) -> &S {
         &self.hasher
     }

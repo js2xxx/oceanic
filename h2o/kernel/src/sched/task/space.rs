@@ -27,7 +27,7 @@ impl Space {
         Ok(Arc::try_new(Space {
             mem,
             handles: HandleMap::new(),
-            futexes: Futexes::new(Default::default()),
+            futexes: Default::default(),
         })?)
     }
 
@@ -35,7 +35,7 @@ impl Space {
         Arc::new(Space {
             mem: mem::space::with_current(Arc::clone),
             handles: HandleMap::new(),
-            futexes: Futexes::new(Default::default()),
+            futexes: Default::default(),
         })
     }
 
