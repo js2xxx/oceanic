@@ -7,7 +7,7 @@ use core::{
 
 use solvent::{
     c_ty::{StatusOrHandle, StatusOrValue},
-    prelude::{Error, Handle, Object, Ref, Result, Virt},
+    prelude::{Handle, Object, Ref, Result, Virt, EEXIST, ENOENT},
 };
 use spin::Mutex;
 
@@ -29,7 +29,7 @@ pub fn init_rt(args: StartupArgs) -> Result<Vec<u8>> {
     loop {
         let value = STARTUP_STATE.load(Acquire);
         match value {
-            SS_INIT => break Err(Error::EEXIST),
+            SS_INIT => break Err(EEXIST),
             SS_PROGRESS => hint::spin_loop(),
             SS_UNINIT => {
                 match STARTUP_STATE.compare_exchange(SS_UNINIT, SS_PROGRESS, Acquire, Acquire) {
@@ -59,12 +59,12 @@ where
     if STARTUP_STATE.load(Acquire) == SS_INIT {
         func()
     } else {
-        Err(Error::ENOENT)
+        Err(ENOENT)
     }
 }
 
 pub fn try_get_root_virt() -> Result<Ref<'static, Virt>> {
-    init_or(|| unsafe { ROOT_VIRT.as_ref().map(Into::into).ok_or(Error::ENOENT) })
+    init_or(|| unsafe { ROOT_VIRT.as_ref().map(Into::into).ok_or(ENOENT) })
 }
 
 pub fn root_virt() -> Ref<'static, Virt> {
@@ -88,7 +88,7 @@ pub fn try_take_startup_handle(info: HandleInfo) -> Result<Handle> {
             .assume_init_mut()
             .handles
             .remove(&info)
-            .ok_or(Error::ENOENT)
+            .ok_or(ENOENT)
     })
 }
 

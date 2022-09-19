@@ -5,7 +5,11 @@ pub mod wait;
 
 pub use self::imp::{deque, epoch};
 pub(crate) use self::{
-    imp::{task_migrate_handler, waiter::Blocker, PREEMPT, SCHED},
+    imp::{
+        task_migrate_handler,
+        waiter::{Blocker, Dispatcher},
+        PREEMPT, SCHED,
+    },
     ipc::{basic::BasicEvent, *},
 };
 

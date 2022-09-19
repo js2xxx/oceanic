@@ -8,10 +8,7 @@ use super::{
 };
 use crate::{
     mem,
-    sched::{
-        wait::{Futex, FutexKey, FutexRef, Futexes},
-        Arsc,
-    },
+    sched::wait::{Futex, FutexKey, FutexRef, Futexes},
 };
 
 #[derive(Debug)]
@@ -25,23 +22,21 @@ unsafe impl Send for Space {}
 unsafe impl Sync for Space {}
 
 impl Space {
-    pub fn new(ty: super::Type) -> sv_call::Result<Arsc<Self>> {
+    pub fn new(ty: super::Type) -> sv_call::Result<Arc<Self>> {
         let mem = mem::space::Space::try_new(ty)?;
-        Arsc::try_new(Space {
+        Ok(Arc::try_new(Space {
             mem,
             handles: HandleMap::new(),
-            futexes: Futexes::new(Default::default()),
-        })
-        .map_err(sv_call::Error::from)
+            futexes: Default::default(),
+        })?)
     }
 
-    pub fn new_current() -> sv_call::Result<Arsc<Self>> {
-        Arsc::try_new(Space {
+    pub fn new_current() -> Arc<Self> {
+        Arc::new(Space {
             mem: mem::space::with_current(Arc::clone),
             handles: HandleMap::new(),
-            futexes: Futexes::new(Default::default()),
+            futexes: Default::default(),
         })
-        .map_err(sv_call::Error::from)
     }
 
     #[inline]
@@ -74,14 +69,14 @@ impl Space {
                 if obj.features().contains(need_feature) {
                     Ok(Tid::clone(&obj))
                 } else {
-                    Err(sv_call::Error::EPERM)
+                    Err(sv_call::EPERM)
                 }
             })
         })
     }
 }
 
-unsafe impl DefaultFeature for Arsc<Space> {
+unsafe impl DefaultFeature for Space {
     fn default_features() -> Feature {
         Feature::READ | Feature::WRITE
     }

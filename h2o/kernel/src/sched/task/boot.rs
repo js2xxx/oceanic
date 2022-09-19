@@ -8,6 +8,7 @@ use targs::Targs;
 
 use super::{hdl::DefaultFeature, *};
 use crate::{
+    cpu::arch::tsc::TSC_CLOCK,
     mem::space::{Flags, Phys, Virt},
     sched::SCHED,
 };
@@ -49,6 +50,26 @@ fn flags_to_feat(flags: Flags) -> Feature {
 }
 
 pub fn setup() {
+    unsafe {
+        let constants = sv_call::Constants {
+            ticks_offset: TSC_CLOCK.initial,
+            ticks_multiplier: TSC_CLOCK.mul,
+            ticks_shift: TSC_CLOCK.sft,
+            has_builtin_rand: archop::rand::has_builtin(),
+            num_cpus: crate::cpu::count(),
+        };
+
+        #[allow(clippy::zero_prefixed_literal)]
+        let offset = include!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/target/constant_offset.rs"
+        ));
+        let ptr = { VDSO.1.base().to_laddr(minfo::ID_OFFSET) }
+            .add(offset)
+            .cast::<sv_call::Constants>();
+        ptr.write(constants);
+    }
+
     let mut objects = hdl::List::new();
 
     // The sequence of kernel objects must match the one defined in
@@ -125,7 +146,4 @@ pub fn setup() {
     )
     .expect("Failed to initialize TINIT");
     SCHED.unblock(tinit, true);
-
-    // Get rid of EPIPE in TINIT.
-    mem::forget(me);
 }

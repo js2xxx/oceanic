@@ -99,7 +99,10 @@ pub fn unwrap_layout(layout: Layout) -> Result<usize, Error> {
     }
 
     let size = layout.pad_to_align().size();
-    let idx = OBJ_SIZES.binary_search(&size).into_ok_or_err();
+    let idx = match OBJ_SIZES.binary_search(&size) {
+        Ok(idx) => idx,
+        Err(idx) => idx,
+    };
 
     if !(0..NR_OBJ_SIZES).contains(&idx) {
         Err(Error::InvLayout(layout))

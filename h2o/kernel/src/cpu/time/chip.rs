@@ -1,15 +1,14 @@
+use core::sync::atomic::Ordering::Release;
+
 use archop::Azy;
 
 use super::Instant;
 use crate::{cpu::arch::tsc::TSC_CLOCK, dev::hpet::HPET_CLOCK};
 
 pub static CLOCK: Azy<&'static dyn ClockChip> = Azy::new(|| {
-    let ret: &'static dyn ClockChip = match *TSC_CLOCK {
-        Some(ref tsc) => tsc,
-        None => HPET_CLOCK.as_ref().expect("No available clock"),
-    };
-    *crate::log::HAS_TIME.write() = true;
-    ret
+    let ret: &crate::cpu::arch::tsc::TscClock = &TSC_CLOCK;
+    crate::log::HAS_TIME.store(true, Release);
+    ret as _
 });
 
 static CALIB_CLOCK: Azy<&'static dyn CalibrationClock> =
@@ -41,7 +40,7 @@ pub fn calibrate(
     let tries = 3;
     let iter_ms = [10u64, 20];
     let mut best = [u64::MAX, u64::MAX];
-    for (i, &duration) in iter_ms.iter().enumerate() {
+    for (best, &duration) in best.iter_mut().zip(iter_ms.iter()) {
         for _ in 0..tries {
             unsafe {
                 CALIB_CLOCK.prepare(duration);
@@ -49,7 +48,6 @@ pub fn calibrate(
 
                 let start = get_start();
                 CALIB_CLOCK.cycle(duration);
-                let best = best.get_unchecked_mut(i);
                 *best = (*best).min(get_end() - start);
 
                 CALIB_CLOCK.cleanup();

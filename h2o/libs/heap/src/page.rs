@@ -37,17 +37,33 @@ pub type DeallocPages = unsafe fn(pages: NonNull<[Page]>);
 /// They're divided into 3 classes. The constants in each class are made of
 /// arithmetic and geometric series.
 pub const OBJ_SIZES: &[usize] = &[
-    16, 24, // \ - Class 1
+    16, 24, // \ - Small
     32, 48, // /
-    64, 80, 96, 112, // \ - Class 2
+    64, 80, 96, 112, // \ - Medium
     128, 160, 192, 224, // |
     256, 320, 384, 448, // |
     512, 640, 768, 896, // /
-    1024, 1152, 1280, 1408, 1536, 1664, 1792, 1920, // \ - Class 3
+    1024, 1152, 1280, 1408, 1536, 1664, 1792, 1920, // \ - Large
 ];
 // The last line is useless because their `max_count` is 1 and that block of
 // memory is used for headers and no free memory for allocations.
 // 2048, 2304, 2560, 2816, 3072, 3328, 3584, 3840, // /
+
+pub enum Classes {
+    Small = 0,
+    Medium = 4,
+    Large = 20,
+}
+
+impl Classes {
+    pub const fn from_index(index: usize) -> Self {
+        match index {
+            20.. => Classes::Large,
+            4.. => Classes::Medium,
+            _ => Classes::Small,
+        }
+    }
+}
 
 /// The number of the items of [`OBJ_SIZES`].
 pub const NR_OBJ_SIZES: usize = OBJ_SIZES.len();

@@ -42,6 +42,8 @@ impl Dist {
 
         fs::create_dir_all(PathBuf::from(&target_root).join("bootfs/lib"))?;
         fs::create_dir_all(PathBuf::from(&target_root).join("bootfs/bin"))?;
+        fs::create_dir_all(PathBuf::from(&target_root).join("sysroot/usr/include"))?;
+        fs::create_dir_all(PathBuf::from(&target_root).join("sysroot/usr/lib"))?;
 
         // Generate syscall stubs
         crate::gen::gen_syscall(
@@ -49,6 +51,7 @@ impl Dist {
             src_root.join(H2O_KERNEL).join("target/wrapper.rs"),
             src_root.join("h2o/libs/syscall/target/call.rs"),
             src_root.join("h2o/libs/syscall/target/stub.rs"),
+            src_root.join("h2o/libs/syscall/target/num.rs"),
         )?;
 
         // Build h2o_boot
@@ -67,7 +70,7 @@ impl Dist {
             let cd = src_root.join(H2O_SYSCALL);
             let ldscript = cd.join("syscall.ld");
 
-            fs::copy(cd.join("rxx.rs.in"), cd.join("target/rxx.rs"))?;
+            println!("Building VDSO");
 
             let mut cmd = Command::new(&cargo);
             let cmd = cmd.current_dir(&cd).arg("rustc").args([
@@ -81,6 +84,8 @@ impl Dist {
                 "--no-default-features",
                 "--features",
                 "call",
+                "--features",
+                "vdso",
             ]);
             cmd.args([
                 "--",
@@ -91,18 +96,36 @@ impl Dist {
 
             // Copy the binary to target.
             let bin_dir = Path::new(&target_root).join("x86_64-pc-oceanic/release");
-            fs::copy(
-                bin_dir.join("libsv_call.so"),
-                src_root.join(H2O_KERNEL).join("target/vdso"),
-            )?;
+            let path = src_root.join(H2O_KERNEL).join("target/vdso");
+            fs::copy(bin_dir.join("libsv_call.so"), &path)?;
             Command::new("llvm-ifs")
                 .arg("--input-format=ELF")
-                .arg(format!("--output-elf={}/libh2o.so", target_root))
-                .arg(src_root.join(H2O_KERNEL).join("target/vdso"))
+                .arg(format!(
+                    "--output-elf={}/sysroot/usr/lib/libh2o.so",
+                    target_root
+                ))
+                .arg(&path)
                 .status()?
                 .exit_ok()?;
 
-            fs::File::create(cd.join("target/rxx.rs"))?;
+            let out = Command::new("llvm-objdump")
+                .arg("--syms")
+                .arg(&path)
+                .output()?
+                .stdout;
+            let s = String::from_utf8_lossy(&out);
+            let (constants_offset, _) = s
+                .split('\n')
+                .find(|s| s.ends_with("CONSTANTS"))
+                .and_then(|s| s.split_once(' '))
+                .expect("Failed to get CONSTANTS");
+
+            fs::write(
+                src_root.join(H2O_KERNEL).join("target/constant_offset.rs"),
+                format!("0x{}", constants_offset),
+            )?;
+
+            self.gen_debug("vdso", src_root.join(H2O_KERNEL).join("target"), DEBUG_DIR)?;
         }
 
         // Build h2o_kernel
@@ -125,8 +148,8 @@ impl Dist {
             &target_root,
         )?;
 
-        self.build_lib(&cargo, &src_root, &target_root)?;
-        self.build_bin(&cargo, &src_root, &target_root)?;
+        self.build_lib(&cargo, src_root, &target_root)?;
+        self.build_bin(&cargo, src_root, &target_root)?;
 
         crate::gen::gen_bootfs(Path::new(BOOTFS).join("../BOOT.fs"))?;
 
@@ -163,6 +186,27 @@ impl Dist {
             &dst_root,
         )?;
 
+        Command::new("llvm-ifs")
+            .arg("--input-format=ELF")
+            .arg(format!(
+                "--output-elf={}",
+                Path::new(target_root)
+                    .join("sysroot/usr/lib/libldso.so")
+                    .to_string_lossy()
+            ))
+            .arg(bin_dir.join(self.profile()).join("libldso.so"))
+            .status()?
+            .exit_ok()?;
+
+        self.build_impl(
+            cargo,
+            "libco2.so",
+            "libco2.so",
+            src_root.join("libc"),
+            &bin_dir,
+            &dst_root,
+        )?;
+
         Ok(())
     }
 
@@ -177,7 +221,10 @@ impl Dist {
         let dst_root = Path::new(target_root).join("bootfs/bin");
         let dep_root = Path::new(target_root).join("bootfs/lib");
 
-        let mut dep_lib = HashSet::new();
+        let mut dep_lib = ["libldso.so", "libco2.so"]
+            .into_iter()
+            .map(ToString::to_string)
+            .collect::<HashSet<_>>();
 
         for ent in fs::read_dir(src_root)?.flatten() {
             let ty = ent.file_type()?;
@@ -187,11 +234,7 @@ impl Dist {
                 for dep in fs::read_dir(bin_dir.join(self.profile()).join("deps"))?.flatten() {
                     let name = dep.file_name();
                     match name.to_str() {
-                        Some(name)
-                            if name.ends_with(".so")
-                                && name != "libldso.so"
-                                && dep_lib.insert(dep.path()) =>
-                        {
+                        Some(name) if name.ends_with(".so") && dep_lib.insert(name.to_string()) => {
                             fs::copy(dep.path(), dep_root.join(name))?;
                             self.gen_debug(name, &dep_root, DEBUG_DIR)?;
                         }

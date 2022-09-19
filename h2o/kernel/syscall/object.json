@@ -54,37 +54,5 @@
                 "ty": "usize"
             }
         ]
-    },
-    {
-        "name": "sv_obj_await",
-        "returns": "Handle",
-        "args": [
-            {
-                "name": "hdl",
-                "ty": "Handle"
-            },
-            {
-                "name": "wake_all",
-                "ty": "bool"
-            },
-            {
-                "name": "signal",
-                "ty": "usize"
-            }
-        ]
-    },
-    {
-        "name": "sv_obj_awend",
-        "returns": "usize",
-        "args": [
-            {
-                "name": "waiter",
-                "ty": "Handle"
-            },
-            {
-                "name": "timeout_us",
-                "ty": "u64"
-            }
-        ]
     }
 ]

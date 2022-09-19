@@ -63,7 +63,7 @@ impl DlAlloc {
     fn dealloc(&self, _: *mut u8, _: Layout, _: &Virt) {}
 }
 
-const BUFFER_SIZE: usize = 512;
+const BUFFER_SIZE: usize = 4096;
 #[repr(align(4096))]
 struct Buffer([u8; BUFFER_SIZE]);
 pub struct DlAlloc2 {
@@ -78,7 +78,7 @@ unsafe impl Sync for DlAlloc2 {}
 unsafe impl GlobalAlloc for DlAlloc2 {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         match svrt::try_get_root_virt() {
-            Ok(root_virt) => self.inner.alloc(layout, &*root_virt),
+            Ok(root_virt) => self.inner.alloc(layout, &root_virt),
             Err(_) => {
                 let index = self.buffer_index.get();
                 let i = (*index).next_multiple_of(layout.align());
@@ -97,7 +97,7 @@ unsafe impl GlobalAlloc for DlAlloc2 {
         if let Ok(root_virt) = svrt::try_get_root_virt() {
             let buffer = &*self.buffer.get();
             if !buffer.0.as_ptr_range().contains(&(ptr as *const _)) {
-                self.inner.dealloc(ptr, layout, &*root_virt);
+                self.inner.dealloc(ptr, layout, &root_virt);
             }
         }
     }

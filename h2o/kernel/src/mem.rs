@@ -23,7 +23,7 @@ pub static MMAP: Azy<PtrIter<pmm::boot::MemRange>> = Azy::new(|| {
 static ALL_AVAILABLE: AtomicUsize = AtomicUsize::new(0);
 
 static MEM_RESOURCE: Azy<Arc<Resource<usize>>> = Azy::new(|| {
-    let (all_available, addr_max) = pmm::init(&*MMAP, minfo::TRAMPOLINE_RANGE);
+    let (all_available, addr_max) = pmm::init(&MMAP, minfo::TRAMPOLINE_RANGE);
     log::info!(
         "Memory size: {:.3} GB ({:#x} Bytes)",
         (all_available as f64) / 1073741824.0,

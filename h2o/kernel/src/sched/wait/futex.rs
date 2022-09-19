@@ -1,4 +1,4 @@
-use core::{hash::BuildHasherDefault, intrinsics, time::Duration};
+use core::{fmt, hash::BuildHasherDefault, intrinsics, time::Duration};
 
 use collection_ex::{CHashMap, FnvHasher};
 use sv_call::*;
@@ -15,6 +15,15 @@ pub struct Futex {
     wo: WaitObject,
 }
 
+impl fmt::Debug for Futex {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Futex")
+            .field("key", &self.key)
+            .field("wo_len", &self.wo.wait_queue.len())
+            .finish()
+    }
+}
+
 impl Futex {
     #[inline]
     pub fn new(key: FutexKey) -> Self {
@@ -28,18 +37,21 @@ impl Futex {
         self.wo.wait_queue.is_empty()
     }
 
-    fn wait<T>(&self, guard: T, val: u64, timeout: Duration) -> Result {
-        let ptr = self.key.as_ptr();
-        if unsafe { intrinsics::atomic_load(ptr) } == val {
-            self.wo.wait(guard, timeout, "Futex::wait")
+    fn wait<T>(this: FutexRef<'_>, guard: T, val: u64, timeout: Duration) -> Result {
+        let ptr = this.key.as_ptr();
+        if unsafe { intrinsics::atomic_load_seqcst(ptr) } == val {
+            unsafe {
+                let wo = &*(&this.wo as *const WaitObject);
+                wo.wait((this, guard), timeout, "Futex::wait")
+            }
         } else {
-            Err(Error::EINVAL)
+            Err(EINVAL)
         }
     }
 
     #[inline]
     fn wake(&self, num: usize) -> Result<usize> {
-        Ok(self.wo.notify(num, true))
+        Ok(self.wo.notify(num, false))
     }
 
     fn requeue(&self, other: &Self, num: usize) -> Result<usize> {
@@ -60,6 +72,7 @@ impl Futex {
 mod syscall {
     use sv_call::*;
 
+    use super::Futex;
     use crate::{
         cpu::time,
         sched::{PREEMPT, SCHED},
@@ -72,15 +85,12 @@ mod syscall {
 
         let pree = PREEMPT.lock();
         let futex = unsafe { (*SCHED.current()).as_ref().unwrap().space.futex(ptr) };
-        let ret = futex.wait(pree, expected, time::from_us(timeout_us));
+        let ret = Futex::wait(futex, pree, expected, time::from_us(timeout_us));
 
-        if futex.wo.wait_queue.is_empty() {
-            drop(futex);
-            SCHED.with_current(|cur| {
-                unsafe { cur.space.try_drop_futex(ptr) };
-                Ok(())
-            })?;
-        }
+        SCHED.with_current(|cur| {
+            unsafe { cur.space.try_drop_futex(ptr) };
+            Ok(())
+        })?;
 
         ret
     }
@@ -88,7 +98,10 @@ mod syscall {
     #[syscall]
     fn futex_wake(ptr: UserPtr<In, u64>, num: usize) -> Result<usize> {
         let _ = unsafe { ptr.read() }?;
-        SCHED.with_current(|cur| unsafe { cur.space.futex(ptr) }.wake(num))
+        SCHED.with_current(|cur| {
+            let futex = unsafe { cur.space.futex(ptr) };
+            futex.wake(num)
+        })
     }
 
     #[syscall]

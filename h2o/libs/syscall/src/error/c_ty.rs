@@ -1,4 +1,4 @@
-use crate::{Error, Handle, Result, SerdeReg};
+use crate::{Error, Handle, Result, SerdeReg, OK};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
@@ -10,14 +10,14 @@ impl SerdeReg for Status {
     }
 
     fn decode(val: usize) -> Self {
-        Self(Error::try_decode(val).unwrap_or(Error::OK))
+        Self(Error::try_decode(val).unwrap_or(OK))
     }
 }
 
 impl Status {
     #[inline]
     pub fn into_res(self) -> Result {
-        if self.0 == Error::OK {
+        if self.0 == OK {
             Ok(())
         } else {
             Err(self.0)
@@ -32,7 +32,7 @@ impl Status {
 
 impl Default for Status {
     fn default() -> Self {
-        Status(Error::OK)
+        Status(OK)
     }
 }
 

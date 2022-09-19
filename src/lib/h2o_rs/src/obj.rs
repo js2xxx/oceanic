@@ -1,6 +1,6 @@
-use core::{marker::PhantomData, mem, mem::ManuallyDrop, ops::Deref, time::Duration};
+use core::{marker::PhantomData, mem, mem::ManuallyDrop, ops::Deref, ptr, time::Duration};
 
-pub use sv_call::{Feature, Handle};
+pub use sv_call::{Feature, Handle, SerdeReg, Syscall};
 
 use crate::error::Result;
 
@@ -59,14 +59,6 @@ pub trait Object {
             .into_res()
             .map(|value| value as usize)
         }
-    }
-
-    fn try_wait_async(&self, wake_all: bool, signal: usize) -> Result<crate::ipc::Waiter> {
-        // SAFETY: We don't move the ownership of the handle.
-        let handle =
-            unsafe { sv_call::sv_obj_await(unsafe { self.raw() }, wake_all, signal).into_res()? };
-        // SAFETY: The handle is freshly allocated.
-        Ok(unsafe { Object::from_raw(handle) })
     }
 
     fn reduce_features(self, features: Feature) -> Result<Self>
@@ -163,5 +155,61 @@ impl<'a, T: ?Sized> Deref for Ref<'a, T> {
 
     fn deref(&self) -> &Self::Target {
         &self.inner
+    }
+}
+
+#[repr(transparent)]
+pub struct Dispatcher(sv_call::Handle);
+impl_obj!(Dispatcher);
+impl_obj!(@CLONE, Dispatcher);
+impl_obj!(@DROP, Dispatcher);
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub struct PopRes {
+    pub canceled: bool,
+    pub key: usize,
+    pub result: usize,
+}
+
+impl Dispatcher {
+    pub fn try_new(capacity: usize) -> Result<Self> {
+        let handle = unsafe { sv_call::sv_disp_new(capacity) }.into_res()?;
+        Ok(unsafe { Self::from_raw(handle) })
+    }
+
+    #[inline]
+    pub fn new(capacity: usize) -> Self {
+        Self::try_new(capacity).expect("Failed to create new dispatcher")
+    }
+
+    pub fn push_raw(
+        &self,
+        obj: &impl Object,
+        level_triggered: bool,
+        signal: usize,
+        syscall: Option<&Syscall>,
+    ) -> Result<usize> {
+        let obj = unsafe { obj.raw() };
+        let key = unsafe {
+            sv_call::sv_disp_push(
+                unsafe { self.raw() },
+                obj,
+                level_triggered,
+                signal,
+                syscall.map_or(ptr::null(), |syscall| syscall as _),
+            )
+        }
+        .into_res()?;
+        Ok(key as usize)
+    }
+
+    pub fn pop_raw(&self) -> Result<PopRes> {
+        let mut res = PopRes::default();
+        let key = unsafe {
+            sv_call::sv_disp_pop(unsafe { self.raw() }, &mut res.canceled, &mut res.result)
+        }
+        .into_res()?;
+        res.key = key as usize;
+        Ok(res)
     }
 }

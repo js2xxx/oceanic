@@ -6,12 +6,29 @@ use crate::cpu::time::{
     Instant,
 };
 
-pub static TSC_CLOCK: Azy<Option<TscClock>> = Azy::new(TscClock::new);
+pub static TSC_CLOCK: Azy<TscClock> = Azy::new(|| {
+    if CpuId::new()
+        .get_advanced_power_mgmt_info()
+        .map_or(true, |info| !info.has_invariant_tsc())
+    {
+        log::warn!("The TSC is not invariant. Ticks will be unreliable.");
+    }
+
+    let khz = crate::cpu::time::chip::calibrate(|| {}, rdtsc, rdtsc, || {});
+    let initial = rdtsc();
+    let (mul, sft) = factor_from_freq(khz);
+    log::info!("CPU Timestamp frequency: {} KHz", khz);
+    TscClock {
+        initial,
+        mul: mul as u128,
+        sft: sft as u128,
+    }
+});
 
 pub struct TscClock {
-    initial: u64,
-    mul: u128,
-    sft: u128,
+    pub initial: u64,
+    pub mul: u128,
+    pub sft: u128,
 }
 
 impl ClockChip for TscClock {
@@ -19,25 +36,5 @@ impl ClockChip for TscClock {
         let val = rdtsc() - self.initial;
         let ns = (val as u128 * self.mul) >> self.sft;
         unsafe { Instant::from_raw(ns) }
-    }
-}
-
-impl TscClock {
-    pub fn new() -> Option<TscClock> {
-        let cpuid = CpuId::new();
-        cpuid
-            .get_advanced_power_mgmt_info()?
-            .has_invariant_tsc()
-            .then(|| {
-                let khz = crate::cpu::time::chip::calibrate(|| {}, rdtsc, rdtsc, || {});
-                let initial = rdtsc();
-                let (mul, sft) = factor_from_freq(khz);
-                log::info!("CPU Timestamp frequency: {} KHz", khz);
-                TscClock {
-                    initial,
-                    mul: mul as u128,
-                    sft: sft as u128,
-                }
-            })
     }
 }

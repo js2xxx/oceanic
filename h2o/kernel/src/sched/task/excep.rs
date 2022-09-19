@@ -45,7 +45,7 @@ pub fn dispatch_exception(frame: &mut Frame, vec: ExVec) -> bool {
 
     let blocker =
         crate::sched::Blocker::new(&(Arc::clone(excep_chan.event()) as _), false, SIG_READ);
-    if blocker.wait((), Duration::MAX).is_err() {
+    if blocker.wait(None, Duration::MAX).is_err() {
         return false;
     }
     if !blocker.detach().0 {
@@ -67,7 +67,7 @@ pub fn dispatch_exception(frame: &mut Frame, vec: ExVec) -> bool {
             Some(res.code == EXRES_CODE_RECOVERED)
         }
         Err(err) => match err {
-            sv_call::Error::EPIPE => None,
+            sv_call::EPIPE => None,
             _ => Some(false),
         },
     };

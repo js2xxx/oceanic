@@ -5,10 +5,13 @@ pub mod load;
 
 extern crate alloc;
 
-use alloc::vec::Vec;
-use core::{mem, time::Duration};
+use alloc::{ffi::CString, vec::Vec};
+use core::{
+    ffi::{CStr, FromBytesWithNulError},
+    mem,
+    time::Duration,
+};
 
-use cstr_core::{CStr, CString};
 use solvent::prelude::{Channel, PacketTyped};
 
 /// # Safety
@@ -71,7 +74,7 @@ fn from_cstr_vec(data: Vec<CString>) -> Vec<u8> {
     })
 }
 
-fn parse_cstr_vec(data: &[u8]) -> Result<Vec<CString>, cstr_core::FromBytesWithNulError> {
+fn parse_cstr_vec(data: &[u8]) -> Result<Vec<CString>, FromBytesWithNulError> {
     data.split_inclusive(|&b| b == 0)
         .map(|data| CStr::from_bytes_with_nul(data).map(CString::from))
         .try_collect()

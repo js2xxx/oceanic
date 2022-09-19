@@ -1,5 +1,8 @@
 use alloc::vec::Vec;
-use core::{ffi::c_char, panic::PanicInfo};
+use core::{
+    ffi::{c_char, c_void},
+    panic::PanicInfo,
+};
 
 use solvent::prelude::{Channel, Handle, Object};
 use svrt::StartupArgs;
@@ -36,6 +39,15 @@ unsafe extern "C" fn __libc_start_main(init_chan: Handle, main: Main) -> ! {
 }
 
 #[no_mangle]
+pub extern "C" fn __cxa_atexit(
+    _func: unsafe extern "C" fn(arg: *mut c_void),
+    _arg: *mut c_void,
+    _dso_handle: *mut c_void,
+) {
+    todo!()
+}
+
+#[no_mangle]
 pub(crate) extern "C" fn __libc_panic(info: &PanicInfo) -> ! {
     log::error!("{}", info);
     loop {
@@ -46,5 +58,5 @@ pub(crate) extern "C" fn __libc_panic(info: &PanicInfo) -> ! {
 #[link(name = "ldso")]
 extern "C" {
     fn __libc_start_init();
-    fn __libc_exit_fini();
+    pub(crate) fn __libc_exit_fini();
 }

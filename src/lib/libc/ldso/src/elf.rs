@@ -1,6 +1,6 @@
-use core::{mem, ptr, slice};
+use alloc::vec::Vec;
+use core::{alloc::Layout, ffi::CStr, mem, ptr, ptr::NonNull, slice};
 
-use cstr_core::CStr;
 pub use goblin::elf64::{
     dynamic::*, header::*, program_header::*, reloc::*, section_header::*, sym::*, Note,
 };
@@ -75,16 +75,16 @@ impl<'a> Symbols<'a> {
         let sym_ptr = base.ptr(
             dynamic
                 .iter()
-                .find_map(|d| (d.d_tag == DT_SYMTAB).then(|| d.d_val as usize))?,
+                .find_map(|d| (d.d_tag == DT_SYMTAB).then_some(d.d_val as usize))?,
         );
         let str_ptr = base.ptr(
             dynamic
                 .iter()
-                .find_map(|d| (d.d_tag == DT_STRTAB).then(|| d.d_val as usize))?,
+                .find_map(|d| (d.d_tag == DT_STRTAB).then_some(d.d_val as usize))?,
         );
         let gnu_hash = dynamic
             .iter()
-            .find_map(|d| (d.d_tag == DT_GNU_HASH).then(|| d.d_val as usize))
+            .find_map(|d| (d.d_tag == DT_GNU_HASH).then_some(d.d_val as usize))
             .map(|offset| base.ptr(offset));
 
         gnu_hash
@@ -237,7 +237,7 @@ impl<'a> GnuHash<'a> {
         None
     }
 
-    fn maybe_contains(&self, hash: u32) -> bool {
+    fn may_contain(&self, hash: u32) -> bool {
         const MASK: u32 = u64::BITS - 1;
         let hash2 = hash >> self.bloom_shift;
         // `x & (N - 1)` is equivalent to `x % N` iff `N = 2^y`.
@@ -248,12 +248,70 @@ impl<'a> GnuHash<'a> {
     }
 
     pub fn get_hashed(&self, name: &CStr, hash: u32) -> Option<&'a Sym> {
-        self.maybe_contains(hash)
+        self.may_contain(hash)
             .then(|| self.lookup(name, hash))
             .flatten()
     }
 
     pub fn get(&self, name: &CStr) -> Option<&'a Sym> {
         self.get_hashed(name, Self::hash(name.to_bytes()))
+    }
+}
+
+pub struct Tls {
+    layout: Layout,
+    init_data: NonNull<[u8]>,
+    offset: usize,
+}
+
+impl Tls {
+    #[inline]
+    pub fn new(init_data: NonNull<[u8]>, layout: Layout, offset: usize) -> Self {
+        Tls {
+            init_data,
+            layout,
+            offset,
+        }
+    }
+
+    #[inline]
+    pub fn chunk_layout(&self) -> Layout {
+        self.layout
+    }
+
+    #[inline]
+    pub fn offset(&self) -> usize {
+        self.offset
+    }
+
+    #[inline]
+    pub fn push(&self, tcb: &mut Tcb) {
+        let data = &mut tcb.data;
+
+        let new_len = self.offset + self.layout.pad_to_align().size();
+        if new_len > data.len() {
+            data.resize(new_len, 0);
+        }
+        data[self.offset..][..self.init_data.len()]
+            .copy_from_slice(unsafe { self.init_data.as_ref() });
+    }
+}
+
+#[repr(C)]
+pub struct Tcb {
+    pub static_base: *mut u8,
+    pub tcb_id: usize,
+
+    pub data: Vec<u8>,
+    pub dtors: Vec<(*mut u8, *mut ())>,
+}
+
+impl Tcb {
+    /// # Safety
+    ///
+    /// The caller must ensure that the current TCB is present.
+    pub unsafe fn current() -> &'static mut Tcb {
+        let value = crate::arch::get_tls_reg();
+        &mut *(value as *mut Tcb)
     }
 }

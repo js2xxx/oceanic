@@ -43,6 +43,7 @@ pub struct Allocator {
 }
 
 impl Allocator {
+    #[inline]
     pub const fn new(alloc_pages: crate::AllocPages, dealloc_pages: crate::DeallocPages) -> Self {
         Allocator {
             pool: Mutex::new(pool::Pool::new()),
@@ -50,12 +51,26 @@ impl Allocator {
         }
     }
 
+    #[inline]
     pub const fn new_null() -> Self {
         Self::new(null_alloc_pages, null_dealloc_pages)
     }
 
+    #[inline]
     pub fn stat(&self) -> crate::stat::Stat {
         self.pool.lock().stat()
+    }
+
+    #[inline]
+    #[allow(dead_code)]
+    pub fn pool(&self) -> &Mutex<pool::Pool> {
+        &self.pool
+    }
+
+    #[inline]
+    #[allow(dead_code)]
+    pub fn pager(&self) -> &Mutex<Pager> {
+        &self.pager
     }
 
     /// # Safety
@@ -94,34 +109,73 @@ unsafe impl GlobalAlloc for Allocator {
 
         // The size is not too big
         if size <= page::MAX_OBJ_SIZE {
-            let mut pool = self.pool.lock();
+            #[cfg(feature = "tcache")]
+            {
+                // The first allocation (assuming something available)
+                match crate::TCACHE.allocate(layout, &self.pool) {
+                    // Whoosh! Returning
+                    Ok(x) => *x,
 
-            // The first allocation (assuming something available)
-            match pool.allocate(layout) {
-                // Whoosh! Returning
-                Ok(x) => *x,
+                    Err(e) => match e {
+                        // Oops! The pool is full
+                        Error::NeedExt => {
+                            let mut pool = self.pool.lock();
 
-                Err(e) => match e {
-                    // Oops! The pool is full
-                    Error::NeedExt => {
-                        let page = {
-                            let mut pager = self.pager.lock();
-                            // Allocate a new page
-                            pager.alloc_pages(1)
-                        };
+                            let page = {
+                                let mut pager = self.pager.lock();
+                                // Allocate a new page
+                                pager.alloc_pages(1)
+                            };
 
-                        if let Some(page) = page {
-                            pool.extend(layout, page.cast()).unwrap();
-                            // The second allocation
-                            pool.allocate(layout).map_or(null_mut(), |x| *x)
-                        } else {
-                            // A-o! Out of memory
-                            null_mut()
+                            if let Some(page) = page {
+                                pool.extend(layout, page.cast()).unwrap();
+                                drop(pool);
+
+                                // The second allocation
+                                crate::TCACHE
+                                    .allocate(layout, &self.pool)
+                                    .map_or(null_mut(), |x| *x)
+                            } else {
+                                // A-o! Out of memory
+                                null_mut()
+                            }
                         }
-                    }
-                    // A-o! There's a bug
-                    _ => null_mut(),
-                },
+                        // A-o! There's a bug
+                        _ => null_mut(),
+                    },
+                }
+            }
+            #[cfg(not(feature = "tcache"))]
+            {
+                let mut pool = self.pool.lock();
+
+                // The first allocation (assuming something available)
+                match pool.allocate(layout) {
+                    // Whoosh! Returning
+                    Ok(x) => *x,
+
+                    Err(e) => match e {
+                        // Oops! The pool is full
+                        Error::NeedExt => {
+                            let page = {
+                                let mut pager = self.pager.lock();
+                                // Allocate a new page
+                                pager.alloc_pages(1)
+                            };
+
+                            if let Some(page) = page {
+                                pool.extend(layout, page.cast()).unwrap();
+                                // The second allocation
+                                pool.allocate(layout).map_or(null_mut(), |x| *x)
+                            } else {
+                                // A-o! Out of memory
+                                null_mut()
+                            }
+                        }
+                        // A-o! There's a bug
+                        _ => null_mut(),
+                    },
+                }
             }
         } else {
             // The size is too big, call the pager directly
@@ -139,13 +193,28 @@ unsafe impl GlobalAlloc for Allocator {
 
         // The size is not too big
         if size <= page::MAX_OBJ_SIZE {
-            let mut pool = self.pool.lock();
+            #[cfg(feature = "tcache")]
+            {
+                // Deallocate it
+                if let Some(page) = crate::TCACHE
+                    .deallocate(LAddr::new(ptr), layout, &self.pool)
+                    .unwrap_or(None)
+                {
+                    // A page is totally empty, drop it
+                    let mut pager = self.pager.lock();
+                    pager.dealloc_pages(NonNull::slice_from_raw_parts(page, 1));
+                }
+            }
+            #[cfg(not(feature = "tcache"))]
+            {
+                let mut pool = self.pool.lock();
 
-            // Deallocate it
-            if let Some(page) = pool.deallocate(LAddr::new(ptr), layout).unwrap_or(None) {
-                // A page is totally empty, drop it
-                let mut pager = self.pager.lock();
-                pager.dealloc_pages(NonNull::slice_from_raw_parts(page, 1));
+                // Deallocate it
+                if let Some(page) = pool.deallocate(LAddr::new(ptr), layout).unwrap_or(None) {
+                    // A page is totally empty, drop it
+                    let mut pager = self.pager.lock();
+                    pager.dealloc_pages(NonNull::slice_from_raw_parts(page, 1));
+                }
             }
         } else {
             // The size is too big, call the pager directly
@@ -160,14 +229,14 @@ unsafe impl GlobalAlloc for Allocator {
 unsafe impl AllocTrait for Allocator {
     fn allocate(&self, layout: Layout) -> Result<NonNull<[u8]>, AllocError> {
         let size = layout.size();
-        let ptr = unsafe { (self as &dyn GlobalAlloc).alloc(layout) };
+        let ptr = unsafe { GlobalAlloc::alloc(self, layout) };
         NonNull::new(ptr)
             .map(|ptr| NonNull::slice_from_raw_parts(ptr, size))
             .ok_or(AllocError)
     }
 
     unsafe fn deallocate(&self, ptr: NonNull<u8>, layout: Layout) {
-        (self as &dyn GlobalAlloc).dealloc(ptr.as_ptr(), layout)
+        GlobalAlloc::dealloc(self, ptr.as_ptr(), layout)
     }
 }
 

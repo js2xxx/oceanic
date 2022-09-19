@@ -1,4 +1,7 @@
-use core::sync::atomic::{self, Ordering::SeqCst};
+use core::{
+    mem,
+    sync::atomic::{self, Ordering::SeqCst},
+};
 
 use solvent::prelude::{Channel, Handle, Object};
 
@@ -98,8 +101,10 @@ unsafe extern "C" fn dl_start(init_chan: Handle, vdso_map: usize) -> DlReturn {
         match d_tag {
             DT_REL => rel = Some((base as *mut u8).add(d_val)),
             DT_RELCOUNT => crel = Some(d_val),
+            DT_RELSZ => crel = crel.or(Some(d_val / mem::size_of::<Rel>())),
             DT_RELA => rela = Some((base as *mut u8).add(d_val)),
             DT_RELACOUNT => crela = Some(d_val),
+            DT_RELASZ => crela = crela.or(Some(d_val / mem::size_of::<Rela>())),
             DT_RELR => relr = Some((base as *mut u8).add(d_val)),
             DT_RELRSZ => szrelr = Some(d_val),
             _ => {}

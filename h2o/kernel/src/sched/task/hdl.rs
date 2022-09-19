@@ -1,6 +1,6 @@
 mod node;
 
-use alloc::sync::Weak;
+use alloc::sync::{Arc, Weak};
 use core::{any::Any, pin::Pin, ptr::NonNull};
 
 use archop::Azy;
@@ -17,8 +17,20 @@ struct Value {
     index: B18,
 }
 
-pub unsafe trait DefaultFeature: Any + Send {
+pub unsafe trait DefaultFeature: Any + Send + Sync {
     fn default_features() -> Feature;
+}
+
+unsafe impl<T: DefaultFeature + ?Sized> DefaultFeature for crate::sched::Arsc<T> {
+    fn default_features() -> Feature {
+        T::default_features()
+    }
+}
+
+unsafe impl<T: DefaultFeature + ?Sized> DefaultFeature for alloc::sync::Arc<T> {
+    fn default_features() -> Feature {
+        T::default_features()
+    }
 }
 
 #[derive(Debug)]
@@ -51,7 +63,7 @@ impl HandleMap {
         let value = Value::new()
             .with_gen(0)
             .with_index_checked(index)
-            .map_err(|_| sv_call::Error::ERANGE)?;
+            .map_err(|_| sv_call::ERANGE)?;
         Ok(sv_call::Handle::new(
             u32::from_ne_bytes(value.into_bytes()) ^ self.mix,
         ))
@@ -88,11 +100,20 @@ impl HandleMap {
         self.encode(link)
     }
 
+    #[inline]
+    pub fn insert_raw<T: DefaultFeature>(
+        &self,
+        obj: Arc<T>,
+        event: Option<Weak<dyn Event>>,
+    ) -> Result<sv_call::Handle> {
+        self.insert_ref(Ref::from_raw(obj, event)?)
+    }
+
     /// # Safety
     ///
     /// The caller must ensure that `T` is [`Send`] if `send` and [`Sync`] if
     /// `sync`.
-    pub unsafe fn insert_unchecked<T: 'static>(
+    pub unsafe fn insert_unchecked<T: Send + Sync + 'static>(
         &self,
         data: T,
         feat: Feature,
@@ -118,14 +139,14 @@ impl HandleMap {
         PREEMPT.scope(|| self.list.lock().remove(link))
     }
 
-    pub fn remove<T: Send + Any>(&self, handle: sv_call::Handle) -> Result<Ref<T>> {
+    pub fn remove<T: Send + Sync + Any>(&self, handle: sv_call::Handle) -> Result<Ref<T>> {
         self.decode(handle).and_then(|value| {
             // SAFETY: Dereference within the available range.
             let ptr = unsafe { value.as_ref() };
             if ptr.is::<T>() {
                 self.remove_ref(handle).map(|obj| obj.downcast().unwrap())
             } else {
-                Err(sv_call::Error::ETYPE)
+                Err(sv_call::ETYPE)
             }
         })
     }
@@ -137,10 +158,8 @@ impl HandleMap {
         PREEMPT.scope(|| {
             { self.list.lock() }.split(handles.iter().map(|&handle| self.decode(handle)), |value| {
                 match value.downcast_ref::<Channel>() {
-                    Ok(chan) if chan.peer_eq(src) => Err(sv_call::Error::EPERM),
-                    Err(_) if !value.features().contains(Feature::SEND) => {
-                        Err(sv_call::Error::EPERM)
-                    }
+                    Ok(chan) if chan.peer_eq(src) => Err(sv_call::EPERM),
+                    Err(_) if !value.features().contains(Feature::SEND) => Err(sv_call::EPERM),
                     _ => Ok(()),
                 }
             })

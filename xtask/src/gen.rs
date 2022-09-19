@@ -10,6 +10,7 @@ pub fn gen_syscall(
     wrapper_file: impl AsRef<Path>,
     call_file: impl AsRef<Path>,
     stub_file: impl AsRef<Path>,
+    num_file: impl AsRef<Path>,
 ) -> Result<(), Box<dyn Error>> {
     let mut funcs = crate::gen::syscall::parse_dir(input)?;
     funcs.shuffle(&mut thread_rng());
@@ -20,6 +21,7 @@ pub fn gen_syscall(
     syscall::gen_wrappers(&funcs, wrapper_file)?;
     syscall::gen_rust_calls(&funcs, call_file)?;
     syscall::gen_rust_stubs(&funcs, stub_file)?;
+    syscall::gen_rust_nums(&funcs, num_file)?;
     Ok(())
 }
 

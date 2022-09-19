@@ -2,7 +2,10 @@ pub mod ipi;
 pub mod timer;
 
 use alloc::collections::BTreeMap;
-use core::arch::asm;
+use core::{
+    arch::asm,
+    ops::{BitOr, BitOrAssign},
+};
 
 use archop::{msr, Azy};
 use modular_bitfield::prelude::*;
@@ -68,6 +71,28 @@ pub enum Polarity {
 pub enum TriggerMode {
     Edge = 0,
     Level = 1,
+}
+
+impl BitOr for TriggerMode {
+    type Output = Self;
+
+    #[inline]
+    fn bitor(self, rhs: TriggerMode) -> Self::Output {
+        if matches!((self as u64) | (rhs as u64), 0) {
+            TriggerMode::Edge
+        } else {
+            TriggerMode::Level
+        }
+    }
+}
+
+impl BitOrAssign for TriggerMode {
+    #[inline]
+    fn bitor_assign(&mut self, rhs: Self) {
+        if let (Self::Edge, Self::Level) = (*self, rhs) {
+            *self = Self::Level
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -210,7 +235,7 @@ impl Lapic {
 
         // Get the LAPIC ID.
         let mut id = unsafe { Self::read_reg_32(&mut ty, msr::X2APICID) };
-        if let LapicType::X2 = &ty {
+        if let LapicType::X1(_) = &ty {
             id >>= 24;
         }
         LAPIC_ID.write().insert(unsafe { crate::cpu::id() }, id);
@@ -274,7 +299,7 @@ impl Lapic {
     ///
     /// The caller must ensure that IDT is initialized before LAPIC Timer's
     /// activation and that `div` is within the range [`timer::DIV`].
-    pub unsafe fn activate_timer(&mut self, mode: timer::TimerMode, div: u8, init_value: u64) {
+    pub unsafe fn activate_timer(&mut self, mode: timer::TimerMode, div: u8, init_value: u32) {
         timer::activate(self, mode, div, init_value);
     }
 

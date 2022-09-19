@@ -127,6 +127,20 @@ impl From<u64> for LAddr {
     }
 }
 
+impl From<*const u8> for LAddr {
+    #[inline]
+    fn from(val: *const u8) -> Self {
+        LAddr(val as _)
+    }
+}
+
+impl From<*mut u8> for LAddr {
+    #[inline]
+    fn from(val: *mut u8) -> Self {
+        LAddr(val as _)
+    }
+}
+
 impl<T: ?Sized> From<NonNull<T>> for LAddr {
     #[inline]
     fn from(ptr: NonNull<T>) -> Self {

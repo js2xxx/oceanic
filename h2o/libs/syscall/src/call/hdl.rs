@@ -17,7 +17,7 @@ impl Handle {
         if self.raw != 0 {
             Ok(*self)
         } else {
-            Err(crate::Error::EINVAL)
+            Err(crate::EINVAL)
         }
     }
 

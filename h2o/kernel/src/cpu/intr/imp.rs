@@ -46,14 +46,14 @@ impl Interrupt {
     #[inline]
     pub fn new(res: &Resource<u32>, gsi: u32, level_triggered: bool) -> sv_call::Result<Arc<Self>> {
         if res.magic_eq(super::gsi_resource()) && res.range().contains(&gsi) {
-            Ok(Arc::new(Interrupt {
+            Ok(Arc::try_new(Interrupt {
                 gsi,
                 last_time: Mutex::new(None),
                 level_triggered,
                 event_data: EventData::new(0),
-            }))
+            })?)
         } else {
-            Err(sv_call::Error::EPERM)
+            Err(sv_call::EPERM)
         }
     }
 
@@ -68,7 +68,7 @@ impl Interrupt {
     }
 }
 
-unsafe impl DefaultFeature for Arc<Interrupt> {
+unsafe impl DefaultFeature for Interrupt {
     fn default_features() -> Feature {
         Feature::SEND | Feature::WAIT
     }
@@ -111,7 +111,7 @@ mod syscall {
 
         let intr = SCHED.with_current(|cur| {
             let handles = cur.space().handles();
-            let res = handles.get::<Arc<Resource<u32>>>(res)?;
+            let res = handles.get::<Resource<u32>>(res)?;
             Interrupt::new(&res, gsi, level_triggered)
         })?;
 
@@ -123,7 +123,7 @@ mod syscall {
         MANAGER.mask(gsi, false)?;
 
         let event = Arc::downgrade(&intr) as _;
-        SCHED.with_current(|cur| unsafe { cur.space().handles().insert(intr, Some(event)) })
+        SCHED.with_current(|cur| unsafe { cur.space().handles().insert_raw(intr, Some(event)) })
     }
 
     #[syscall]
@@ -132,18 +132,20 @@ mod syscall {
         last_time.check()?;
 
         let pree = PREEMPT.lock();
-        let intr = unsafe { (*SCHED.current()).as_ref().ok_or(Error::ESRCH)? }
+        let intr = unsafe { (*SCHED.current()).as_ref().ok_or(ESRCH)? }
             .space()
             .handles()
-            .get::<Arc<Interrupt>>(hdl)?;
+            .get::<Interrupt>(hdl)?;
         if !intr.features().contains(Feature::WAIT) {
-            return Err(Error::EPERM);
+            return Err(EPERM);
         }
 
-        let blocker = crate::sched::Blocker::new(&(Arc::clone(&intr) as _), false, SIG_GENERIC);
-        blocker.wait(pree, time::from_us(timeout_us))?;
-        if !blocker.detach().0 {
-            return Err(Error::ETIME);
+        if timeout_us > 0 {
+            let blocker = crate::sched::Blocker::new(&(Arc::clone(&intr) as _), false, SIG_GENERIC);
+            blocker.wait(Some(pree), time::from_us(timeout_us))?;
+            if !blocker.detach().0 {
+                return Err(ETIME);
+            }
         }
 
         unsafe { last_time.write(intr.last_time().unwrap().raw()) }?;
@@ -154,7 +156,7 @@ mod syscall {
     fn intr_drop(hdl: Handle) -> Result {
         hdl.check_null()?;
         SCHED.with_current(|cur| {
-            let intr = cur.space().handles().remove::<Arc<Interrupt>>(hdl)?;
+            let intr = cur.space().handles().remove::<Interrupt>(hdl)?;
             intr.cancel();
             MANAGER.register(intr.gsi, None)?;
             Ok(())

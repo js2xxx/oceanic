@@ -65,7 +65,7 @@ impl Phys {
     /// Returns error if the heap memory is exhausted or the size is zero.
     pub fn allocate(size: usize, zeroed: bool) -> Result<Self> {
         if size == 0 {
-            return Err(sv_call::Error::ENOMEM);
+            return Err(sv_call::ENOMEM);
         }
 
         let mut inner = Arsc::try_new_uninit()?;
@@ -98,7 +98,7 @@ impl Phys {
 
     pub fn create_sub(&self, offset: usize, len: usize, copy: bool) -> Result<Self> {
         if offset.contains_bit(PAGE_SHIFT) || len.contains_bit(PAGE_SHIFT) {
-            return Err(sv_call::Error::EALIGN);
+            return Err(sv_call::EALIGN);
         }
 
         let new_offset = self.offset.wrapping_add(offset);
@@ -120,7 +120,7 @@ impl Phys {
                 })
             }
         } else {
-            Err(sv_call::Error::ERANGE)
+            Err(sv_call::ERANGE)
         }
     }
 

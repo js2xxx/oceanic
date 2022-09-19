@@ -2,6 +2,7 @@ use alloc::sync::Arc;
 use core::{alloc::Layout, mem::size_of};
 
 use paging::LAddr;
+use sv_call::call::Syscall;
 
 use super::Entry;
 use crate::{
@@ -49,7 +50,7 @@ impl Kframe {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(C)]
 pub struct Frame {
     gs_base: u64,
@@ -108,22 +109,22 @@ impl Frame {
     }
 
     #[inline]
-    pub fn syscall_args(&self) -> (usize, [usize; 5]) {
-        (
-            self.rax as usize,
-            [
+    pub fn syscall_args(&self) -> Syscall {
+        Syscall {
+            num: self.rax as usize,
+            args: [
                 self.rdi as usize,
                 self.rsi as usize,
                 self.rdx as usize,
                 self.r8 as usize,
                 self.r9 as usize,
             ],
-        )
+        }
     }
 
     #[inline]
-    pub fn set_syscall_retval(&mut self, retval: usize) {
-        self.rax = retval as u64;
+    pub fn set_syscall_retval(&mut self, res: usize) {
+        self.rax = res as u64;
     }
 
     #[inline]
@@ -167,7 +168,7 @@ impl Frame {
         if !archop::canonical(LAddr::from(gpr.fs_base))
             || !archop::canonical(LAddr::from(gpr.gs_base))
         {
-            return Err(sv_call::Error::EINVAL);
+            return Err(sv_call::EINVAL);
         }
         self.gs_base = gpr.gs_base;
         self.fs_base = gpr.fs_base;

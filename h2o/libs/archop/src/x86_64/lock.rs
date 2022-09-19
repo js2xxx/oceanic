@@ -43,6 +43,7 @@ impl PreemptState {
     }
 
     #[inline]
+    #[track_caller]
     pub fn scope<F, R>(&self, func: F) -> R
     where
         F: FnOnce() -> R,

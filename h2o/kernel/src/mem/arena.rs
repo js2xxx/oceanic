@@ -103,7 +103,7 @@ impl<T> Arena<T> {
     /// The caller must ensure that `ptr` is previously allocated by this arena.
     pub unsafe fn deallocate(&self, ptr: NonNull<T>) -> sv_call::Result {
         if !self.check_ptr(ptr) {
-            return Err(sv_call::Error::EINVAL);
+            return Err(sv_call::EINVAL);
         }
 
         let mut next = self.head.load_acquire();
@@ -147,9 +147,9 @@ impl<T> Arena<T> {
             let index = addr.wrapping_sub(base).wrapping_div(self.off);
             Some(index)
                 .filter(|&index| self.check_index(index))
-                .ok_or(sv_call::Error::EINVAL)
+                .ok_or(sv_call::EINVAL)
         } else {
-            Err(sv_call::Error::EINVAL)
+            Err(sv_call::EINVAL)
         }
     }
 
@@ -159,9 +159,9 @@ impl<T> Arena<T> {
             let addr = index.wrapping_mul(self.off).wrapping_add(base);
             NonNull::new(addr as *mut T)
                 .filter(|&ptr| self.check_ptr(ptr))
-                .ok_or(sv_call::Error::EINVAL)
+                .ok_or(sv_call::EINVAL)
         } else {
-            Err(sv_call::Error::EINVAL)
+            Err(sv_call::EINVAL)
         }
     }
 

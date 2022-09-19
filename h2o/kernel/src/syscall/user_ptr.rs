@@ -52,7 +52,7 @@ impl<T: Type, D> UserPtr<T, D> {
     pub fn check_slice(&self, len: usize) -> Result<()> {
         check_ptr(
             self.data.cast(),
-            mem::size_of::<T>() * len,
+            mem::size_of::<D>() * len,
             mem::align_of::<D>(),
         )
     }
@@ -204,9 +204,9 @@ fn check_ptr(ptr: *mut u8, size: usize, align: usize) -> Result<()> {
     let is_aligned = (ptr as usize) & (align - 1) == 0;
     // TODO: Decide whether to check the validity of pointers of empty slices.
     if !is_in_range && size > 0 {
-        Err(sv_call::Error::EPERM)
+        Err(sv_call::EPERM)
     } else if !is_aligned {
-        Err(sv_call::Error::EALIGN)
+        Err(sv_call::EALIGN)
     } else {
         Ok(())
     }
@@ -240,7 +240,7 @@ impl CheckedCopyRet {
                 self.addr_p1 - 1,
                 self.errc
             );
-            Err(sv_call::Error::EPERM)
+            Err(sv_call::EPERM)
         } else {
             Ok(())
         }

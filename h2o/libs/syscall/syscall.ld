@@ -1,9 +1,12 @@
+ENTRY(sv_task_exit)
+
 SECTIONS
 {
     . = SIZEOF_HEADERS;
     .note.gnu.build-id  : { *(.note.gnu.build-id) } :note
 
     .text       : { *(.text*) }     :load
+    .rodata     : { *(.rodata*) }   :load
     .dynamic    : { *(.dynamic*) }  :load :dynamic
 
     /DISCARD/ : { *(.comment*) }

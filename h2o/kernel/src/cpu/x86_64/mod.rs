@@ -31,9 +31,6 @@ pub unsafe fn set_id(bsp: bool) -> usize {
     while !bsp && CPU_COUNT.load(Ordering::SeqCst) == 0 {
         core::hint::spin_loop();
     }
-    if !bsp {
-        crate::cpu::time::delay(core::time::Duration::from_micros(archop::rand::get() % 100));
-    }
     id
 }
 
@@ -42,8 +39,7 @@ pub unsafe fn set_id(bsp: bool) -> usize {
 /// This function is only called after [`set_id`].
 #[inline]
 pub unsafe fn id() -> usize {
-    use archop::msr;
-    msr::read(msr::TSC_AUX) as usize
+    archop::msr::rdtscp().1 as usize
 }
 
 #[inline]
@@ -80,7 +76,7 @@ pub static KERNEL_GS: Lazy<KernelGs> = Lazy::new(|| KernelGs {
     tss_rsp0: UnsafeCell::new(unsafe { seg::ndt::TSS.rsp0() }),
     syscall_user_stack: null_mut(),
     syscall_stack: unsafe { syscall::init() }.expect("Memory allocation failed"),
-    kernel_fs: LAddr::from(unsafe { archop::msr::read(archop::msr::FS_BASE) } as usize),
+    kernel_fs: LAddr::from(unsafe { archop::reg::read_fs() } as usize),
 });
 
 impl KernelGs {

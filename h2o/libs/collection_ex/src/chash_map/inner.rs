@@ -7,6 +7,7 @@ use core::{
 
 use spin::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
+#[derive(Debug, Clone, Copy)]
 pub enum Entry<T> {
     Empty,
     Data(T),
@@ -84,8 +85,20 @@ impl<K, V, S> Buckets<K, V, S> {
         Buckets { hasher, data }
     }
 
+    pub fn as_inner(&self) -> &[RwLock<Entry<(K, V)>>] {
+        &self.data
+    }
+
     pub fn len(&self) -> usize {
         self.data.len()
+    }
+
+    pub fn hasher(&self) -> &S {
+        &self.hasher
+    }
+
+    pub fn into_inner(self) -> Vec<RwLock<Entry<(K, V)>>> {
+        self.data
     }
 }
 
@@ -172,6 +185,22 @@ impl<K, V, S: BuildHasher> Buckets<K, V, S> {
                     *entry = Entry::Data((key, value));
                 }
             }
+        }
+    }
+}
+
+impl<K: Clone, V: Clone, S: Clone> Clone for Buckets<K, V, S> {
+    fn clone(&self) -> Self {
+        Buckets {
+            // Since we copy plainly without rehashing etc., it is important that we keep the same
+            // hash function.
+            hasher: self.hasher.clone(),
+            // Lock and clone every bucket individually.
+            data: self
+                .data
+                .iter()
+                .map(|x| RwLock::new(x.read().clone()))
+                .collect(),
         }
     }
 }

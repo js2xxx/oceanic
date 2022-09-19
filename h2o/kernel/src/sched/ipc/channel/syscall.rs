@@ -7,8 +7,8 @@ use sv_call::{
 
 use super::*;
 use crate::{
-    cpu::time,
-    sched::SIG_READ,
+    cpu::{arch::apic::TriggerMode, time},
+    sched::{Dispatcher, WaiterData, SIG_READ},
     syscall::{In, InOut, Out, UserPtr},
 };
 
@@ -38,14 +38,14 @@ where
 
     let packet = unsafe { packet.read()? };
     if packet.buffer_size > MAX_BUFFER_SIZE || packet.handle_count >= MAX_HANDLE_COUNT {
-        return Err(Error::ENOMEM);
+        return Err(ENOMEM);
     }
     UserPtr::<In, Handle>::new(packet.handles).check_slice(packet.handle_count)?;
     UserPtr::<In, u8>::new(packet.buffer).check_slice(packet.buffer_size)?;
 
     let handles = unsafe { slice::from_raw_parts(packet.handles, packet.handle_count) };
     if handles.contains(&hdl) {
-        return Err(Error::EPERM);
+        return Err(EPERM);
     }
     let buffer = unsafe { slice::from_raw_parts(packet.buffer, packet.buffer_size) };
 
@@ -53,7 +53,7 @@ where
         let map = cur.space().handles();
         let channel = map.get::<Channel>(hdl)?;
         if !channel.features().contains(Feature::WRITE) {
-            return Err(Error::EPERM);
+            return Err(EPERM);
         }
         let objects = unsafe { map.send(handles, &channel) }?;
         let mut packet = Packet::new(packet.id, objects, buffer);
@@ -119,7 +119,7 @@ fn chan_recv(hdl: Handle, packet_ptr: UserPtr<InOut, RawPacket>) -> Result {
         let map = cur.space().handles();
         let channel = map.get::<Channel>(hdl)?;
         if !channel.features().contains(Feature::READ) {
-            return Err(Error::EPERM);
+            return Err(EPERM);
         }
 
         raw.buffer_size = raw.buffer_cap;
@@ -150,7 +150,7 @@ fn chan_crecv(
     let call_event = SCHED.with_current(|cur| {
         let channel = cur.space().handles().get::<Channel>(hdl)?;
         if !{ channel.features() }.contains(Feature::WAIT | Feature::READ) {
-            return Err(Error::EPERM);
+            return Err(EPERM);
         }
         Ok(channel.call_event(id)? as _)
     })?;
@@ -159,7 +159,7 @@ fn chan_crecv(
     } else {
         let pree = PREEMPT.lock();
         let blocker = crate::sched::Blocker::new(&call_event, true, SIG_READ);
-        blocker.wait(pree, time::from_us(timeout_us))?;
+        blocker.wait(Some(pree), time::from_us(timeout_us))?;
         Some(blocker)
     };
 
@@ -168,7 +168,7 @@ fn chan_crecv(
 
         let channel = map.get::<Channel>(hdl)?;
         if !channel.features().contains(Feature::READ) {
-            return Err(Error::EPERM);
+            return Err(EPERM);
         }
 
         raw.buffer_size = raw.buffer_cap;
@@ -179,7 +179,7 @@ fn chan_crecv(
 
     if let Some(blocker) = blocker {
         if !blocker.detach().0 {
-            return Err(Error::ETIME);
+            return Err(ETIME);
         }
     }
 
@@ -187,15 +187,39 @@ fn chan_crecv(
 }
 
 #[syscall]
-fn chan_acrecv(hdl: Handle, id: usize, wake_all: bool) -> Result<Handle> {
+fn chan_acrecv(
+    hdl: Handle,
+    id: usize,
+    disp: Handle,
+    syscall: UserPtr<In, Syscall>,
+) -> Result<usize> {
+    hdl.check_null()?;
+    disp.check_null()?;
+    let syscall = (!syscall.as_ptr().is_null())
+        .then(|| {
+            let syscall = unsafe { syscall.read() }?;
+            if matches!(
+                syscall.num as usize,
+                SV_DISP_NEW | SV_DISP_PUSH | SV_DISP_POP
+            ) {
+                return Err(EPERM);
+            }
+            Ok(syscall)
+        })
+        .transpose()?;
+
     SCHED.with_current(|cur| {
         let chan = cur.space().handles().get::<Channel>(hdl)?;
-        if !{ chan.features() }.contains(Feature::READ | Feature::WAIT) {
-            return Err(Error::EPERM);
+        let disp = cur.space().handles().get::<Dispatcher>(disp)?;
+        if !chan.features().contains(Feature::WAIT) {
+            return Err(EPERM);
+        }
+        if !disp.features().contains(Feature::WRITE) {
+            return Err(EPERM);
         }
         let event = chan.call_event(id)? as _;
 
-        let blocker = crate::sched::Blocker::new(&event, wake_all, SIG_READ);
-        cur.space().handles().insert(blocker, None)
+        let waiter_data = WaiterData::new(TriggerMode::Level, SIG_READ);
+        disp.push(&event, waiter_data, syscall)
     })
 }

@@ -121,7 +121,7 @@ impl Kstack {
         addr: u64,
     ) -> sv_call::Result {
         match self.pf_resume.take() {
-            None => Err(sv_call::Error::ENOENT),
+            None => Err(sv_call::ENOENT),
             Some(ret) => {
                 cur_frame.set_pf_resume(ret.into(), errc, addr);
                 Ok(())

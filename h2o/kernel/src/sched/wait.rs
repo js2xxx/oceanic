@@ -1,6 +1,5 @@
 mod futex;
 
-use alloc::boxed::Box;
 use core::time::Duration;
 
 use crossbeam_queue::SegQueue;
@@ -37,7 +36,7 @@ impl WaitObject {
             if !timer.is_fired() {
                 Ok(())
             } else {
-                Err(sv_call::Error::ETIME)
+                Err(sv_call::ETIME)
             }
         })
     }
@@ -48,9 +47,7 @@ impl WaitObject {
         let mut cnt = 0;
         while cnt < num {
             match self.wait_queue.pop() {
-                Some(timer) if !timer.cancel() => {
-                    let blocked = unsafe { Box::from_raw(timer.callback_arg().as_ptr()) };
-                    SCHED.unblock(Box::into_inner(blocked), preempt);
+                Some(timer) if timer.cancel(preempt) => {
                     cnt += 1;
                 }
                 Some(_) => {}

@@ -6,7 +6,7 @@ use alloc::{
 };
 use core::{
     mem,
-    sync::atomic::{AtomicUsize, Ordering::SeqCst},
+    sync::atomic::{AtomicU64, AtomicUsize, Ordering::SeqCst},
 };
 
 use bytes::Bytes;
@@ -95,8 +95,9 @@ pub struct Channel {
 
 impl Channel {
     pub fn new() -> (Self, Self) {
-        // TODO: Find a better way to acquire an unique id.
-        let peer_id = unsafe { archop::msr::rdtsc() };
+        static PEER_ID: AtomicU64 = AtomicU64::new(0);
+        let peer_id = PEER_ID.fetch_add(1, SeqCst);
+
         let q1 = Arc::new(ChannelSide::default());
         let q2 = Arc::new(ChannelSide::default());
         let c1 = Channel {
@@ -128,35 +129,34 @@ impl Channel {
     ///
     /// Returns error if the peer is closed or if the channel is full.
     pub fn send(&self, msg: &mut Packet) -> sv_call::Result {
-        match self.peer.upgrade() {
-            None => Err(sv_call::Error::EPIPE),
-            Some(peer) => {
-                let called = PREEMPT.scope(|| {
-                    let mut callers = peer.callers.lock();
-                    let called = callers.get_mut(&msg.id);
-                    if let Some(caller) = called {
-                        let _old = caller.cell.replace(mem::take(msg));
-                        caller.event.notify(0, SIG_READ);
-                        debug_assert!(_old.is_none());
-                        true
-                    } else {
-                        false
-                    }
-                });
-                if called {
-                    Ok(())
-                } else if peer.msgs.len() >= MAX_QUEUE_SIZE {
-                    Err(sv_call::Error::ENOSPC)
-                } else {
-                    peer.msgs.push(mem::take(msg));
-                    peer.event.notify(0, SIG_READ);
-                    Ok(())
-                }
+        let peer = self.peer.upgrade().ok_or(sv_call::EPIPE)?;
+        let called = PREEMPT.scope(|| {
+            let mut callers = peer.callers.lock();
+            let called = callers.get_mut(&msg.id);
+            if let Some(caller) = called {
+                let _old = caller.cell.replace(mem::take(msg));
+                caller.event.notify(0, SIG_READ);
+                debug_assert!(_old.is_none());
+                true
+            } else {
+                false
             }
+        });
+        if called {
+            Ok(())
+        } else if peer.msgs.len() >= MAX_QUEUE_SIZE {
+            Err(sv_call::ENOSPC)
+        } else {
+            peer.msgs.push(mem::take(msg));
+            peer.event.notify(0, SIG_READ);
+            Ok(())
         }
     }
 
-    fn get_packet(
+    /// # Safety
+    ///
+    /// `head` must contains a valid packet.
+    unsafe fn get_packet(
         head: &mut Option<Packet>,
         buffer_cap: &mut usize,
         handle_cap: &mut usize,
@@ -165,7 +165,7 @@ impl Channel {
         let buffer_size = packet.buffer().len();
         let handle_count = packet.object_count();
         let ret = if buffer_size > *buffer_cap || handle_count > *handle_cap {
-            Err(sv_call::Error::EBUFFER)
+            Err(sv_call::EBUFFER)
         } else {
             Ok(unsafe { head.take().unwrap_unchecked() })
         };
@@ -182,15 +182,17 @@ impl Channel {
         buffer_cap: &mut usize,
         handle_cap: &mut usize,
     ) -> sv_call::Result<Packet> {
-        if self.peer.strong_count() == 0 {
-            return Err(sv_call::Error::EPIPE);
-        }
         let _pree = PREEMPT.lock();
         let mut head = self.head.lock();
         if head.is_none() {
-            *head = Some(self.me.msgs.pop().ok_or(sv_call::Error::ENOENT)?);
+            let err = if self.peer.strong_count() > 0 {
+                sv_call::ENOENT
+            } else {
+                sv_call::EPIPE
+            };
+            *head = Some(self.me.msgs.pop().ok_or(err)?);
         }
-        Self::get_packet(&mut head, buffer_cap, handle_cap)
+        unsafe { Self::get_packet(&mut head, buffer_cap, handle_cap) }
     }
 
     #[inline]
@@ -206,33 +208,28 @@ impl Channel {
     }
 
     pub fn call_send(&self, msg: &mut Packet) -> sv_call::Result<usize> {
-        match self.peer.upgrade() {
-            None => Err(sv_call::Error::EPIPE),
-            Some(peer) => {
-                if peer.msgs.len() >= MAX_QUEUE_SIZE {
-                    Err(sv_call::Error::ENOSPC)
-                } else {
-                    let id = Self::next_msg_id(&self.me.msg_id);
-                    msg.id = id;
-                    self.me
-                        .callers
-                        .lock()
-                        .try_insert(id, Caller::default())
-                        .map_err(|_| sv_call::Error::EEXIST)?;
-                    peer.msgs.push(mem::take(msg));
-                    peer.event.notify(0, SIG_READ);
-                    Ok(id)
-                }
-            }
+        let peer = self.peer.upgrade().ok_or(sv_call::EPIPE)?;
+        if peer.msgs.len() >= MAX_QUEUE_SIZE {
+            Err(sv_call::ENOSPC)
+        } else {
+            let id = Self::next_msg_id(&self.me.msg_id);
+            msg.id = id;
+            PREEMPT.scope(|| {
+                { self.me.callers.lock() }
+                    .try_insert(id, Caller::default())
+                    .map_or(Err(sv_call::EEXIST), |_| Ok(()))
+            })?;
+            peer.msgs.push(mem::take(msg));
+            peer.event.notify(0, SIG_READ);
+            Ok(id)
         }
     }
 
     fn call_event(&self, id: usize) -> sv_call::Result<Arc<BasicEvent>> {
         PREEMPT.scope(|| {
-            let callers = self.me.callers.lock();
-            callers.get(&id).map_or(Err(sv_call::Error::ENOENT), |ent| {
-                Ok(Arc::clone(&ent.event))
-            })
+            { self.me.callers.lock() }
+                .get(&id)
+                .map_or(Err(sv_call::ENOENT), |ent| Ok(Arc::clone(&ent.event)))
         })
     }
 
@@ -242,20 +239,22 @@ impl Channel {
         buffer_cap: &mut usize,
         handle_cap: &mut usize,
     ) -> sv_call::Result<Packet> {
-        if self.peer.strong_count() == 0 {
-            return Err(sv_call::Error::EPIPE);
-        }
         let _pree = PREEMPT.lock();
         let mut callers = self.me.callers.lock();
         let mut caller = match callers.entry(id) {
-            alloc::collections::btree_map::Entry::Vacant(_) => return Err(sv_call::Error::ENOENT),
+            alloc::collections::btree_map::Entry::Vacant(_) => return Err(sv_call::ENOENT),
             alloc::collections::btree_map::Entry::Occupied(caller) => caller,
         };
         if caller.get().head.is_none() {
-            let packet = caller.get_mut().cell.take().ok_or(sv_call::Error::ENOENT)?;
+            let err = if self.peer.strong_count() > 0 {
+                sv_call::ENOENT
+            } else {
+                sv_call::EPIPE
+            };
+            let packet = caller.get_mut().cell.take().ok_or(err)?;
             caller.get_mut().head = Some(packet);
         }
-        Self::get_packet(&mut caller.get_mut().head, buffer_cap, handle_cap)
+        unsafe { Self::get_packet(&mut caller.get_mut().head, buffer_cap, handle_cap) }
             .inspect(|_| drop(caller.remove()))
     }
 }
@@ -269,7 +268,11 @@ unsafe impl DefaultFeature for Channel {
 impl Drop for Channel {
     fn drop(&mut self) {
         if let Some(peer) = self.peer.upgrade() {
-            peer.event.notify(0, usize::MAX);
+            peer.event.cancel();
+            let _pree = PREEMPT.lock();
+            for (_, caller) in peer.callers.lock().iter() {
+                caller.event.cancel();
+            }
         }
     }
 }

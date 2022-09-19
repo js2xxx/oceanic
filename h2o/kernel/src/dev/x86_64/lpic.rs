@@ -1,7 +1,5 @@
 #![allow(dead_code)]
 
-use core::mem;
-
 use archop::io::{Io, Port};
 
 const MASTER_PORT: u16 = 0x20;
@@ -72,5 +70,4 @@ pub unsafe fn init(masked: bool) {
     } else {
         lpic.init();
     }
-    mem::forget(lpic);
 }

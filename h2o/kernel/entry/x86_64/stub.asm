@@ -4,7 +4,6 @@ USR_CODE_X86 equ 0x18
 USR_DATA_X64 equ 0x20
 USR_CODE_X64 equ 0x28 + 3
 
-FS_BASE           equ 0xc0000100
 GS_BASE           equ 0xc0000101
 KERNEL_GS_BASE    equ 0xc0000102
 
@@ -110,11 +109,15 @@ endstruc
       push  r14
       push  r15
 
-      push_xs FS_BASE
+      push  rcx
+      rdfsbase  rcx
+      xchg  [rsp], rcx
 %if %2 == 1
       push_xs KERNEL_GS_BASE
 %else
-      push_xs GS_BASE
+      push  rcx
+      rdgsbase  rcx
+      xchg  [rsp], rcx
 %endif
 %if %1 == 1
       push  rcx
@@ -147,9 +150,14 @@ endstruc
 %if %1 == 1
       pop_xs KERNEL_GS_BASE
 %else
-      pop_xs GS_BASE
+      xchg  rcx, [rsp]
+      wrgsbase  rcx
+      pop   rcx
 %endif
-      pop_xs FS_BASE
+      xchg  rcx, [rsp]
+      wrfsbase  rcx
+      pop   rcx
+
       pop   r15
       pop   r14
       pop   r13
@@ -339,11 +347,8 @@ intr_entry:
       push_regs   1, 1; The routine has a return address, so we must preserve it.
       lea   rbp, [rsp + 8 + 1]
 
-      mov   rcx, FS_BASE
       mov   rax, [gs:(KernelGs.kernel_fs)]
-      mov   rdx, rax
-      shr   rdx, 32
-      wrmsr
+      wrfsbase rax
 
       align_call  save_regs, r12
 
@@ -398,11 +403,8 @@ rout_syscall:
       push_regs   0, 1
       lea   rbp, [rsp + 8 + 1]
 
-      mov   rcx, FS_BASE
       mov   rax, [gs:(KernelGs.kernel_fs)]
-      mov   rdx, rax
-      shr   rdx, 32
-      wrmsr
+      wrfsbase rax
 
       mov   rcx, GS_BASE
       rdmsr

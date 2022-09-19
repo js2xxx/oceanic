@@ -1,6 +1,11 @@
 use core::{ops::*, time::Duration};
 
-use crate::error::{Error, Result};
+use sv_call::ETIME;
+
+use crate::{
+    error::{Error, Result},
+    obj::Object,
+};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(transparent)]
@@ -103,5 +108,55 @@ impl core::fmt::Display for Instant {
         let ns = unsafe { self.raw() };
         let s = ns as f64 / 1_000_000_000.0;
         write!(f, "{:.6}", s)
+    }
+}
+
+#[repr(transparent)]
+pub struct Timer(sv_call::Handle);
+crate::impl_obj!(Timer);
+crate::impl_obj!(@CLONE, Timer);
+crate::impl_obj!(@DROP, Timer);
+
+impl Timer {
+    pub fn try_new() -> Result<Self> {
+        let handle = unsafe { sv_call::sv_timer_new() }.into_res()?;
+        // SAFETY: The handle is freshly allocated.
+        Ok(unsafe { Self::from_raw(handle) })
+    }
+
+    pub fn new() -> Self {
+        Self::try_new().expect("Failed to create a timer object")
+    }
+
+    /// If the timer is already set, then it will be canceled first (sending the
+    /// cancellation event).
+    ///
+    /// If `duration` is zero ([`Duration::ZERO`]), then the timer will not be
+    /// triggered.
+    pub fn set(&self, duration: Duration) -> Result {
+        // SAFETY: We don't move the ownership of the handle.
+        unsafe { sv_call::sv_timer_set(unsafe { self.raw() }, try_into_us(duration)?) }.into_res()
+    }
+
+    /// See [`Timer::set`] for more information.
+    #[inline]
+    pub fn set_deadline(&self, deadline: Instant) -> Result {
+        let now = Instant::now();
+        if deadline <= now {
+            Err(ETIME)
+        } else {
+            self.set(deadline - now)
+        }
+    }
+
+    /// Shorthand for `set(Duration::ZERO)`.
+    pub fn reset(&self) -> Result {
+        self.set(Duration::ZERO)
+    }
+}
+
+impl Default for Timer {
+    fn default() -> Self {
+        Self::new()
     }
 }

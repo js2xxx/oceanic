@@ -1,4 +1,4 @@
-use alloc::sync::Weak;
+use alloc::sync::{Arc, Weak};
 use core::{
     any::Any,
     fmt,
@@ -15,7 +15,7 @@ use sv_call::{Feature, Result};
 use super::DefaultFeature;
 use crate::{
     mem::Arena,
-    sched::{Arsc, Event, PREEMPT},
+    sched::{Event, PREEMPT},
 };
 
 pub const MAX_HANDLE_COUNT: usize = 1 << 16;
@@ -23,13 +23,13 @@ pub const MAX_HANDLE_COUNT: usize = 1 << 16;
 pub(super) static HR_ARENA: Azy<Arena<Ref>> = Azy::new(|| Arena::new(MAX_HANDLE_COUNT));
 
 #[derive(Debug)]
-pub struct Ref<T: ?Sized = dyn Any> {
+pub struct Ref<T: ?Sized = dyn Any + Send + Sync> {
     _marker: PhantomPinned,
     next: Option<Ptr>,
     prev: Option<Ptr>,
     event: Weak<dyn Event>,
     feat: Feature,
-    obj: Arsc<T>,
+    obj: Arc<T>,
 }
 pub type Ptr = NonNull<Ref>;
 
@@ -50,9 +50,21 @@ impl<T: ?Sized> Ref<T> {
     where
         T: Sized,
     {
+        Self::from_raw_unchecked(Arc::try_new(data)?, feat, event)
+    }
+
+    /// # Safety
+    ///
+    /// The caller must ensure that `T` is [`Send`] if `send` and [`Sync`] if
+    /// `sync`.
+    pub unsafe fn from_raw_unchecked(
+        obj: Arc<T>,
+        feat: Feature,
+        event: Option<Weak<dyn Event>>,
+    ) -> sv_call::Result<Self> {
         let event = event.unwrap_or(Weak::<crate::sched::BasicEvent>::new() as _);
         if event.strong_count() == 0 && feat.contains(Feature::WAIT) {
-            return Err(sv_call::Error::EPERM);
+            return Err(sv_call::EPERM);
         }
         Ok(Ref {
             _marker: PhantomPinned,
@@ -60,7 +72,7 @@ impl<T: ?Sized> Ref<T> {
             prev: None,
             event,
             feat,
-            obj: Arsc::try_new(data)?,
+            obj,
         })
     }
 
@@ -72,11 +84,24 @@ impl<T: ?Sized> Ref<T> {
         unsafe { Self::try_new_unchecked(data, T::default_features(), event) }
     }
 
+    #[inline]
+    pub fn from_raw(obj: Arc<T>, event: Option<Weak<dyn Event>>) -> sv_call::Result<Self>
+    where
+        T: DefaultFeature,
+    {
+        unsafe { Self::from_raw_unchecked(obj, T::default_features(), event) }
+    }
+
+    #[inline]
+    pub fn into_raw(this: Self) -> Arc<T> {
+        this.obj
+    }
+
     /// # Safety
     ///
     /// The caller must ensure that `self` is owned by the current task if its
     /// not [`Send`].
-    pub unsafe fn deref_unchecked(&self) -> &T {
+    pub unsafe fn deref_unchecked(&self) -> &Arc<T> {
         &self.obj
     }
 
@@ -95,13 +120,13 @@ impl<T: ?Sized> Ref<T> {
             self.feat = feat;
             Ok(())
         } else {
-            Err(sv_call::Error::EPERM)
+            Err(sv_call::EPERM)
         }
     }
 }
 
-impl<T: ?Sized + Send> Deref for Ref<T> {
-    type Target = T;
+impl<T: ?Sized + Send + Sync> Deref for Ref<T> {
+    type Target = Arc<T>;
 
     #[inline]
     fn deref(&self) -> &Self::Target {
@@ -120,11 +145,11 @@ impl Ref {
         if self.is::<T>() {
             Ok(unsafe { &*(self as *const Ref as *const Ref<T>) })
         } else {
-            Err(sv_call::Error::ETYPE)
+            Err(sv_call::ETYPE)
         }
     }
 
-    pub fn downcast<T: Any>(self) -> core::result::Result<Ref<T>, Self> {
+    pub fn downcast<T: Any + Send + Sync>(self) -> core::result::Result<Ref<T>, Self> {
         match self.obj.downcast() {
             Ok(obj) => Ok(Ref {
                 _marker: PhantomPinned,
@@ -158,7 +183,7 @@ impl Ref {
             prev: None,
             event: Weak::clone(&self.event),
             feat: self.feat,
-            obj: Arsc::clone(&self.obj),
+            obj: Arc::clone(&self.obj),
         }
     }
 
@@ -168,7 +193,7 @@ impl Ref {
             // SAFETY: The underlying object is `send` and `sync`.
             Ok(unsafe { self.clone_unchecked() })
         } else {
-            Err(sv_call::Error::EPERM)
+            Err(sv_call::EPERM)
         }
     }
 }
@@ -288,7 +313,7 @@ impl List {
                 }
                 // SAFETY: The pointer is allocated from the arena.
                 Some(cur) => unsafe { cur.as_ref().next },
-                None => break Err(sv_call::Error::ENOENT),
+                None => break Err(sv_call::ENOENT),
             }
         }
     }

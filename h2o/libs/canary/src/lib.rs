@@ -8,7 +8,8 @@ use core::{
     marker::PhantomData,
 };
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, Copy, PartialOrd, Ord, Hash, PartialEq, Eq)]
 pub struct Canary<T> {
     id: TypeId,
     _marker: PhantomData<T>,
@@ -51,7 +52,7 @@ impl<T: 'static> Default for Canary<T> {
 impl<T: 'static> core::fmt::Debug for Canary<T> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         if self.check() {
-            write!(f, "{}", core::any::type_name::<T>())
+            write!(f, "{}", type_name::<T>())
         } else {
             write!(f, "<Invalid type>")
         }

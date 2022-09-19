@@ -50,6 +50,13 @@ pub struct HandleInfo {
     pub additional: u16,
 }
 
+impl From<HandleType> for HandleInfo {
+    #[inline]
+    fn from(ty: HandleType) -> Self {
+        Self::new().with_handle_type(ty)
+    }
+}
+
 impl PartialEq for HandleInfo {
     fn eq(&self, other: &Self) -> bool {
         self.bytes == other.bytes

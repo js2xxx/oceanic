@@ -35,7 +35,7 @@ impl Type {
     #[inline]
     pub fn pass(this: Option<Self>, cur_ty: Type) -> sv_call::Result<Type> {
         match (this, cur_ty) {
-            (Some(Self::Kernel), Self::User) => Err(sv_call::Error::EPERM),
+            (Some(Self::Kernel), Self::User) => Err(sv_call::EPERM),
             (Some(ty), _) => Ok(ty),
             _ => Ok(cur_ty),
         }
@@ -66,7 +66,7 @@ fn exec_inner(
     name: Option<String>,
     ty: Option<Type>,
     affinity: Option<CpuMask>,
-    space: Arsc<Space>,
+    space: Arc<Space>,
     init_chan: sv_call::Handle,
     s: &Starter,
 ) -> sv_call::Result<Init> {
@@ -80,7 +80,7 @@ fn exec_inner(
         .build()
         .unwrap();
 
-    let tid = tid::allocate(ti).map_err(|_| sv_call::Error::EBUSY)?;
+    let tid = tid::allocate(ti).map_err(|_| sv_call::EBUSY)?;
 
     let entry = ctx::Entry {
         entry: s.entry,
@@ -98,7 +98,7 @@ fn exec_inner(
 #[inline]
 fn exec(
     name: Option<String>,
-    space: Arsc<Space>,
+    space: Arc<Space>,
     init_chan: sv_call::Handle,
     starter: &Starter,
 ) -> sv_call::Result<(Init, sv_call::Handle)> {
@@ -114,7 +114,7 @@ fn exec(
     })
 }
 
-fn create(name: Option<String>, space: Arsc<Space>) -> sv_call::Result<(Init, sv_call::Handle)> {
+fn create(name: Option<String>, space: Arc<Space>) -> sv_call::Result<(Init, sv_call::Handle)> {
     let cur = super::SCHED.with_current(|cur| Ok(cur.tid.clone()))?;
 
     let ty = cur.ty();
@@ -127,7 +127,7 @@ fn create(name: Option<String>, space: Arsc<Space>) -> sv_call::Result<(Init, sv
         .build()
         .unwrap();
 
-    let tid = tid::allocate(ti).map_err(|_| sv_call::Error::EBUSY)?;
+    let tid = tid::allocate(ti).map_err(|_| sv_call::EBUSY)?;
 
     let kstack = ctx::Kstack::new(None, ty);
     let ext_frame = ctx::ExtFrame::zeroed();

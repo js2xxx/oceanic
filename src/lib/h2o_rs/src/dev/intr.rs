@@ -1,6 +1,7 @@
 use core::time::Duration;
 
 pub use sv_call::res::IntrConfig;
+use sv_call::{c_ty::Status, Syscall, ETIME};
 
 use super::GsiRes;
 use crate::{error::Result, obj::Object, time::Instant};
@@ -34,6 +35,19 @@ impl Interrupt {
         }
         Ok(unsafe { Instant::from_raw(ins) })
     }
+
+    pub fn pack_wait(&self, timeout: Duration) -> Result<PackIntrWait> {
+        let mut ins = 0u128;
+        let syscall = unsafe {
+            // SAFETY: We don't move the ownership of the handle.
+            sv_call::sv_pack_intr_wait(
+                unsafe { self.raw() },
+                crate::time::try_into_us(timeout)?,
+                &mut ins as *mut _ as *mut _,
+            )
+        };
+        Ok(PackIntrWait { ins, syscall })
+    }
 }
 
 impl Drop for Interrupt {
@@ -43,5 +57,18 @@ impl Drop for Interrupt {
                 .into_res()
                 .expect("Failed to drop an interrupt");
         }
+    }
+}
+
+pub struct PackIntrWait {
+    pub ins: u128,
+    pub syscall: Syscall,
+}
+
+impl PackIntrWait {
+    #[inline]
+    pub fn receive(&self, res: Status, canceled: bool) -> Result<Instant> {
+        res.into_res().and((!canceled).then_some(()).ok_or(ETIME))?;
+        Ok(unsafe { Instant::from_raw(self.ins) })
     }
 }

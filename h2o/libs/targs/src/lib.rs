@@ -1,6 +1,6 @@
 #![no_std]
 
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 #[repr(usize)]
 pub enum HandleIndex {
     MemRes = 0,

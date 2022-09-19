@@ -2,6 +2,7 @@
 target = "../../.cargo/x86_64-pc-oceanic.json"
 
 [unstable]
+# build-std = ["std", "panic_abort"]
 build-std = ["core", "compiler_builtins", "alloc", "panic_abort"]
 build-std-features = ["compiler-builtins-mem"]
 

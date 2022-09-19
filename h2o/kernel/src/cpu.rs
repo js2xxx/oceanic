@@ -2,7 +2,7 @@ pub mod intr;
 pub mod time;
 
 // `Lazy` stands for Local (non-atomic) AZY, while `Azy` stands for Atomic laZY.
-pub use core::lazy::Lazy;
+pub use core::cell::LazyCell as Lazy;
 
 use bitvec::prelude::*;
 

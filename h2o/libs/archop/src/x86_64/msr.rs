@@ -279,3 +279,12 @@ pub fn rdtsc() -> u64 {
         ((edx as u64) << 32) | (eax as u64)
     }
 }
+
+#[inline]
+pub fn rdtscp() -> (u64, u32) {
+    unsafe {
+        let (eax, edx, ecx): (u32, u32, u32);
+        asm!("rdtscp", out("eax")eax, out("edx")edx, out("ecx")ecx, options(nostack));
+        (((edx as u64) << 32) | (eax as u64), ecx)
+    }
+}

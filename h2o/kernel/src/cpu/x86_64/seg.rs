@@ -106,17 +106,17 @@ impl From<u16> for SegSelector {
 ///
 /// # Safety
 ///
-/// The caller must ensure the value stored in [`archop::msr::FS_BASE`] is a
-/// valid physical address.
+/// The caller must ensure the value stored in FS base is a valid physical
+/// address.
 pub unsafe fn reload_pls() {
     extern "C" {
         static TDATA_START: u8;
         static TBSS_START: u8;
     }
-    use archop::msr;
+    use archop::reg;
     let pls_size = crate::kargs().pls_layout.map_or(0, |layout| layout.size());
 
-    let val = msr::read(msr::FS_BASE) as usize;
+    let val = reg::read_fs() as usize;
     if val != 0 {
         let ptr = PAddr::new(val).to_laddr(minfo::ID_OFFSET).cast::<usize>();
         let base = ptr.cast::<u8>().sub(pls_size);
@@ -125,7 +125,7 @@ pub unsafe fn reload_pls() {
         base.add(size).write_bytes(0, pls_size - size);
         ptr.write(ptr as usize);
 
-        msr::write(msr::FS_BASE, ptr as u64);
+        reg::write_fs(ptr as u64);
     }
 
     test_pls();
@@ -140,7 +140,7 @@ pub fn alloc_pls() -> sv_call::Result<NonNull<u8>> {
 
     let pls_layout = match crate::kargs().pls_layout {
         Some(layout) => layout,
-        None => return Err(sv_call::Error::ENOENT),
+        None => return Err(sv_call::ENOENT),
     };
 
     let base = Global

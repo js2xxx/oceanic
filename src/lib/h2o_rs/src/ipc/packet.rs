@@ -3,7 +3,7 @@ use core::{fmt::Debug, mem};
 
 use sv_call::Error;
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Packet {
     pub id: Option<usize>,
     pub buffer: Vec<u8>,

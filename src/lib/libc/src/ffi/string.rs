@@ -1,7 +1,9 @@
 use core::{ffi::*, ptr, slice};
 
 use bitvec::prelude::*;
-use cstr_core::CStr;
+
+#[allow(non_camel_case_types)]
+pub type size_t = usize;
 
 /// # Safety
 ///
@@ -29,7 +31,7 @@ pub unsafe extern "C" fn strcpy(dest: *mut c_char, src: *const c_char) -> *mut c
 pub unsafe extern "C" fn strncpy(
     dest: *mut c_char,
     src: *const c_char,
-    count: c_size_t,
+    count: usize,
 ) -> *mut c_char {
     let mut f = false;
     for i in 0..count {
@@ -64,7 +66,7 @@ pub unsafe extern "C" fn strcat(dest: *mut c_char, src: *const c_char) -> *mut c
 pub unsafe extern "C" fn strncat(
     dest: *mut c_char,
     src: *const c_char,
-    count: c_size_t,
+    count: usize,
 ) -> *mut c_char {
     let d = dest.add(strlen(dest));
     let count = count.min(strlen(src));
@@ -78,7 +80,7 @@ pub unsafe extern "C" fn strncat(
 ///
 /// Same as [`strcpy`].
 #[no_mangle]
-pub unsafe extern "C" fn strxfrm(dest: *mut c_char, src: *const c_char, n: c_size_t) -> c_size_t {
+pub unsafe extern "C" fn strxfrm(dest: *mut c_char, src: *const c_char, n: usize) -> usize {
     let len = strlen(src);
     if len < n {
         strcpy(dest, src);
@@ -107,7 +109,7 @@ pub unsafe extern "C" fn strcmp(lhs: *const c_char, rhs: *const c_char) -> c_int
 ///
 /// Same as [`CStr::from_ptr`].
 #[no_mangle]
-pub unsafe extern "C" fn strncmp(lhs: *const c_char, rhs: *const c_char, count: c_size_t) -> c_int {
+pub unsafe extern "C" fn strncmp(lhs: *const c_char, rhs: *const c_char, count: usize) -> c_int {
     let lhs = CStr::from_ptr(lhs).to_bytes();
     let rhs = CStr::from_ptr(rhs).to_bytes();
     let lhs = lhs.get(..count).unwrap_or(lhs);
@@ -137,7 +139,7 @@ pub unsafe extern "C" fn strchr(s: *const c_char, ch: c_int) -> *const c_char {
     pos.map_or(ptr::null(), |pos| unsafe { s.add(pos) })
 }
 
-unsafe fn strspn_inner(dest: *const c_char, src: *const c_char, cmp: bool) -> c_size_t {
+unsafe fn strspn_inner(dest: *const c_char, src: *const c_char, cmp: bool) -> usize {
     let dest = CStr::from_ptr(dest).to_bytes();
     let src = CStr::from_ptr(src).to_bytes();
 
@@ -157,7 +159,7 @@ unsafe fn strspn_inner(dest: *const c_char, src: *const c_char, cmp: bool) -> c_
 ///
 /// Same as [`CStr::from_ptr`].
 #[no_mangle]
-pub unsafe extern "C" fn strspn(dest: *const c_char, src: *const c_char) -> c_size_t {
+pub unsafe extern "C" fn strspn(dest: *const c_char, src: *const c_char) -> usize {
     strspn_inner(dest, src, true)
 }
 
@@ -165,7 +167,7 @@ pub unsafe extern "C" fn strspn(dest: *const c_char, src: *const c_char) -> c_si
 ///
 /// Same as [`CStr::from_ptr`].
 #[no_mangle]
-pub unsafe extern "C" fn strcspn(dest: *const c_char, src: *const c_char) -> c_size_t {
+pub unsafe extern "C" fn strcspn(dest: *const c_char, src: *const c_char) -> usize {
     strspn_inner(dest, src, false)
 }
 
@@ -260,26 +262,136 @@ pub unsafe extern "C" fn strrchr(s: *const c_char, ch: c_int) -> *const c_char {
 /// The caller must ensure that `ptr` contains a valid byte slice with a length
 /// of at least `count`.
 #[no_mangle]
-pub unsafe extern "C" fn memchr(ptr: *const c_void, ch: c_int, count: c_size_t) -> *const c_void {
+pub unsafe extern "C" fn memchr(ptr: *const c_void, ch: c_int, count: usize) -> *const c_void {
     // SAFETY: The safety check is guaranteed by the caller.
     let haystack = unsafe { slice::from_raw_parts(ptr.cast(), count) };
     let pos = memchr::memchr(ch as u8, haystack);
     pos.map_or(ptr::null(), |pos| unsafe { ptr.add(pos) })
 }
 
-// Defined in `compiler_builtins`. TODO: implement this self with SIMD
-// optimizations.
-extern "C" {
-    pub fn memcmp(lhs: *const c_void, rhs: *const c_void, count: c_size_t) -> c_int;
+// TODO: implement these with SIMD optimizations.
 
-    pub fn memset(dest: *mut c_void, ch: c_int, count: c_size_t) -> *mut c_void;
+/// # Safety
+///
+/// The caller must ensure that `lhs` and `rhs` contain valid byte slices with a
+/// length of at least `count`.
+#[no_mangle]
+pub unsafe extern "C" fn memcmp(lhs: *const c_void, rhs: *const c_void, count: usize) -> c_int {
+    let (lhs, rhs) = (lhs as *const u8, rhs as *const u8);
+    let mut i = 0;
+    while i < count {
+        let a = *lhs.add(i);
+        let b = *rhs.add(i);
+        if a != b {
+            return a as i32 - b as i32;
+        }
+        i += 1;
+    }
+    0
+}
 
-    pub fn memcpy(dest: *mut c_void, src: *const c_void, count: c_size_t) -> *mut c_void;
+/// # Safety
+///
+/// The caller must ensure that `dest` contains a valid and writable byte slice
+/// with a length of at least `count`.
+#[no_mangle]
+pub unsafe extern "C" fn memset(dest: *mut c_void, ch: c_int, count: usize) -> *mut c_void {
+    let qword_count = count >> 3;
+    let byte_count = count & 0b111;
+    core::arch::asm!(
+        "repe stosq %rax, (%rdi)",
+        "mov {byte_count:e}, %ecx",
+        "repe stosb %al, (%rdi)",
+        byte_count = in(reg) byte_count,
+        inout("rcx") qword_count => _,
+        inout("rdi") dest => _,
+        in("rax") (ch as u64) * 0x0101010101010101,
+        options(att_syntax, nostack, preserves_flags)
+    );
+    dest
+}
 
-    pub fn memmove(dest: *mut c_void, src: *const c_void, count: c_size_t) -> *mut c_void;
+/// # Safety
+///
+/// Same as [`core::ptr::copy_nonoverlapping`].
+#[no_mangle]
+pub unsafe extern "C" fn memcpy(
+    dest: *mut c_void,
+    src: *const c_void,
+    count: usize,
+) -> *mut c_void {
+    let qword_count = count >> 3;
+    let byte_count = count & 0b111;
+    core::arch::asm!(
+        "repe movsq (%rsi), (%rdi)",
+        "mov {byte_count:e}, %ecx",
+        "repe movsb (%rsi), (%rdi)",
+        byte_count = in(reg) byte_count,
+        inout("rcx") qword_count => _,
+        inout("rdi") dest => _,
+        inout("rsi") src => _,
+        options(att_syntax, nostack, preserves_flags)
+    );
+    dest
+}
+
+/// # Safety
+///
+/// Same as [`core::ptr::copy`].
+#[no_mangle]
+pub unsafe extern "C" fn memmove(
+    dest: *mut c_void,
+    src: *const c_void,
+    count: usize,
+) -> *mut c_void {
+    let delta = (dest as usize).wrapping_sub(src as usize);
+    if delta >= count {
+        // We can copy forwards because either dest is far enough ahead of src,
+        // or src is ahead of dest (and delta overflowed).
+        memcpy(dest, src, count)
+    } else {
+        let qword_count = count >> 3;
+        let byte_count = count & 0b111;
+        core::arch::asm!(
+            "std",
+            "repe movsq (%rsi), (%rdi)",
+            "movl {byte_count:e}, %ecx",
+            "addq $7, %rdi",
+            "addq $7, %rsi",
+            "repe movsb (%rsi), (%rdi)",
+            "cld",
+            byte_count = in(reg) byte_count,
+            inout("rcx") qword_count => _,
+            inout("rdi") dest.add(count).wrapping_sub(8) => _,
+            inout("rsi") src.add(count).wrapping_sub(8) => _,
+            options(att_syntax, nostack)
+        );
+        dest
+    }
 }
 
 #[no_mangle]
 pub extern "C" fn strerror(errnum: c_int) -> *const c_char {
     solvent::error::Error::desc_by_index(errnum).map_or(ptr::null(), |s| s.as_ptr().cast())
+}
+
+/// # Safety
+///
+/// The caller must ensure that `buf` contains a valid and writable byte slice
+/// with a length of at least `buflen`.
+#[no_mangle]
+pub unsafe extern "C" fn strerror_r(errnum: c_int, buf: *mut c_char, buflen: usize) -> c_int {
+    match solvent::error::Error::desc_by_index(errnum) {
+        Some(desc) => {
+            let desc = desc.as_bytes();
+            if buflen <= desc.len() {
+                return solvent::error::EBUFFER.raw();
+            }
+            buf.copy_from_nonoverlapping(desc.as_ptr() as _, desc.len());
+            buf.add(desc.len()).write(0);
+
+            solvent::error::OK.raw()
+        }
+        None => solvent::error::EINVAL.raw(),
+    }
 }

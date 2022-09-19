@@ -120,7 +120,7 @@ type PfList = LinkedList<PFAdapter>;
 /// The page frame type for allocation. See [the module level doc](./index.html)
 /// for more.
 #[repr(C)]
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PfType {
     /// Representing the low (below 4GB) physical memory area.
     Low,

@@ -144,7 +144,7 @@ crates = ["sv-call"]
 # `expand = ["euclid"]` shorthand is used.
 #
 # default: false
-all_features = true
+all_features = false
 
 # When `all_features` is disabled and this is also disabled, use the
 # `--no-default-features` option when expanding.

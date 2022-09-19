@@ -1,5 +1,6 @@
 #![no_std]
 #![allow(unused_unsafe)]
+#![feature(atomic_mut_ptr)]
 #![feature(int_roundings)]
 #![feature(nonnull_slice_from_raw_parts)]
 #![feature(slice_ptr_get)]
@@ -11,11 +12,18 @@ pub mod error;
 pub mod ipc;
 pub mod mem;
 pub mod obj;
+pub mod sync;
 pub mod task;
 pub mod time;
 
 #[cfg(feature = "alloc")]
 extern crate alloc;
+
+#[cfg(feature = "stub")]
+#[inline]
+pub fn random() -> u64 {
+    unsafe { sv_call::sv_random().into_res() }.unwrap()
+}
 
 pub mod prelude {
     pub use crate::{dev::*, error::*, ipc::*, mem::*, obj::*, task::*, time::*};

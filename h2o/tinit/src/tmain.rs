@@ -12,7 +12,6 @@
 #![feature(slice_ptr_get)]
 #![feature(slice_ptr_len)]
 #![feature(thread_local)]
-#![feature(toowned_clone_into)]
 #![feature(vec_into_raw_parts)]
 
 mod load;
@@ -27,7 +26,7 @@ use bootfs::parse::Directory;
 use rpc::load::{GetObject, GetObjectResponse};
 use solvent::prelude::*;
 use sv_call::ipc::SIG_READ;
-use svrt::{HandleInfo, HandleType, StartupArgs};
+use svrt::{HandleType, StartupArgs};
 use targs::{HandleIndex, Targs};
 
 extern crate alloc;
@@ -50,7 +49,7 @@ fn offset_sub<T>(slice: &[T], parent: &[T]) -> Option<usize> {
 }
 
 fn sub_phys(bin_data: &[u8], bootfs: Directory, bootfs_phys: &Phys) -> Result<Phys> {
-    let offset = offset_sub(bin_data, bootfs.image()).ok_or(Error::ERANGE)?;
+    let offset = offset_sub(bin_data, bootfs.image()).ok_or(ERANGE)?;
     bootfs_phys.create_sub(offset, bin_data.len().next_multiple_of(PAGE_SIZE), false)
 }
 
@@ -80,11 +79,11 @@ fn serve_load(load_rpc: Channel, bootfs: Directory, bootfs_phys: &Phys) -> Error
                     None => return GetObjectResponse::Error { not_found_index: i },
                 }
             }
-            rpc::load::GetObjectResponse::Success(objs)
+            GetObjectResponse::Success(objs)
         });
         match res {
             Ok(()) => hint::spin_loop(),
-            Err(Error::ENOENT) => match load_rpc.try_wait(Duration::MAX, true, SIG_READ) {
+            Err(ENOENT) => match load_rpc.try_wait(Duration::MAX, true, SIG_READ) {
                 Ok(_) => {}
                 Err(err) => break err,
             },
@@ -143,7 +142,7 @@ extern "C" fn tmain(init_chan: sv_call::Handle) {
     let vdso_base = virt
         .map_vdso(Phys::clone(&vdso_phys))
         .expect("Failed to load VDSO");
-    log::debug!("{:?} {:?} {:?}", entry, stack, vdso_base);
+    log::debug!("E {:?}; S {:?}; V {:?}", entry, stack, vdso_base);
 
     let (me, child) = Channel::new();
     let child = child
@@ -157,22 +156,10 @@ extern "C" fn tmain(init_chan: sv_call::Handle) {
 
     let dl_args = StartupArgs {
         handles: [
-            (
-                HandleInfo::new().with_handle_type(HandleType::RootVirt),
-                Virt::into_raw(virt.clone()),
-            ),
-            (
-                HandleInfo::new().with_handle_type(HandleType::VdsoPhys),
-                Phys::into_raw(vdso_phys),
-            ),
-            (
-                HandleInfo::new().with_handle_type(HandleType::ProgramPhys),
-                Phys::into_raw(bin),
-            ),
-            (
-                HandleInfo::new().with_handle_type(HandleType::LoadRpc),
-                Channel::into_raw(load_rpc.1),
-            ),
+            (HandleType::RootVirt.into(), Virt::into_raw(virt.clone())),
+            (HandleType::VdsoPhys.into(), Phys::into_raw(vdso_phys)),
+            (HandleType::ProgramPhys.into(), Phys::into_raw(bin)),
+            (HandleType::LoadRpc.into(), Channel::into_raw(load_rpc.1)),
         ]
         .into_iter()
         .collect(),
@@ -183,21 +170,19 @@ extern "C" fn tmain(init_chan: sv_call::Handle) {
     me.send(dl_args).expect("Failed to send dyn loader args");
 
     let exe_args = StartupArgs {
-        handles: [(
-            HandleInfo::new().with_handle_type(HandleType::RootVirt),
-            Virt::into_raw(virt),
-        )]
-        .into_iter()
-        .collect(),
-        args: vec![0],
+        handles: [(HandleType::RootVirt.into(), Virt::into_raw(virt))]
+            .into_iter()
+            .collect(),
+        args: Vec::from(b"progm\0" as &[u8]),
         env: vec![0],
     };
 
     me.send(exe_args).expect("Failed to send executable args");
+    drop(me);
 
     let task = Task::exec(
         Some("PROGMGR"),
-        space,
+        Some(space),
         entry,
         stack,
         Some(child),
@@ -212,7 +197,7 @@ extern "C" fn tmain(init_chan: sv_call::Handle) {
     log::debug!("Waiting for the task");
 
     let retval = task.join().expect("Failed to join the task");
-    log::debug!("{} {:?}", retval, Error::try_from_retval(retval));
+    log::debug!("{:x} {:?}", retval, Error::try_from_retval(retval));
 
     log::debug!("Reaching end of TINIT");
 }

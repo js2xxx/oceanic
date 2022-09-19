@@ -118,5 +118,12 @@
                 "ty": "usize"
             }
         ]
+    },
+    {
+        "name": "sv_cpu_num",
+        "returns": "usize",
+        "vdso_specific": true,
+        "vdso_only": true,
+        "args": []
     }
 ]

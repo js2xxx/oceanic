@@ -10,7 +10,7 @@ use crate::sched::{Arsc, PREEMPT};
 pub const NR_TASKS: usize = 65536;
 
 type BH = BuildHasherDefault<FnvHasher>;
-static TI_MAP: Azy<CHashMap<u32, Arsc<TaskInfo>, BH>> = Azy::new(|| CHashMap::new(BH::default()));
+static TI_MAP: Azy<CHashMap<u32, Arsc<TaskInfo>, BH>> = Azy::new(Default::default);
 static TID_ALLOC: Azy<spin::Mutex<IdAllocator>> =
     Azy::new(|| spin::Mutex::new(IdAllocator::new(0..=(NR_TASKS as u64 - 1))));
 
@@ -69,7 +69,7 @@ pub fn allocate(ti: TaskInfo) -> sv_call::Result<Tid> {
             debug_assert!(old.is_none());
             Ok(Tid { raw, ti })
         }
-        None => Err(sv_call::Error::ENOSPC),
+        None => Err(sv_call::ENOSPC),
     }
 }
 

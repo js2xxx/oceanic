@@ -16,7 +16,7 @@ use crate::{
 };
 
 #[derive(Debug, Builder)]
-#[builder(no_std)]
+#[builder(no_std, pattern = "owned")]
 pub struct TaskInfo {
     from: Option<Tid>,
     #[builder(setter(skip))]
@@ -77,21 +77,13 @@ impl TaskInfo {
     pub fn excep_chan(&self) -> Arsc<Mutex<Option<Channel>>> {
         Arsc::clone(&self.excep_chan)
     }
-
-    #[inline]
-    pub fn with_excep_chan<F, R>(&self, func: F) -> R
-    where
-        F: FnOnce(&mut Option<Channel>) -> R,
-    {
-        PREEMPT.scope(|| func(&mut self.excep_chan.lock()))
-    }
 }
 
 #[derive(Debug)]
 pub struct Context {
     pub(in crate::sched) tid: Tid,
 
-    pub(in crate::sched) space: Arsc<Space>,
+    pub(in crate::sched) space: Arc<Space>,
     pub(in crate::sched) kstack: ctx::Kstack,
     pub(in crate::sched) ext_frame: ctx::ExtFrame,
     pub(in crate::sched) io_bitmap: Option<BitVec>,
@@ -107,7 +99,7 @@ impl Context {
     }
 
     #[inline]
-    pub fn space(&self) -> &Arsc<Space> {
+    pub fn space(&self) -> &Arc<Space> {
         &self.space
     }
 
@@ -210,12 +202,7 @@ impl IntoReady for Init {
 }
 
 impl Init {
-    pub fn new(
-        tid: Tid,
-        space: Arsc<Space>,
-        kstack: ctx::Kstack,
-        ext_frame: ctx::ExtFrame,
-    ) -> Self {
+    pub fn new(tid: Tid, space: Arc<Space>, kstack: ctx::Kstack, ext_frame: ctx::ExtFrame) -> Self {
         Init {
             ctx: Box::new(Context {
                 tid,
@@ -325,7 +312,7 @@ impl Blocked {
     }
 
     #[inline]
-    pub fn space(&self) -> &Arsc<Space> {
+    pub fn space(&self) -> &Arc<Space> {
         &self.ctx.space
     }
 

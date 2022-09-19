@@ -2,15 +2,32 @@
 //!
 //! ## Adding a syscall (`fn cast_init(k: *mut K) -> *const L`)
 //!
-//! Just create a private submodule `syscall` in a file and write the processing
-//! code:
+//! 1. Add a new JSON file in the target directory of the kernel source root
+//! with the following content as the prototype, or append it to an existing
+//! file:
+//!
+//! ```json
+//! {
+//!     "name": "sv_cast_init",
+//!     "returns": "*const L",
+//!     "args": [
+//!         {
+//!             "name": "k",
+//!             "ty": "*mut K"
+//!         }
+//!     ]
+//! }
+//! ```
+//!
+//! 2. Create a private submodule `syscall` in a source file and write the
+//! processing code:
 //!
 //! ```rust,no_run
 //! mod syscall {
 //!       use sv_call::*;
 //!       #[syscall]
-//!       fn cast_init(k: *mut K) -> *const L {
-//!             init(k);
+//!       fn cast_init(k: *mut K) -> Result<*const L> {
+//!             // init(k);
 //!             Ok(k.cast())
 //!       }
 //! }
@@ -20,7 +37,7 @@
 
 mod user_ptr;
 
-use sv_call::*;
+use sv_call::{call::Syscall, *};
 
 pub use self::user_ptr::*;
 
@@ -28,10 +45,11 @@ type SyscallWrapper = unsafe extern "C" fn(usize, usize, usize, usize, usize) ->
 static SYSCALL_TABLE: &[SyscallWrapper] =
     &include!(concat!(env!("CARGO_MANIFEST_DIR"), "/target/wrapper.rs"));
 
-pub fn handler(num: usize, args: &[usize; 5]) -> usize {
-    match SYSCALL_TABLE.get(num).copied() {
+pub fn handle(syscall: Syscall) -> usize {
+    let args = syscall.args;
+    match SYSCALL_TABLE.get(syscall.num).copied() {
         Some(handler) => unsafe { handler(args[0], args[1], args[2], args[3], args[4]) },
-        _ => Error::EINVAL.into_retval(),
+        _ => ESPRT.into_retval(),
     }
 }
 
@@ -55,6 +73,6 @@ mod syscall {
 
     #[syscall]
     fn int_get(hdl: Handle) -> Result<u64> {
-        SCHED.with_current(|cur| cur.space().handles().get::<u64>(hdl).map(|obj| **obj))
+        SCHED.with_current(|cur| cur.space().handles().get::<u64>(hdl).map(|obj| ***obj))
     }
 }

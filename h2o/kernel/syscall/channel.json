@@ -79,7 +79,7 @@
     },
     {
         "name": "sv_chan_acrecv",
-        "returns": "Handle",
+        "returns": "usize",
         "args": [
             {
                 "name": "hdl",
@@ -90,8 +90,12 @@
                 "ty": "usize"
             },
             {
-                "name": "wake_all",
-                "ty": "bool"
+                "name": "disp",
+                "ty": "Handle"
+            },
+            {
+                "name": "syscall",
+                "ty": "*const Syscall"
             }
         ]
     }

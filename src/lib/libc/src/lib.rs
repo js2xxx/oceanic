@@ -1,10 +1,11 @@
 #![no_std]
 #![allow(unused_unsafe)]
 #![feature(alloc_error_handler)]
-#![feature(c_size_t)]
-#![feature(core_ffi_c)]
+#![feature(allocator_api)]
+#![feature(c_variadic)]
 #![feature(int_roundings)]
 #![feature(linkage)]
+#![feature(thread_local)]
 
 pub mod env;
 pub mod ffi;

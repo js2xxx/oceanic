@@ -109,7 +109,7 @@ impl Space {
             id_off: minfo::ID_OFFSET,
         };
 
-        paging::maps(&mut *self.root_table.lock(), &map_info, &mut PageAlloc)
+        paging::maps(&mut self.root_table.lock(), &map_info, &mut PageAlloc)
     }
 
     pub(in crate::mem) fn reprotect(
@@ -125,18 +125,14 @@ impl Space {
             id_off: minfo::ID_OFFSET,
         };
 
-        paging::reprotect(
-            &mut *self.root_table.lock(),
-            &reprotect_info,
-            &mut PageAlloc,
-        )
+        paging::reprotect(&mut self.root_table.lock(), &reprotect_info, &mut PageAlloc)
     }
 
     #[allow(dead_code)]
     pub(in crate::mem) fn query(&self, virt: LAddr) -> Result<(PAddr, Flags), paging::Error> {
         self.canary.assert();
 
-        paging::query(&*self.root_table.lock(), virt, minfo::ID_OFFSET)
+        paging::query(&self.root_table.lock(), virt, minfo::ID_OFFSET)
             .map(|(phys, attr)| (phys, Self::pg_attr_to_flags(attr)))
     }
 

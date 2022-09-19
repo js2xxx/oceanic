@@ -1,13 +1,26 @@
-use alloc::sync::{Arc, Weak};
-use core::{fmt::Debug, time::Duration};
+use alloc::{
+    sync::{Arc, Weak},
+    vec::Vec,
+};
+use core::{
+    fmt::Debug,
+    sync::atomic::{AtomicUsize, Ordering::*},
+    time::Duration,
+};
 
+use archop::PreemptStateGuard;
+use crossbeam_queue::SegQueue;
 use spin::Mutex;
-use sv_call::Feature;
+use sv_call::{
+    call::Syscall,
+    ipc::{SIG_READ, SIG_WRITE},
+    Feature, Result, ENOSPC,
+};
 
 use super::PREEMPT;
 use crate::{
     cpu::arch::apic::TriggerMode,
-    sched::{task::hdl::DefaultFeature, wait::WaitObject, Event, Waiter, WaiterData},
+    sched::{task::hdl::DefaultFeature, wait::WaitObject, BasicEvent, Event, Waiter, WaiterData},
 };
 
 #[derive(Debug)]
@@ -32,11 +45,18 @@ impl Blocker {
         ret
     }
 
-    pub fn wait<T>(&self, guard: T, timeout: Duration) -> sv_call::Result {
-        if timeout.is_zero() || PREEMPT.scope(|| self.status.lock().1 != 0) {
+    pub fn wait(&self, pree: Option<PreemptStateGuard>, timeout: Duration) -> sv_call::Result {
+        let pree = match pree {
+            Some(pree) => pree,
+            None => PREEMPT.lock(),
+        };
+        let status = self.status.lock();
+        if timeout.is_zero() || status.1 != 0 {
             Ok(())
+        } else if self.event.strong_count() == 0 {
+            Err(sv_call::EPIPE)
         } else {
-            self.wo.wait(guard, timeout, "Blocker::wait")
+            self.wo.wait((status, pree), timeout, "Blocker::wait")
         }
     }
 
@@ -58,11 +78,11 @@ impl Blocker {
 
 impl Waiter for Blocker {
     #[inline]
-    fn waiter_data(&self) -> &WaiterData {
-        &self.waiter_data
+    fn waiter_data(&self) -> WaiterData {
+        self.waiter_data
     }
 
-    fn on_cancel(&self, signal: usize) {
+    fn on_cancel(&self, _: *const (), signal: usize) {
         PREEMPT.scope(|| *self.status.lock() = (false, signal));
         let num = if self.wake_all { usize::MAX } else { 1 };
         self.wo.notify(num, false);
@@ -75,8 +95,142 @@ impl Waiter for Blocker {
     }
 }
 
-unsafe impl DefaultFeature for Arc<Blocker> {
+unsafe impl DefaultFeature for Blocker {
+    #[inline]
     fn default_features() -> sv_call::Feature {
-        Feature::SEND | Feature::WAIT
+        Feature::SEND
+    }
+}
+
+#[derive(Debug)]
+struct Request {
+    key: usize,
+    event: Weak<dyn Event>,
+    waiter_data: WaiterData,
+    syscall: Option<Syscall>,
+}
+
+#[derive(Debug)]
+pub struct Dispatcher {
+    next_key: AtomicUsize,
+    event: Arc<BasicEvent>,
+
+    capacity: usize,
+    pending: Mutex<Vec<Request>>,
+    ready: SegQueue<(bool, Request)>,
+}
+
+impl Dispatcher {
+    pub fn new(capacity: usize) -> Result<Arc<Self>> {
+        Ok(Arc::try_new(Dispatcher {
+            next_key: AtomicUsize::new(1),
+            event: BasicEvent::new(0),
+
+            capacity,
+            pending: Mutex::new(Vec::new()),
+            ready: SegQueue::new(),
+        })?)
+    }
+
+    pub fn event(&self) -> Weak<dyn Event> {
+        Arc::downgrade(&self.event) as _
+    }
+
+    pub fn push(
+        self: &Arc<Self>,
+        event: &Arc<dyn Event>,
+        waiter_data: WaiterData,
+        syscall: Option<Syscall>,
+    ) -> Result<usize> {
+        let key = self.next_key.fetch_add(1, AcqRel);
+        let req = Request {
+            key,
+            event: Arc::downgrade(event),
+            waiter_data,
+            syscall,
+        };
+        PREEMPT.scope(|| {
+            let mut pending = self.pending.lock();
+            if pending.len() >= self.capacity - self.ready.len() {
+                return Err(ENOSPC);
+            }
+            pending.push(req);
+            Ok(())
+        })?;
+
+        event.wait(Arc::clone(self) as _);
+        Ok(key)
+    }
+
+    pub fn pop(self: &Arc<Self>) -> Option<(bool, usize, Option<Syscall>)> {
+        let (canceled, req) = self.ready.pop()?;
+        if let Some(event) = req.event.upgrade() {
+            event.unwait(&(Arc::clone(self) as _));
+        }
+        let res = if !canceled { req.syscall } else { None };
+        self.event.notify(0, SIG_WRITE);
+        Some((canceled, req.key, res))
+    }
+}
+
+impl Waiter for Dispatcher {
+    fn waiter_data(&self) -> WaiterData {
+        unimplemented!()
+    }
+
+    fn on_cancel(&self, event: *const (), signal: usize) {
+        let mut has_cancel = false;
+
+        PREEMPT.scope(|| {
+            let mut pending = self.pending.lock();
+            let iter = pending.drain_filter(|req| {
+                let (e, _) = req.event.as_ptr().to_raw_parts();
+                e == event && req.waiter_data.can_signal(signal, false)
+            });
+            iter.for_each(|req| {
+                self.ready.push((false, req));
+                has_cancel = true;
+            });
+        });
+
+        if has_cancel {
+            self.event.notify(0, SIG_READ)
+        }
+    }
+
+    fn on_notify(&self, _: usize) {
+        unimplemented!()
+    }
+
+    fn try_on_notify(&self, event: *const (), signal: usize, on_wait: bool) -> bool {
+        if self.ready.len() >= self.capacity {
+            return false;
+        }
+        let mut has_notify = false;
+
+        let empty = PREEMPT.scope(|| {
+            let mut pending = self.pending.lock();
+            let iter = pending.drain_filter(|req| {
+                let (e, _) = req.event.as_ptr().to_raw_parts();
+                e == event && req.waiter_data.can_signal(signal, on_wait)
+            });
+            iter.for_each(|req| {
+                self.ready.push((false, req));
+                has_notify = true;
+            });
+            pending.is_empty()
+        });
+
+        if has_notify {
+            self.event.notify(0, SIG_READ)
+        }
+        empty
+    }
+}
+
+unsafe impl DefaultFeature for Dispatcher {
+    #[inline]
+    fn default_features() -> Feature {
+        Feature::SEND | Feature::SYNC | Feature::READ | Feature::WRITE | Feature::WAIT
     }
 }

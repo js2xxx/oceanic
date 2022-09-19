@@ -10,7 +10,6 @@
 #![no_main]
 #![feature(abi_efiapi)]
 #![feature(alloc_error_handler)]
-#![feature(bool_to_option)]
 #![feature(box_syntax)]
 #![feature(nonnull_slice_from_raw_parts)]
 #![feature(panic_info_message)]
@@ -85,6 +84,11 @@ unsafe fn init_services(img: Handle, syst: &SystemTable<Boot>) {
     file::init(img, syst);
 
     mem::init(syst);
+    {
+        use archop::reg::cr4;
+        cr4::set(cr4::FSGSBASE);
+        cr4::unset(cr4::TSD);
+    }
 }
 
 #[entry]

@@ -7,7 +7,7 @@ fn asm_build(input: &str, output: &str, flags: &[&str]) -> Result<(), Box<dyn Er
 
     println!("cargo:rerun-if-changed={}", input);
     let mut cmd = Command::new("nasm");
-    cmd.args(&[input, "-o", output])
+    cmd.args([input, "-o", output])
         .args(flags)
         .status()?
         .exit_ok()?;

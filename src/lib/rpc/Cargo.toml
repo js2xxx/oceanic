@@ -10,5 +10,3 @@ default = ["solvent/default"]
 [dependencies]
 # Local crates
 solvent = {path = "../h2o_rs", default-features = false}
-# External crates
-cstr_core = "0.2"
