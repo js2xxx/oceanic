@@ -140,7 +140,7 @@ pub(crate) struct SendData {
     pub packet: Packet,
 }
 
-impl PackedSyscall for (PackRecv, oneshot_::Sender<SendData>) {
+unsafe impl PackedSyscall for (PackRecv, oneshot_::Sender<SendData>) {
     #[inline]
     fn raw(&self) -> Option<Syscall> {
         Some(self.0.syscall)

@@ -53,7 +53,8 @@ impl Instant {
 
     #[inline]
     pub fn saturating_duration_since(&self, earlier: Instant) -> Duration {
-        self.checked_duration_since(earlier).unwrap_or(Duration::ZERO)
+        self.checked_duration_since(earlier)
+            .unwrap_or(Duration::ZERO)
     }
 }
 

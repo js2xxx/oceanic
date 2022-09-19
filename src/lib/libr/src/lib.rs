@@ -3,6 +3,7 @@
 #![feature(alloc_layout_extra)]
 #![feature(allocator_api)]
 #![feature(allow_internal_unstable)]
+#![feature(build_hasher_simple_hash_one)]
 #![feature(coerce_unsized)]
 #![feature(const_mut_refs)]
 #![feature(const_trait_impl)]

@@ -1,6 +1,5 @@
-use alloc::{boxed::Box, collections::BTreeMap};
+use alloc::boxed::Box;
 use core::{
-    mem,
     sync::atomic::{AtomicUsize, Ordering::*},
     task::{Poll, Waker},
 };
@@ -9,7 +8,7 @@ use futures::task::AtomicWaker;
 use solvent::prelude::{
     Dispatcher as Inner, Object, Result, Syscall, ENOENT, ENOSPC, EPIPE, ETIME,
 };
-use solvent_std::sync::{Arsc, Mutex};
+use solvent_std::sync::{Arsc, CHashMap};
 
 struct Task {
     pack: Box<dyn PackedSyscall>,
@@ -23,8 +22,14 @@ struct Dispatcher {
     inner: Inner,
     state: AtomicUsize,
     num_recv: AtomicUsize,
-    tasks: Mutex<BTreeMap<usize, Task>>,
+    tasks: CHashMap<usize, Task>,
 }
+
+// SAFETY: Usually, `pack` field in `Task` should be `Sync` in order to derive
+// `Sync` for this structure. However, we here guarantee that `pack` don't
+// expose its reference to any context other than its own implementation,
+// meaning that it don't need to be `Sync`.
+unsafe impl Sync for Dispatcher {}
 
 impl Dispatcher {
     #[inline]
@@ -33,14 +38,14 @@ impl Dispatcher {
             inner: Inner::new(capacity),
             state: AtomicUsize::new(NORMAL),
             num_recv: AtomicUsize::new(1),
-            tasks: Mutex::new(BTreeMap::new()),
+            tasks: CHashMap::new(),
         }
     }
 
     fn poll_receive(&self) -> Poll<Result> {
         match self.inner.pop_raw() {
             Ok(res) => {
-                let Task { waker, mut pack } = self.tasks.lock().remove(&res.key).ok_or(ETIME)?;
+                let Task { waker, mut pack } = self.tasks.remove(&res.key).ok_or(ETIME)?;
                 // We need to inform the task where an internal error occurred.
                 let res = pack.unpack(res.result, res.canceled);
                 waker.wake();
@@ -111,7 +116,7 @@ impl Dispatcher {
             waker: AtomicWaker::new(),
         };
         task.waker.register(waker);
-        self.tasks.lock().insert(key, task);
+        self.tasks.insert(key, task);
         Ok(Ok(key))
     }
 
@@ -120,8 +125,7 @@ impl Dispatcher {
             return Err(EPIPE);
         }
 
-        let mut tasks = self.tasks.lock();
-        if let Some(task) = tasks.get_mut(&key) {
+        if let Some(task) = self.tasks.get_mut(&key) {
             task.waker.register(waker);
             Ok(())
         } else {
@@ -230,7 +234,7 @@ impl Drop for DispReceiver {
     fn drop(&mut self) {
         self.disp.state.store(DISCONNECTED, SeqCst);
         if self.disp.num_recv.fetch_sub(1, SeqCst) == 0 {
-            let tasks = mem::take(&mut *self.disp.tasks.lock());
+            let tasks = self.disp.tasks.take();
             for (_, task) in tasks {
                 let Task { mut pack, waker } = task;
                 let _ = pack.unpack(0, true);
@@ -249,7 +253,10 @@ pub fn dispatch(capacity: usize) -> (DispSender, DispReceiver) {
     )
 }
 
-pub trait PackedSyscall: Send {
+/// # Safety
+///
+/// The implementation must not expose its reference to the outer context.
+pub unsafe trait PackedSyscall: Send {
     fn raw(&self) -> Option<Syscall>;
 
     fn unpack(&mut self, result: usize, canceled: bool) -> Result;

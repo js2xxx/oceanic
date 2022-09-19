@@ -55,7 +55,7 @@ impl Interrupt {
     }
 }
 
-impl PackedSyscall for (PackIntrWait, oneshot_::Sender<Result<Instant>>) {
+unsafe impl PackedSyscall for (PackIntrWait, oneshot_::Sender<Result<Instant>>) {
     #[inline]
     fn raw(&self) -> Option<Syscall> {
         Some(self.0.syscall)
