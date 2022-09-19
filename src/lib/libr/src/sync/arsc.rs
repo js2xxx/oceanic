@@ -153,7 +153,7 @@ impl<T> Arsc<T, Global> {
     }
 
     /// # Safety
-    /// 
+    ///
     /// The raw pointer must have been previously returned by a call to
     /// [`Arsc<U>::into_raw`][into_raw] where `U` must have the same size and
     /// alignment as `T`. This is trivially true if `U` is `T`.

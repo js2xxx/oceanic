@@ -1,6 +1,7 @@
-use alloc::{collections::LinkedList, sync::Weak};
+use alloc::{collections::BinaryHeap, sync::Weak};
 use core::{
-    cell::RefCell,
+    cell::{LazyCell, RefCell},
+    cmp,
     sync::atomic::{AtomicBool, Ordering::*},
     time::Duration,
 };
@@ -12,16 +13,45 @@ use super::Instant;
 use crate::sched::{ipc::Arsc, task, Event, PREEMPT, SCHED};
 
 #[thread_local]
-static TIMER_QUEUE: TimerQueue = TimerQueue::new();
+static TIMER_QUEUE: LazyCell<TimerQueue> = LazyCell::new(TimerQueue::new);
+
+#[derive(Debug, Clone)]
+struct TimerEntry(Arsc<Timer>);
+
+impl PartialEq for TimerEntry {
+    #[inline]
+    fn eq(&self, other: &Self) -> bool {
+        self.0.deadline == other.0.deadline
+    }
+}
+
+impl Eq for TimerEntry {}
+
+impl PartialOrd for TimerEntry {
+    #[inline]
+    fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
+        self.0
+            .deadline
+            .partial_cmp(&other.0.deadline)
+            .map(|c| c.reverse())
+    }
+}
+
+impl Ord for TimerEntry {
+    #[inline]
+    fn cmp(&self, other: &Self) -> cmp::Ordering {
+        self.0.deadline.cmp(&other.0.deadline).reverse()
+    }
+}
 
 struct TimerQueue {
-    inner: RefCell<LinkedList<Arsc<Timer>>>,
+    inner: RefCell<BinaryHeap<TimerEntry>>,
 }
 
 impl TimerQueue {
-    const fn new() -> Self {
+    fn new() -> Self {
         TimerQueue {
-            inner: RefCell::new(LinkedList::new()),
+            inner: RefCell::new(BinaryHeap::new()),
         }
     }
 
@@ -29,7 +59,7 @@ impl TimerQueue {
     #[track_caller]
     fn with_inner<F, R>(&self, func: F) -> R
     where
-        F: FnOnce(&mut LinkedList<Arsc<Timer>>) -> R,
+        F: FnOnce(&mut BinaryHeap<TimerEntry>) -> R,
     {
         PREEMPT.scope(|| func(&mut self.inner.borrow_mut()))
     }
@@ -37,44 +67,15 @@ impl TimerQueue {
     #[inline]
     fn try_with_inner<F, R>(&self, func: F) -> Option<R>
     where
-        F: FnOnce(&mut LinkedList<Arsc<Timer>>) -> R,
+        F: FnOnce(&mut BinaryHeap<TimerEntry>) -> R,
     {
         PREEMPT.scope(|| self.inner.try_borrow_mut().ok().map(|mut r| func(&mut r)))
     }
 
+    #[inline]
     fn push(&self, timer: Arsc<Timer>) {
-        let ddl = timer.deadline;
         self.with_inner(|queue| {
-            let mut cur = queue.cursor_front_mut();
-            loop {
-                match cur.current() {
-                    Some(t) if t.deadline >= ddl => {
-                        cur.insert_before(timer);
-                        break;
-                    }
-                    None => {
-                        cur.insert_before(timer);
-                        break;
-                    }
-                    Some(_) => cur.move_next(),
-                }
-            }
-        })
-    }
-
-    fn pop(&self, timer: &Arsc<Timer>) -> bool {
-        self.with_inner(|queue| {
-            let mut cur = queue.cursor_front_mut();
-            loop {
-                match cur.current() {
-                    Some(t) if Arsc::ptr_eq(t, timer) => {
-                        cur.remove_current();
-                        break true;
-                    }
-                    Some(_) => cur.move_next(),
-                    None => break false,
-                }
-            }
+            queue.push(TimerEntry(timer));
         })
     }
 }
@@ -146,7 +147,6 @@ impl Timer {
     }
 
     pub fn cancel(self: &Arsc<Self>, preempt: bool) -> bool {
-        TIMER_QUEUE.pop(self);
         match PREEMPT.scope(|| self.callback.write().take()) {
             Some(callback) => {
                 callback.cancel(preempt);
@@ -156,7 +156,7 @@ impl Timer {
         }
     }
 
-    pub fn fire(&self) {
+    fn fire(&self) {
         if let Some(callback) = PREEMPT.scope(|| self.callback.write().take()) {
             callback.call(self);
         }
@@ -170,22 +170,21 @@ impl Timer {
 pub unsafe fn tick() {
     loop {
         let now = Instant::now();
-        let timer = TIMER_QUEUE.try_with_inner(|queue| {
-            let mut cur = queue.cursor_front_mut();
-            loop {
-                match cur.current() {
-                    Some(timer) if timer.callback.try_read().map_or(false, |r| r.is_none()) => {
-                        cur.remove_current();
-                    }
-                    Some(timer) if timer.deadline <= now => {
-                        break cur.remove_current();
-                    }
-                    _ => break None,
+        let timer = TIMER_QUEUE.try_with_inner(|queue| loop {
+            match queue.peek() {
+                Some(TimerEntry(timer))
+                    if timer.callback.try_read().map_or(false, |r| r.is_none()) =>
+                {
+                    queue.pop();
                 }
+                Some(TimerEntry(timer)) if timer.deadline <= now => {
+                    break queue.pop();
+                }
+                _ => break None,
             }
         });
         match timer {
-            Some(Some(timer)) => timer.fire(),
+            Some(Some(TimerEntry(timer))) => timer.fire(),
             _ => break,
         }
     }

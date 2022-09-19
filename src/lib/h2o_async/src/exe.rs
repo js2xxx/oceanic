@@ -98,7 +98,7 @@ impl ThreadPool {
     }
 
     pub fn dispatch(&self, capacity: usize) -> DispSender {
-        let (tx, rx) = crate::dispatch(capacity);
+        let (tx, rx) = crate::disp::dispatch(capacity);
         let inner = self.inner.clone();
         log::trace!("solvent-async::exe: Dispatch I/O operations");
         thread::spawn(move || io_thread(rx, inner));

@@ -40,6 +40,21 @@ impl Instant {
     pub const unsafe fn from_raw(data: u128) -> Self {
         Instant(data)
     }
+
+    #[inline]
+    pub fn duration_since(&self, earlier: Instant) -> Duration {
+        *self - earlier
+    }
+
+    #[inline]
+    pub fn checked_duration_since(&self, earlier: Instant) -> Option<Duration> {
+        (self >= &earlier).then(|| *self - earlier)
+    }
+
+    #[inline]
+    pub fn saturating_duration_since(&self, earlier: Instant) -> Duration {
+        self.checked_duration_since(earlier).unwrap_or(Duration::ZERO)
+    }
 }
 
 impl Add<Duration> for Instant {

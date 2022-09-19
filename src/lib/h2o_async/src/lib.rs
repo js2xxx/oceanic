@@ -8,8 +8,6 @@ mod utils;
 
 extern crate alloc;
 
-pub use self::disp::dispatch;
-
 pub mod test {
     use core::future::Future;
 

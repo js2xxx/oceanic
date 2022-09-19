@@ -272,8 +272,11 @@ impl Scheduler {
 
         match cur.running_state.start_time() {
             Some(start_time) => {
-                debug_assert!(cur_time > start_time);
-                let runtime_delta = cur_time - start_time;
+                // FIXME: Some platform like QEMU doesn't support invariant TSC, so the assert
+                // below can really fail. By far, comment it out to avoid kernel panic.
+                //
+                // debug_assert!(cur_time > start_time);
+                let runtime_delta = cur_time.saturating_duration_since(start_time);
                 cur.runtime += runtime_delta;
                 if cur.time_slice < runtime_delta && !sole {
                     cur.running_state = task::RunningState::NEED_RESCHED;
