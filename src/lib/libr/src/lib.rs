@@ -7,6 +7,7 @@
 #![feature(coerce_unsized)]
 #![feature(const_mut_refs)]
 #![feature(const_trait_impl)]
+#![feature(error_in_core)]
 #![feature(dropck_eyepatch)]
 #![feature(hashmap_internals)]
 #![feature(int_roundings)]

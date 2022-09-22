@@ -1,4 +1,5 @@
 use alloc::vec::Vec;
+use core::error::Error;
 
 use solvent::prelude::Channel;
 use svrt::StartupArgs;
@@ -29,7 +30,7 @@ impl Termination for ! {
     }
 }
 
-impl<E> Termination for Result<(), E> {
+impl<E: Error> Termination for Result<(), E> {
     fn report(self) -> usize {
         match self {
             Ok(()) => ().report(),
@@ -38,8 +39,12 @@ impl<E> Termination for Result<(), E> {
     }
 }
 
-impl<E> Termination for Result<!, E> {
+impl<E: Error> Termination for Result<!, E> {
     fn report(self) -> usize {
+        match self {
+            Ok(t) => t,
+            Err(e) => log::error!("main function ended with error: {e}"),
+        }
         1
     }
 }
