@@ -83,7 +83,7 @@ impl Scheduler {
     fn enqueue(&self, task: task::Ready, pree: PreemptStateGuard, preempt: bool) {
         SCHED_INFO[self.cpu]
             .expected_runtime
-            .fetch_add(task.time_slice.as_millis() as u64, Release);
+            .fetch_add(task.time_slice.as_micros() as u64, Release);
         // SAFETY: We have `pree`, which means preemption is disabled.
         match unsafe { &*self.current.get() } {
             Some(ref cur) if preempt && Self::should_preempt(cur, &task) => {
@@ -360,8 +360,9 @@ fn select_cpu(
 ) -> Option<usize> {
     let mut iter = affinity.iter_ones();
     let mut ret = iter.next()?;
+    let mut rret = SCHED_INFO[ret].expected_runtime();
 
-    if ret == cur_cpu && SCHED_INFO[ret].expected_runtime() == 0 {
+    if ret == cur_cpu && rret == 0 {
         return Some(ret);
     }
 
@@ -388,7 +389,7 @@ fn select_cpu(
         };
 
         let wruntime = {
-            let ra = SCHED_INFO[a].expected_runtime();
+            let ra = rret;
             let diff = ra.abs_diff(rb);
             if diff <= 1 {
                 0
@@ -399,7 +400,9 @@ fn select_cpu(
 
         let weight = wlast_cpu * 10 + wcur_cpu * 2 + wruntime * 20;
 
-        ret = if weight > 0 { a } else { b };
+        if weight < 0 {
+            (ret, rret) = (b, rb);
+        }
     }
 
     Some(ret)

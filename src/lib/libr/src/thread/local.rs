@@ -7,8 +7,7 @@ pub struct LocalKey<T: 'static> {
 #[macro_export]
 #[allow_internal_unstable(thread_local)]
 macro_rules! thread_local {
-
-    (@CONST_KEY, $type:ty, $init:expr) => {
+    (@KEY, $type:ty, const $init:expr) => {
         {
             unsafe fn get_key(_: Option<&mut Option<$type>>) -> Option<&'static $type> {
                 #[thread_local]
@@ -41,15 +40,6 @@ macro_rules! thread_local {
         }
     };
 
-    (@CONST_INNER $(#[$attr:meta])* $vis:vis static $name:ident: $type:ty = $init:expr) => {
-        $(#[$attr])* $vis static $name: $crate::thread::local::LocalKey<$type>
-            = $crate::thread_local!(@CONST_KEY, $type, $init);
-    };
-
-    {$($(#[$attr:meta])* $vis:vis static $name:ident: $type:ty = const { $init:expr });* $(;)?} => {
-        $($crate::thread_local!(@CONST_INNER $(#[$attr])* $vis static $name: $type = $init);)+
-    };
-
     (@KEY, $type:ty, $init:expr) => {
         {
             #[inline]
@@ -77,9 +67,13 @@ macro_rules! thread_local {
         }
     };
 
-    (@INNER $(#[$attr:meta])* $vis:vis static $name:ident: $type:ty = $init:expr) => {
-        $(#[$attr])* $vis static $name: $crate::thread::local::LocalKey<$type> =
-            $crate::thread_local!(@KEY, $type, $init);
+    (@INNER $(#[$attr:meta])* $vis:vis static $name:ident: $type:ty = $($init:tt)*) => {
+        $(#[$attr])* $vis const $name: $crate::thread::local::LocalKey<$type> =
+            $crate::thread_local!(@KEY, $type, $($init)*);
+    };
+
+    {$($(#[$attr:meta])* $vis:vis static $name:ident: $type:ty = const { $init:expr });* $(;)?} => {
+        $($crate::thread_local!(@INNER $(#[$attr])* $vis static $name: $type = const $init);)+
     };
 
     {$($(#[$attr:meta])* $vis:vis static $name:ident: $type:ty = $init:expr);* $(;)?} => {

@@ -47,9 +47,7 @@ impl WaitObject {
         let mut cnt = 0;
         while cnt < num {
             match self.wait_queue.pop() {
-                Some(timer) if timer.cancel(preempt) => {
-                    cnt += 1;
-                }
+                Some(timer) if timer.cancel(preempt) => cnt += 1,
                 Some(_) => {}
                 None => break,
             }
