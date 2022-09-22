@@ -6,7 +6,6 @@ cfg_if::cfg_if! {
 }
 
 use alloc::boxed::Box;
-use archop::PreemptStateGuard;
 use core::{
     alloc::Layout,
     fmt::Debug,
@@ -15,6 +14,7 @@ use core::{
     ptr::{self, NonNull},
 };
 
+use archop::PreemptStateGuard;
 use paging::{LAddr, PAGE_SIZE};
 
 use crate::{

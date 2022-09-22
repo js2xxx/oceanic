@@ -771,7 +771,8 @@ pub fn get_object(path: Vec<CString>) -> Result<Vec<Phys>, Error> {
     let ldrpc = LDRPC
         .as_ref()
         .ok_or(Error::DepGet(solvent::error::ENOENT))?;
-    let resp = rpc::call::<GetObject>(ldrpc, path.into(), Duration::MAX).map_err(Error::DepGet)?;
+    let resp = rpc::call_blocking::<GetObject>(ldrpc, path.into(), Duration::MAX)
+        .map_err(Error::DepGet)?;
     match resp {
         Response::Success(objs) => Ok(objs),
         Response::Error { not_found_index } => {

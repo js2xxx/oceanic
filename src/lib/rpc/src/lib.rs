@@ -8,6 +8,7 @@ extern crate alloc;
 use alloc::{ffi::CString, vec::Vec};
 use core::{
     ffi::{CStr, FromBytesWithNulError},
+    future::Future,
     mem,
     time::Duration,
 };
@@ -16,7 +17,7 @@ use solvent::prelude::{Channel, PacketTyped};
 
 /// # Safety
 ///
-/// The implementor must be of the plain-old-data type.
+/// The implementor must be capable of byte-copying.
 pub unsafe trait Byted: Default {
     fn from_bytes(bytes: &[u8]) -> Option<Self> {
         let mut ret = Self::default();
@@ -45,7 +46,7 @@ pub trait Carrier: Sized {
     type Response: PacketTyped;
 }
 
-pub fn call<T: Carrier>(
+pub fn call_blocking<T: Carrier>(
     channel: &Channel,
     request: T::Request,
     timeout: Duration,
@@ -55,7 +56,16 @@ pub fn call<T: Carrier>(
     <T::Response>::try_from_packet(&mut packet).map_err(Into::into)
 }
 
-pub fn handle<T: Carrier, F>(channel: &Channel, proc: F) -> solvent::error::Result
+pub async fn call<T: Carrier>(
+    channel: &solvent_async::ipc::Channel,
+    request: T::Request,
+) -> solvent::error::Result<T::Response> {
+    let mut packet = request.into_packet();
+    channel.call(&mut packet).await?;
+    <T::Response>::try_from_packet(&mut packet).map_err(Into::into)
+}
+
+pub fn handle_blocking<T: Carrier, F>(channel: &Channel, proc: F) -> solvent::error::Result
 where
     F: FnOnce(T::Request) -> T::Response,
 {
@@ -65,6 +75,23 @@ where
         *packet = response.into_packet();
         Ok(())
     })
+}
+
+pub async fn handle<T: Carrier, F, G>(
+    channel: &solvent_async::ipc::Channel,
+    proc: G,
+) -> solvent::error::Result
+where
+    G: FnOnce(T::Request) -> F,
+    F: Future<Output = T::Response>,
+{
+    let fut = channel.handle(|mut packet| async {
+        let request = <T::Request>::try_from_packet(&mut packet).map_err(Into::into)?;
+        let response = proc(request).await;
+        packet = response.into_packet();
+        Ok(((), packet))
+    });
+    fut.await
 }
 
 fn from_cstr_vec(data: Vec<CString>) -> Vec<u8> {

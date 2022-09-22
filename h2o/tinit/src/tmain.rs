@@ -66,7 +66,7 @@ fn map_bootfs(phys: &Phys, root: &Virt) -> Directory<'static> {
 
 fn serve_load(load_rpc: Channel, bootfs: Directory, bootfs_phys: &Phys) -> Error {
     loop {
-        let res = rpc::handle::<GetObject, _>(&load_rpc, |request| {
+        let res = rpc::handle_blocking::<GetObject, _>(&load_rpc, |request| {
             let mut objs = Vec::with_capacity(request.paths.len());
             for (i, path) in request.paths.into_iter().enumerate() {
                 let mut root = Vec::from(b"lib/" as &[u8]);
