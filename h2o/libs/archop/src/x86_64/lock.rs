@@ -1,4 +1,7 @@
-use core::sync::atomic::{AtomicUsize, Ordering::*};
+use core::{
+    mem,
+    sync::atomic::{AtomicUsize, Ordering::*},
+};
 
 pub mod mutex;
 pub mod rwlock;
@@ -20,6 +23,15 @@ impl Drop for IntrState {
 
 pub struct PreemptStateGuard<'a>(u64, &'a AtomicUsize);
 
+impl<'a> PreemptStateGuard<'a> {
+    #[inline]
+    pub fn into_raw(self) -> (usize, u64) {
+        let ret = (self.1.load(Relaxed), self.0);
+        mem::forget(self);
+        ret
+    }
+}
+
 impl<'a> Drop for PreemptStateGuard<'a> {
     fn drop(&mut self) {
         if self.1.fetch_sub(1, Release) == 1 {
@@ -38,7 +50,7 @@ impl PreemptState {
 
     pub fn lock(&self) -> PreemptStateGuard {
         let flags = unsafe { crate::pause_intr() };
-        self.0.fetch_add(1, Acquire);
+        self.0.fetch_add(1, Relaxed);
         PreemptStateGuard(flags, &self.0)
     }
 
@@ -52,46 +64,30 @@ impl PreemptState {
         func()
     }
 
+    #[inline]
     pub fn is_locked(&self) -> bool {
-        self.0.load(Acquire) > 0
+        self.0.load(Relaxed) > 0
     }
 
+    #[inline]
     pub fn raw(&self) -> usize {
-        self.0.load(Acquire)
+        self.0.load(Relaxed)
     }
 
     /// # Safety
     ///
-    /// This function must be called only if a [`PreemptStateGuard`] is
-    /// [`forget`]ed or peered with [`disable`].
+    /// `value` and `flags` must be from [`into_raw`] method and the current
+    /// state must be valid.
     ///
-    /// [`forget`]: core::mem::forget
-    /// [`disable`]: Self::disable
-    pub unsafe fn enable(&self, flags: Option<u64>) -> bool {
-        let p = self.0.load(Acquire);
-        if p > 0
-            && self
-                .0
-                .compare_exchange_weak(p, p - 1, AcqRel, Acquire)
-                .is_ok()
-        {
-            if p == 1 {
-                crate::resume_intr(flags);
-            }
-            true
+    /// [`into_raw`]: PreemptStateGuard::into_raw
+    #[inline]
+    pub unsafe fn from_raw(&self, value: usize, flags: u64) -> PreemptStateGuard {
+        self.0.store(if value > 0 { value } else { 1 }, Release);
+        let flags = if flags > 0 {
+            flags
         } else {
-            false
-        }
-    }
-
-    /// # Safety
-    ///
-    /// This function must be called only if peered with [`enable`].
-    ///
-    /// [`enable`]: Self::enable
-    pub unsafe fn disable(&self) -> (u64, usize) {
-        let flags = crate::pause_intr();
-        let old = self.0.fetch_add(1, AcqRel);
-        (flags, old)
+            crate::pause_intr()
+        };
+        PreemptStateGuard(flags, &self.0)
     }
 }

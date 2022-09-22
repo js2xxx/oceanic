@@ -6,7 +6,7 @@ use alloc::vec::Vec;
 use core::{
     assert_matches::assert_matches,
     cell::UnsafeCell,
-    hint, mem,
+    hint,
     sync::atomic::{AtomicU64, Ordering::*},
     time::Duration,
 };
@@ -346,9 +346,7 @@ impl Scheduler {
         }
         .unzip();
 
-        // We will enable preemption in `switch_ctx`.
-        mem::forget(pree);
-        unsafe { task::ctx::switch_ctx(old, new) };
+        unsafe { task::ctx::switch_ctx(old, new, pree) };
         ret.transpose().and_then(|res| res.ok_or(sv_call::ESRCH))
     }
 }
@@ -374,12 +372,14 @@ fn select_cpu(
 
         let a = ret;
 
+        // Attempt to pin a task to its last CPU.
         let wlast_cpu = match last_cpu {
             Some(last_cpu) if a == last_cpu && b != last_cpu => 1,
             Some(last_cpu) if a != last_cpu && b == last_cpu => -1,
             _ => 0,
         };
 
+        // Attempt to reduce the times of raising `TASK_MIGRATE` interrupt.
         let wcur_cpu = if a == cur_cpu && b != cur_cpu {
             1
         } else if a != cur_cpu && b == cur_cpu {
@@ -388,6 +388,7 @@ fn select_cpu(
             0
         };
 
+        // Attempt to balance the load of each CPU.
         let wruntime = {
             let ra = rret;
             let diff = ra.abs_diff(rb);
@@ -398,7 +399,7 @@ fn select_cpu(
             }
         };
 
-        let weight = wlast_cpu * 10 + wcur_cpu * 2 + wruntime * 20;
+        let weight = wlast_cpu * 15 + wcur_cpu + wruntime * 40;
 
         if weight < 0 {
             (ret, rret) = (b, rb);

@@ -29,6 +29,8 @@ pub const EXTENDED_FRAME_SIZE: usize = 576;
 #[repr(C)]
 pub struct Kframe {
     cs: u64,
+    pree0: u64,
+    pree1: u64,
     rflags: u64,
     r15: u64,
     r14: u64,
@@ -250,7 +252,8 @@ unsafe extern "C" fn save_regs() {
 }
 
 #[no_mangle]
-pub(super) unsafe extern "C" fn switch_finishing() {
+pub(super) unsafe extern "C" fn switch_finishing(pree_value: usize, pree_flags: u64) {
+    let _pree = PREEMPT.from_raw(pree_value, pree_flags);
     if let Some(ref cur) = *crate::sched::SCHED.current() {
         log::trace!("Switched to task {:?}, P{}", cur.tid().raw(), PREEMPT.raw());
         debug_assert!(!cur.running_state.not_running());
@@ -264,11 +267,15 @@ pub(super) unsafe extern "C" fn switch_finishing() {
             KERNEL_GS.load();
         }
     }
-    PREEMPT.enable(None);
 }
 
 extern "C" {
-    pub(super) fn switch_kframe(old: *mut *mut u8, new: *mut u8);
+    pub(super) fn switch_kframe(
+        old: *mut *mut u8,
+        new: *mut u8,
+        pree_value: *mut usize,
+        pree_flags: *mut u64,
+    );
 
     fn task_fresh();
 }
