@@ -236,3 +236,16 @@ where
 }
 
 } }
+
+#[macro_export]
+macro_rules! entry {
+    ($func:ident) => {
+        mod __h2o_async_inner {
+            fn main() {
+                $crate::block_on(async { (super::$func)().await })
+            }
+
+            $crate::reexport_std::entry!(main);
+        }
+    };
+}

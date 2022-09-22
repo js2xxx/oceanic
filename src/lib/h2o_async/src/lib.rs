@@ -6,6 +6,8 @@ pub mod exe;
 pub mod ipc;
 mod utils;
 
+pub use solvent_std as reexport_std;
+
 extern crate alloc;
 
 #[cfg(feature = "runtime")]
@@ -64,14 +66,13 @@ pub mod test {
         (send, recv)
     }
 
-    pub fn test_disp() {
+    pub async fn test_disp() {
         log::debug!("Has {} cpus available", solvent::task::cpu_num());
-        crate::block_on(async move {
-            let (send, recv) = test_tx();
-            let recv = crate::spawn(recv);
-            let send = crate::spawn(send);
-            recv.await;
-            send.await;
-        });
+
+        let (send, recv) = test_tx();
+        let recv = crate::spawn(recv);
+        let send = crate::spawn(send);
+        recv.await;
+        send.await;
     }
 }
