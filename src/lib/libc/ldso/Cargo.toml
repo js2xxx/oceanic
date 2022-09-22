@@ -11,7 +11,7 @@ crate-type = ["cdylib"]
 canary = {path = "../../../../h2o/libs/canary"}
 dbglog = {path = "../../dbglog"}
 elfload = {path = "../../elfload"}
-rpc = {path = "../../rpc"}
+rpc = {path = "../../rpc", default-features = false, features = ["compact"]}
 solvent = {path = "../../h2o_rs"}
 svrt = {path = "../../svrt"}
 # External crates

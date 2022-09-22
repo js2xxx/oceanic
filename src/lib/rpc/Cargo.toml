@@ -4,10 +4,12 @@ name = "rpc"
 version = "0.1.0"
 
 [features]
+async = ["dep:solvent-async"]
 call = ["solvent/call"]
-default = ["solvent/default"]
+compact = ["solvent/default"]
+default = ["compact", "async"]
 
 [dependencies]
 # Local crates
 solvent = {path = "../h2o_rs", default-features = false}
-solvent-async = {path = "../h2o_async"}
+solvent-async = {path = "../h2o_async", optional = true}

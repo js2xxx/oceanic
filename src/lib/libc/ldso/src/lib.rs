@@ -56,6 +56,7 @@ extern "C" fn __libc_start_init() {
 
 #[no_mangle]
 extern "C" fn __libc_exit_fini() {
+    crate::ffi::__libc_deallocate_tcb();
     dso::dso_list().lock().do_fini();
 }
 

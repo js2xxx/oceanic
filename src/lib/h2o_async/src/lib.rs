@@ -8,19 +8,21 @@ mod utils;
 
 extern crate alloc;
 
+#[cfg(feature = "runtime")]
+pub use exe::{block_on, dispatch, spawn, spawn_blocking};
+
+#[cfg(feature = "runtime")]
 pub mod test {
     use core::future::Future;
 
     use solvent::{ipc::Packet, prelude::Handle, random};
 
-    use crate::disp::DispSender;
-
     const NUM_PACKET: usize = 2000;
 
-    fn test_tx(tx: DispSender) -> (impl Future<Output = ()>, impl Future<Output = ()>) {
+    fn test_tx() -> (impl Future<Output = ()>, impl Future<Output = ()>) {
         let (i1, i2) = solvent::ipc::Channel::new();
-        let i1 = crate::ipc::Channel::new(i1, tx.clone());
-        let i2 = crate::ipc::Channel::new(i2, tx);
+        let i1 = crate::ipc::Channel::new(i1);
+        let i2 = crate::ipc::Channel::new(i2);
 
         let recv = async move {
             let mut packet = Packet {
@@ -64,12 +66,10 @@ pub mod test {
 
     pub fn test_disp() {
         log::debug!("Has {} cpus available", solvent::task::cpu_num());
-        let exe = crate::exe::ThreadPool::new(2);
-        exe.block_on(|pool| async move {
-            let tx = pool.dispatch(10);
-            let (send, recv) = test_tx(tx);
-            let recv = pool.spawn(recv);
-            let send = pool.spawn(send);
+        crate::block_on(async move {
+            let (send, recv) = test_tx();
+            let recv = crate::spawn(recv);
+            let send = crate::spawn(send);
             recv.await;
             send.await;
         });

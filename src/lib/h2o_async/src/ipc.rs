@@ -25,9 +25,23 @@ pub struct Channel {
     disp: DispSender,
 }
 
+#[cfg(feature = "runtime")]
+impl From<Inner> for Channel {
+    #[inline]
+    fn from(inner: Inner) -> Self {
+        Self::new(inner)
+    }
+}
+
 impl Channel {
     #[inline]
-    pub fn new(inner: Inner, disp: DispSender) -> Self {
+    #[cfg(feature = "runtime")]
+    pub fn new(inner: Inner) -> Self {
+        Self::with_disp(inner, crate::dispatch())
+    }
+
+    #[inline]
+    pub fn with_disp(inner: Inner, disp: DispSender) -> Self {
         Channel { inner, disp }
     }
 

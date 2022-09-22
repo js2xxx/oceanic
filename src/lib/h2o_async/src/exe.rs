@@ -17,10 +17,28 @@ use futures::{
 use solvent::prelude::EPIPE;
 use solvent_std::{
     sync::{Arsc, Injector, Stealer, Worker},
-    thread::{self, Backoff},
+    thread::{self, available_parallelism, Backoff},
+    thread_local,
 };
 
 use crate::disp::{DispReceiver, DispSender};
+
+struct Blocking<G>(Option<G>);
+
+impl<G> Unpin for Blocking<G> {}
+
+impl<G, U> Future for Blocking<G>
+where
+    G: FnOnce() -> U + Send + 'static,
+{
+    type Output = U;
+
+    #[inline]
+    fn poll(mut self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Self::Output> {
+        let func = self.0.take().expect("Cannot run a task twice");
+        Poll::Ready(func())
+    }
+}
 
 #[derive(Debug)]
 pub struct ThreadPool {
@@ -77,23 +95,6 @@ impl ThreadPool {
         F: FnOnce() -> T + Send + 'static,
         T: Send + 'static,
     {
-        struct Blocking<G>(Option<G>);
-
-        impl<G> Unpin for Blocking<G> {}
-
-        impl<G, U> Future for Blocking<G>
-        where
-            G: FnOnce() -> U + Send + 'static,
-        {
-            type Output = U;
-
-            #[inline]
-            fn poll(mut self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Self::Output> {
-                let func = self.0.take().expect("Cannot run a task twice");
-                Poll::Ready(func())
-            }
-        }
-
         self.spawn(Blocking(Some(func)))
     }
 
@@ -194,3 +195,44 @@ fn io_thread(rx: DispReceiver, pool: Arsc<Inner>) {
         }
     }
 }
+
+cfg_if::cfg_if! { if #[cfg(feature = "runtime")] {
+
+thread_local! {
+    static POOL: ThreadPool = ThreadPool::new(available_parallelism().into());
+
+    static DISP: DispSender = POOL.with(|pool| pool.dispatch(4096));
+}
+
+#[inline]
+pub fn spawn<F, T>(fut: F) -> Task<T>
+where
+    F: Future<Output = T> + Send + 'static,
+    T: Send + 'static,
+{
+    POOL.with(|pool| pool.spawn(fut))
+}
+
+#[inline]
+pub fn spawn_blocking<F, T>(func: F) -> Task<T>
+where
+    F: FnOnce() -> T + Send + 'static,
+    T: Send + 'static,
+{
+    POOL.with(|pool| pool.spawn_blocking(func))
+}
+
+#[inline]
+pub fn dispatch() -> DispSender {
+    DISP.with(|tx| tx.clone())
+}
+
+#[inline]
+pub fn block_on<F, T>(fut: F) -> T
+where
+    F: Future<Output = T> + Send + 'static,
+{
+    POOL.with(|pool| pool.block_on(|_| fut))
+}
+
+} }

@@ -6,9 +6,10 @@ pub mod load;
 extern crate alloc;
 
 use alloc::{ffi::CString, vec::Vec};
+#[cfg(feature = "async")]
+use core::future::Future;
 use core::{
     ffi::{CStr, FromBytesWithNulError},
-    future::Future,
     mem,
     time::Duration,
 };
@@ -56,6 +57,7 @@ pub fn call_blocking<T: Carrier>(
     <T::Response>::try_from_packet(&mut packet).map_err(Into::into)
 }
 
+#[cfg(feature = "async")]
 pub async fn call<T: Carrier>(
     channel: &solvent_async::ipc::Channel,
     request: T::Request,
@@ -77,6 +79,7 @@ where
     })
 }
 
+#[cfg(feature = "async")]
 pub async fn handle<T: Carrier, F, G>(
     channel: &solvent_async::ipc::Channel,
     proc: G,
