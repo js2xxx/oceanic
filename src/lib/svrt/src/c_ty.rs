@@ -40,6 +40,7 @@ pub enum HandleType {
     VdsoPhys,
     ProgramPhys,
     LoadRpc,
+    BootfsPhys,
 }
 
 #[derive(Copy, Clone)]

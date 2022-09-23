@@ -21,7 +21,7 @@ use canary::Canary;
 use elfload::LoadedElf;
 use rpc::load::{GetObject, GetObjectResponse as Response};
 use solvent::prelude::{Channel, Object, Phys};
-use spin::{Lazy, Mutex, Once};
+use spin::{Lazy, Mutex, Once, RwLock};
 use svrt::HandleType;
 
 use crate::{
@@ -33,9 +33,9 @@ use crate::{
 
 static mut LDSO: MaybeUninit<Dso> = MaybeUninit::uninit();
 static mut VDSO: MaybeUninit<Dso> = MaybeUninit::uninit();
-static LDRPC: Lazy<Option<Channel>> = Lazy::new(|| {
-    let handle = svrt::try_take_startup_handle(HandleType::LoadRpc.into()).ok()?;
-    Some(unsafe { Channel::from_raw(handle) })
+static LDRPC: Lazy<RwLock<Option<Channel>>> = Lazy::new(|| {
+    let handle = svrt::try_take_startup_handle(HandleType::LoadRpc.into()).ok();
+    RwLock::new(handle.map(|handle| unsafe { Channel::from_raw(handle) }))
 });
 
 static mut DSO_LIST: MaybeUninit<Mutex<DsoList>> = MaybeUninit::uninit();
@@ -768,9 +768,8 @@ pub fn init() -> Result<(), Error> {
 }
 
 pub fn get_object(path: Vec<CString>) -> Result<Vec<Phys>, Error> {
-    let ldrpc = LDRPC
-        .as_ref()
-        .ok_or(Error::DepGet(solvent::error::ENOENT))?;
+    let lock = LDRPC.read();
+    let ldrpc = lock.as_ref().ok_or(Error::DepGet(solvent::error::ENOENT))?;
     let resp = rpc::call_blocking::<GetObject>(ldrpc, path.into(), Duration::MAX)
         .map_err(Error::DepGet)?;
     match resp {
@@ -780,6 +779,11 @@ pub fn get_object(path: Vec<CString>) -> Result<Vec<Phys>, Error> {
             Err(Error::DepGet(solvent::error::ENOENT))
         }
     }
+}
+
+#[inline]
+pub(crate) fn disconnect_ldrpc() {
+    *LDRPC.write() = None;
 }
 
 fn check_type(st_type: u8) -> bool {

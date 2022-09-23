@@ -4,6 +4,7 @@
 extern crate alloc;
 
 async fn main() {
+    unsafe { dldisconn() };
     log::debug!("Hello world!");
     solvent_std::env::args().for_each(|arg| log::debug!("{arg}"));
 
@@ -12,3 +13,8 @@ async fn main() {
 }
 
 solvent_async::entry!(main);
+
+#[link(name = "ldso")]
+extern "C" {
+    fn dldisconn();
+}

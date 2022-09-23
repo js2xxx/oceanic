@@ -170,9 +170,12 @@ extern "C" fn tmain(init_chan: sv_call::Handle) {
     me.send(dl_args).expect("Failed to send dyn loader args");
 
     let exe_args = StartupArgs {
-        handles: [(HandleType::RootVirt.into(), Virt::into_raw(virt))]
-            .into_iter()
-            .collect(),
+        handles: [
+            (HandleType::RootVirt.into(), Virt::into_raw(virt)),
+            (HandleType::BootfsPhys.into(), Phys::into_raw(bootfs_phys.clone())),
+        ]
+        .into_iter()
+        .collect(),
         args: Vec::from(b"progm\0" as &[u8]),
         env: vec![0],
     };

@@ -44,6 +44,11 @@ impl Interrupt {
     }
 
     #[inline]
+    pub fn rebind(&mut self, disp: DispSender) {
+        self.disp = disp
+    }
+
+    #[inline]
     pub fn last_time(&self) -> Result<Instant> {
         self.inner.wait(Duration::ZERO)
     }

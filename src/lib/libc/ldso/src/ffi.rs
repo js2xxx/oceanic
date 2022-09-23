@@ -124,6 +124,11 @@ pub extern "C" fn dlerror() -> *const c_char {
     STATUS.swap(ptr::null_mut(), SeqCst)
 }
 
+#[no_mangle]
+pub extern "C" fn dldisconn() {
+    crate::dso::disconnect_ldrpc()
+}
+
 #[repr(C)]
 pub(crate) struct TlsGetAddr {
     pub id: usize,

@@ -46,6 +46,11 @@ impl Channel {
     }
 
     #[inline]
+    pub fn rebind(&mut self, disp: DispSender) {
+        self.disp = disp
+    }
+
+    #[inline]
     pub fn send_raw(&self, id: Option<usize>, buffer: &[u8], handles: &[Handle]) -> Result {
         self.inner.send_raw(id, buffer, handles)
     }
