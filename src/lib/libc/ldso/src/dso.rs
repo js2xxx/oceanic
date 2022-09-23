@@ -13,14 +13,14 @@ use core::{
     mem::{self, MaybeUninit},
     ptr::{self, NonNull},
     slice,
-    sync::atomic::{self, AtomicU32, Ordering::*},
+    sync::atomic::{self, AtomicU32, AtomicUsize, Ordering::*},
     time::Duration,
 };
 
 use canary::Canary;
 use elfload::LoadedElf;
-use rpc::load::{GetObject, GetObjectResponse as Response};
-use solvent::prelude::{Channel, Object, Phys};
+use rpc::load::{GetObjectRequest as Request, GetObjectResponse as Response};
+use solvent::prelude::{Channel, Object, PacketTyped, Phys, SIG_READ};
 use spin::{Lazy, Mutex, Once, RwLock};
 use svrt::HandleType;
 
@@ -768,10 +768,25 @@ pub fn init() -> Result<(), Error> {
 }
 
 pub fn get_object(path: Vec<CString>) -> Result<Vec<Phys>, Error> {
+    static ID: AtomicUsize = AtomicUsize::new(1);
+
     let lock = LDRPC.read();
     let ldrpc = lock.as_ref().ok_or(Error::DepGet(solvent::error::ENOENT))?;
-    let resp = rpc::call_blocking::<GetObject>(ldrpc, path.into(), Duration::MAX)
-        .map_err(Error::DepGet)?;
+    let resp = {
+        let request = Request::from(path);
+        let mut packet = request.into_packet();
+        let id = ID.fetch_add(1, SeqCst);
+        packet.id = Some(id);
+
+        ldrpc.send_packet(&mut packet).map_err(Error::DepGet)?;
+        ldrpc
+            .try_wait(Duration::MAX, false, SIG_READ)
+            .map_err(Error::DepGet)?;
+        ldrpc.receive_packet(&mut packet).map_err(Error::DepGet)?;
+        assert_eq!(packet.id, Some(id));
+
+        Response::try_from_packet(&mut packet).map_err(Error::DepGet)?
+    };
     match resp {
         Response::Success(objs) => Ok(objs),
         Response::Error { not_found_index } => {

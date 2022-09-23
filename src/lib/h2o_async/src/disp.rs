@@ -76,19 +76,6 @@ impl Dispatcher {
         }
     }
 
-    #[inline]
-    fn poll_chan_acrecv(
-        &self,
-        obj: &solvent::prelude::Channel,
-        id: usize,
-        syscall: Option<&Syscall>,
-    ) -> Poll<Result<usize>> {
-        match obj.call_receive_async(id, &self.inner, syscall) {
-            Err(ENOSPC) => Poll::Pending,
-            res => Poll::Ready(res),
-        }
-    }
-
     fn poll_send<K, P>(
         &self,
         key: K,
@@ -176,24 +163,6 @@ impl DispSender {
     #[inline]
     pub fn update(&self, key: usize, waker: &Waker) -> Result {
         self.disp.update(key, waker)
-    }
-
-    #[inline]
-    pub(crate) fn poll_chan_acrecv<P>(
-        &self,
-        obj: &solvent::prelude::Channel,
-        id: usize,
-        pack: P,
-        waker: &Waker,
-    ) -> core::result::Result<Result<usize>, P>
-    where
-        P: PackedSyscall + 'static,
-    {
-        self.disp.poll_send(
-            |syscall| self.disp.poll_chan_acrecv(obj, id, syscall),
-            pack,
-            waker,
-        )
     }
 }
 

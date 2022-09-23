@@ -11,7 +11,6 @@ use core::future::Future;
 use core::{
     ffi::{CStr, FromBytesWithNulError},
     mem,
-    time::Duration,
 };
 
 use solvent::prelude::{Channel, PacketTyped};
@@ -45,26 +44,6 @@ pub unsafe trait Byted: Default {
 pub trait Carrier: Sized {
     type Request: PacketTyped;
     type Response: PacketTyped;
-}
-
-pub fn call_blocking<T: Carrier>(
-    channel: &Channel,
-    request: T::Request,
-    timeout: Duration,
-) -> solvent::error::Result<T::Response> {
-    let mut packet = request.into_packet();
-    channel.call(&mut packet, timeout)?;
-    <T::Response>::try_from_packet(&mut packet).map_err(Into::into)
-}
-
-#[cfg(feature = "async")]
-pub async fn call<T: Carrier>(
-    channel: &solvent_async::ipc::Channel,
-    request: T::Request,
-) -> solvent::error::Result<T::Response> {
-    let mut packet = request.into_packet();
-    channel.call(&mut packet).await?;
-    <T::Response>::try_from_packet(&mut packet).map_err(Into::into)
 }
 
 pub fn handle_blocking<T: Carrier, F>(channel: &Channel, proc: F) -> solvent::error::Result

@@ -4,7 +4,6 @@ use core::{
     ops::ControlFlow,
     pin::Pin,
     task::{Context, Poll},
-    time::Duration,
 };
 
 use solvent::prelude::{
@@ -98,44 +97,6 @@ impl Channel {
         let mut packet = Packet::default();
         self.receive_packet(&mut packet).await?;
         T::try_from_packet(&mut packet).map_err(Into::into)
-    }
-}
-
-impl Channel {
-    #[inline]
-    pub fn call_send_raw(&self, buffer: &[u8], handles: &[Handle]) -> Result<usize> {
-        self.inner.call_send_raw(buffer, handles)
-    }
-
-    #[inline]
-    pub fn call_send(&self, packet: &Packet) -> Result<usize> {
-        self.inner.call_send(packet)
-    }
-
-    #[inline]
-    pub fn call_receive_with(&self, id: usize, packet: Packet) -> CallReceive {
-        CallReceive {
-            id,
-            recv: Receive {
-                channel: self,
-                packet,
-                result: None,
-                key: None,
-            },
-        }
-    }
-
-    pub async fn call_receive(&self, id: usize, packet: &mut Packet) -> Result {
-        let temp = mem::take(packet);
-        let temp = self.call_receive_with(id, temp).await?;
-        *packet = temp;
-        Ok(())
-    }
-
-    #[inline]
-    pub async fn call(&self, packet: &mut Packet) -> Result {
-        let id = self.call_send(packet)?;
-        self.call_receive(id, packet).await
     }
 
     pub async fn handle<G, F, R>(&self, handler: G) -> Result<R>
@@ -289,47 +250,6 @@ impl<'a> Future for Receive<'a> {
                         true,
                         SIG_READ,
                         (r.channel.inner.pack_receive(packet), tx),
-                        cx.waker(),
-                    )
-                },
-            );
-            (packet, tx) = match cf {
-                ControlFlow::Break(res) => break res,
-                ControlFlow::Continue(res) => res,
-            };
-            backoff.snooze()
-        }
-    }
-}
-
-#[must_use]
-pub struct CallReceive<'a> {
-    id: usize,
-    recv: Receive<'a>,
-}
-
-impl Future for CallReceive<'_> {
-    type Output = Result<Packet>;
-
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let mut packet = match self.recv.result_recv(cx) {
-            ControlFlow::Continue(packet) => packet,
-            ControlFlow::Break(res) => return res,
-        };
-
-        let backoff = Backoff::new();
-        let (mut tx, rx) = oneshot();
-        self.recv.result = Some(rx);
-        loop {
-            let id = self.id;
-            let cf = self.recv.poll_inner(
-                packet,
-                |r, packet| r.channel.inner.call_receive(id, packet, Duration::ZERO),
-                |r, packet| {
-                    r.channel.disp.poll_chan_acrecv(
-                        &r.channel.inner,
-                        id,
-                        (r.channel.inner.pack_call_receive(id, packet), tx),
                         cx.waker(),
                     )
                 },
