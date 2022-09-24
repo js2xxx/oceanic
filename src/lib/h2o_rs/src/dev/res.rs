@@ -36,6 +36,7 @@ trait Resource: Sized + Object {
 macro_rules! impl_resource {
     ($name:ident, $data:ident, $type:ident, $num:ident) => {
         #[repr(transparent)]
+        #[derive(Debug)]
         pub struct $name(sv_call::Handle);
         crate::impl_obj!($name, $num);
         crate::impl_obj!(@DROP, $name);

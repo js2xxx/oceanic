@@ -7,8 +7,7 @@ use core::{
 };
 
 use solvent::prelude::{
-    Handle, PackRecv, Packet, PacketTyped, Result, SerdeReg, Syscall, EBUFFER, ENOENT, EPIPE,
-    SIG_READ,
+    Handle, PackRecv, Packet, Result, SerdeReg, Syscall, EBUFFER, ENOENT, EPIPE, SIG_READ,
 };
 use solvent_std::{
     sync::channel::{oneshot, oneshot_, TryRecvError},
@@ -55,14 +54,9 @@ impl Channel {
     }
 
     #[inline]
-    pub fn send_packet(&self, packet: &mut Packet) -> Result {
+    pub fn send(&self, packet: &mut Packet) -> Result {
         self.send_raw(packet.id, &packet.buffer, &packet.handles)
             .map(|_| *packet = Default::default())
-    }
-
-    #[inline]
-    pub fn send<T: PacketTyped>(&self, packet: T) -> Result {
-        self.send_packet(&mut packet.into_packet())
     }
 
     #[inline]
@@ -75,28 +69,11 @@ impl Channel {
         }
     }
 
-    pub async fn receive_packet(&self, packet: &mut Packet) -> Result {
+    pub async fn receive(&self, packet: &mut Packet) -> Result {
         let temp = mem::take(packet);
         let temp = self.receive_with(temp).await?;
         *packet = temp;
         Ok(())
-    }
-
-    pub async fn try_receive<T: PacketTyped>(
-        &self,
-    ) -> Result<core::result::Result<T, (T::TryFromError, Packet)>> {
-        let mut packet = Default::default();
-        self.receive_packet(&mut packet).await?;
-        match T::try_from_packet(&mut packet) {
-            Ok(packet) => Ok(Ok(packet)),
-            Err(err) => Ok(Err((err, packet))),
-        }
-    }
-
-    pub async fn receive<T: PacketTyped>(&self) -> Result<T> {
-        let mut packet = Packet::default();
-        self.receive_packet(&mut packet).await?;
-        T::try_from_packet(&mut packet).map_err(Into::into)
     }
 
     pub async fn handle<G, F, R>(&self, handler: G) -> Result<R>
@@ -105,11 +82,11 @@ impl Channel {
         F: Future<Output = Result<(R, Packet)>>,
     {
         let mut packet = Packet::default();
-        self.receive_packet(&mut packet).await?;
+        self.receive(&mut packet).await?;
         let id = packet.id;
         let (ret, mut packet) = handler(packet).await?;
         packet.id = id;
-        self.send_packet(&mut packet)?;
+        self.send(&mut packet)?;
         Ok(ret)
     }
 }
@@ -243,7 +220,7 @@ impl<'a> Future for Receive<'a> {
         loop {
             let cf = self.poll_inner(
                 packet,
-                |r, packet| r.channel.inner.receive_packet(packet),
+                |r, packet| r.channel.inner.receive(packet),
                 |r, packet| {
                     r.channel.disp.poll_send(
                         &r.channel.inner,

@@ -1,7 +1,7 @@
 use alloc::vec::Vec;
 use core::error::Error;
 
-use solvent::prelude::Channel;
+use solvent::prelude::{Channel, PacketTyped};
 use svrt::StartupArgs;
 
 use crate::thread::{self, Thread};
@@ -56,9 +56,13 @@ pub fn lang_start<R: Termination>(channel: Channel, main: fn() -> R) -> R {
         fn __libc_exit_fini();
     }
 
-    let args = channel
-        .receive::<StartupArgs>()
-        .expect("Failed to receive startup args");
+    let args = {
+        let mut packet = Default::default();
+        channel
+            .receive(&mut packet)
+            .expect("Failed to receive startup args");
+        StartupArgs::try_from_packet(&mut packet).expect("Failed to parse startup args")
+    };
 
     let args = svrt::init_rt(args).expect("Failed to initialize runtime");
 

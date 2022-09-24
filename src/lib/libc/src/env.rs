@@ -4,7 +4,7 @@ use core::{
     panic::PanicInfo,
 };
 
-use solvent::prelude::{Channel, Handle, Object};
+use solvent::prelude::{Channel, Handle, Object, PacketTyped};
 use svrt::StartupArgs;
 
 pub type Main =
@@ -13,9 +13,12 @@ pub type Main =
 #[no_mangle]
 unsafe extern "C" fn __libc_start_main(init_chan: Handle, main: Main) -> ! {
     let chan = unsafe { Channel::from_raw(init_chan) };
-    let args = chan
-        .receive::<StartupArgs>()
-        .expect("Failed to receive startup args");
+    let args = {
+        let mut packet = Default::default();
+        chan.receive(&mut packet)
+            .expect("Failed to receive startup args");
+        StartupArgs::try_from_packet(&mut packet).expect("Failed to parse startup args")
+    };
 
     let mut args = svrt::init_rt(args).expect("Failed to initialize runtime");
 

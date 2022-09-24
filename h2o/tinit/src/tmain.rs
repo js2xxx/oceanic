@@ -167,7 +167,8 @@ extern "C" fn tmain(init_chan: sv_call::Handle) {
         env: vec![0],
     };
 
-    me.send(dl_args).expect("Failed to send dyn loader args");
+    me.send(&mut dl_args.into_packet())
+        .expect("Failed to send dyn loader args");
 
     let exe_args = StartupArgs {
         handles: [
@@ -183,7 +184,8 @@ extern "C" fn tmain(init_chan: sv_call::Handle) {
         env: vec![0],
     };
 
-    me.send(exe_args).expect("Failed to send executable args");
+    me.send(&mut exe_args.into_packet())
+        .expect("Failed to send executable args");
     drop(me);
 
     let task = Task::exec(

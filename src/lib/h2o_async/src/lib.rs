@@ -34,7 +34,7 @@ pub mod test {
             };
             for index in 0..NUM_PACKET {
                 // log::debug!("\t\t\tReceive #{index}");
-                i2.receive_packet(&mut packet)
+                i2.receive(&mut packet)
                     .await
                     .expect("Failed to receive packet");
                 // log::debug!("\t\t\tGot #{index}");
@@ -56,7 +56,7 @@ pub mod test {
                     .extend(core::iter::repeat_with(|| random() as u8).take(199));
                 async {
                     // log::debug!("Send #{index}");
-                    i1.send_packet(&mut packet).expect("Failed to send packet")
+                    i1.send(&mut packet).expect("Failed to send packet")
                 }
                 .await;
             }

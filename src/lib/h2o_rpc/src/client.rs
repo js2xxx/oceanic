@@ -57,7 +57,7 @@ impl Client {
         let id = self.inner.register();
         packet.id = Some(id);
 
-        match self.inner.channel.send_packet(&mut packet) {
+        match self.inner.channel.send(&mut packet) {
             Err(EPIPE) => self.inner.receive_to_end().await?,
             res => res.map_err(Error::ClientSend)?,
         };
@@ -268,7 +268,7 @@ impl Inner {
 
     async fn receive(&self) -> Result<(), Error> {
         let mut packet = Default::default();
-        let res = self.channel.receive_packet(&mut packet).await;
+        let res = self.channel.receive(&mut packet).await;
         res.map_err(|err| {
             if matches!(err, EPIPE) {
                 self.stop.store(true, Release);

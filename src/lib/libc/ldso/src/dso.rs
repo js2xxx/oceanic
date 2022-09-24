@@ -778,11 +778,11 @@ pub fn get_object(path: Vec<CString>) -> Result<Vec<Phys>, Error> {
         let id = ID.fetch_add(1, SeqCst);
         packet.id = Some(id);
 
-        ldrpc.send_packet(&mut packet).map_err(Error::DepGet)?;
+        ldrpc.send(&mut packet).map_err(Error::DepGet)?;
         ldrpc
             .try_wait(Duration::MAX, false, SIG_READ)
             .map_err(Error::DepGet)?;
-        ldrpc.receive_packet(&mut packet).map_err(Error::DepGet)?;
+        ldrpc.receive(&mut packet).map_err(Error::DepGet)?;
         assert_eq!(packet.id, Some(id));
 
         Response::try_from_packet(&mut packet).map_err(Error::DepGet)?

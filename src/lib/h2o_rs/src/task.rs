@@ -16,6 +16,7 @@ use sv_call::{
 use crate::{error::Result, ipc::Channel, mem::Space, obj::Object};
 
 #[repr(transparent)]
+#[derive(Debug)]
 pub struct Task(sv_call::Handle);
 crate::impl_obj!(Task, SV_TASK);
 crate::impl_obj!(@DROP, Task);
@@ -102,6 +103,7 @@ impl Task {
 }
 
 #[repr(transparent)]
+#[derive(Debug)]
 pub struct SuspendToken(sv_call::Handle);
 crate::impl_obj!(SuspendToken, SV_SUSPENDTOKEN);
 crate::impl_obj!(@DROP, SuspendToken);

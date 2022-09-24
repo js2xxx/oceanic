@@ -21,7 +21,7 @@ pub mod ffi;
 mod imp_alloc;
 mod rxx;
 
-use solvent::prelude::{Channel, Object, Phys};
+use solvent::prelude::{Channel, Object, PacketTyped, Phys};
 pub use svrt::*;
 
 pub use self::rxx::{dynamic, load_address, vdso_map};
@@ -30,9 +30,13 @@ fn dl_main(init_chan: Channel) -> rxx::DlReturn {
     dso::init().expect("Failed to initialize the DSO list");
     dbglog::init(log::Level::Debug);
 
-    let startup_args = init_chan
-        .receive::<StartupArgs>()
-        .expect("Failed to receive boot message");
+    let startup_args = {
+        let mut packet = Default::default();
+        init_chan
+            .receive(&mut packet)
+            .expect("Failed to receive boot message");
+        StartupArgs::try_from_packet(&mut packet).expect("Failed to parse boot message")
+    };
 
     let _args = init_rt(startup_args).expect("Failed to initialize runtime");
 

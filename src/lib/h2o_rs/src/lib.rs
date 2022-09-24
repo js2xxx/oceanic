@@ -15,6 +15,7 @@ pub mod obj;
 pub mod sync;
 pub mod task;
 pub mod time;
+pub mod macros;
 
 #[cfg(feature = "alloc")]
 extern crate alloc;

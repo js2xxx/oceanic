@@ -79,7 +79,7 @@ impl Inner {
     fn receive(&self, timeout: Duration) -> Result<Packet, Error> {
         let mut packet = Default::default();
         let res = self.channel.try_wait(timeout, false, SIG_READ);
-        let res = res.and_then(|_| self.channel.receive_packet(&mut packet));
+        let res = res.and_then(|_| self.channel.receive(&mut packet));
         res.map_err(|err| {
             if err == EPIPE {
                 self.stop.store(true, Release);
@@ -92,7 +92,7 @@ impl Inner {
     }
 
     fn send(&self, mut packet: Packet) -> Result<(), Error> {
-        let res = self.channel.send_packet(&mut packet);
+        let res = self.channel.send(&mut packet);
         res.map_err(|err| {
             if err == EPIPE {
                 self.stop.store(true, Release);

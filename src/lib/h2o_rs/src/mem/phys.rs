@@ -12,6 +12,7 @@ use crate::{
     obj::{private::Sealed, Object},
 };
 
+#[derive(Debug)]
 pub struct Phys {
     inner: sv_call::Handle,
     len: usize,
@@ -20,6 +21,8 @@ pub struct Phys {
 impl Sealed for Phys {}
 impl Object for Phys {
     const ID: usize = SV_PHYS;
+
+    const NAME: &'static str = "Phys";
 
     unsafe fn raw(&self) -> sv_call::Handle {
         self.inner

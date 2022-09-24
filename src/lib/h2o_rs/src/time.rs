@@ -112,6 +112,7 @@ impl core::fmt::Display for Instant {
 }
 
 #[repr(transparent)]
+#[derive(Debug)]
 pub struct Timer(sv_call::Handle);
 crate::impl_obj!(Timer, SV_TIMER);
 crate::impl_obj!(@CLONE, Timer);

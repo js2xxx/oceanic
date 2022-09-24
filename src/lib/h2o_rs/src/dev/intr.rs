@@ -7,6 +7,7 @@ use super::GsiRes;
 use crate::{error::Result, obj::Object, time::Instant};
 
 #[repr(transparent)]
+#[derive(Debug)]
 pub struct Interrupt(sv_call::Handle);
 crate::impl_obj!(Interrupt, SV_INTERRUPT);
 

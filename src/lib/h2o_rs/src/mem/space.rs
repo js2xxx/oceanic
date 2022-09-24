@@ -4,6 +4,7 @@ use super::Virt;
 use crate::{error::Result, obj::Object};
 
 #[repr(transparent)]
+#[derive(Debug)]
 pub struct Space(sv_call::Handle);
 
 crate::impl_obj!(Space, SV_SPACE);

@@ -1,4 +1,4 @@
-use core::{marker::PhantomData, mem, mem::ManuallyDrop, ops::Deref, ptr, time::Duration};
+use core::{marker::PhantomData, mem, mem::ManuallyDrop, ops::Deref, ptr, time::Duration, fmt};
 
 use sv_call::SV_DISPATCHER;
 pub use sv_call::{Feature, Handle, SerdeReg, Syscall};
@@ -9,8 +9,10 @@ pub(crate) mod private {
     pub trait Sealed {}
 }
 
-pub trait Object: private::Sealed {
+pub trait Object: private::Sealed + fmt::Debug {
     const ID: usize;
+
+    const NAME: &'static str;
 
     /// # Safety
     ///
@@ -102,6 +104,8 @@ macro_rules! impl_obj {
         impl $crate::obj::Object for $name {
             const ID: usize = $num;
 
+            const NAME: &'static str = stringify!($name);
+
             unsafe fn raw(&self) -> sv_call::Handle {
                 self.0
             }
@@ -169,6 +173,7 @@ impl<'a, T: ?Sized> Deref for Ref<'a, T> {
 }
 
 #[repr(transparent)]
+#[derive(Debug)]
 pub struct Dispatcher(sv_call::Handle);
 impl_obj!(Dispatcher, SV_DISPATCHER);
 impl_obj!(@CLONE, Dispatcher);

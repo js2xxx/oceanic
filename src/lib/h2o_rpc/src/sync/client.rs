@@ -119,7 +119,7 @@ impl Inner {
     {
         let self_id = self.next_id.fetch_add(1, SeqCst);
         packet.id = Some(self_id);
-        self.channel.send_packet(&mut packet).map_err(|err| {
+        self.channel.send(&mut packet).map_err(|err| {
             if err == EPIPE {
                 self.stop.store(true, Release);
                 Error::Disconnected
@@ -130,7 +130,7 @@ impl Inner {
 
         let instant = Instant::now();
         loop {
-            match self.channel.receive_packet(&mut packet) {
+            match self.channel.receive(&mut packet) {
                 Ok(()) => {
                     if let Some(id) = packet.id {
                         if id == self_id {
@@ -191,7 +191,7 @@ impl Inner {
         let instant = Instant::now();
         let mut packet = Default::default();
         loop {
-            match self.channel.receive_packet(&mut packet) {
+            match self.channel.receive(&mut packet) {
                 Ok(()) => {
                     if let Some(id) = packet.id {
                         let mut callers = self.callers.lock();
