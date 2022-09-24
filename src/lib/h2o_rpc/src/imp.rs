@@ -9,9 +9,11 @@ use core::{
 
 use crossbeam::queue::SegQueue;
 use futures::{pin_mut, ready, stream::FusedStream, Stream};
-use solvent::{error::*, ipc::Packet};
+use solvent::ipc::Packet;
 use solvent_async::ipc::Channel;
 use solvent_std::sync::{Arsc, Mutex};
+
+use crate::Error;
 
 pub struct Client {
     inner: Arsc<Inner>,
@@ -48,12 +50,17 @@ impl Client {
         })
     }
 
-    pub async fn call(&self, mut packet: Packet) -> Result<Packet> {
+    pub async fn call(&self, mut packet: Packet) -> Result<Packet, Error> {
         let id = self.inner.register();
         packet.id = Some(id);
 
-        match self.inner.channel.send_packet(&mut packet) {
-            Err(ETIME | EPIPE) => self.inner.receive_to_end().await?,
+        match self
+            .inner
+            .channel
+            .send_packet(&mut packet)
+            .map_err(Into::into)
+        {
+            Err(Error::Disconnected) => self.inner.receive_to_end().await?,
             res => res?,
         };
 
@@ -73,7 +80,7 @@ pub struct EventReceiver {
 impl Unpin for EventReceiver {}
 
 impl Stream for EventReceiver {
-    type Item = Result<Packet>;
+    type Item = Result<Packet, Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         if self.stop {
@@ -86,7 +93,7 @@ impl Stream for EventReceiver {
             ready!(ready!(res.poll(cx)))
         };
         Poll::Ready(Some(res.inspect_err(|&err| {
-            if matches!(err, ETIME | EPIPE) {
+            if matches!(err, Error::Disconnected) {
                 self.stop = true;
             }
         })))
@@ -112,11 +119,11 @@ struct Call {
 }
 
 impl Future for Call {
-    type Output = Result<Packet>;
+    type Output = Result<Packet, Error>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let res = {
-            let client = self.inner.as_ref().ok_or(EPIPE)?;
+            let client = self.inner.as_ref().ok_or(Error::Disconnected)?;
             let res = client.receive_for_caller(self.id, cx.waker());
             pin_mut!(res);
             ready!(ready!(res.poll(cx)))
@@ -261,13 +268,15 @@ impl Inner {
         }
     }
 
-    async fn receive(&self) -> Result {
+    async fn receive(&self) -> Result<(), Error> {
         let mut packet = Default::default();
         let res = self.channel.receive_packet(&mut packet).await;
-        res.inspect_err(|&res| {
-            if matches!(res, EPIPE | ETIME) {
+        res.map_err(|err| {
+            let err = err.into();
+            if matches!(err, Error::Disconnected) {
                 self.stop.store(true, Release)
             }
+            err
         })?;
         if let Some(id) = packet.id {
             let mut wakers = self.wakers.lock();
@@ -282,21 +291,21 @@ impl Inner {
         Ok(())
     }
 
-    async fn receive_to_end(&self) -> Result {
+    async fn receive_to_end(&self) -> Result<(), Error> {
         loop {
             if self.stop.load(Acquire) {
-                break Err(EPIPE);
+                break Err(Error::Disconnected);
             }
 
             match self.receive().await {
                 Ok(()) => {}
-                Err(ENOENT) => break Ok(()),
+                Err(Error::WouldBlock) => break Ok(()),
                 Err(err) => break Err(err),
             }
         }
     }
 
-    async fn receive_for_caller(&self, id: usize, waker: &Waker) -> Poll<Result<Packet>> {
+    async fn receive_for_caller(&self, id: usize, waker: &Waker) -> Poll<Result<Packet, Error>> {
         {
             let mut wakers = self.wakers.lock();
             let entry = wakers.get_mut(&id).expect("Polling unregistered id");
@@ -304,7 +313,7 @@ impl Inner {
         }
 
         let stop = match self.receive_to_end().await {
-            Err(EPIPE) => true,
+            Err(Error::Disconnected) => true,
             res => {
                 res?;
                 false
@@ -317,20 +326,20 @@ impl Inner {
             wakers.remove(&id);
             Poll::Ready(Ok(packet))
         } else if stop {
-            Poll::Ready(Err(EPIPE))
+            Poll::Ready(Err(Error::Disconnected))
         } else {
             Poll::Pending
         }
     }
 
-    async fn receive_for_event(&self, waker: &Waker) -> Poll<Result<Packet>> {
+    async fn receive_for_event(&self, waker: &Waker) -> Poll<Result<Packet, Error>> {
         {
             let mut entry = self.event.waker.lock();
             *entry = EventEntry::Waiting(waker.clone());
         }
 
         let stop = match self.receive_to_end().await {
-            Err(EPIPE) => true,
+            Err(Error::Disconnected) => true,
             res => {
                 res?;
                 false
@@ -340,7 +349,7 @@ impl Inner {
         if let Some(packet) = self.event.packets.pop() {
             Poll::Ready(Ok(packet))
         } else if stop {
-            Poll::Ready(Err(EPIPE))
+            Poll::Ready(Err(Error::Disconnected))
         } else {
             Poll::Pending
         }

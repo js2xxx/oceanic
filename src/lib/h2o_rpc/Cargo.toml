@@ -11,3 +11,4 @@ solvent-std = {path = "../libr"}
 # External crates
 crossbeam = {version = "0.8", default-features = false, features = ["alloc"]}
 futures = {version = "0.3", default-features = false, features = ["alloc"]}
+thiserror = "1.0"

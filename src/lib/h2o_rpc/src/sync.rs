@@ -8,12 +8,13 @@ use core::{
 
 use crossbeam::queue::SegQueue;
 use solvent::{
-    error::*,
     ipc::{Channel, Packet},
     prelude::{Object, SIG_READ},
     time::Instant,
 };
 use solvent_std::sync::{Arsc, Mutex};
+
+use crate::Error;
 
 pub struct Client {
     inner: Arsc<Inner>,
@@ -34,12 +35,12 @@ impl Client {
     }
 
     #[inline]
-    pub fn call(&self, packet: Packet) -> Result<Packet> {
+    pub fn call(&self, packet: Packet) -> Result<Packet, Error> {
         self.inner.call(packet)
     }
 
     #[inline]
-    pub fn call_timeout(&self, packet: Packet, timeout: Duration) -> Result<Packet> {
+    pub fn call_timeout(&self, packet: Packet, timeout: Duration) -> Result<Packet, Error> {
         self.inner.call_timeout(packet, timeout)
     }
 
@@ -58,7 +59,7 @@ pub struct EventReceiver {
 }
 
 impl Iterator for EventReceiver {
-    type Item = Result<Packet>;
+    type Item = Result<Packet, Error>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.inner.stop.load(Acquire) {
@@ -88,18 +89,18 @@ struct Inner {
 }
 
 impl Inner {
-    fn call(&self, packet: Packet) -> Result<Packet> {
+    fn call(&self, packet: Packet) -> Result<Packet, Error> {
         self.call_inner(packet, |_| {
             self.channel.try_wait(Duration::MAX, false, SIG_READ)?;
             Ok(())
         })
     }
 
-    fn call_timeout(&self, packet: Packet, timeout: Duration) -> Result<Packet> {
+    fn call_timeout(&self, packet: Packet, timeout: Duration) -> Result<Packet, Error> {
         self.call_inner(packet, |instant| {
             let elapsed = instant.elapsed();
             if elapsed >= timeout {
-                return Err(ETIME);
+                return Err(Error::Timeout);
             }
             self.channel.try_wait(timeout - elapsed, false, SIG_READ)?;
             Ok(())
@@ -107,21 +108,23 @@ impl Inner {
     }
 
     #[inline]
-    fn call_inner<F>(&self, mut packet: Packet, mut wait: F) -> Result<Packet>
+    fn call_inner<F>(&self, mut packet: Packet, mut wait: F) -> Result<Packet, Error>
     where
-        F: FnMut(Instant) -> Result,
+        F: FnMut(Instant) -> Result<(), Error>,
     {
         let self_id = self.next_id.fetch_add(1, SeqCst);
         packet.id = Some(self_id);
-        self.channel.send_packet(&mut packet).inspect_err(|&err| {
-            if err == EPIPE {
+        self.channel.send_packet(&mut packet).map_err(|err| {
+            let err = Error::from(err);
+            if err == Error::Disconnected {
                 self.stop.store(true, Release);
             }
+            err
         })?;
 
         let instant = Instant::now();
         loop {
-            match self.channel.receive_packet(&mut packet) {
+            match self.channel.receive_packet(&mut packet).map_err(Into::into) {
                 Ok(()) => {
                     if let Some(id) = packet.id {
                         if id == self_id {
@@ -134,7 +137,7 @@ impl Inner {
                         self.events.push(mem::take(&mut packet));
                     }
                 }
-                Err(ENOENT) => {
+                Err(Error::WouldBlock) => {
                     let mut callers = self.callers.lock();
                     if let Some(packet) = callers.remove(&self_id) {
                         break Ok(packet);
@@ -142,7 +145,7 @@ impl Inner {
                     wait(instant)?;
                 }
                 Err(err) => {
-                    if err == EPIPE {
+                    if err == Error::Disconnected {
                         self.stop.store(true, Release);
                     }
                     break Err(err);
@@ -151,18 +154,18 @@ impl Inner {
         }
     }
 
-    fn receive_event(&self) -> Result<Packet> {
+    fn receive_event(&self) -> Result<Packet, Error> {
         self.receive_event_inner(|_| {
             self.channel.try_wait(Duration::MAX, false, SIG_READ)?;
             Ok(())
         })
     }
 
-    fn receive_event_timeout(&self, timeout: Duration) -> Result<Packet> {
+    fn receive_event_timeout(&self, timeout: Duration) -> Result<Packet, Error> {
         self.receive_event_inner(|instant| {
             let elapsed = instant.elapsed();
             if elapsed >= timeout {
-                return Err(ETIME);
+                return Err(Error::Timeout);
             }
             self.channel.try_wait(timeout - elapsed, false, SIG_READ)?;
             Ok(())
@@ -170,14 +173,14 @@ impl Inner {
     }
 
     #[inline]
-    fn receive_event_inner<F>(&self, mut wait: F) -> Result<Packet>
+    fn receive_event_inner<F>(&self, mut wait: F) -> Result<Packet, Error>
     where
-        F: FnMut(Instant) -> Result,
+        F: FnMut(Instant) -> Result<(), Error>,
     {
         let instant = Instant::now();
         let mut packet = Default::default();
         loop {
-            match self.channel.receive_packet(&mut packet) {
+            match self.channel.receive_packet(&mut packet).map_err(Into::into) {
                 Ok(()) => {
                     if let Some(id) = packet.id {
                         let mut callers = self.callers.lock();
@@ -186,14 +189,14 @@ impl Inner {
                         break Ok(packet);
                     }
                 }
-                Err(ENOENT) => {
+                Err(Error::WouldBlock) => {
                     if let Some(packet) = self.events.pop() {
                         break Ok(packet);
                     }
                     wait(instant)?;
                 }
                 Err(err) => {
-                    if err == EPIPE {
+                    if err == Error::Disconnected {
                         self.stop.store(true, Release);
                     }
                     break Err(err);
