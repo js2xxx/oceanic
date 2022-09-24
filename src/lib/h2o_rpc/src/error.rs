@@ -1,10 +1,13 @@
+#[doc(hidden)]
 mod thiserror; // Hacking `thiserror::Error`.
 use core as std; // Hacking `thiserror::Error`.
 
+use alloc::boxed::Box;
 use solvent::error::Error as RawError;
 use thiserror_impl::Error;
+use core::error::Error as Trait;
 
-#[derive(Error, Debug, PartialEq, Eq)]
+#[derive(Error, Debug)]
 pub enum Error {
     #[error("inner channel disconnected")]
     Disconnected,
@@ -20,4 +23,13 @@ pub enum Error {
 
     #[error("unexpected error when the server sends packets: {0}")]
     ServerSend(#[source] RawError),
+
+    #[error("buffer too short: expected {expected_at_least}, found {len}")]
+    BufferTooShort {
+        len: usize,
+        expected_at_least: usize,
+    },
+
+    #[error("invalid type when parsing buffer: {0}")]
+    TypeMismatch(#[source] Box<dyn Trait>)
 }

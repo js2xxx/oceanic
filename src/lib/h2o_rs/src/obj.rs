@@ -4,7 +4,11 @@ pub use sv_call::{Feature, Handle, SerdeReg, Syscall};
 
 use crate::error::Result;
 
-pub trait Object {
+pub(crate) mod private {
+    pub trait Sealed {}
+}
+
+pub trait Object: private::Sealed {
     /// # Safety
     ///
     /// The ownership of the object must not be moved if it's still in use.
@@ -91,6 +95,7 @@ pub trait Object {
 #[macro_export]
 macro_rules! impl_obj {
     ($name:ident) => {
+        impl $crate::obj::private::Sealed for $name {}
         impl $crate::obj::Object for $name {
             unsafe fn raw(&self) -> sv_call::Handle {
                 self.0

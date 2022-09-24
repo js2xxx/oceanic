@@ -106,7 +106,7 @@ impl Inner {
                 self.stop.store(true, Release);
                 Error::Disconnected
             } else {
-                Error::ServerReceive(err)
+                Error::ServerSend(err)
             }
         })?;
         Ok(())

@@ -7,7 +7,7 @@ use super::PAGE_SIZE;
 use crate::{
     dev::MemRes,
     error::{Result, ERANGE},
-    obj::Object,
+    obj::{Object, private::Sealed},
 };
 
 pub struct Phys {
@@ -15,6 +15,7 @@ pub struct Phys {
     len: usize,
 }
 
+impl Sealed for Phys {}
 impl Object for Phys {
     unsafe fn raw(&self) -> sv_call::Handle {
         self.inner
