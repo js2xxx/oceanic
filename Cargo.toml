@@ -7,6 +7,8 @@ members = [
   "src/bin/*",
   "src/lib/*",
   "src/lib/libc/ldso",
+  "src/lib/h2o_rpc/core",
+  "src/lib/h2o_rpc/macros",
   "xtask",
 ]
 

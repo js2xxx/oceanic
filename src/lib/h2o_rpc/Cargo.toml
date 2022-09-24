@@ -7,8 +7,8 @@ version = "0.1.0"
 # Local crates
 solvent = {path = "../h2o_rs"}
 solvent-async = {path = "../h2o_async"}
+solvent-rpc-core = {path = "core"}
 solvent-std = {path = "../libr"}
 # External crates
 crossbeam = {version = "0.8", default-features = false, features = ["alloc"]}
 futures = {version = "0.3", default-features = false, features = ["alloc"]}
-thiserror-impl = "1.0"
