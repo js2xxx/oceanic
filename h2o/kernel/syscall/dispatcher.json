@@ -1,56 +1,61 @@
-[
-    {
-        "name": "sv_disp_new",
-        "returns": "Handle",
-        "args": [
-            {
-                "name": "capacity",
-                "ty": "usize"
-            }
-        ]
-    },
-    {
-        "name": "sv_disp_push",
-        "returns": "usize",
-        "args": [
-            {
-                "name": "disp",
-                "ty": "Handle"
-            },
-            {
-                "name": "hdl",
-                "ty": "Handle"
-            },
-            {
-                "name": "level_triggered",
-                "ty": "bool"
-            },
-            {
-                "name": "signal",
-                "ty": "usize"
-            },
-            {
-                "name": "syscall",
-                "ty": "*const Syscall"
-            }
-        ]
-    },
-    {
-        "name": "sv_disp_pop",
-        "returns": "usize",
-        "args": [
-            {
-                "name": "disp",
-                "ty": "Handle"
-            },
-            {
-                "name": "canceled",
-                "ty": "*mut bool"
-            },
-            {
-                "name": "result",
-                "ty": "*mut usize"
-            }
-        ]
-    }
-]
+{
+    "types": [
+        "Dispatcher"
+    ],
+    "funcs": [
+        {
+            "name": "sv_disp_new",
+            "returns": "Handle",
+            "args": [
+                {
+                    "name": "capacity",
+                    "ty": "usize"
+                }
+            ]
+        },
+        {
+            "name": "sv_disp_push",
+            "returns": "usize",
+            "args": [
+                {
+                    "name": "disp",
+                    "ty": "Handle"
+                },
+                {
+                    "name": "hdl",
+                    "ty": "Handle"
+                },
+                {
+                    "name": "level_triggered",
+                    "ty": "bool"
+                },
+                {
+                    "name": "signal",
+                    "ty": "usize"
+                },
+                {
+                    "name": "syscall",
+                    "ty": "*const Syscall"
+                }
+            ]
+        },
+        {
+            "name": "sv_disp_pop",
+            "returns": "usize",
+            "args": [
+                {
+                    "name": "disp",
+                    "ty": "Handle"
+                },
+                {
+                    "name": "canceled",
+                    "ty": "*mut bool"
+                },
+                {
+                    "name": "result",
+                    "ty": "*mut usize"
+                }
+            ]
+        }
+    ]
+}

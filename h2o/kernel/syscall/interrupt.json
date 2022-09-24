@@ -1,48 +1,53 @@
-[
-    {
-        "name": "sv_intr_new",
-        "returns": "Handle",
-        "args": [
-            {
-                "name": "res",
-                "ty": "Handle"
-            },
-            {
-                "name": "gsi",
-                "ty": "u32"
-            },
-            {
-                "name": "config",
-                "ty": "IntrConfig"
-            }
-        ]
-    },
-    {
-        "name": "sv_intr_wait",
-        "returns": "()",
-        "args": [
-            {
-                "name": "hdl",
-                "ty": "Handle"
-            },
-            {
-                "name": "timeout_us",
-                "ty": "u64"
-            },
-            {
-                "name": "last_time",
-                "ty": "*mut ()"
-            }
-        ]
-    },
-    {
-        "name": "sv_intr_drop",
-        "returns": "()",
-        "args": [
-            {
-                "name": "hdl",
-                "ty": "Handle"
-            }
-        ]
-    }
-]
+{
+    "types": [
+        "Interrupt"
+    ],
+    "funcs": [
+        {
+            "name": "sv_intr_new",
+            "returns": "Handle",
+            "args": [
+                {
+                    "name": "res",
+                    "ty": "Handle"
+                },
+                {
+                    "name": "gsi",
+                    "ty": "u32"
+                },
+                {
+                    "name": "config",
+                    "ty": "IntrConfig"
+                }
+            ]
+        },
+        {
+            "name": "sv_intr_wait",
+            "returns": "()",
+            "args": [
+                {
+                    "name": "hdl",
+                    "ty": "Handle"
+                },
+                {
+                    "name": "timeout_us",
+                    "ty": "u64"
+                },
+                {
+                    "name": "last_time",
+                    "ty": "*mut ()"
+                }
+            ]
+        },
+        {
+            "name": "sv_intr_drop",
+            "returns": "()",
+            "args": [
+                {
+                    "name": "hdl",
+                    "ty": "Handle"
+                }
+            ]
+        }
+    ]
+}

@@ -1,10 +1,12 @@
+use sv_call::SV_SPACE;
+
 use super::Virt;
 use crate::{error::Result, obj::Object};
 
 #[repr(transparent)]
 pub struct Space(sv_call::Handle);
 
-crate::impl_obj!(Space);
+crate::impl_obj!(Space, SV_SPACE);
 crate::impl_obj!(@DROP, Space);
 
 impl Space {

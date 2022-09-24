@@ -1,56 +1,59 @@
-[
-    {
-        "name": "sv_futex_wait",
-        "returns": "()",
-        "args": [
-            {
-                "name": "ptr",
-                "ty": "*const u64"
-            },
-            {
-                "name": "expected",
-                "ty": "u64"
-            },
-            {
-                "name": "timeout_us",
-                "ty": "u64"
-            }
-        ]
-    },
-    {
-        "name": "sv_futex_wake",
-        "returns": "usize",
-        "args": [
-            {
-                "name": "ptr",
-                "ty": "*const u64"
-            },
-            {
-                "name": "num",
-                "ty": "usize"
-            }
-        ]
-    },
-    {
-        "name": "sv_futex_reque",
-        "returns": "()",
-        "args": [
-            {
-                "name": "ptr",
-                "ty": "*const u64"
-            },
-            {
-                "name": "wake_num",
-                "ty": "*mut usize"
-            },
-            {
-                "name": "other",
-                "ty": "*const u64"
-            },
-            {
-                "name": "reque_num",
-                "ty":"*mut usize"
-            }
-        ]
-    }
-]
+{
+    "types": [],
+    "funcs": [
+        {
+            "name": "sv_futex_wait",
+            "returns": "()",
+            "args": [
+                {
+                    "name": "ptr",
+                    "ty": "*const u64"
+                },
+                {
+                    "name": "expected",
+                    "ty": "u64"
+                },
+                {
+                    "name": "timeout_us",
+                    "ty": "u64"
+                }
+            ]
+        },
+        {
+            "name": "sv_futex_wake",
+            "returns": "usize",
+            "args": [
+                {
+                    "name": "ptr",
+                    "ty": "*const u64"
+                },
+                {
+                    "name": "num",
+                    "ty": "usize"
+                }
+            ]
+        },
+        {
+            "name": "sv_futex_reque",
+            "returns": "()",
+            "args": [
+                {
+                    "name": "ptr",
+                    "ty": "*const u64"
+                },
+                {
+                    "name": "wake_num",
+                    "ty": "*mut usize"
+                },
+                {
+                    "name": "other",
+                    "ty": "*const u64"
+                },
+                {
+                    "name": "reque_num",
+                    "ty": "*mut usize"
+                }
+            ]
+        }
+    ]
+}

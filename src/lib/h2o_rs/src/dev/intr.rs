@@ -1,14 +1,14 @@
 use core::time::Duration;
 
 pub use sv_call::res::IntrConfig;
-use sv_call::{c_ty::Status, Syscall, ETIME};
+use sv_call::{c_ty::Status, Syscall, ETIME, SV_INTERRUPT};
 
 use super::GsiRes;
 use crate::{error::Result, obj::Object, time::Instant};
 
 #[repr(transparent)]
 pub struct Interrupt(sv_call::Handle);
-crate::impl_obj!(Interrupt);
+crate::impl_obj!(Interrupt, SV_INTERRUPT);
 
 impl Interrupt {
     pub fn acquire(res: &GsiRes, gsi: u32, config: IntrConfig) -> Result<Interrupt> {

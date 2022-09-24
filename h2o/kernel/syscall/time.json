@@ -1,39 +1,44 @@
-[
-    {
-        "name": "sv_time_get",
-        "returns": "()",
-        "vdso_specific": true,
-        "args": [
-            {
-                "name": "ptr",
-                "ty": "*mut ()"
-            }
-        ]
-    },
-    {
-        "name": "sv_random",
-        "returns": "u64",
-        "vdso_specific": true,
-        "vdso_only": true,
-        "args": []
-    },
-    {
-        "name": "sv_timer_new",
-        "returns": "Handle",
-        "args": []
-    },
-    {
-        "name": "sv_timer_set",
-        "returns": "()",
-        "args": [
-            {
-                "name": "handle",
-                "ty": "Handle"
-            },
-            {
-                "name": "duration_us",
-                "ty": "u64"
-            }
-        ]
-    }
-]
+{
+    "types": [
+        "Timer"
+    ],
+    "funcs": [
+        {
+            "name": "sv_time_get",
+            "returns": "()",
+            "vdso_specific": true,
+            "args": [
+                {
+                    "name": "ptr",
+                    "ty": "*mut ()"
+                }
+            ]
+        },
+        {
+            "name": "sv_random",
+            "returns": "u64",
+            "vdso_specific": true,
+            "vdso_only": true,
+            "args": []
+        },
+        {
+            "name": "sv_timer_new",
+            "returns": "Handle",
+            "args": []
+        },
+        {
+            "name": "sv_timer_set",
+            "returns": "()",
+            "args": [
+                {
+                    "name": "handle",
+                    "ty": "Handle"
+                },
+                {
+                    "name": "duration_us",
+                    "ty": "u64"
+                }
+            ]
+        }
+    ]
+}

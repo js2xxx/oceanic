@@ -1,6 +1,6 @@
 use core::ops::Range;
 
-use sv_call::res::*;
+use sv_call::{res::*, SV_GSIRES, SV_MEMRES, SV_PIORES};
 
 use crate::{error::Result, obj::Object};
 trait ResData: Copy {
@@ -34,10 +34,10 @@ trait Resource: Sized + Object {
 }
 
 macro_rules! impl_resource {
-    ($name:ident, $data:ident, $type:ident) => {
+    ($name:ident, $data:ident, $type:ident, $num:ident) => {
         #[repr(transparent)]
         pub struct $name(sv_call::Handle);
-        crate::impl_obj!($name);
+        crate::impl_obj!($name, $num);
         crate::impl_obj!(@DROP, $name);
 
         impl Resource for $name {
@@ -55,6 +55,6 @@ macro_rules! impl_resource {
     };
 }
 
-impl_resource!(MemRes, usize, RES_MEM);
-impl_resource!(PioRes, u16, RES_PIO);
-impl_resource!(GsiRes, u32, RES_GSI);
+impl_resource!(MemRes, usize, RES_MEM, SV_MEMRES);
+impl_resource!(PioRes, u16, RES_PIO, SV_PIORES);
+impl_resource!(GsiRes, u32, RES_GSI, SV_GSIRES);

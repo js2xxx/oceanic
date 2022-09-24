@@ -1,16 +1,19 @@
-[
-    {
-        "name": "sv_log",
-        "returns": "()",
-        "args": [
-            {
-                "name": "buffer",
-                "ty": "*const u8"
-            },
-            {
-                "name": "len",
-                "ty": "usize"
-            }
-        ]
-    }
-]
+{
+    "types": [],
+    "funcs": [
+        {
+            "name": "sv_log",
+            "returns": "()",
+            "args": [
+                {
+                    "name": "buffer",
+                    "ty": "*const u8"
+                },
+                {
+                    "name": "len",
+                    "ty": "usize"
+                }
+            ]
+        }
+    ]
+}

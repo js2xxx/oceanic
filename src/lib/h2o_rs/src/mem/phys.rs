@@ -3,11 +3,13 @@ use alloc::vec::Vec;
 #[cfg(feature = "alloc")]
 use core::slice;
 
+use sv_call::SV_PHYS;
+
 use super::PAGE_SIZE;
 use crate::{
     dev::MemRes,
     error::{Result, ERANGE},
-    obj::{Object, private::Sealed},
+    obj::{private::Sealed, Object},
 };
 
 pub struct Phys {
@@ -17,6 +19,8 @@ pub struct Phys {
 
 impl Sealed for Phys {}
 impl Object for Phys {
+    const ID: usize = SV_PHYS;
+
     unsafe fn raw(&self) -> sv_call::Handle {
         self.inner
     }

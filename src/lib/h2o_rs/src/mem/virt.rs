@@ -5,7 +5,7 @@ use core::{
 
 use sv_call::{
     mem::{Flags, VirtMapInfo},
-    Handle, Result,
+    Handle, Result, SV_VIRT,
 };
 
 use super::{Phys, PAGE_SIZE};
@@ -18,7 +18,7 @@ use crate::obj::Object;
 #[derive(Debug)]
 #[repr(transparent)]
 pub struct Virt(Handle);
-crate::impl_obj!(Virt);
+crate::impl_obj!(Virt, SV_VIRT);
 crate::impl_obj!(@CLONE, Virt);
 crate::impl_obj!(@DROP, Virt);
 

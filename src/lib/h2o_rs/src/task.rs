@@ -10,14 +10,14 @@ use core::{
 use sv_call::{
     ipc::SIG_READ,
     task::{ctx::Gpr, *},
-    Error, Handle,
+    Error, Handle, SV_TASK, SV_SUSPENDTOKEN,
 };
 
 use crate::{error::Result, ipc::Channel, mem::Space, obj::Object};
 
 #[repr(transparent)]
 pub struct Task(sv_call::Handle);
-crate::impl_obj!(Task);
+crate::impl_obj!(Task, SV_TASK);
 crate::impl_obj!(@DROP, Task);
 
 impl Task {
@@ -103,7 +103,7 @@ impl Task {
 
 #[repr(transparent)]
 pub struct SuspendToken(sv_call::Handle);
-crate::impl_obj!(SuspendToken);
+crate::impl_obj!(SuspendToken, SV_SUSPENDTOKEN);
 crate::impl_obj!(@DROP, SuspendToken);
 
 impl SuspendToken {

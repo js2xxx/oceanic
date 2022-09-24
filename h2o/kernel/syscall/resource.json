@@ -1,78 +1,85 @@
-[
-    {
-        "name": "sv_res_alloc",
-        "returns": "Handle",
-        "args": [
-            {
-                "name": "hdl",
-                "ty": "Handle"
-            },
-            {
-                "name": "ty",
-                "ty": "u32"
-            },
-            {
-                "name": "base",
-                "ty": "usize"
-            },
-            {
-                "name": "size",
-                "ty": "usize"
-            }
-        ]
-    },
-    {
-        "name": "sv_pio_acq",
-        "returns": "()",
-        "args": [
-            {
-                "name": "res",
-                "ty": "Handle"
-            },
-            {
-                "name": "base",
-                "ty": "u16"
-            },
-            {
-                "name": "size",
-                "ty": "u16"
-            }
-        ]
-    },
-    {
-        "name": "sv_pio_rel",
-        "returns": "()",
-        "args": [
-            {
-                "name": "res",
-                "ty": "Handle"
-            },
-            {
-                "name": "base",
-                "ty": "u16"
-            },
-            {
-                "name": "size",
-                "ty": "u16"
-            }
-        ]
-    },
-    {
-        "name": "sv_phys_acq",
-        "returns": "Handle",
-        "args": [
-            {
-                "name": "res",
-                "ty": "Handle"
-            },
-            {
-                "name": "addr",
-                "ty": "usize"
-            },
-            {
-                "name": "size",
-                "ty": "usize"
-            }
-        ]
-    }
-]
+{
+    "types": [
+        "MemRes",
+        "PioRes",
+        "GsiRes"
+    ],
+    "funcs": [
+        {
+            "name": "sv_res_alloc",
+            "returns": "Handle",
+            "args": [
+                {
+                    "name": "hdl",
+                    "ty": "Handle"
+                },
+                {
+                    "name": "ty",
+                    "ty": "u32"
+                },
+                {
+                    "name": "base",
+                    "ty": "usize"
+                },
+                {
+                    "name": "size",
+                    "ty": "usize"
+                }
+            ]
+        },
+        {
+            "name": "sv_pio_acq",
+            "returns": "()",
+            "args": [
+                {
+                    "name": "res",
+                    "ty": "Handle"
+                },
+                {
+                    "name": "base",
+                    "ty": "u16"
+                },
+                {
+                    "name": "size",
+                    "ty": "u16"
+                }
+            ]
+        },
+        {
+            "name": "sv_pio_rel",
+            "returns": "()",
+            "args": [
+                {
+                    "name": "res",
+                    "ty": "Handle"
+                },
+                {
+                    "name": "base",
+                    "ty": "u16"
+                },
+                {
+                    "name": "size",
+                    "ty": "u16"
+                }
+            ]
+        },
+        {
+            "name": "sv_phys_acq",
+            "returns": "Handle",
+            "args": [
+                {
+                    "name": "res",
+                    "ty": "Handle"
+                },
+                {
+                    "name": "addr",
+                    "ty": "usize"
+                },
+                {
+                    "name": "size",
+                    "ty": "usize"
+                }
+            ]
+        }
+    ]
+}

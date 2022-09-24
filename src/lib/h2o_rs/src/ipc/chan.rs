@@ -2,7 +2,7 @@
 use alloc::{boxed::Box, vec::Vec};
 use core::mem::MaybeUninit;
 
-use sv_call::{c_ty::Status, ipc::RawPacket, Syscall};
+use sv_call::{c_ty::Status, ipc::RawPacket, Syscall, SV_CHANNEL};
 
 #[cfg(feature = "alloc")]
 use super::{Packet, PacketTyped};
@@ -11,7 +11,7 @@ use crate::{error::*, obj::Object};
 #[repr(transparent)]
 pub struct Channel(sv_call::Handle);
 
-crate::impl_obj!(Channel);
+crate::impl_obj!(Channel, SV_CHANNEL);
 crate::impl_obj!(@DROP, Channel);
 
 impl Channel {

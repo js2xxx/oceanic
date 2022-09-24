@@ -1,6 +1,6 @@
 use core::{ops::*, time::Duration};
 
-use sv_call::ETIME;
+use sv_call::{ETIME, SV_TIMER};
 
 use crate::{
     error::{Error, Result},
@@ -113,7 +113,7 @@ impl core::fmt::Display for Instant {
 
 #[repr(transparent)]
 pub struct Timer(sv_call::Handle);
-crate::impl_obj!(Timer);
+crate::impl_obj!(Timer, SV_TIMER);
 crate::impl_obj!(@CLONE, Timer);
 crate::impl_obj!(@DROP, Timer);
 

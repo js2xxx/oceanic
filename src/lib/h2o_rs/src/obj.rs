@@ -1,5 +1,6 @@
 use core::{marker::PhantomData, mem, mem::ManuallyDrop, ops::Deref, ptr, time::Duration};
 
+use sv_call::SV_DISPATCHER;
 pub use sv_call::{Feature, Handle, SerdeReg, Syscall};
 
 use crate::error::Result;
@@ -9,6 +10,8 @@ pub(crate) mod private {
 }
 
 pub trait Object: private::Sealed {
+    const ID: usize;
+
     /// # Safety
     ///
     /// The ownership of the object must not be moved if it's still in use.
@@ -94,9 +97,11 @@ pub trait Object: private::Sealed {
 
 #[macro_export]
 macro_rules! impl_obj {
-    ($name:ident) => {
+    ($name:ident, $num:ident) => {
         impl $crate::obj::private::Sealed for $name {}
         impl $crate::obj::Object for $name {
+            const ID: usize = $num;
+
             unsafe fn raw(&self) -> sv_call::Handle {
                 self.0
             }
@@ -165,7 +170,7 @@ impl<'a, T: ?Sized> Deref for Ref<'a, T> {
 
 #[repr(transparent)]
 pub struct Dispatcher(sv_call::Handle);
-impl_obj!(Dispatcher);
+impl_obj!(Dispatcher, SV_DISPATCHER);
 impl_obj!(@CLONE, Dispatcher);
 impl_obj!(@DROP, Dispatcher);
 
