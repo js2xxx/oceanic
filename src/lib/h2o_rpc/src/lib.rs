@@ -4,11 +4,13 @@
 
 extern crate alloc;
 
+mod client;
 mod error;
-mod imp;
+mod server;
 pub mod sync;
 
 pub use self::{
+    client::{Client, EventReceiver},
     error::Error,
-    imp::{Client, EventReceiver},
+    server::{PacketStream, Server},
 };

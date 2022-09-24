@@ -9,7 +9,10 @@ use core::{
 
 use crossbeam::queue::SegQueue;
 use futures::{pin_mut, ready, stream::FusedStream, Stream};
-use solvent::ipc::Packet;
+use solvent::{
+    error::{ENOENT, EPIPE},
+    ipc::Packet,
+};
 use solvent_async::ipc::Channel;
 use solvent_std::sync::{Arsc, Mutex};
 
@@ -54,14 +57,9 @@ impl Client {
         let id = self.inner.register();
         packet.id = Some(id);
 
-        match self
-            .inner
-            .channel
-            .send_packet(&mut packet)
-            .map_err(Into::into)
-        {
-            Err(Error::Disconnected) => self.inner.receive_to_end().await?,
-            res => res?,
+        match self.inner.channel.send_packet(&mut packet) {
+            Err(EPIPE) => self.inner.receive_to_end().await?,
+            res => res.map_err(Error::ClientSend)?,
         };
 
         Call {
@@ -92,7 +90,7 @@ impl Stream for EventReceiver {
             pin_mut!(res);
             ready!(ready!(res.poll(cx)))
         };
-        Poll::Ready(Some(res.inspect_err(|&err| {
+        Poll::Ready(Some(res.inspect_err(|err| {
             if matches!(err, Error::Disconnected) {
                 self.stop = true;
             }
@@ -272,11 +270,12 @@ impl Inner {
         let mut packet = Default::default();
         let res = self.channel.receive_packet(&mut packet).await;
         res.map_err(|err| {
-            let err = err.into();
-            if matches!(err, Error::Disconnected) {
-                self.stop.store(true, Release)
+            if matches!(err, EPIPE) {
+                self.stop.store(true, Release);
+                Error::Disconnected
+            } else {
+                Error::ClientReceive(err)
             }
-            err
         })?;
         if let Some(id) = packet.id {
             let mut wakers = self.wakers.lock();
@@ -299,7 +298,7 @@ impl Inner {
 
             match self.receive().await {
                 Ok(()) => {}
-                Err(Error::WouldBlock) => break Ok(()),
+                Err(Error::ClientReceive(ENOENT)) => break Ok(()),
                 Err(err) => break Err(err),
             }
         }

@@ -42,7 +42,7 @@ impl<'a, K, V, S> Deref for ReadGuard<'a, K, V, S> {
 }
 
 pub struct WriteGuard<'a, K, V, S> {
-    _buckets: RwLockReadGuard<'a, inner::Buckets<K, V, S>>,
+    buckets: RwLockReadGuard<'a, inner::Buckets<K, V, S>>,
     inner: RwLockWriteGuard<'a, inner::Entry<(K, V)>>,
 }
 
@@ -174,7 +174,7 @@ impl<K, V, S: BuildHasher + Default> CHashMap<K, V, S> {
         let entry = unsafe { &*(&buckets as *const RwLockReadGuard<inner::Buckets<K, V, S>>) }
             .find_write(key, |entry| entry.contains_key(key));
         entry.map(|entry| WriteGuard {
-            _buckets: buckets,
+            buckets,
             inner: entry,
         })
     }
@@ -230,9 +230,25 @@ impl<K, V, S: BuildHasher + Default> CHashMap<K, V, S> {
         }
 
         WriteGuard {
-            _buckets: buckets,
+            buckets,
             inner: entry,
         }
+    }
+
+    /// # Safety
+    ///
+    /// `guard` must come from [`Self::get_mut`] method.
+    pub unsafe fn remove_from(&self, mut guard: WriteGuard<'_, K, V, S>) -> (K, V)
+    where
+        K: Hash,
+    {
+        let ret = mem::replace(&mut *guard.inner, inner::Entry::Removed);
+        let len = self.len.fetch_sub(1, SeqCst) - 1;
+        if len * GROW_FACTOR * LOAD_FACTOR_D < guard.buckets.len() * LOAD_FACTOR_N {
+            drop(guard);
+            self.shrink(len);
+        }
+        Option::<(K, V)>::from(ret).unwrap()
     }
 
     pub fn remove_entry_if<Q, F>(&self, key: &Q, predicate: F) -> Option<(K, V)>

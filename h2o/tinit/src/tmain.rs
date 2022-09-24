@@ -172,7 +172,10 @@ extern "C" fn tmain(init_chan: sv_call::Handle) {
     let exe_args = StartupArgs {
         handles: [
             (HandleType::RootVirt.into(), Virt::into_raw(virt)),
-            (HandleType::BootfsPhys.into(), Phys::into_raw(bootfs_phys.clone())),
+            (
+                HandleType::BootfsPhys.into(),
+                Phys::into_raw(bootfs_phys.clone()),
+            ),
         ]
         .into_iter()
         .collect(),

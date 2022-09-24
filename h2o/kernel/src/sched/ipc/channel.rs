@@ -55,7 +55,6 @@ impl Packet {
     }
 }
 
-
 #[derive(Debug)]
 struct ChannelSide {
     msgs: SegQueue<Packet>,
