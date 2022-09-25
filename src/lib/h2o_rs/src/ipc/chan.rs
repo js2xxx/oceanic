@@ -1,6 +1,6 @@
 #[cfg(feature = "alloc")]
 use alloc::{boxed::Box, vec::Vec};
-use core::mem::MaybeUninit;
+use core::{mem::MaybeUninit, num::NonZeroUsize};
 
 use sv_call::{c_ty::Status, ipc::RawPacket, Syscall, SV_CHANNEL};
 
@@ -30,12 +30,12 @@ impl Channel {
 
     pub fn send_raw(
         &self,
-        id: Option<usize>,
+        id: Option<NonZeroUsize>,
         buffer: &[u8],
         handles: &[sv_call::Handle],
     ) -> Result {
         let packet = RawPacket {
-            id: id.unwrap_or_default(),
+            id: id.map_or(0, |id| id.get()),
             handles: handles.as_ptr() as *mut _,
             handle_count: handles.len(),
             handle_cap: handles.len(),
@@ -110,7 +110,7 @@ impl Channel {
     #[cfg(feature = "alloc")]
     pub fn receive(&self, packet: &mut Packet) -> Result {
         let id = self.receive_into(&mut packet.buffer, &mut packet.handles)?;
-        packet.id = Some(id);
+        packet.id = NonZeroUsize::new(id);
         Ok(())
     }
 

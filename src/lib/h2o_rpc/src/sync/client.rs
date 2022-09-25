@@ -3,7 +3,7 @@ use core::{
     iter::FusedIterator,
     mem,
     sync::atomic::{AtomicBool, AtomicUsize, Ordering::*},
-    time::Duration,
+    time::Duration, num::NonZeroUsize,
 };
 
 use crossbeam::queue::SegQueue;
@@ -118,7 +118,7 @@ impl Inner {
         F: FnMut(Instant) -> Result<(), Error>,
     {
         let self_id = self.next_id.fetch_add(1, SeqCst);
-        packet.id = Some(self_id);
+        packet.id = NonZeroUsize::new(self_id);
         self.channel.send(&mut packet).map_err(|err| {
             if err == EPIPE {
                 self.stop.store(true, Release);
@@ -133,11 +133,11 @@ impl Inner {
             match self.channel.receive(&mut packet) {
                 Ok(()) => {
                     if let Some(id) = packet.id {
-                        if id == self_id {
+                        if id.get() == self_id {
                             break Ok(packet);
                         } else {
                             let mut callers = self.callers.lock();
-                            callers.insert(id, mem::take(&mut packet));
+                            callers.insert(id.get(), mem::take(&mut packet));
                         }
                     } else {
                         self.events.push(mem::take(&mut packet));
@@ -195,7 +195,7 @@ impl Inner {
                 Ok(()) => {
                     if let Some(id) = packet.id {
                         let mut callers = self.callers.lock();
-                        callers.insert(id, mem::take(&mut packet));
+                        callers.insert(id.get(), mem::take(&mut packet));
                     } else {
                         break Ok(packet);
                     }

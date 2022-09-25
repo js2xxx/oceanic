@@ -1,11 +1,11 @@
 use alloc::vec::Vec;
-use core::{fmt::Debug, mem};
+use core::{fmt::Debug, mem, num::NonZeroUsize};
 
 use sv_call::Error;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Packet {
-    pub id: Option<usize>,
+    pub id: Option<NonZeroUsize>,
     pub buffer: Vec<u8>,
     pub handles: Vec<sv_call::Handle>,
 }

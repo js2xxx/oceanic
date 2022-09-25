@@ -3,7 +3,7 @@ use core::{
     mem,
     ops::ControlFlow,
     pin::Pin,
-    task::{Context, Poll},
+    task::{Context, Poll}, num::NonZeroUsize,
 };
 
 use solvent::prelude::{
@@ -49,7 +49,7 @@ impl Channel {
     }
 
     #[inline]
-    pub fn send_raw(&self, id: Option<usize>, buffer: &[u8], handles: &[Handle]) -> Result {
+    pub fn send_raw(&self, id: Option<NonZeroUsize>, buffer: &[u8], handles: &[Handle]) -> Result {
         self.inner.send_raw(id, buffer, handles)
     }
 
@@ -134,7 +134,7 @@ impl<'a> Receive<'a> {
                     // Packet transferring successful, return it
                     Ok(id) => {
                         let mut packet = send_data.packet;
-                        packet.id = Some(id);
+                        packet.id = NonZeroUsize::new(id);
                         return ControlFlow::Break(Poll::Ready(Ok(packet)));
                     }
 

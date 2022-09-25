@@ -4,7 +4,7 @@ use core::{
     mem,
     pin::Pin,
     sync::atomic::{AtomicBool, AtomicUsize, Ordering::*},
-    task::{Context, Poll, Waker},
+    task::{Context, Poll, Waker}, num::NonZeroUsize,
 };
 
 use crossbeam::queue::SegQueue;
@@ -55,7 +55,7 @@ impl Client {
 
     pub async fn call(&self, mut packet: Packet) -> Result<Packet, Error> {
         let id = self.inner.register();
-        packet.id = Some(id);
+        packet.id = NonZeroUsize::new(id);
 
         match self.inner.channel.send(&mut packet) {
             Err(EPIPE) => self.inner.receive_to_end().await?,
@@ -279,7 +279,7 @@ impl Inner {
         })?;
         if let Some(id) = packet.id {
             let mut wakers = self.wakers.lock();
-            if let Entry::Occupied(mut entry) = wakers.entry(id) {
+            if let Entry::Occupied(mut entry) = wakers.entry(id.get()) {
                 if !entry.get_mut().receive(packet) {
                     entry.remove();
                 }

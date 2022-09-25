@@ -45,7 +45,7 @@ pub mod test {
 
         let send = async move {
             let mut packet = Packet {
-                id: Some(0),
+                id: None,
                 buffer: alloc::vec![0],
                 ..Default::default()
             };
