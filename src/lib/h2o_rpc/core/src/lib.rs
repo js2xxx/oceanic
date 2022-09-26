@@ -4,6 +4,7 @@
 #![feature(box_into_inner)]
 #![feature(extend_one)]
 #![feature(iterator_try_collect)]
+#![feature(slice_split_at_unchecked)]
 
 extern crate alloc;
 

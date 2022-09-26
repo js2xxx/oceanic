@@ -1,4 +1,4 @@
-use alloc::{boxed::Box, collections::BTreeMap, format, string::String, vec::Vec};
+use alloc::{boxed::Box, collections::BTreeMap, ffi::CString, format, string::String, vec::Vec};
 use core::{array, iter, mem};
 
 use solvent::{
@@ -40,11 +40,11 @@ pub struct Deserializer<'a> {
 
 impl<'a> Deserializer<'a> {
     #[inline]
-    fn is_empty(&self) -> bool {
+    pub fn is_empty(&self) -> bool {
         self.buffer.is_empty() && self.handles.is_empty()
     }
 
-    fn check_buffer(&self, len: usize) -> Result<(), Error> {
+    pub fn check_buffer(&self, len: usize) -> Result<(), Error> {
         if self.buffer.len() >= len {
             Ok(())
         } else {
@@ -55,7 +55,7 @@ impl<'a> Deserializer<'a> {
         }
     }
 
-    fn check_handles(&self, len: usize) -> Result<(), Error> {
+    pub fn check_handles(&self, len: usize) -> Result<(), Error> {
         if self.handles.len() >= len {
             Ok(())
         } else {
@@ -66,18 +66,38 @@ impl<'a> Deserializer<'a> {
         }
     }
 
-    fn next_buffer(&mut self, len: usize) -> Result<&[u8], Error> {
+    #[inline]
+    pub fn next_buffer(&mut self, len: usize) -> Result<&[u8], Error> {
         self.check_buffer(len)?;
-        let (ret, next) = self.buffer.split_at(len);
-        self.buffer = next;
-        Ok(ret)
+        Ok(unsafe { self.next_buffer_unchecked(len) })
     }
 
-    fn next_handle(&mut self) -> Result<Handle, Error> {
+    /// # Safety
+    ///
+    /// `len` must be less than or equal to the length of the buffer in the
+    /// deserializer. Be sure to `check_buffer` first.
+    pub unsafe fn next_buffer_unchecked(&mut self, len: usize) -> &[u8] {
+        let (ret, next) = self.buffer.split_at_unchecked(len);
+        self.buffer = next;
+        ret
+    }
+
+    #[inline]
+    pub fn next_handle(&mut self) -> Result<Handle, Error> {
         self.check_handles(1)?;
-        let (&ret, next) = self.handles.split_first().unwrap();
-        self.handles = next;
-        Ok(ret)
+        Ok(unsafe { self.next_handle_unchecked() })
+    }
+
+    /// Returns the next handle unchecked of this [`Deserializer`].
+    ///
+    /// # Safety
+    ///
+    /// The deserializer must have at least one handle to be returned. Be sure
+    /// to `check_handles` first.
+    pub unsafe fn next_handle_unchecked(&mut self) -> Handle {
+        let ret = *self.handles.get_unchecked(0);
+        self.handles = self.handles.get_unchecked(1..);
+        ret
     }
 }
 
@@ -85,6 +105,17 @@ pub trait SerdePacket: Sized {
     fn serialize(self, ser: &mut Serializer) -> Result<(), Error>;
 
     fn deserialize(de: &mut Deserializer) -> Result<Self, Error>;
+
+    /// # Safety
+    ///
+    /// The deserializer must have enough buffer and handles to be deserialized.
+    #[inline]
+    unsafe fn deserialize_unchecked(de: &mut Deserializer) -> Result<Self, Error> {
+        match Self::deserialize(de) {
+            Err(Error::BufferTooShort { .. }) => unreachable!(),
+            res => res,
+        }
+    }
 }
 
 pub trait Method: SerdePacket {
@@ -243,6 +274,18 @@ impl SerdePacket for String {
     fn deserialize(de: &mut Deserializer) -> Result<Self, Error> {
         let bytes = Vec::<u8>::deserialize(de)?;
         String::from_utf8(bytes).map_err(|err| Error::TypeMismatch(err.into()))
+    }
+}
+
+impl SerdePacket for CString {
+    #[inline]
+    fn serialize(self, ser: &mut Serializer) -> Result<(), Error> {
+        self.into_bytes_with_nul().serialize(ser)
+    }
+
+    fn deserialize(de: &mut Deserializer) -> Result<Self, Error> {
+        let bytes = Vec::<u8>::deserialize(de)?;
+        CString::from_vec_with_nul(bytes).map_err(|err| Error::TypeMismatch(err.into()))
     }
 }
 

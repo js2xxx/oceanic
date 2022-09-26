@@ -25,6 +25,7 @@ fn set_status(res: dso::Error) {
         dso::Error::ElfLoad(_) => "Elf loading error",
         dso::Error::DepGet(err) => err.desc(),
         dso::Error::Memory(..) => "Memory exhausted",
+        dso::Error::Serde(..) => "Serde error",
     };
     STATUS.store(val.as_ptr() as *mut c_char, SeqCst)
 }

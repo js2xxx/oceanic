@@ -21,7 +21,8 @@ use core::{
 use canary::Canary;
 use elfload::LoadedElf;
 use rpc::load::{GetObjectRequest as Request, GetObjectResponse as Response};
-use solvent::prelude::{Channel, Object, PacketTyped, Phys, SIG_READ};
+use solvent::prelude::{Channel, Object, Phys, SIG_READ};
+use solvent_rpc_core::packet;
 use spin::{Lazy, Mutex, Once, RwLock};
 use svrt::HandleType;
 
@@ -53,6 +54,7 @@ pub enum Error {
     ElfLoad(elfload::Error),
     DepGet(solvent::error::Error),
     Memory(usize, usize),
+    Serde(solvent_rpc_core::Error),
 }
 
 #[derive(Copy, Clone)]
@@ -775,7 +777,8 @@ pub fn get_object(path: Vec<CString>) -> Result<Vec<Phys>, Error> {
     let ldrpc = lock.as_ref().ok_or(Error::DepGet(solvent::error::ENOENT))?;
     let resp = {
         let request = Request::from(path);
-        let mut packet = request.into_packet();
+        let mut packet = Default::default();
+        packet::serialize(request, &mut packet).map_err(Error::Serde)?;
         let id = ID.fetch_add(1, SeqCst);
         packet.id = NonZeroUsize::new(id);
 
@@ -786,7 +789,7 @@ pub fn get_object(path: Vec<CString>) -> Result<Vec<Phys>, Error> {
         ldrpc.receive(&mut packet).map_err(Error::DepGet)?;
         assert_eq!(packet.id, NonZeroUsize::new(id));
 
-        Response::try_from_packet(&mut packet).map_err(Error::DepGet)?
+        packet::deserialize(&packet, None).map_err(Error::Serde)?
     };
     match resp {
         Response::Success(objs) => Ok(objs),

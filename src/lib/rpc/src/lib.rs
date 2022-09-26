@@ -5,15 +5,12 @@ pub mod load;
 
 extern crate alloc;
 
-use alloc::{ffi::CString, vec::Vec};
 #[cfg(feature = "async")]
 use core::future::Future;
-use core::{
-    ffi::{CStr, FromBytesWithNulError},
-    mem,
-};
+use core::mem;
 
-use solvent::prelude::{Channel, PacketTyped};
+use solvent::prelude::Channel;
+use solvent_rpc_core::packet::{self, Method};
 
 /// # Safety
 ///
@@ -42,8 +39,8 @@ pub unsafe trait Byted: Default {
 }
 
 pub trait Carrier: Sized {
-    type Request: PacketTyped;
-    type Response: PacketTyped;
+    type Request: Method;
+    type Response: Method;
 }
 
 pub fn handle_blocking<T: Carrier, F>(channel: &Channel, proc: F) -> solvent::error::Result
@@ -51,9 +48,9 @@ where
     F: FnOnce(T::Request) -> T::Response,
 {
     channel.handle(|packet| {
-        let request = <T::Request>::try_from_packet(packet).map_err(Into::into)?;
+        let request = packet::deserialize(packet, None).map_err(|_| solvent::error::ETYPE)?;
         let response = proc(request);
-        *packet = response.into_packet();
+        packet::serialize(response, packet).map_err(|_| solvent::error::EFAULT)?;
         Ok(())
     })
 }
@@ -68,23 +65,10 @@ where
     F: Future<Output = T::Response>,
 {
     let fut = channel.handle(|mut packet| async {
-        let request = <T::Request>::try_from_packet(&mut packet).map_err(Into::into)?;
+        let request = packet::deserialize(&packet, None).map_err(|_| solvent::error::ETYPE)?;
         let response = proc(request).await;
-        packet = response.into_packet();
+        packet::serialize(response, &mut packet).map_err(|_| solvent::error::EFAULT)?;
         Ok(((), packet))
     });
     fut.await
-}
-
-fn from_cstr_vec(data: Vec<CString>) -> Vec<u8> {
-    data.into_iter().fold(Vec::new(), |mut acc, arg| {
-        acc.append(&mut arg.into_bytes_with_nul());
-        acc
-    })
-}
-
-fn parse_cstr_vec(data: &[u8]) -> Result<Vec<CString>, FromBytesWithNulError> {
-    data.split_inclusive(|&b| b == 0)
-        .map(|data| CStr::from_bytes_with_nul(data).map(CString::from))
-        .try_collect()
 }
