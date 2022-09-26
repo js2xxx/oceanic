@@ -91,6 +91,25 @@ impl<T> Arsc<T, Global> {
     pub fn try_new_uninit() -> Result<Arsc<MaybeUninit<T>, Global>, AllocError> {
         Self::try_new_uninit_in(Global)
     }
+
+    pub fn try_unwrap(this: Self) -> Result<T, Self> {
+        let ref_count = unsafe { &this.inner.as_ref().ref_count };
+        if ref_count.compare_exchange(1, 0, Acquire, Relaxed).is_err() {
+            return Err(this);
+        }
+
+        atomic::fence(Acquire);
+
+        unsafe {
+            ref_count.store(1, Relaxed);
+
+            let data = ptr::read(&this.inner.as_ref().data);
+            let ptr = Self::into_raw(this) as *const MaybeUninit<T>;
+            let _ = Arsc::from_raw(ptr);
+
+            Ok(data)
+        }
+    }
 }
 
 impl<T, A: Allocator> Arsc<MaybeUninit<T>, A> {

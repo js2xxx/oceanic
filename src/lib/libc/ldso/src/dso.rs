@@ -11,10 +11,11 @@ use core::{
     fmt,
     marker::PhantomData,
     mem::{self, MaybeUninit},
+    num::NonZeroUsize,
     ptr::{self, NonNull},
     slice,
     sync::atomic::{self, AtomicU32, AtomicUsize, Ordering::*},
-    time::Duration, num::NonZeroUsize,
+    time::Duration,
 };
 
 use canary::Canary;

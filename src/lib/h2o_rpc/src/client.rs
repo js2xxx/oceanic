@@ -2,9 +2,10 @@ use alloc::collections::{btree_map::Entry, BTreeMap};
 use core::{
     future::Future,
     mem,
+    num::NonZeroUsize,
     pin::Pin,
     sync::atomic::{AtomicBool, AtomicUsize, Ordering::*},
-    task::{Context, Poll, Waker}, num::NonZeroUsize,
+    task::{Context, Poll, Waker},
 };
 
 use crossbeam::queue::SegQueue;
@@ -67,6 +68,39 @@ impl Client {
             inner: Some(self.inner.clone()),
         }
         .await
+    }
+}
+
+impl AsRef<Channel> for Client {
+    #[inline]
+    fn as_ref(&self) -> &Channel {
+        &self.inner.channel
+    }
+}
+
+impl From<Channel> for Client {
+    #[inline]
+    fn from(channel: Channel) -> Self {
+        Self::new(channel)
+    }
+}
+
+impl TryFrom<Client> for Channel {
+    type Error = Client;
+
+    fn try_from(client: Client) -> Result<Self, Self::Error> {
+        match Arsc::try_unwrap(client.inner) {
+            Ok(mut inner) => {
+                if inner.wakers.get_mut().is_empty() {
+                    Ok(inner.channel)
+                } else {
+                    Err(Client {
+                        inner: Arsc::new(inner),
+                    })
+                }
+            }
+            Err(inner) => Err(Client { inner }),
+        }
     }
 }
 

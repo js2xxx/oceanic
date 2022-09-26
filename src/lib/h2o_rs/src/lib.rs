@@ -10,12 +10,12 @@ pub mod c_ty;
 pub mod dev;
 pub mod error;
 pub mod ipc;
+pub mod macros;
 pub mod mem;
 pub mod obj;
 pub mod sync;
 pub mod task;
 pub mod time;
-pub mod macros;
 
 #[cfg(feature = "alloc")]
 extern crate alloc;

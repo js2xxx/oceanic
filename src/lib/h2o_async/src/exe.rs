@@ -16,7 +16,7 @@ use futures::{
 };
 use solvent::prelude::EPIPE;
 use solvent_std::{
-    sync::{Arsc, Injector, Stealer, Worker},
+    sync::{Arsc, Injector, Lazy, Stealer, Worker},
     thread::{self, available_parallelism, Backoff},
     thread_local,
 };
@@ -198,10 +198,9 @@ fn io_thread(rx: DispReceiver, pool: Arsc<Inner>) {
 
 cfg_if::cfg_if! { if #[cfg(feature = "runtime")] {
 
+static POOL: Lazy<ThreadPool> = Lazy::new(|| ThreadPool::new(available_parallelism().into()));
 thread_local! {
-    static POOL: ThreadPool = ThreadPool::new(available_parallelism().into());
-
-    static DISP: DispSender = POOL.with(|pool| pool.dispatch(4096));
+    static DISP: DispSender = POOL.dispatch(4096);
 }
 
 #[inline]
@@ -210,7 +209,7 @@ where
     F: Future<Output = T> + Send + 'static,
     T: Send + 'static,
 {
-    POOL.with(|pool| pool.spawn(fut))
+    POOL.spawn(fut)
 }
 
 #[inline]
@@ -219,7 +218,7 @@ where
     F: FnOnce() -> T + Send + 'static,
     T: Send + 'static,
 {
-    POOL.with(|pool| pool.spawn_blocking(func))
+    POOL.spawn_blocking(func)
 }
 
 #[inline]
@@ -232,10 +231,8 @@ pub fn block_on<F, T>(fut: F) -> T
 where
     F: Future<Output = T> + Send + 'static,
 {
-    POOL.with(|pool| pool.block_on(|_| fut))
+    POOL.block_on(|_| fut)
 }
-
-} }
 
 #[macro_export]
 macro_rules! entry {
@@ -249,3 +246,5 @@ macro_rules! entry {
         }
     };
 }
+
+} }

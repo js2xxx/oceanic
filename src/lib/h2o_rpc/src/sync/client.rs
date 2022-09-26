@@ -2,8 +2,9 @@ use alloc::collections::BTreeMap;
 use core::{
     iter::FusedIterator,
     mem,
+    num::NonZeroUsize,
     sync::atomic::{AtomicBool, AtomicUsize, Ordering::*},
-    time::Duration, num::NonZeroUsize,
+    time::Duration,
 };
 
 use crossbeam::queue::SegQueue;
@@ -51,6 +52,39 @@ impl Client {
             inner: self.inner.clone(),
             timeout,
         })
+    }
+}
+
+impl AsRef<Channel> for Client {
+    #[inline]
+    fn as_ref(&self) -> &Channel {
+        &self.inner.channel
+    }
+}
+
+impl From<Channel> for Client {
+    #[inline]
+    fn from(channel: Channel) -> Self {
+        Self::new(channel)
+    }
+}
+
+impl TryFrom<Client> for Channel {
+    type Error = Client;
+
+    fn try_from(client: Client) -> Result<Self, Self::Error> {
+        match Arsc::try_unwrap(client.inner) {
+            Ok(mut inner) => {
+                if inner.callers.get_mut().is_empty() {
+                    Ok(inner.channel)
+                } else {
+                    Err(Client {
+                        inner: Arsc::new(inner),
+                    })
+                }
+            }
+            Err(inner) => Err(Client { inner }),
+        }
     }
 }
 

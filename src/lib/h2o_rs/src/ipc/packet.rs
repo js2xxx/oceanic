@@ -10,6 +10,15 @@ pub struct Packet {
     pub handles: Vec<sv_call::Handle>,
 }
 
+impl Packet {
+    #[inline]
+    pub fn clear(&mut self) {
+        self.id = None;
+        self.buffer.clear();
+        self.handles.clear();
+    }
+}
+
 pub trait PacketTyped: Sized {
     type TryFromError: Into<Error>;
     fn into_packet(self) -> Packet;

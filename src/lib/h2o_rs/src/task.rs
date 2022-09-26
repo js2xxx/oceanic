@@ -10,7 +10,7 @@ use core::{
 use sv_call::{
     ipc::SIG_READ,
     task::{ctx::Gpr, *},
-    Error, Handle, SV_TASK, SV_SUSPENDTOKEN,
+    Error, Handle, SV_SUSPENDTOKEN, SV_TASK,
 };
 
 use crate::{error::Result, ipc::Channel, mem::Space, obj::Object};

@@ -8,20 +8,7 @@ use solvent::{
 
 use crate::Error;
 
-#[derive(Debug, Clone, Copy)]
-#[repr(C)]
-pub struct Header {
-    pub magic: usize,
-    pub method_id: usize,
-    pub metadata_count: usize,
-}
-
-#[derive(Debug, Clone, Copy)]
-#[repr(C)]
-pub struct Metadata {
-    pub is_handle: bool,
-    pub len: usize,
-}
+pub const MAGIC: usize = 0xac84fb7c0391;
 
 pub struct Serializer<'a>(&'a mut Packet);
 
@@ -52,12 +39,17 @@ pub struct Deserializer<'a> {
 }
 
 impl<'a> Deserializer<'a> {
+    #[inline]
+    fn is_empty(&self) -> bool {
+        self.buffer.is_empty() && self.handles.is_empty()
+    }
+
     fn check_buffer(&self, len: usize) -> Result<(), Error> {
         if self.buffer.len() > len {
             Ok(())
         } else {
             Err(Error::BufferTooShort {
-                len: self.buffer.len(),
+                found: self.buffer.len(),
                 expected_at_least: len,
             })
         }
@@ -68,7 +60,7 @@ impl<'a> Deserializer<'a> {
             Ok(())
         } else {
             Err(Error::BufferTooShort {
-                len: self.handles.len(),
+                found: self.handles.len(),
                 expected_at_least: len,
             })
         }
@@ -95,6 +87,10 @@ pub trait SerdePacket: Sized {
     fn deserialize(de: &mut Deserializer) -> Result<Self, Error>;
 }
 
+pub trait Method: SerdePacket {
+    const METHOD_ID: usize;
+}
+
 impl SerdePacket for () {
     #[inline]
     fn serialize(self, _: &mut Serializer) -> Result<(), Error> {
@@ -108,6 +104,7 @@ impl SerdePacket for () {
 }
 
 impl SerdePacket for bool {
+    #[inline]
     fn serialize(self, ser: &mut Serializer) -> Result<(), Error> {
         ser.extend_one(self as u8);
         Ok(())
@@ -115,7 +112,13 @@ impl SerdePacket for bool {
 
     fn deserialize(de: &mut Deserializer) -> Result<Self, Error> {
         let byte = de.next_buffer(1)?;
-        Ok(byte[0] != 0)
+        Ok(match byte[0] {
+            0 => false,
+            1 => true,
+            byte => Err(Error::TypeMismatch(
+                format!("expected bool (0 or 1), found {byte}").into(),
+            ))?,
+        })
     }
 }
 
@@ -174,6 +177,36 @@ macro_rules! serde_tuples {
     };
 }
 serde_tuples!(A, B, C, D, E, F, G, H, I, J, K, L);
+
+impl<T: SerdePacket, E: SerdePacket> SerdePacket for Result<T, E> {
+    fn serialize(self, ser: &mut Serializer) -> Result<(), Error> {
+        match self {
+            Ok(t) => {
+                0u8.serialize(ser)?;
+                t.serialize(ser)?;
+            }
+            Err(e) => {
+                1u8.serialize(ser)?;
+                e.serialize(ser)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn deserialize(de: &mut Deserializer) -> Result<Self, Error> {
+        let index = u8::deserialize(de)?;
+        let ret = match index {
+            0 => Ok(T::deserialize(de)?),
+            1 => Err(E::deserialize(de)?),
+            _ => {
+                return Err(Error::TypeMismatch(
+                    format!("expected result index (0 or 1), found {index}").into(),
+                ))
+            }
+        };
+        Ok(ret)
+    }
+}
 
 impl<T: SerdePacket> SerdePacket for Box<T> {
     #[inline]
@@ -305,3 +338,53 @@ macro_rules! serde_ko {
     };
 }
 impl_obj_for!(serde_ko);
+
+pub fn serialize<T: Method>(data: T, output: &mut Packet) -> Result<(), Error> {
+    output.clear();
+    let mut ser = Serializer(output);
+    MAGIC.serialize(&mut ser)?;
+    T::METHOD_ID.serialize(&mut ser)?;
+    data.serialize(&mut ser)?;
+    Ok(())
+}
+
+pub fn deserialize<T: Method>(input: &Packet, extra: Option<&mut [usize; 2]>) -> Result<T, Error> {
+    let (data, de) = de_inner(input)?;
+    if !de.is_empty() {
+        if let Some(extra) = extra {
+            *extra = [de.buffer.len(), de.handles.len()];
+        }
+    }
+    Ok(data)
+}
+
+pub fn deserialize_exact<T: Method>(input: &Packet) -> Result<T, Error> {
+    let (data, de) = de_inner(input)?;
+    if !de.is_empty() {
+        return Err(Error::SizeMismatch {
+            extra_buffer_len: de.buffer.len(),
+            extra_handle_count: de.handles.len(),
+        });
+    }
+    Ok(data)
+}
+
+fn de_inner<T: Method>(input: &Packet) -> Result<(T, Deserializer), Error> {
+    let mut de = Deserializer {
+        buffer: &input.buffer,
+        handles: &input.handles,
+    };
+    let magic = usize::deserialize(&mut de)?;
+    if magic != MAGIC {
+        return Err(Error::InvalidMagic(magic));
+    }
+    let m = usize::deserialize(&mut de)?;
+    if m != T::METHOD_ID {
+        return Err(Error::InvalidMethod {
+            expected: T::METHOD_ID,
+            found: m,
+        });
+    }
+    let data = T::deserialize(&mut de)?;
+    Ok((data, de))
+}

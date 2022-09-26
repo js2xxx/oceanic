@@ -1,9 +1,10 @@
 use core::{
     future::Future,
     mem,
+    num::NonZeroUsize,
     ops::ControlFlow,
     pin::Pin,
-    task::{Context, Poll}, num::NonZeroUsize,
+    task::{Context, Poll},
 };
 
 use solvent::prelude::{
@@ -31,6 +32,13 @@ impl From<Inner> for Channel {
     }
 }
 
+impl AsRef<Inner> for Channel {
+    #[inline]
+    fn as_ref(&self) -> &Inner {
+        &self.inner
+    }
+}
+
 impl Channel {
     #[inline]
     #[cfg(feature = "runtime")]
@@ -41,6 +49,11 @@ impl Channel {
     #[inline]
     pub fn with_disp(inner: Inner, disp: DispSender) -> Self {
         Channel { inner, disp }
+    }
+
+    #[inline]
+    pub fn into_inner(this: Self) -> Inner {
+        this.inner
     }
 
     #[inline]

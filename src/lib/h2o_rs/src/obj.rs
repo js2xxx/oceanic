@@ -1,4 +1,4 @@
-use core::{marker::PhantomData, mem, mem::ManuallyDrop, ops::Deref, ptr, time::Duration, fmt};
+use core::{fmt, marker::PhantomData, mem, mem::ManuallyDrop, ops::Deref, ptr, time::Duration};
 
 use sv_call::SV_DISPATCHER;
 pub use sv_call::{Feature, Handle, SerdeReg, Syscall};

@@ -7,7 +7,7 @@ mod client;
 mod server;
 pub mod sync;
 
-pub use solvent_rpc_core::{packet, Error, SerdePacket};
+pub use solvent_rpc_core::*;
 
 pub use self::{
     client::{Client, EventReceiver},
