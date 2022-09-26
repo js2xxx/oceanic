@@ -10,6 +10,6 @@ extern crate alloc;
 mod error;
 pub mod packet;
 
-pub use solvent_rpc_macros::SerdePacket;
+pub use solvent_rpc_macros::*;
 
 pub use self::error::Error;
