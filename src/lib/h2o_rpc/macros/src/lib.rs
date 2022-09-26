@@ -1,6 +1,5 @@
 #![feature(iterator_try_collect)]
 
-mod protocol;
 mod serde_packet;
 
 use proc_macro::TokenStream;
