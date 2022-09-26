@@ -2,7 +2,6 @@ use alloc::{ffi::CString, vec::Vec};
 
 use solvent::prelude::Phys;
 use solvent_rpc::{packet::Method, SerdePacket};
-use solvent_rpc_core as solvent_rpc;
 
 use crate::Carrier;
 

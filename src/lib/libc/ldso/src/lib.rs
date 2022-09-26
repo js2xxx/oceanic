@@ -22,7 +22,7 @@ mod imp_alloc;
 mod rxx;
 
 use solvent::prelude::{Channel, Object, Phys};
-use solvent_rpc_core::packet;
+use solvent_rpc::packet;
 pub use svrt::*;
 
 pub use self::rxx::{dynamic, load_address, vdso_map};

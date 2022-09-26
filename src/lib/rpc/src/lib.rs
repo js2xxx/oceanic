@@ -10,7 +10,7 @@ use core::future::Future;
 use core::mem;
 
 use solvent::prelude::Channel;
-use solvent_rpc_core::packet::{self, Method};
+use solvent_rpc::packet::{self, Method};
 
 /// # Safety
 ///

@@ -5,7 +5,7 @@ use core::{
 };
 
 use solvent::prelude::{Channel, Handle, Object};
-use solvent_rpc_core::packet;
+use solvent_rpc::packet;
 
 pub type Main =
     unsafe extern "C" fn(argc: u32, argv: *mut *mut c_char, environ: *mut *mut c_char) -> i32;

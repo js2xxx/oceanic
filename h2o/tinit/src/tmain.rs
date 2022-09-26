@@ -25,7 +25,7 @@ use core::{hint, mem::MaybeUninit, time::Duration};
 use bootfs::parse::Directory;
 use rpc::load::{GetObject, GetObjectResponse};
 use solvent::prelude::*;
-use solvent_rpc_core::packet;
+use solvent_rpc::packet;
 use sv_call::ipc::SIG_READ;
 use svrt::{HandleType, StartupArgs};
 use targs::{HandleIndex, Targs};

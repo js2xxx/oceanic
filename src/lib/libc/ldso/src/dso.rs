@@ -22,7 +22,7 @@ use canary::Canary;
 use elfload::LoadedElf;
 use rpc::load::{GetObjectRequest as Request, GetObjectResponse as Response};
 use solvent::prelude::{Channel, Object, Phys, SIG_READ};
-use solvent_rpc_core::packet;
+use solvent_rpc::packet;
 use spin::{Lazy, Mutex, Once, RwLock};
 use svrt::HandleType;
 
@@ -54,7 +54,7 @@ pub enum Error {
     ElfLoad(elfload::Error),
     DepGet(solvent::error::Error),
     Memory(usize, usize),
-    Serde(solvent_rpc_core::Error),
+    Serde(solvent_rpc::Error),
 }
 
 #[derive(Copy, Clone)]

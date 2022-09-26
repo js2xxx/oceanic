@@ -4,8 +4,8 @@ name = "svrt"
 version = "0.1.0"
 
 [features]
-call = ["solvent/call"]
-default = ["solvent/default"]
+call = ["solvent/call", "solvent-rpc-core/call"]
+default = ["solvent/default", "solvent-rpc-core/default"]
 
 [dependencies]
 # Local crates

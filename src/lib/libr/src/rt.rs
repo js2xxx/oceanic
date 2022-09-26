@@ -1,8 +1,8 @@
 use alloc::vec::Vec;
-use solvent_rpc_core::packet;
 use core::error::Error;
 
 use solvent::prelude::Channel;
+use solvent_rpc_core::packet;
 
 use crate::thread::{self, Thread};
 
