@@ -27,8 +27,7 @@ struct Dispatcher {
 
 // SAFETY: Usually, `pack` field in `Task` should be `Sync` in order to derive
 // `Sync` for this structure. However, we here guarantee that `pack` don't
-// expose its reference to any context other than its own implementation,
-// meaning that it don't need to be `Sync`.
+// expose its reference to any context, meaning that it don't need to be `Sync`.
 unsafe impl Sync for Dispatcher {}
 
 impl Dispatcher {
@@ -62,28 +61,15 @@ impl Dispatcher {
         }
     }
 
-    #[inline]
-    fn poll_send_raw(
+    fn poll_send<P>(
         &self,
         obj: &impl Object,
         level_triggered: bool,
         signal: usize,
-        syscall: Option<&Syscall>,
-    ) -> Poll<Result<usize>> {
-        match self.inner.push_raw(obj, level_triggered, signal, syscall) {
-            Err(ENOSPC) => Poll::Pending,
-            res => Poll::Ready(res),
-        }
-    }
-
-    fn poll_send<K, P>(
-        &self,
-        key: K,
         pack: P,
         waker: &Waker,
     ) -> core::result::Result<Result<usize>, P>
     where
-        K: Fn(Option<&Syscall>) -> Poll<Result<usize>>,
         P: PackedSyscall + 'static,
     {
         if self.state.load(SeqCst) == DISCONNECTED {
@@ -91,9 +77,12 @@ impl Dispatcher {
         }
 
         let syscall = pack.raw();
-        let key = match key(syscall.as_ref()) {
-            Poll::Pending => return Err(pack),
-            Poll::Ready(key) => match key {
+        let key = match self
+            .inner
+            .push_raw(obj, level_triggered, signal, syscall.as_ref())
+        {
+            Err(ENOSPC) => return Err(pack),
+            key => match key {
                 Ok(key) => key,
                 Err(err) => return Ok(Err(err)),
             },
@@ -150,14 +139,8 @@ impl DispSender {
     where
         P: PackedSyscall + 'static,
     {
-        self.disp.poll_send(
-            |syscall| {
-                self.disp
-                    .poll_send_raw(obj, level_triggered, signal, syscall)
-            },
-            pack,
-            waker,
-        )
+        self.disp
+            .poll_send(obj, level_triggered, signal, pack, waker)
     }
 
     #[inline]
@@ -167,11 +150,9 @@ impl DispSender {
 }
 
 impl Drop for DispSender {
+    #[inline]
     fn drop(&mut self) {
-        let state = self.disp.state.swap(DISCONNECTED, SeqCst);
-        if state != DISCONNECTED {
-            // TODO: Signal the receiver.
-        }
+        self.disp.state.store(DISCONNECTED, SeqCst);
     }
 }
 

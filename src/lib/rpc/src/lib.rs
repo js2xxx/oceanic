@@ -5,8 +5,6 @@ pub mod load;
 
 extern crate alloc;
 
-#[cfg(feature = "async")]
-use core::future::Future;
 use core::mem;
 
 use solvent::prelude::Channel;
@@ -53,22 +51,4 @@ where
         packet::serialize(response, packet).map_err(|_| solvent::error::EFAULT)?;
         Ok(())
     })
-}
-
-#[cfg(feature = "async")]
-pub async fn handle<T: Carrier, F, G>(
-    channel: &solvent_async::ipc::Channel,
-    proc: G,
-) -> solvent::error::Result
-where
-    G: FnOnce(T::Request) -> F,
-    F: Future<Output = T::Response>,
-{
-    let fut = channel.handle(|mut packet| async {
-        let request = packet::deserialize(&packet, None).map_err(|_| solvent::error::ETYPE)?;
-        let response = proc(request).await;
-        packet::serialize(response, &mut packet).map_err(|_| solvent::error::EFAULT)?;
-        Ok(((), packet))
-    });
-    fut.await
 }

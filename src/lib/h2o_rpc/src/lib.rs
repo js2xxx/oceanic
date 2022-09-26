@@ -13,7 +13,4 @@ pub mod sync;
 pub use solvent_rpc_core::*;
 
 #[cfg(feature = "std")]
-pub use self::{
-    client::{Client, EventReceiver},
-    server::{PacketStream, Server},
-};
+pub use self::{client::*, server::*};

@@ -12,6 +12,7 @@ use solvent_std::sync::Arsc;
 
 use crate::Error;
 
+#[repr(transparent)]
 pub struct Server {
     inner: Arsc<Inner>,
 }
@@ -22,39 +23,66 @@ impl Server {
             inner: Arsc::new(Inner {
                 channel,
                 stop: AtomicBool::new(false),
-                has_stream: AtomicBool::new(false),
             }),
         }
     }
 
-    pub fn packet_stream(&self) -> Option<PacketStream> {
-        if self.inner.has_stream.swap(true, SeqCst) {
-            return None;
+    #[inline]
+    pub fn serve(self) -> (PacketStream, EventSender) {
+        (
+            PacketStream {
+                inner: self.inner.clone(),
+            },
+            EventSender { inner: self.inner },
+        )
+    }
+}
+
+impl AsRef<Channel> for Server {
+    #[inline]
+    fn as_ref(&self) -> &Channel {
+        &self.inner.channel
+    }
+}
+
+impl From<Channel> for Server {
+    #[inline]
+    fn from(channel: Channel) -> Self {
+        Self::new(channel)
+    }
+}
+
+impl TryFrom<Server> for Channel {
+    type Error = Server;
+
+    fn try_from(server: Server) -> Result<Self, Self::Error> {
+        match Arsc::try_unwrap(server.inner) {
+            Ok(mut inner) => {
+                if !*inner.stop.get_mut() {
+                    Ok(inner.channel)
+                } else {
+                    Err(Server {
+                        inner: Arsc::new(inner),
+                    })
+                }
+            }
+            Err(inner) => Err(Server { inner }),
         }
-        Some(PacketStream {
-            inner: self.inner.clone(),
-        })
-    }
-
-    #[inline]
-    pub fn send(&self, packet: Packet) -> Result<(), Error> {
-        self.inner.send(packet)
     }
 }
 
-impl Drop for Server {
-    #[inline]
-    fn drop(&mut self) {
-        self.inner.stop.store(true, Release);
-    }
+pub struct Request {
+    pub packet: Packet,
+    pub responder: Responder,
 }
 
+#[repr(transparent)]
 pub struct PacketStream {
     inner: Arsc<Inner>,
 }
 
 impl Stream for PacketStream {
-    type Item = Result<Packet, Error>;
+    type Item = Result<Request, Error>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         if self.inner.stop.load(Acquire) {
@@ -66,7 +94,12 @@ impl Stream for PacketStream {
         let res = ready!(fut.poll(cx));
         Poll::Ready(match res {
             Err(Error::Disconnected) => None,
-            res => Some(res),
+            res => Some(res.map(|packet| Request {
+                packet,
+                responder: Responder(EventSender {
+                    inner: self.inner.clone(),
+                }),
+            })),
         })
     }
 }
@@ -78,10 +111,48 @@ impl FusedStream for PacketStream {
     }
 }
 
+#[repr(transparent)]
+pub struct EventSender {
+    inner: Arsc<Inner>,
+}
+
+impl EventSender {
+    #[inline]
+    pub fn send(&self, packet: Packet) -> Result<(), Error> {
+        if self.inner.stop.load(Acquire) {
+            return Err(Error::Disconnected);
+        }
+        self.inner.send(packet)
+    }
+
+    #[inline]
+    pub fn close(self) {
+        self.inner.stop.store(true, Release);
+    }
+}
+
+#[repr(transparent)]
+pub struct Responder(EventSender);
+
+impl Responder {
+    #[inline]
+    pub fn send(self, packet: Packet, close: bool) -> Result<(), Error> {
+        let ret = self.0.send(packet);
+        if close {
+            self.0.close();
+        }
+        ret
+    }
+
+    #[inline]
+    pub fn close(self) {
+        self.0.close()
+    }
+}
+
 struct Inner {
     channel: Channel,
     stop: AtomicBool,
-    has_stream: AtomicBool,
 }
 
 impl Inner {

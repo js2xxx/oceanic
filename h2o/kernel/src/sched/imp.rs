@@ -272,7 +272,7 @@ impl Scheduler {
 
         match cur.running_state.start_time() {
             Some(start_time) => {
-                // FIXME: Some platform like QEMU doesn't support invariant TSC, so the assert
+                // FIXME: Some platforms like QEMU don't support invariant TSC, so the assert
                 // below can really fail. By far, comment it out to avoid kernel panic.
                 //
                 // debug_assert!(cur_time > start_time);
