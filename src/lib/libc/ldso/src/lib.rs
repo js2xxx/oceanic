@@ -21,7 +21,8 @@ pub mod ffi;
 mod imp_alloc;
 mod rxx;
 
-use solvent::prelude::{Channel, Object, PacketTyped, Phys};
+use solvent::prelude::{Channel, Object, Phys};
+use solvent_rpc_core::packet;
 pub use svrt::*;
 
 pub use self::rxx::{dynamic, load_address, vdso_map};
@@ -35,7 +36,7 @@ fn dl_main(init_chan: Channel) -> rxx::DlReturn {
         init_chan
             .receive(&mut packet)
             .expect("Failed to receive boot message");
-        StartupArgs::try_from_packet(&mut packet).expect("Failed to parse boot message")
+        packet::deserialize(&packet, None).expect("Failed to parse startup args")
     };
 
     let _args = init_rt(startup_args).expect("Failed to initialize runtime");

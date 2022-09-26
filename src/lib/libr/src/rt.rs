@@ -1,8 +1,8 @@
 use alloc::vec::Vec;
+use solvent_rpc_core::packet;
 use core::error::Error;
 
-use solvent::prelude::{Channel, PacketTyped};
-use svrt::StartupArgs;
+use solvent::prelude::Channel;
 
 use crate::thread::{self, Thread};
 
@@ -61,7 +61,7 @@ pub fn lang_start<R: Termination>(channel: Channel, main: fn() -> R) -> R {
         channel
             .receive(&mut packet)
             .expect("Failed to receive startup args");
-        StartupArgs::try_from_packet(&mut packet).expect("Failed to parse startup args")
+        packet::deserialize(&packet, None).expect("Failed to parse startup args")
     };
 
     let args = svrt::init_rt(args).expect("Failed to initialize runtime");

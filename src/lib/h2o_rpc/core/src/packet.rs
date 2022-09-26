@@ -45,7 +45,7 @@ impl<'a> Deserializer<'a> {
     }
 
     fn check_buffer(&self, len: usize) -> Result<(), Error> {
-        if self.buffer.len() > len {
+        if self.buffer.len() >= len {
             Ok(())
         } else {
             Err(Error::BufferTooShort {
@@ -56,7 +56,7 @@ impl<'a> Deserializer<'a> {
     }
 
     fn check_handles(&self, len: usize) -> Result<(), Error> {
-        if self.handles.len() > len {
+        if self.handles.len() >= len {
             Ok(())
         } else {
             Err(Error::BufferTooShort {
@@ -350,10 +350,8 @@ pub fn serialize<T: Method>(data: T, output: &mut Packet) -> Result<(), Error> {
 
 pub fn deserialize<T: Method>(input: &Packet, extra: Option<&mut [usize; 2]>) -> Result<T, Error> {
     let (data, de) = de_inner(input)?;
-    if !de.is_empty() {
-        if let Some(extra) = extra {
-            *extra = [de.buffer.len(), de.handles.len()];
-        }
+    if let Some(extra) = extra {
+        *extra = [de.buffer.len(), de.handles.len()];
     }
     Ok(data)
 }
@@ -387,4 +385,40 @@ fn de_inner<T: Method>(input: &Packet) -> Result<(T, Deserializer), Error> {
     }
     let data = T::deserialize(&mut de)?;
     Ok((data, de))
+}
+
+#[cfg(test)]
+mod test {
+    use alloc::{collections::BTreeMap, string::String};
+
+    use super::{deserialize, serialize, Method, SerdePacket};
+    use crate::packet::{Deserializer, Serializer};
+
+    #[test]
+    fn test_btree_map() {
+        struct M<K, V>(BTreeMap<K, V>);
+        impl<K: Ord + SerdePacket, V: SerdePacket> Method for M<K, V> {
+            const METHOD_ID: usize = 12345;
+        }
+        impl<K: Ord + SerdePacket, V: SerdePacket> SerdePacket for M<K, V> {
+            fn serialize(self, ser: &mut Serializer) -> Result<(), crate::Error> {
+                self.0.serialize(ser)
+            }
+
+            fn deserialize(de: &mut Deserializer) -> Result<Self, crate::Error> {
+                BTreeMap::deserialize(de).map(M)
+            }
+        }
+        let ser: BTreeMap<_, _> = [
+            (1, (String::from("12345"), true)),
+            (2, (String::from("67890"), false)),
+        ]
+        .into_iter()
+        .collect();
+        let mut packet = Default::default();
+        serialize(M(ser.clone()), &mut packet).expect("Failed to serialize packet");
+        let M(de) = deserialize(&packet, None).expect("Failed to deserialize packet");
+
+        assert_eq!(de, ser);
+    }
 }

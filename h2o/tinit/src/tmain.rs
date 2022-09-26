@@ -25,6 +25,7 @@ use core::{hint, mem::MaybeUninit, time::Duration};
 use bootfs::parse::Directory;
 use rpc::load::{GetObject, GetObjectResponse};
 use solvent::prelude::*;
+use solvent_rpc_core::packet;
 use sv_call::ipc::SIG_READ;
 use svrt::{HandleType, StartupArgs};
 use targs::{HandleIndex, Targs};
@@ -167,7 +168,9 @@ extern "C" fn tmain(init_chan: sv_call::Handle) {
         env: vec![0],
     };
 
-    me.send(&mut dl_args.into_packet())
+    let mut packet = Default::default();
+    packet::serialize(dl_args, &mut packet).expect("Failed to serialize packet");
+    me.send(&mut packet)
         .expect("Failed to send dyn loader args");
 
     let exe_args = StartupArgs {
@@ -184,7 +187,8 @@ extern "C" fn tmain(init_chan: sv_call::Handle) {
         env: vec![0],
     };
 
-    me.send(&mut exe_args.into_packet())
+    packet::serialize(exe_args, &mut packet).expect("Failed to serialize packet");
+    me.send(&mut packet)
         .expect("Failed to send executable args");
     drop(me);
 

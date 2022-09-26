@@ -1,4 +1,8 @@
 use modular_bitfield::{bitfield, BitfieldSpecifier};
+use solvent_rpc_core::{
+    packet::{Deserializer, SerdePacket, Serializer},
+    Error,
+};
 
 #[derive(Debug, Copy, Clone, Default)]
 #[repr(C)]
@@ -49,6 +53,18 @@ pub enum HandleType {
 pub struct HandleInfo {
     pub handle_type: HandleType,
     pub additional: u16,
+}
+
+impl SerdePacket for HandleInfo {
+    #[inline]
+    fn serialize(self, ser: &mut Serializer) -> Result<(), Error> {
+        self.bytes.serialize(ser)
+    }
+
+    #[inline]
+    fn deserialize(de: &mut Deserializer) -> Result<Self, Error> {
+        SerdePacket::deserialize(de).map(Self::from_bytes)
+    }
 }
 
 impl From<HandleType> for HandleInfo {
