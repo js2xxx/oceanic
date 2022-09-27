@@ -11,7 +11,6 @@
 #![feature(box_into_inner)]
 #![feature(box_syntax)]
 #![feature(coerce_unsized)]
-#![feature(const_btree_new)]
 #![feature(core_intrinsics)]
 #![feature(downcast_unchecked)]
 #![feature(drain_filter)]

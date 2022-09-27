@@ -13,6 +13,6 @@ panic = 'abort'
 
 [profile.release]
 incremental = true
-lto = 'thin'
-opt-level = 2
+lto = 'fat'
+opt-level = 3
 panic = 'abort'
