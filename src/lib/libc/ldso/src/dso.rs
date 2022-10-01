@@ -21,7 +21,7 @@ use core::{
 use canary::Canary;
 use elfload::LoadedElf;
 use solvent::prelude::{Channel, Object, Phys, SIG_READ};
-use solvent_rpc::{load::GET_OBJECT, packet};
+use solvent_rpc::{loader::GET_OBJECT, packet};
 use spin::{Lazy, Mutex, Once, RwLock};
 use svrt::HandleType;
 

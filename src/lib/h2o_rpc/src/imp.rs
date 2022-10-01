@@ -1,15 +1,23 @@
 use solvent::prelude::Packet;
 
-pub mod load;
+pub struct UnknownEvent(pub Packet);
 
-pub enum DefaultEvent {
-    Unknown(Packet),
-}
-
-impl DefaultEvent {
+impl Event for UnknownEvent {
     #[inline]
-    #[allow(dead_code)]
     fn deserialize(packet: Packet) -> Result<Self, crate::Error> {
-        Ok(Self::Unknown(packet))
+        Ok(Self(packet))
+    }
+
+    #[inline]
+    fn serialize(self) -> Result<Packet, crate::Error> {
+        Ok(self.0)
     }
 }
+
+pub trait Event: Sized {
+    fn deserialize(packet: Packet) -> Result<Self, crate::Error>;
+
+    fn serialize(self) -> Result<Packet, crate::Error>;
+}
+
+pub mod loader;

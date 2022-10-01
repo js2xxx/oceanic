@@ -7,5 +7,6 @@ version = "0.1.0"
 proc-macro = true
 
 [dependencies]
+convert_case = "0.6"
 quote = "1.0"
 syn = {version = "1.0"}
