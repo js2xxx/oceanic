@@ -118,10 +118,6 @@ pub trait SerdePacket: Sized {
     }
 }
 
-pub trait Method: SerdePacket {
-    const METHOD_ID: usize;
-}
-
 impl SerdePacket for () {
     #[inline]
     fn serialize(self, _: &mut Serializer) -> Result<(), Error> {
@@ -382,35 +378,20 @@ macro_rules! serde_ko {
 }
 impl_obj_for!(serde_ko);
 
-pub fn serialize<T: Method>(data: T, output: &mut Packet) -> Result<(), Error> {
+pub fn serialize<T: SerdePacket>(
+    method_id: usize,
+    data: T,
+    output: &mut Packet,
+) -> Result<(), Error> {
     output.clear();
     let mut ser = Serializer(output);
     MAGIC.serialize(&mut ser)?;
-    T::METHOD_ID.serialize(&mut ser)?;
+    method_id.serialize(&mut ser)?;
     data.serialize(&mut ser)?;
     Ok(())
 }
 
-pub fn deserialize<T: Method>(input: &Packet, extra: Option<&mut [usize; 2]>) -> Result<T, Error> {
-    let (data, de) = de_inner(input)?;
-    if let Some(extra) = extra {
-        *extra = [de.buffer.len(), de.handles.len()];
-    }
-    Ok(data)
-}
-
-pub fn deserialize_exact<T: Method>(input: &Packet) -> Result<T, Error> {
-    let (data, de) = de_inner(input)?;
-    if !de.is_empty() {
-        return Err(Error::SizeMismatch {
-            extra_buffer_len: de.buffer.len(),
-            extra_handle_count: de.handles.len(),
-        });
-    }
-    Ok(data)
-}
-
-fn de_inner<T: Method>(input: &Packet) -> Result<(T, Deserializer), Error> {
+pub fn deserialize_metadata(input: &Packet) -> Result<(usize, Deserializer), Error> {
     let mut de = Deserializer {
         buffer: &input.buffer,
         handles: &input.handles,
@@ -420,38 +401,44 @@ fn de_inner<T: Method>(input: &Packet) -> Result<(T, Deserializer), Error> {
         return Err(Error::InvalidMagic(magic));
     }
     let m = usize::deserialize(&mut de)?;
-    if m != T::METHOD_ID {
+    Ok((m, de))
+}
+
+pub fn deserialize_body<T: SerdePacket>(
+    mut de: Deserializer,
+    extra: Option<&mut [usize; 2]>,
+) -> Result<T, Error> {
+    let data = T::deserialize(&mut de)?;
+    if let Some(extra) = extra {
+        *extra = [de.buffer.len(), de.handles.len()];
+    }
+    Ok(data)
+}
+
+pub fn deserialize<T: SerdePacket>(
+    method_id: usize,
+    input: &Packet,
+    extra: Option<&mut [usize; 2]>,
+) -> Result<T, Error> {
+    let (m, de) = deserialize_metadata(input)?;
+    if m != method_id {
         return Err(Error::InvalidMethod {
-            expected: T::METHOD_ID,
+            expected: method_id,
             found: m,
         });
     }
-    let data = T::deserialize(&mut de)?;
-    Ok((data, de))
+    deserialize_body(de, extra)
 }
 
 #[cfg(test)]
 mod test {
     use alloc::{collections::BTreeMap, string::String};
 
-    use super::{deserialize, serialize, Method, SerdePacket};
+    use super::{deserialize_body, serialize, SerdePacket};
     use crate::packet::{Deserializer, Serializer};
 
     #[test]
     fn test_btree_map() {
-        struct M<K, V>(BTreeMap<K, V>);
-        impl<K: Ord + SerdePacket, V: SerdePacket> Method for M<K, V> {
-            const METHOD_ID: usize = 12345;
-        }
-        impl<K: Ord + SerdePacket, V: SerdePacket> SerdePacket for M<K, V> {
-            fn serialize(self, ser: &mut Serializer) -> Result<(), crate::Error> {
-                self.0.serialize(ser)
-            }
-
-            fn deserialize(de: &mut Deserializer) -> Result<Self, crate::Error> {
-                BTreeMap::deserialize(de).map(M)
-            }
-        }
         let ser: BTreeMap<_, _> = [
             (1, (String::from("12345"), true)),
             (2, (String::from("67890"), false)),
@@ -459,8 +446,9 @@ mod test {
         .into_iter()
         .collect();
         let mut packet = Default::default();
-        serialize(M(ser.clone()), &mut packet).expect("Failed to serialize packet");
-        let M(de) = deserialize(&packet, None).expect("Failed to deserialize packet");
+        serialize(12345, ser.clone(), &mut packet).expect("Failed to serialize packet");
+
+        let de = deserialize(12345, &packet, None).expect("Failed to deserialize packet");
 
         assert_eq!(de, ser);
     }

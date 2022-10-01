@@ -5,7 +5,6 @@ use core::{
 };
 
 use solvent::prelude::{Channel, Handle, Object};
-use solvent_rpc::packet;
 
 pub type Main =
     unsafe extern "C" fn(argc: u32, argv: *mut *mut c_char, environ: *mut *mut c_char) -> i32;
@@ -13,14 +12,7 @@ pub type Main =
 #[no_mangle]
 unsafe extern "C" fn __libc_start_main(init_chan: Handle, main: Main) -> ! {
     let chan = unsafe { Channel::from_raw(init_chan) };
-    let args = {
-        let mut packet = Default::default();
-        chan.receive(&mut packet)
-            .expect("Failed to receive startup args");
-        packet::deserialize(&packet, None).expect("Failed to parse startup args")
-    };
-
-    let mut args = svrt::init_rt(args).expect("Failed to initialize runtime");
+    let mut args = svrt::init_rt(&chan).expect("Failed to initialize runtime");
 
     let mut argv = args
         .split_inclusive_mut(|&b| b == 0)

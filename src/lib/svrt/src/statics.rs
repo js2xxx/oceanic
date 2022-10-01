@@ -7,7 +7,7 @@ use core::{
 
 use solvent::{
     c_ty::{StatusOrHandle, StatusOrValue},
-    prelude::{Handle, Object, Ref, Result, Virt, EEXIST, ENOENT},
+    prelude::{Channel, Handle, Object, Ref, Result, Virt, EEXIST, ENOENT, ETYPE},
 };
 use spin::Mutex;
 
@@ -25,7 +25,13 @@ const SS_UNINIT: usize = 0;
 const SS_PROGRESS: usize = 1;
 const SS_INIT: usize = 2;
 
-pub fn init_rt(args: StartupArgs) -> Result<Vec<u8>> {
+pub fn init_rt(init_chan: &Channel) -> Result<Vec<u8>> {
+    let args = {
+        let mut packet = Default::default();
+        init_chan.receive(&mut packet)?;
+        solvent_rpc_core::packet::deserialize(crate::STARTUP_ARGS, &packet, None)
+            .map_err(|_| ETYPE)?
+    };
     loop {
         let value = STARTUP_STATE.load(Acquire);
         match value {

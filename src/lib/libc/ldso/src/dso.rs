@@ -20,9 +20,8 @@ use core::{
 
 use canary::Canary;
 use elfload::LoadedElf;
-use rpc::load::{GetObjectRequest as Request, GetObjectResponse as Response};
 use solvent::prelude::{Channel, Object, Phys, SIG_READ};
-use solvent_rpc::packet;
+use solvent_rpc::{load::GET_OBJECT, packet};
 use spin::{Lazy, Mutex, Once, RwLock};
 use svrt::HandleType;
 
@@ -775,10 +774,9 @@ pub fn get_object(path: Vec<CString>) -> Result<Vec<Phys>, Error> {
 
     let lock = LDRPC.read();
     let ldrpc = lock.as_ref().ok_or(Error::DepGet(solvent::error::ENOENT))?;
-    let resp = {
-        let request = Request::from(path);
+    let resp: Result<_, usize> = {
         let mut packet = Default::default();
-        packet::serialize(request, &mut packet).map_err(Error::Serde)?;
+        packet::serialize(GET_OBJECT, path, &mut packet).map_err(Error::Serde)?;
         let id = ID.fetch_add(1, SeqCst);
         packet.id = NonZeroUsize::new(id);
 
@@ -789,11 +787,11 @@ pub fn get_object(path: Vec<CString>) -> Result<Vec<Phys>, Error> {
         ldrpc.receive(&mut packet).map_err(Error::DepGet)?;
         assert_eq!(packet.id, NonZeroUsize::new(id));
 
-        packet::deserialize(&packet, None).map_err(Error::Serde)?
+        packet::deserialize(GET_OBJECT, &packet, None).map_err(Error::Serde)?
     };
     match resp {
-        Response::Success(objs) => Ok(objs),
-        Response::Error { not_found_index } => {
+        Ok(objs) => Ok(objs),
+        Err(not_found_index) => {
             log::error!("DT_NEEDED Library at index {} not found", not_found_index);
             Err(Error::DepGet(solvent::error::ENOENT))
         }

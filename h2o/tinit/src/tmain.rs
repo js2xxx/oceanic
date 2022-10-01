@@ -19,15 +19,14 @@ mod mem;
 mod rxx;
 mod test;
 
-use alloc::{vec, vec::Vec};
+use alloc::{ffi::CString, vec, vec::Vec};
 use core::{hint, mem::MaybeUninit, time::Duration};
 
 use bootfs::parse::Directory;
-use rpc::load::{GetObject, GetObjectResponse};
 use solvent::prelude::*;
-use solvent_rpc::packet;
+use solvent_rpc::{load::GET_OBJECT, packet};
 use sv_call::ipc::SIG_READ;
-use svrt::{HandleType, StartupArgs};
+use svrt::{HandleType, StartupArgs, STARTUP_ARGS};
 use targs::{HandleIndex, Targs};
 
 extern crate alloc;
@@ -67,21 +66,35 @@ fn map_bootfs(phys: &Phys, root: &Virt) -> Directory<'static> {
 
 fn serve_load(load_rpc: Channel, bootfs: Directory, bootfs_phys: &Phys) -> Error {
     loop {
-        let res = rpc::handle_blocking::<GetObject, _>(&load_rpc, |request| {
-            let mut objs = Vec::with_capacity(request.paths.len());
-            for (i, path) in request.paths.into_iter().enumerate() {
-                let mut root = Vec::from(b"lib/" as &[u8]);
-                root.append(&mut path.into_bytes());
-                let obj = bootfs
-                    .find(&root, b'/')
-                    .and_then(|bin| sub_phys(bin, bootfs, bootfs_phys).ok());
-                match obj {
-                    Some(obj) => objs.push(obj),
-                    None => return GetObjectResponse::Error { not_found_index: i },
+        let res = load_rpc.handle(|packet| {
+            let paths: Vec<CString> =
+                packet::deserialize(GET_OBJECT, packet, None).map_err(|_| solvent::error::ETYPE)?;
+            let response = {
+                let mut objs = Vec::with_capacity(paths.len());
+                let mut err = None;
+                for (i, path) in paths.into_iter().enumerate() {
+                    let mut root = Vec::from(b"lib/" as &[u8]);
+                    root.append(&mut path.into_bytes());
+                    let obj = bootfs
+                        .find(&root, b'/')
+                        .and_then(|bin| sub_phys(bin, bootfs, bootfs_phys).ok());
+                    match obj {
+                        Some(obj) => objs.push(obj),
+                        None => {
+                            err = Some(i);
+                            break;
+                        }
+                    }
                 }
-            }
-            GetObjectResponse::Success(objs)
+                match err {
+                    Some(err) => Err(err),
+                    None => Ok(objs),
+                }
+            };
+            packet::serialize(GET_OBJECT, response, packet).map_err(|_| solvent::error::EFAULT)?;
+            Ok(())
         });
+
         match res {
             Ok(()) => hint::spin_loop(),
             Err(ENOENT) => match load_rpc.try_wait(Duration::MAX, true, SIG_READ) {
@@ -169,7 +182,7 @@ extern "C" fn tmain(init_chan: sv_call::Handle) {
     };
 
     let mut packet = Default::default();
-    packet::serialize(dl_args, &mut packet).expect("Failed to serialize packet");
+    packet::serialize(STARTUP_ARGS, dl_args, &mut packet).expect("Failed to serialize packet");
     me.send(&mut packet)
         .expect("Failed to send dyn loader args");
 
@@ -187,7 +200,7 @@ extern "C" fn tmain(init_chan: sv_call::Handle) {
         env: vec![0],
     };
 
-    packet::serialize(exe_args, &mut packet).expect("Failed to serialize packet");
+    packet::serialize(STARTUP_ARGS, exe_args, &mut packet).expect("Failed to serialize packet");
     me.send(&mut packet)
         .expect("Failed to send executable args");
     drop(me);
