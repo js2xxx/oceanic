@@ -33,16 +33,14 @@ fn parse_event(input: TokenStream) -> Result<Path> {
 pub struct Protocol {
     vis: Visibility,
     ident: Ident,
-    doc: Option<Attribute>,
+    doc: Vec<Attribute>,
     method: Punctuated<Method, Token![;]>,
 }
 
 impl Parse for Protocol {
     fn parse(input: ParseStream) -> Result<Self> {
-        let attr = Attribute::parse_outer(input)?;
-        let doc = attr
-            .into_iter()
-            .find(|attr| attr.path.to_token_stream().to_string() == "doc");
+        let mut attr = Attribute::parse_outer(input)?;
+        attr.retain(|attr| attr.path.to_token_stream().to_string() == "doc");
         let vis = Visibility::parse(input)?;
         <Token![trait]>::parse(input)?;
         let ident = Ident::parse(input)?;
@@ -52,7 +50,7 @@ impl Parse for Protocol {
         Ok(Protocol {
             vis,
             ident,
-            doc,
+            doc: attr,
             method,
         })
     }
@@ -62,7 +60,7 @@ pub struct Method {
     id: Expr,
     close: bool,
     ident: Ident,
-    doc: Option<Attribute>,
+    doc: Vec<Attribute>,
     const_ident: Ident,
     type_ident_prefix: String,
     args: Punctuated<FnArg, Token![,]>,
@@ -76,7 +74,7 @@ impl Parse for Method {
         let (id, close, doc) = {
             let mut id = None;
             let mut close = false;
-            let mut doc = None;
+            let mut doc = Vec::with_capacity(meta.len());
 
             for meta in meta {
                 match &*meta.path.to_token_stream().to_string() {
@@ -90,7 +88,7 @@ impl Parse for Method {
                         }
                         close = true;
                     }
-                    "doc" => doc = Some(meta),
+                    "doc" => doc.push(meta),
                     _ => {
                         let message = format!("Unsupported attribute {meta:?}");
                         return Err(Error::new_spanned(meta.tokens, message));
@@ -179,7 +177,7 @@ impl Method {
         } = self;
         let ser = self.call_arg();
         quote! {
-            #doc
+            #(#doc)*
             pub async fn #ident (&self, #args) -> Result<#output, crate::Error> {
                 let mut packet = Default::default();
                 crate::packet::serialize(#const_ident, (#ser), &mut packet)?;
@@ -192,13 +190,20 @@ impl Method {
     fn request(&self, prefix: &str) -> TokenStream2 {
         let Method {
             ident,
+            doc,
             type_ident_prefix,
             args,
             ..
         } = self;
         let type_ident = Ident::new(type_ident_prefix, ident.span());
         let responder = self.responder_ident(prefix);
-        quote! { #type_ident { #args, responder: #responder } }
+        quote! {
+            #(#doc)*
+            #type_ident {
+                #args,
+                responder: #responder
+            }
+        }
     }
 
     fn responder_ident(&self, prefix: &str) -> Ident {
@@ -303,7 +308,7 @@ impl Protocol {
                     inner::<#event>()
                 }
 
-                #doc
+                #(#doc)*
                 #[derive(SerdePacket)]
                 #vis struct #client {
                     inner: crate::Client,
@@ -475,6 +480,7 @@ impl Protocol {
 
                 #(#responders)*
 
+                #(#doc)*
                 pub fn with_disp(disp: solvent_async::disp::DispSender) -> (#client, #server) {
                     let (client, server) = crate::with_disp(disp);
                     (
@@ -483,6 +489,7 @@ impl Protocol {
                     )
                 }
 
+                #(#doc)*
                 pub fn channel() -> (#client, #server) {
                     with_disp(solvent_async::dispatch())
                 }
