@@ -1,7 +1,7 @@
 use alloc::{collections::BTreeMap, vec::Vec};
 
 use modular_bitfield::{bitfield, BitfieldSpecifier};
-use solvent::prelude::{Handle, Object, Phys, Virt};
+use solvent::prelude::{Channel, Handle, Object, Packet, Phys, Virt, ETYPE};
 use solvent_rpc::{
     packet::{Deserializer, SerdePacket, Serializer},
     Error, SerdePacket,
@@ -67,7 +67,7 @@ impl Ord for HandleInfo {
     }
 }
 
-pub const STARTUP_ARGS: usize = 0x1873ddab8;
+pub(crate) const STARTUP_ARGS: usize = 0x1873ddab8;
 
 #[derive(SerdePacket)]
 pub struct StartupArgs {
@@ -85,5 +85,10 @@ impl StartupArgs {
     pub fn vdso_phys(&mut self) -> Option<Phys> {
         let handle = self.handles.remove(&HandleType::VdsoPhys.into())?;
         Some(unsafe { Phys::from_raw(handle) })
+    }
+
+    pub fn send(self, channel: &Channel, storage: &mut Packet) -> solvent::error::Result {
+        solvent_rpc::packet::serialize(STARTUP_ARGS, self, storage).map_err(|_| ETYPE)?;
+        channel.send(storage)
     }
 }

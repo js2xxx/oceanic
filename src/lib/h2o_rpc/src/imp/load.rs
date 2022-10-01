@@ -13,14 +13,19 @@ mod std {
     use solvent_async::ipc::Channel;
 
     use super::*;
+    use crate as solvent_rpc;
+    use crate::{packet, SerdePacket};
 
     pub trait Loader: AsRef<Channel> + From<Channel> + TryInto<Channel> {
-        type GetObject<'a>: Future<Output = Result<Vec<Phys>, usize>> + 'a
+        type GetObject<'a>: Future<Output = Result<Result<Vec<Phys>, usize>, crate::Error>>
+            + Send
+            + 'a
         where
             Self: 'a;
         fn get_object(&self, paths: Vec<CString>) -> Self::GetObject<'_>;
     }
 
+    #[derive(SerdePacket)]
     pub struct LoaderClient {
         inner: crate::Client,
     }
@@ -55,14 +60,11 @@ mod std {
     }
 
     impl Loader for LoaderClient {
-        type GetObject<'a> = impl Future<Output = Result<Vec<Phys>, usize>> + 'a;
+        type GetObject<'a> =
+            impl Future<Output = Result<Result<Vec<Phys>, usize>, crate::Error>> + Send + 'a;
 
         fn get_object(&self, paths: Vec<CString>) -> Self::GetObject<'_> {
-            async {
-                self.get_object(paths)
-                    .await
-                    .expect("Failed to send request")
-            }
+            async { self.get_object(paths).await }
         }
     }
 
@@ -99,7 +101,7 @@ mod std {
         fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
             Poll::Ready(
                 ready!(Pin::new(&mut self.inner).poll_next(cx))
-                    .map(|inner| inner.map(LoaderEvent::Unknown)),
+                    .map(|inner| inner.and_then(LoaderEvent::deserialize)),
             )
         }
     }
@@ -114,6 +116,17 @@ mod std {
         Unknown(Packet),
     }
 
+    impl LoaderEvent {
+        fn deserialize(packet: Packet) -> Result<Self, crate::Error> {
+            let (m, _de) = packet::deserialize_metadata(&packet)?;
+            #[allow(clippy::match_single_binding)]
+            match m {
+                _ => Ok(LoaderEvent::Unknown(packet)),
+            }
+        }
+    }
+
+    #[derive(SerdePacket)]
     pub struct LoaderServer {
         inner: crate::Server,
     }

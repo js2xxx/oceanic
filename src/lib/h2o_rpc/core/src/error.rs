@@ -44,4 +44,7 @@ pub enum Error {
         extra_buffer_len: usize,
         extra_handle_count: usize,
     },
+
+    #[error("The endpoint to be serialized is already in use")]
+    EndpointInUse,
 }

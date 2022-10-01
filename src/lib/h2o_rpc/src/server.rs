@@ -8,6 +8,7 @@ use core::{
 use futures::{pin_mut, stream::FusedStream, Stream};
 use solvent::prelude::{Packet, EPIPE};
 use solvent_async::ipc::Channel;
+use solvent_rpc_core::packet::{self, SerdePacket};
 use solvent_std::sync::Arsc;
 
 use crate::Error;
@@ -68,6 +69,20 @@ impl TryFrom<Server> for Channel {
             }
             Err(inner) => Err(Server { inner }),
         }
+    }
+}
+
+impl SerdePacket for Server {
+    fn serialize(self, ser: &mut packet::Serializer) -> Result<(), Error> {
+        match Channel::try_from(self) {
+            Ok(channel) => Channel::into_inner(channel).serialize(ser),
+            Err(_) => Err(Error::EndpointInUse),
+        }
+    }
+
+    fn deserialize(de: &mut packet::Deserializer) -> Result<Self, Error> {
+        let channel = Channel::new(SerdePacket::deserialize(de)?);
+        Ok(Self::new(channel))
     }
 }
 

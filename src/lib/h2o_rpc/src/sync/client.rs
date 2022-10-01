@@ -14,6 +14,7 @@ use solvent::{
     prelude::Object,
     time::Instant,
 };
+use solvent_rpc_core::packet::{self, SerdePacket};
 use solvent_std::sync::{Arsc, Mutex};
 
 use crate::Error;
@@ -85,6 +86,20 @@ impl TryFrom<Client> for Channel {
             }
             Err(inner) => Err(Client { inner }),
         }
+    }
+}
+
+impl SerdePacket for Client {
+    fn serialize(self, ser: &mut packet::Serializer) -> Result<(), Error> {
+        match Channel::try_from(self) {
+            Ok(channel) => channel.serialize(ser),
+            Err(_) => Err(Error::EndpointInUse),
+        }
+    }
+
+    fn deserialize(de: &mut packet::Deserializer) -> Result<Self, Error> {
+        let channel = SerdePacket::deserialize(de)?;
+        Ok(Self::new(channel))
     }
 }
 
