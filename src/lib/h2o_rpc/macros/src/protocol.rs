@@ -309,7 +309,7 @@ impl Protocol {
                 }
 
                 #(#doc)*
-                #[derive(SerdePacket)]
+                #[derive(Debug, Clone, SerdePacket)]
                 #vis struct #client {
                     inner: crate::Client,
                 }
@@ -378,7 +378,9 @@ impl Protocol {
                         self.inner.is_terminated()
                     }
                 }
-                #[derive(SerdePacket)]
+
+                #(#doc)*
+                #[derive(Debug, SerdePacket)]
                 pub struct #server {
                     inner: crate::Server,
                 }

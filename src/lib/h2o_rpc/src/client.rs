@@ -1,5 +1,6 @@
 use alloc::collections::{btree_map::Entry, BTreeMap};
 use core::{
+    fmt,
     future::Future,
     mem,
     num::NonZeroUsize,
@@ -20,6 +21,7 @@ use solvent_std::sync::{Arsc, Mutex};
 
 use crate::Error;
 
+#[derive(Debug, Clone)]
 pub struct Client {
     inner: Arsc<Inner>,
 }
@@ -189,6 +191,7 @@ impl Drop for Call {
     }
 }
 
+#[derive(Debug)]
 struct Event {
     waker: Mutex<EventEntry>,
     packets: SegQueue<Packet>,
@@ -201,6 +204,7 @@ impl Event {
     }
 }
 
+#[derive(Debug)]
 enum EventEntry {
     Init,
     WillWait,
@@ -223,6 +227,7 @@ impl Drop for EventEntry {
     }
 }
 
+#[derive(Debug)]
 enum WakerEntry {
     Init,
     Waiting(Waker),
@@ -295,6 +300,17 @@ struct Inner {
     event: Event,
     wakers: Mutex<BTreeMap<usize, WakerEntry>>,
     stop: AtomicBool,
+}
+
+impl fmt::Debug for Inner {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Inner")
+            .field("next_id", &self.next_id)
+            .field("event", &self.event)
+            .field("wakers", &self.wakers)
+            .field("stop", &self.stop)
+            .finish()
+    }
 }
 
 impl Inner {

@@ -8,6 +8,7 @@
 #![feature(const_mut_refs)]
 #![feature(const_trait_impl)]
 #![feature(error_in_core)]
+#![feature(extend_one)]
 #![feature(dropck_eyepatch)]
 #![feature(hashmap_internals)]
 #![feature(int_roundings)]
@@ -18,15 +19,20 @@
 #![feature(pointer_byte_offsets)]
 #![feature(receiver_trait)]
 #![feature(result_option_inspect)]
+#![feature(slice_concat_trait)]
 #![feature(slice_ptr_get)]
+#![feature(str_internals)]
 #![feature(thread_local)]
 #![feature(unsize)]
+#![feature(utf8_chunks)]
 
 extern crate alloc;
 
 mod alloc2;
 pub mod env;
+pub mod ffi;
 pub mod hash;
+pub mod path;
 pub mod rt;
 pub mod sync;
 pub mod thread;

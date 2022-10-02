@@ -1,4 +1,5 @@
 use core::{
+    fmt,
     future::Future,
     pin::Pin,
     sync::atomic::{AtomicBool, Ordering::*},
@@ -13,6 +14,7 @@ use solvent_std::sync::Arsc;
 
 use crate::Error;
 
+#[derive(Debug)]
 #[repr(transparent)]
 pub struct Server {
     inner: Arsc<Inner>,
@@ -168,6 +170,13 @@ impl Responder {
 struct Inner {
     channel: Channel,
     stop: AtomicBool,
+}
+
+impl fmt::Debug for Inner {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Inner").field("stop", &self.stop).finish()
+    }
 }
 
 impl Inner {
