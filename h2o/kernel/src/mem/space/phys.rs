@@ -1,11 +1,13 @@
 mod contiguous;
 mod extensible;
 
+use alloc::sync::Weak;
+
 use paging::PAddr;
 use sv_call::{Feature, Result};
 
 use crate::{
-    sched::task::hdl::DefaultFeature,
+    sched::{task::hdl::DefaultFeature, Event, BasicEvent},
     syscall::{In, Out, UserPtr},
 };
 
@@ -42,6 +44,13 @@ impl Phys {
         } else {
             Phys::Extensible(Ext::allocate(size, zeroed)?)
         })
+    }
+
+    pub fn event(&self) -> Weak<dyn Event> {
+        match self {
+            Phys::Contiguous(_) => Weak::<BasicEvent>::new() as _,
+            Phys::Extensible(ext) => ext.event(),
+        }
     }
 
     #[inline]
@@ -131,6 +140,11 @@ impl PinnedPhys {
 
 unsafe impl DefaultFeature for Phys {
     fn default_features() -> Feature {
-        Feature::SEND | Feature::SYNC | Feature::READ | Feature::WRITE | Feature::EXECUTE
+        Feature::SEND
+            | Feature::SYNC
+            | Feature::READ
+            | Feature::WRITE
+            | Feature::EXECUTE
+            | Feature::WAIT
     }
 }

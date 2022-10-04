@@ -1,4 +1,8 @@
-use alloc::{alloc::Global, collections::BTreeMap};
+use alloc::{
+    alloc::Global,
+    collections::BTreeMap,
+    sync::{Arc, Weak},
+};
 use core::{
     alloc::{AllocError, Allocator, Layout},
     slice,
@@ -8,7 +12,7 @@ use bitop_ex::BitOpEx;
 use paging::{LAddr, PAddr, PAGE_SHIFT, PAGE_SIZE};
 
 use crate::{
-    sched::Arsc,
+    sched::{Arsc, BasicEvent, Event},
     syscall::{In, Out, UserPtr},
 };
 
@@ -148,6 +152,7 @@ pub struct Phys {
     offset: usize,
     len: usize,
     inner: Arsc<PhysInner>,
+    event: Arc<BasicEvent>,
 }
 
 pub type PinnedPhys = Phys;
@@ -159,8 +164,13 @@ impl Phys {
                 offset: 0,
                 len: inner.len,
                 inner: Arsc::try_new(inner)?,
+                event: BasicEvent::new(0),
             })
         })
+    }
+
+    pub fn event(&self) -> Weak<dyn Event> {
+        Arc::downgrade(&self.event) as _
     }
 
     #[inline]
@@ -204,6 +214,7 @@ impl Phys {
                     offset: new_offset,
                     len,
                     inner: Arsc::clone(&self.inner),
+                    event: Arc::clone(&self.event),
                 })
             }
         } else {

@@ -42,7 +42,10 @@ fn features_to_flags(feat: Feature) -> Flags {
 #[syscall]
 fn phys_alloc(size: usize, zeroed: bool) -> Result<Handle> {
     let phys = PREEMPT.scope(|| space::Phys::allocate(size, zeroed, false))?;
-    SCHED.with_current(|cur| unsafe { cur.space().handles().insert(phys, None) })
+    SCHED.with_current(|cur| {
+        let event = phys.event();
+        cur.space().handles().insert(phys, Some(event))
+    })
 }
 
 #[syscall]
@@ -119,10 +122,11 @@ fn phys_sub(hdl: Handle, offset: usize, len: usize, copy: bool) -> Result<Handle
     let sub = phys.create_sub(offset, len, copy)?;
     SCHED.with_current(|cur| {
         let handles = cur.space().handles();
+        let event = sub.event();
         if copy {
-            handles.insert(sub, None)
+            handles.insert(sub, Some(event))
         } else {
-            unsafe { handles.insert_unchecked(sub, feat, None) }
+            unsafe { handles.insert_unchecked(sub, feat, Some(event)) }
         }
     })
 }
