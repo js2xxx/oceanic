@@ -1,11 +1,17 @@
 use alloc::alloc::Global;
-use core::alloc::{Allocator, Layout};
+use core::{
+    alloc::{Allocator, Layout},
+    slice,
+};
 
 use bitop_ex::BitOpEx;
 use paging::{LAddr, PAddr, PAGE_SHIFT, PAGE_SIZE};
 use sv_call::{Feature, Result};
 
-use crate::sched::{task::hdl::DefaultFeature, Arsc};
+use crate::{
+    sched::{task::hdl::DefaultFeature, Arsc},
+    syscall::{In, Out, UserPtr},
+};
 
 #[derive(Debug)]
 struct PhysInner {
@@ -106,9 +112,9 @@ impl Phys {
         if self.offset <= new_offset && new_offset < end && end <= self.offset + self.len {
             if copy {
                 let child = Self::allocate(len, true)?;
-                let dst = child.raw_ptr();
+                let dst = child.raw();
                 unsafe {
-                    let src = self.raw_ptr().add(offset);
+                    let src = self.raw().add(offset);
                     dst.copy_from_nonoverlapping(src, len);
                 }
                 Ok(child)
@@ -128,8 +134,36 @@ impl Phys {
         PAddr::new(*self.inner.base + self.offset)
     }
 
-    pub fn raw_ptr(&self) -> *mut u8 {
+    #[inline]
+    pub fn map_iter(&self, offset: usize, len: usize) -> impl Iterator<Item = (PAddr, usize)> {
+        let base = PAddr::new(*self.inner.base + self.offset + offset);
+        let len = self.len.saturating_sub(offset).min(len);
+        (len > 0).then_some((base, len)).into_iter()
+    }
+
+    fn raw(&self) -> *mut u8 {
         unsafe { self.inner.base.to_laddr(minfo::ID_OFFSET).add(self.offset) }
+    }
+
+    pub fn read(&self, offset: usize, len: usize, buffer: UserPtr<Out, u8>) -> Result<usize> {
+        let offset = self.len.min(offset);
+        let len = self.len.saturating_sub(offset).min(len);
+        unsafe {
+            let ptr = self.raw().add(offset);
+            let slice = slice::from_raw_parts(ptr, len);
+            buffer.write_slice(slice)?;
+        }
+        Ok(len)
+    }
+
+    pub fn write(&self, offset: usize, len: usize, buffer: UserPtr<In, u8>) -> Result<usize> {
+        let offset = self.len.min(offset);
+        let len = self.len.saturating_sub(offset).min(len);
+        unsafe {
+            let ptr = self.raw().add(offset);
+            buffer.read_slice(ptr, len)?;
+        }
+        Ok(len)
     }
 }
 

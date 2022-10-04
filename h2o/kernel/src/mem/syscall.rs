@@ -1,5 +1,5 @@
 use alloc::sync::{Arc, Weak};
-use core::{alloc::Layout, slice};
+use core::alloc::Layout;
 
 use bitop_ex::BitOpEx;
 use paging::LAddr;
@@ -85,11 +85,7 @@ fn phys_read(hdl: Handle, offset: usize, len: usize, buffer: UserPtr<Out, u8>) -
         return Err(EPERM);
     }
     if len > 0 {
-        unsafe {
-            let ptr = phys.raw_ptr().add(offset);
-            let slice = slice::from_raw_parts(ptr, len);
-            buffer.write_slice(slice)?;
-        }
+        phys.read(offset, len, buffer)?;
     }
     Ok(())
 }
@@ -105,10 +101,7 @@ fn phys_write(hdl: Handle, offset: usize, len: usize, buffer: UserPtr<In, u8>) -
         return Err(EPERM);
     }
     if len > 0 {
-        unsafe {
-            let ptr = phys.raw_ptr().add(offset);
-            buffer.read_slice(ptr, len)?;
-        }
+        phys.write(offset, len, buffer)?;
     }
     Ok(())
 }
