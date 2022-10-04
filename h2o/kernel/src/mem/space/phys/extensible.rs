@@ -5,14 +5,19 @@ use alloc::{
 };
 use core::{
     alloc::{AllocError, Allocator, Layout},
-    slice,
+    mem, slice,
 };
 
 use bitop_ex::BitOpEx;
 use paging::{LAddr, PAddr, PAGE_SHIFT, PAGE_SIZE};
+use spin::RwLock;
+use sv_call::{
+    ipc::{SIG_MUTATE, SIG_READ, SIG_WRITE},
+    EAGAIN,
+};
 
 use crate::{
-    sched::{Arsc, BasicEvent, Event},
+    sched::{Arsc, BasicEvent, Event, PREEMPT},
     syscall::{In, Out, UserPtr},
 };
 
@@ -108,7 +113,7 @@ impl PhysInner {
         Ok(PhysInner { map, len })
     }
 
-    fn shrink(&mut self, new_len: usize) {
+    fn truncate(&mut self, new_len: usize) {
         let mut removed = self.map.split_off(&new_len);
         if let Some((offset, mut last)) = removed.pop_first() {
             drop(removed);
@@ -141,7 +146,7 @@ impl PhysInner {
         if self.len < new_len {
             self.extend(new_len, zeroed)
         } else {
-            self.shrink(new_len);
+            self.truncate(new_len);
             Ok(())
         }
     }
@@ -151,11 +156,9 @@ impl PhysInner {
 pub struct Phys {
     offset: usize,
     len: usize,
-    inner: Arsc<PhysInner>,
+    inner: Arsc<RwLock<PhysInner>>,
     event: Arc<BasicEvent>,
 }
-
-pub type PinnedPhys = Phys;
 
 impl Phys {
     pub fn allocate(len: usize, zeroed: bool) -> Result<Self, AllocError> {
@@ -163,7 +166,7 @@ impl Phys {
             Ok(Phys {
                 offset: 0,
                 len: inner.len,
-                inner: Arsc::try_new(inner)?,
+                inner: Arsc::try_new(RwLock::new(inner))?,
                 event: BasicEvent::new(0),
             })
         })
@@ -184,8 +187,21 @@ impl Phys {
     }
 
     #[inline]
-    pub fn pin(this: Self) -> PinnedPhys {
-        this
+    pub fn pin(this: Self) -> sv_call::Result<PinnedPhys> {
+        mem::forget(this.inner.try_read().ok_or(EAGAIN)?);
+        Ok(PinnedPhys(this))
+    }
+
+    fn notify_read(&self) {
+        if self.inner.reader_count() > 0 {
+            self.event.notify(0, SIG_READ | SIG_WRITE);
+        } else {
+            self.event.notify(0, SIG_READ | SIG_WRITE | SIG_MUTATE)
+        }
+    }
+
+    fn notify_write(&self) {
+        self.event.notify(0, SIG_READ | SIG_WRITE | SIG_MUTATE);
     }
 
     pub fn create_sub(&self, offset: usize, len: usize, copy: bool) -> sv_call::Result<Self> {
@@ -198,16 +214,24 @@ impl Phys {
         if self.offset <= new_offset && new_offset < end && end <= self.offset + self.len {
             if copy {
                 let child = Self::allocate(len, false)?;
-                let (dst, _) = child.inner.iter().next().expect("Inconsistent map");
-                let mut dst = *dst.to_laddr(minfo::ID_OFFSET);
 
-                for (src, sl) in self.inner.range(new_offset, len) {
-                    let src = *src.to_laddr(minfo::ID_OFFSET);
-                    unsafe {
-                        dst.copy_from_nonoverlapping(src, sl);
-                        dst = dst.add(sl);
+                PREEMPT.scope(|| {
+                    let child = child.inner.read();
+                    let (dst, _) = child.iter().next().expect("Inconsistent map");
+                    let mut dst = *dst.to_laddr(minfo::ID_OFFSET);
+
+                    let this = self.inner.try_read().ok_or(EAGAIN)?;
+                    for (src, sl) in this.range(new_offset, len) {
+                        let src = *src.to_laddr(minfo::ID_OFFSET);
+                        unsafe {
+                            dst.copy_from_nonoverlapping(src, sl);
+                            dst = dst.add(sl);
+                        }
                     }
-                }
+                    Ok::<_, sv_call::Error>(())
+                })?;
+                self.notify_read();
+
                 Ok(child)
             } else {
                 Ok(Phys {
@@ -222,10 +246,6 @@ impl Phys {
         }
     }
 
-    pub fn map_iter(&self, offset: usize, len: usize) -> impl Iterator<Item = (PAddr, usize)> + '_ {
-        self.inner.range(self.offset + offset, len)
-    }
-
     pub fn read(
         &self,
         offset: usize,
@@ -236,14 +256,19 @@ impl Phys {
         let len = self.len.saturating_sub(offset).min(len);
 
         let mut buffer = buffer;
-        for (base, len) in self.inner.range(self.offset + offset, len) {
-            let src = *base.to_laddr(minfo::ID_OFFSET);
-            unsafe {
-                let src = slice::from_raw_parts(src, len);
-                buffer.write_slice(src)?;
-                buffer = UserPtr::new(buffer.as_ptr().add(len));
+        PREEMPT.scope(|| {
+            let this = self.inner.try_read().ok_or(EAGAIN)?;
+            for (base, len) in this.range(self.offset + offset, len) {
+                let src = *base.to_laddr(minfo::ID_OFFSET);
+                unsafe {
+                    let src = slice::from_raw_parts(src, len);
+                    buffer.write_slice(src)?;
+                    buffer = UserPtr::new(buffer.as_ptr().add(len));
+                }
             }
-        }
+            Ok::<_, sv_call::Error>(())
+        })?;
+        self.notify_read();
         Ok(len)
     }
 
@@ -257,13 +282,18 @@ impl Phys {
         let len = self.len.saturating_sub(offset).min(len);
 
         let mut buffer = buffer;
-        for (base, len) in self.inner.range(self.offset + offset, len) {
-            let dst = *base.to_laddr(minfo::ID_OFFSET);
-            unsafe {
-                buffer.read_slice(dst, len)?;
-                buffer = UserPtr::new(buffer.as_ptr().add(len));
+        PREEMPT.scope(|| {
+            let this = self.inner.try_read().ok_or(EAGAIN)?;
+            for (base, len) in this.range(self.offset + offset, len) {
+                let dst = *base.to_laddr(minfo::ID_OFFSET);
+                unsafe {
+                    buffer.read_slice(dst, len)?;
+                    buffer = UserPtr::new(buffer.as_ptr().add(len));
+                }
             }
-        }
+            Ok::<_, sv_call::Error>(())
+        })?;
+        self.notify_read();
         Ok(len)
     }
 }
@@ -273,5 +303,22 @@ impl PartialEq for Phys {
         self.offset == other.offset
             && self.len == other.len
             && Arsc::ptr_eq(&self.inner, &other.inner)
+    }
+}
+
+#[derive(Debug)]
+pub struct PinnedPhys(Phys);
+
+impl PinnedPhys {
+    pub fn map_iter(&self, offset: usize, len: usize) -> impl Iterator<Item = (PAddr, usize)> + '_ {
+        assert!(self.0.inner.writer_count() == 0 && self.0.inner.reader_count() > 0);
+        unsafe { (*self.0.inner.as_mut_ptr()).range(self.0.offset + offset, len) }
+    }
+}
+
+impl Drop for PinnedPhys {
+    fn drop(&mut self) {
+        assert!(self.0.inner.reader_count() > 0);
+        unsafe { self.0.inner.force_read_decrement() }
     }
 }

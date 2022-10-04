@@ -73,7 +73,7 @@ impl Phys {
     pub fn pin(this: Self) -> Result<PinnedPhys> {
         match this {
             Phys::Contiguous(cont) => Ok(PinnedPhys::Contiguous(Cont::pin(cont))),
-            Phys::Extensible(ext) => Ok(PinnedPhys::Extensible(Ext::pin(ext))),
+            Phys::Extensible(ext) => Ok(PinnedPhys::Extensible(Ext::pin(ext)?)),
         }
     }
 
