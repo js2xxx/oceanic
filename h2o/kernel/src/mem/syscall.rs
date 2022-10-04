@@ -1,5 +1,5 @@
 use alloc::sync::{Arc, Weak};
-use core::alloc::Layout;
+use core::{alloc::Layout, ptr};
 
 use bitop_ex::BitOpEx;
 use paging::LAddr;
@@ -15,7 +15,7 @@ use crate::{
         task::{hdl::DefaultFeature, Space as TaskSpace, VDSO},
         PREEMPT, SCHED,
     },
-    syscall::{In, Out, UserPtr},
+    syscall::{In, InOut, Out, UserPtr},
 };
 
 fn check_flags(flags: Flags) -> Result<Flags> {
@@ -132,6 +132,26 @@ fn phys_sub(hdl: Handle, offset: usize, len: usize, copy: bool) -> Result<Handle
 }
 
 #[syscall]
+fn phys_resize(hdl: Handle, new_len: usize, zeroed: bool) -> Result {
+    if new_len == 0 {
+        return Err(EINVAL);
+    }
+    let (feat, phys) = SCHED.with_current(|cur| {
+        cur.space()
+            .handles()
+            .get::<space::Phys>(hdl)
+            .map(|obj| (obj.features(), space::Phys::clone(&obj)))
+    })?;
+    if phys == VDSO.1 {
+        return Err(EACCES);
+    }
+    if !feat.contains(Feature::READ | Feature::WRITE | Feature::EXECUTE) {
+        return Err(EPERM);
+    }
+    phys.resize(new_len, zeroed)
+}
+
+#[syscall]
 fn space_new(root_virt: UserPtr<Out, Handle>) -> Result<Handle> {
     root_virt.check()?;
     SCHED.with_current(|cur| {
@@ -189,9 +209,9 @@ fn virt_drop(hdl: Handle) -> Result {
 }
 
 #[syscall]
-fn virt_map(hdl: Handle, mi: UserPtr<In, VirtMapInfo>) -> Result<*mut u8> {
+fn virt_map(hdl: Handle, mi_ptr: UserPtr<InOut, VirtMapInfo>) -> Result<*mut u8> {
     hdl.check_null()?;
-    let mi = unsafe { mi.read() }?;
+    let mi = unsafe { mi_ptr.r#in().read() }?;
     let flags = check_flags(mi.flags)?;
     SCHED.with_current(|cur| {
         let virt = cur.space().handles().get::<Weak<space::Virt>>(hdl)?;
@@ -202,13 +222,19 @@ fn virt_map(hdl: Handle, mi: UserPtr<In, VirtMapInfo>) -> Result<*mut u8> {
             return Err(EPERM);
         }
 
+        let size = if mi.len == 0 { phys.len() } else { mi.len };
+        let layout = Layout::from_size_align(size, mi.align)?;
         let addr = virt.map(
             offset,
             space::Phys::clone(&phys),
             mi.phys_offset,
-            space::page_aligned(mi.len),
+            layout,
             flags,
         )?;
+        unsafe {
+            let len = UserPtr::new(ptr::addr_of_mut!((*mi_ptr.as_ptr()).len));
+            len.write(size)?;
+        }
         Ok(*addr)
     })
 }

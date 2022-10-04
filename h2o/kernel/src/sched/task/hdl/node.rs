@@ -123,6 +123,20 @@ impl<T: ?Sized> Ref<T> {
             Err(sv_call::EPERM)
         }
     }
+
+    pub fn try_unwrap(this: Self) -> core::result::Result<T, Self>
+    where
+        T: Sized,
+    {
+        Arc::try_unwrap(this.obj).map_err(|obj| Ref {
+            _marker: PhantomPinned,
+            next: this.next,
+            prev: this.prev,
+            event: this.event,
+            feat: this.feat,
+            obj,
+        })
+    }
 }
 
 impl<T: ?Sized + Send + Sync> Deref for Ref<T> {

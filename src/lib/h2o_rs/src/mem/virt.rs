@@ -66,7 +66,7 @@ impl Virt {
         flags: Flags,
     ) -> Result<NonNull<[u8]>> {
         let layout = layout.pad_to_align();
-        let mi = VirtMapInfo {
+        let mut mi = VirtMapInfo {
             offset: offset.unwrap_or(usize::MAX),
             phys: Phys::into_raw(phys),
             phys_offset,
@@ -75,11 +75,11 @@ impl Virt {
             flags,
         };
         // SAFETY: We don't move the ownership of the handle.
-        let value = unsafe { sv_call::sv_virt_map(unsafe { self.raw() }, &mi) }.into_res()?;
+        let value = unsafe { sv_call::sv_virt_map(unsafe { self.raw() }, &mut mi) }.into_res()?;
         // SAFETY: The pointer range is freshly allocated.
         Ok(unsafe {
             let ptr = NonNull::new_unchecked(value as *mut u8);
-            NonNull::slice_from_raw_parts(ptr, layout.size())
+            NonNull::slice_from_raw_parts(ptr, mi.len)
         })
     }
 
@@ -91,8 +91,7 @@ impl Virt {
         phys: Phys,
         flags: Flags,
     ) -> Result<NonNull<[u8]>> {
-        let len = phys.len();
-        self.map(offset, phys, 0, unsafe { Self::page_aligned(len) }, flags)
+        self.map(offset, phys, 0, unsafe { Self::page_aligned(0) }, flags)
     }
 
     /// Shorthand for mapping the VDSO into the virt.

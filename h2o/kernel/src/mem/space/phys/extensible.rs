@@ -141,7 +141,6 @@ impl PhysInner {
         Ok(())
     }
 
-    #[allow(dead_code)]
     fn resize(&mut self, new_len: usize, zeroed: bool) -> Result<(), AllocError> {
         if self.len < new_len {
             self.extend(new_len, zeroed)
@@ -295,6 +294,16 @@ impl Phys {
         })?;
         self.notify_read();
         Ok(len)
+    }
+
+    pub fn resize(&self, new_len: usize, zeroed: bool) -> sv_call::Result {
+        PREEMPT.scope(|| {
+            let mut this = self.inner.try_write().ok_or(EAGAIN)?;
+            this.resize(new_len, zeroed)?;
+            Ok::<_, sv_call::Error>(())
+        })?;
+        self.notify_write();
+        Ok(())
     }
 }
 

@@ -4,10 +4,10 @@ mod extensible;
 use alloc::sync::Weak;
 
 use paging::PAddr;
-use sv_call::{Feature, Result};
+use sv_call::{Feature, Result, EPERM};
 
 use crate::{
-    sched::{task::hdl::DefaultFeature, Event, BasicEvent},
+    sched::{task::hdl::DefaultFeature, BasicEvent, Event},
     syscall::{In, Out, UserPtr},
 };
 
@@ -106,6 +106,14 @@ impl Phys {
         match self {
             Phys::Contiguous(cont) => cont.write(offset, len, buffer),
             Phys::Extensible(ext) => ext.write(offset, len, buffer),
+        }
+    }
+
+    #[inline]
+    pub fn resize(&self, new_len: usize, zeroed: bool) -> Result {
+        match self {
+            Phys::Contiguous(_) => Err(EPERM),
+            Phys::Extensible(ext) => ext.resize(new_len, zeroed),
         }
     }
 }

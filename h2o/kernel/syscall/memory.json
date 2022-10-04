@@ -95,6 +95,24 @@
             ]
         },
         {
+            "name": "sv_phys_resize",
+            "returns": "()",
+            "args": [
+                {
+                    "name": "hdl",
+                    "ty": "Handle"
+                },
+                {
+                    "name": "new_len",
+                    "ty": "usize"
+                },
+                {
+                    "name": "zeroed",
+                    "ty": "bool"
+                }
+            ]
+        },
+        {
             "name": "sv_virt_alloc",
             "returns": "Handle",
             "args": [
@@ -150,7 +168,7 @@
                 },
                 {
                     "name": "mi",
-                    "ty": "*const VirtMapInfo"
+                    "ty": "*mut VirtMapInfo"
                 }
             ]
         },
