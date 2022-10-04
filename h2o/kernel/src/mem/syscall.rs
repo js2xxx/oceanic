@@ -41,7 +41,7 @@ fn features_to_flags(feat: Feature) -> Flags {
 
 #[syscall]
 fn phys_alloc(size: usize, zeroed: bool) -> Result<Handle> {
-    let phys = PREEMPT.scope(|| space::Phys::allocate(size, zeroed))?;
+    let phys = PREEMPT.scope(|| space::Phys::allocate(size, zeroed, false))?;
     SCHED.with_current(|cur| unsafe { cur.space().handles().insert(phys, None) })
 }
 

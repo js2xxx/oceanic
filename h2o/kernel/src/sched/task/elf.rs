@@ -29,7 +29,7 @@ fn map_addr(
         .ok_or(sv_call::ERANGE)?;
     let phys = match phys {
         Some(phys) => phys,
-        None => Phys::allocate(len, true)?,
+        None => Phys::allocate(len, true, false)?,
     };
     virt.map(Some(offset), phys, 0, space::page_aligned(len), flags)?;
     Ok(())

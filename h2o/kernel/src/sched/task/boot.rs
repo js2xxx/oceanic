@@ -16,7 +16,7 @@ use crate::{
 static VDSO_DATA: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/target/vdso"));
 pub static VDSO: Azy<(Flags, Phys)> = Azy::new(|| {
     let flags = Flags::READABLE | Flags::EXECUTABLE | Flags::USER_ACCESS;
-    let vdso_mem = Phys::allocate(VDSO_DATA.len().round_up_bit(paging::PAGE_SHIFT), false)
+    let vdso_mem = Phys::allocate(VDSO_DATA.len().round_up_bit(paging::PAGE_SHIFT), false, true)
         .expect("Failed to allocate memory for VDSO");
     unsafe {
         let dst = vdso_mem.base().to_laddr(minfo::ID_OFFSET);
