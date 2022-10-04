@@ -22,6 +22,7 @@
 #![feature(new_uninit)]
 #![feature(nonnull_slice_from_raw_parts)]
 #![feature(once_cell)]
+#![feature(pointer_byte_offsets)]
 #![feature(ptr_metadata)]
 #![feature(receiver_trait)]
 #![feature(result_option_inspect)]

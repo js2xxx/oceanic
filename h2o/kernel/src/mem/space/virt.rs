@@ -9,7 +9,7 @@ use paging::{LAddr, PAGE_SHIFT, PAGE_SIZE};
 use spin::Mutex;
 use sv_call::{error::*, mem::Flags, Feature, Result};
 
-use super::{paging_error, ty_to_range, Phys, Space};
+use super::{paging_error, ty_to_range, Phys, PinnedPhys, Space};
 use crate::sched::{
     task,
     task::{hdl::DefaultFeature, VDSO},
@@ -19,7 +19,7 @@ use crate::sched::{
 #[derive(Debug)]
 pub(super) enum Child {
     Virt(Arc<Virt>),
-    Phys(Phys, Flags, usize),
+    Phys(PinnedPhys, Flags, usize),
 }
 
 impl Child {
@@ -139,6 +139,8 @@ impl Virt {
         if !(phys_offset < phys_end && phys_end <= phys.len()) {
             return Err(ERANGE);
         }
+
+        let phys = Phys::pin(phys)?;
 
         let _pree = PREEMPT.lock();
         let mut children = self.children.lock();
