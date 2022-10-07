@@ -64,39 +64,6 @@ impl<T: PtrType, D> UserPtr<T, D> {
             _marker: PhantomData,
         }
     }
-
-    pub fn advance(&mut self, len: &mut usize, n: usize) {
-        assert!(n <= *len, "advancing IoSlice beyond its length");
-        unsafe {
-            *len -= n;
-            self.data = self.data.add(n);
-        }
-    }
-
-    pub fn advance_slices(bufs: &mut &mut [(Self, usize)], n: usize) {
-        let mut remove = 0;
-        // Total length of all the to be removed buffers.
-        let mut accumulated_len = 0;
-        for (_, len) in bufs.iter() {
-            if accumulated_len + len > n {
-                break;
-            } else {
-                accumulated_len += len;
-                remove += 1;
-            }
-        }
-
-        *bufs = &mut mem::take(bufs)[remove..];
-        if bufs.is_empty() {
-            assert!(
-                n == accumulated_len,
-                "advancing io slices beyond their length"
-            );
-        } else {
-            let (buf, len) = &mut bufs[0];
-            buf.advance(len, n - accumulated_len);
-        }
-    }
 }
 
 impl<T: InPtrType, D> UserPtr<T, D> {

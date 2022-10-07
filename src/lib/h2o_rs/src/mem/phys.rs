@@ -5,7 +5,7 @@ use core::slice;
 
 use sv_call::{EINVAL, SV_PHYS};
 
-use super::PAGE_SIZE;
+use super::{IoSlice, IoSliceMut, PAGE_SIZE};
 use crate::{
     dev::MemRes,
     error::{Result, ERANGE},
@@ -93,6 +93,35 @@ impl Phys {
         } else {
             Ok(())
         }
+    }
+
+    pub fn read_vectored(&self, offset: usize, bufs: &mut [IoSliceMut<'_>]) -> Result<usize> {
+        let len = unsafe {
+            sv_call::sv_phys_readv(
+                unsafe { self.raw() },
+                offset,
+                bufs.as_ptr() as _,
+                bufs.len(),
+            )
+        }
+        .into_res()?;
+        Ok(len as usize)
+    }
+
+    /// # Safety
+    ///
+    /// The caller must guarantee the memory safety of sharing the object.
+    pub unsafe fn write_vectored(&self, offset: usize, bufs: &[IoSlice<'_>]) -> Result<usize> {
+        let len = unsafe {
+            sv_call::sv_phys_writev(
+                unsafe { self.raw() },
+                offset,
+                bufs.as_ptr() as _,
+                bufs.len(),
+            )
+        }
+        .into_res()?;
+        Ok(len as usize)
     }
 
     pub fn create_sub(&self, offset: usize, len: usize, copy: bool) -> Result<Self> {
