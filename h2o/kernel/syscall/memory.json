@@ -73,6 +73,50 @@
             ]
         },
         {
+            "name": "sv_phys_readv",
+            "returns": "usize",
+            "args": [
+                {
+                    "name": "hdl",
+                    "ty": "Handle"
+                },
+                {
+                    "name": "offset",
+                    "ty": "usize"
+                },
+                {
+                    "name": "bufs",
+                    "ty": "*const IoVec"
+                },
+                {
+                    "name": "count",
+                    "ty": "usize"
+                }
+            ]
+        },
+        {
+            "name": "sv_phys_writev",
+            "returns": "usize",
+            "args": [
+                {
+                    "name": "hdl",
+                    "ty": "Handle"
+                },
+                {
+                    "name": "offset",
+                    "ty": "usize"
+                },
+                {
+                    "name": "bufs",
+                    "ty": "*const IoVec"
+                },
+                {
+                    "name": "count",
+                    "ty": "usize"
+                }
+            ]
+        },
+        {
             "name": "sv_phys_sub",
             "returns": "Handle",
             "args": [

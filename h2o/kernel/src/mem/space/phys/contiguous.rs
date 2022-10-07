@@ -10,7 +10,7 @@ use sv_call::Result;
 
 use crate::{
     sched::Arsc,
-    syscall::{In, Out, UserPtr},
+    syscall::{In, InPtrType, Out, OutPtrType, UserPtr},
 };
 
 #[derive(Debug)]
@@ -154,7 +154,7 @@ impl Phys {
         unsafe { self.inner.base.to_laddr(minfo::ID_OFFSET).add(self.offset) }
     }
 
-    pub fn read(&self, offset: usize, len: usize, buffer: UserPtr<Out, u8>) -> Result<usize> {
+    pub fn read(&self, offset: usize, len: usize, buffer: UserPtr<Out>) -> Result<usize> {
         let offset = self.len.min(offset);
         let len = self.len.saturating_sub(offset).min(len);
         unsafe {
@@ -165,7 +165,7 @@ impl Phys {
         Ok(len)
     }
 
-    pub fn write(&self, offset: usize, len: usize, buffer: UserPtr<In, u8>) -> Result<usize> {
+    pub fn write(&self, offset: usize, len: usize, buffer: UserPtr<In>) -> Result<usize> {
         let offset = self.len.min(offset);
         let len = self.len.saturating_sub(offset).min(len);
         unsafe {
@@ -173,6 +173,55 @@ impl Phys {
             buffer.read_slice(ptr, len)?;
         }
         Ok(len)
+    }
+
+    pub fn read_vectored<T: OutPtrType>(
+        &self,
+        mut offset: usize,
+        bufs: &[(UserPtr<T>, usize)],
+    ) -> sv_call::Result<usize> {
+        let mut read_len = 0;
+        for buf in bufs {
+            let actual_offset = self.len.min(offset);
+            let len = self.len.saturating_sub(actual_offset).min(buf.1);
+
+            let buffer = buf.0.out();
+            unsafe {
+                let ptr = self.raw().add(offset);
+                let slice = slice::from_raw_parts(ptr, len);
+                buffer.write_slice(slice)?;
+            }
+            read_len += len;
+            offset += len;
+            if len < buf.1 {
+                break;
+            }
+        }
+        Ok(read_len)
+    }
+
+    pub fn write_vectored<T: InPtrType>(
+        &self,
+        mut offset: usize,
+        bufs: &[(UserPtr<T>, usize)],
+    ) -> sv_call::Result<usize> {
+        let mut written_len = 0;
+        for buf in bufs {
+            let actual_offset = self.len.min(offset);
+            let len = self.len.saturating_sub(actual_offset).min(buf.1);
+
+            let buffer = buf.0.r#in();
+            unsafe {
+                let ptr = self.raw().add(offset);
+                buffer.read_slice(ptr, len)?;
+            }
+            written_len += len;
+            offset += len;
+            if len < buf.1 {
+                break;
+            }
+        }
+        Ok(written_len)
     }
 }
 

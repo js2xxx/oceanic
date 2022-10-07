@@ -71,7 +71,7 @@ fn task_sleep(ms: u32) -> Result {
     }
 }
 
-fn get_name(ptr: UserPtr<In, u8>, len: usize) -> Result<Option<String>> {
+fn get_name(ptr: UserPtr<In>, len: usize) -> Result<Option<String>> {
     if !ptr.as_ptr().is_null() {
         let mut buf = Vec::<u8>::with_capacity(len);
         unsafe {
@@ -127,7 +127,7 @@ fn task_exec(ci: UserPtr<In, task::ExecInfo>) -> Result<Handle> {
 
 #[syscall]
 fn task_new(
-    name: UserPtr<In, u8>,
+    name: UserPtr<In>,
     name_len: usize,
     space: Handle,
     st: UserPtr<Out, Handle>,
@@ -228,7 +228,7 @@ fn read_regs(
     task: &Blocked,
     feat: Feature,
     addr: usize,
-    data: UserPtr<Out, u8>,
+    data: UserPtr<Out>,
     len: usize,
 ) -> Result<()> {
     if !feat.contains(Feature::READ) {
@@ -258,7 +258,7 @@ fn write_regs(
     task: &mut Blocked,
     feat: Feature,
     addr: usize,
-    data: UserPtr<In, u8>,
+    data: UserPtr<In>,
     len: usize,
 ) -> Result<()> {
     if !feat.contains(Feature::WRITE) {

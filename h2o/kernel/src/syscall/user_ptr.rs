@@ -6,26 +6,26 @@ pub use self::types::*;
 use crate::{mem::space::PageFaultErrCode, sched::SCHED};
 
 #[derive(Copy, Clone)]
-pub struct UserPtr<T: Type, D> {
+pub struct UserPtr<T: PtrType, D = u8> {
     data: *mut D,
     _marker: PhantomData<T>,
 }
 
-impl<T: Type, D> PartialEq for UserPtr<T, D> {
+impl<T: PtrType, D> PartialEq for UserPtr<T, D> {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
         self.data == other.data
     }
 }
 
-impl<T: Type, D> Hash for UserPtr<T, D> {
+impl<T: PtrType, D> Hash for UserPtr<T, D> {
     #[inline]
     fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
         self.data.hash(state);
     }
 }
 
-impl<T: Type, D> UserPtr<T, D> {
+impl<T: PtrType, D> UserPtr<T, D> {
     pub fn new(data: *mut D) -> Self {
         UserPtr {
             data,
@@ -64,9 +64,42 @@ impl<T: Type, D> UserPtr<T, D> {
             _marker: PhantomData,
         }
     }
+
+    pub fn advance(&mut self, len: &mut usize, n: usize) {
+        assert!(n <= *len, "advancing IoSlice beyond its length");
+        unsafe {
+            *len -= n;
+            self.data = self.data.add(n);
+        }
+    }
+
+    pub fn advance_slices(bufs: &mut &mut [(Self, usize)], n: usize) {
+        let mut remove = 0;
+        // Total length of all the to be removed buffers.
+        let mut accumulated_len = 0;
+        for (_, len) in bufs.iter() {
+            if accumulated_len + len > n {
+                break;
+            } else {
+                accumulated_len += len;
+                remove += 1;
+            }
+        }
+
+        *bufs = &mut mem::take(bufs)[remove..];
+        if bufs.is_empty() {
+            assert!(
+                n == accumulated_len,
+                "advancing io slices beyond their length"
+            );
+        } else {
+            let (buf, len) = &mut bufs[0];
+            buf.advance(len, n - accumulated_len);
+        }
+    }
 }
 
-impl<T: InType, D> UserPtr<T, D> {
+impl<T: InPtrType, D> UserPtr<T, D> {
     /// # Errors
     ///
     /// Returns error if the pointer is invalid for reads or if the pointer is
@@ -116,15 +149,16 @@ impl<T: InType, D> UserPtr<T, D> {
         .into_result()
     }
 
-    /// See `read_slice` for more information.
-    pub unsafe fn read_and_advance(&mut self, out: *mut D, count: usize) -> Result<()> {
-        self.read_slice(out, count)?;
-        self.data = self.data.add(count);
-        Ok(())
+    #[inline]
+    pub fn r#in(&self) -> UserPtr<In, D> {
+        UserPtr {
+            data: self.data,
+            _marker: PhantomData,
+        }
     }
 }
 
-impl<T: OutType, D> UserPtr<T, D> {
+impl<T: OutPtrType, D> UserPtr<T, D> {
     /// # Errors
     ///
     /// Returns error if the pointer is invalid for writes or if the pointer is
@@ -165,23 +199,6 @@ impl<T: OutType, D> UserPtr<T, D> {
         }
     }
 
-    /// See `write_slice` for more information.
-    pub fn write_and_advance(&mut self, value: &[D]) -> Result<()> {
-        self.write_slice(value)?;
-        unsafe { self.data = self.data.add(value.len()) };
-        Ok(())
-    }
-}
-
-impl<D> UserPtr<InOut, D> {
-    #[inline]
-    pub fn r#in(&self) -> UserPtr<In, D> {
-        UserPtr {
-            data: self.data,
-            _marker: PhantomData,
-        }
-    }
-
     #[inline]
     pub fn out(&self) -> UserPtr<Out, D> {
         UserPtr {
@@ -191,13 +208,13 @@ impl<D> UserPtr<InOut, D> {
     }
 }
 
-impl<T: Type, D> fmt::Debug for UserPtr<T, D> {
+impl<T: PtrType, D> fmt::Debug for UserPtr<T, D> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_tuple("UserPtr").field(&self.data).finish()
     }
 }
 
-impl<T: Type, D> SerdeReg for UserPtr<T, D> {
+impl<T: PtrType, D> SerdeReg for UserPtr<T, D> {
     #[inline]
     fn encode(self) -> usize {
         self.data as usize
@@ -234,18 +251,18 @@ mod types {
     #[derive(Copy, Clone)]
     pub enum InOut {}
 
-    pub trait Type {}
-    impl Type for In {}
-    impl Type for Out {}
-    impl Type for InOut {}
+    pub trait PtrType {}
+    impl PtrType for In {}
+    impl PtrType for Out {}
+    impl PtrType for InOut {}
 
-    pub trait InType: Type {}
-    impl InType for In {}
-    impl InType for InOut {}
+    pub trait InPtrType: PtrType {}
+    impl InPtrType for In {}
+    impl InPtrType for InOut {}
 
-    pub trait OutType: Type {}
-    impl OutType for Out {}
-    impl OutType for InOut {}
+    pub trait OutPtrType: PtrType {}
+    impl OutPtrType for Out {}
+    impl OutPtrType for InOut {}
 }
 
 #[repr(C)]

@@ -1,10 +1,13 @@
-use alloc::sync::{Arc, Weak};
+use alloc::{
+    sync::{Arc, Weak},
+    vec::Vec,
+};
 use core::{alloc::Layout, ptr};
 
 use bitop_ex::BitOpEx;
 use paging::LAddr;
 use sv_call::{
-    mem::{Flags, MemInfo, VirtMapInfo},
+    mem::{Flags, IoVec, MemInfo, VirtMapInfo},
     *,
 };
 
@@ -15,7 +18,7 @@ use crate::{
         task::{hdl::DefaultFeature, Space as TaskSpace, VDSO},
         PREEMPT, SCHED,
     },
-    syscall::{In, InOut, Out, UserPtr},
+    syscall::{In, InOut, Out, PtrType, UserPtr},
 };
 
 fn check_flags(flags: Flags) -> Result<Flags> {
@@ -71,6 +74,9 @@ fn phys_check(hdl: Handle, offset: usize, len: usize) -> Result<(Feature, space:
             .get::<space::Phys>(hdl)
             .map(|obj| (obj.features(), space::Phys::clone(&obj)))
     })?;
+    if phys == VDSO.1 {
+        return Err(EACCES);
+    }
     if offset_end > phys.len() {
         return Err(ERANGE);
     }
@@ -78,12 +84,9 @@ fn phys_check(hdl: Handle, offset: usize, len: usize) -> Result<(Feature, space:
 }
 
 #[syscall]
-fn phys_read(hdl: Handle, offset: usize, len: usize, buffer: UserPtr<Out, u8>) -> Result {
+fn phys_read(hdl: Handle, offset: usize, len: usize, buffer: UserPtr<Out>) -> Result {
     buffer.check_slice(len)?;
     let (feat, phys) = phys_check(hdl, offset, len)?;
-    if phys == VDSO.1 {
-        return Err(EACCES);
-    }
     if !feat.contains(Feature::READ) {
         return Err(EPERM);
     }
@@ -94,12 +97,9 @@ fn phys_read(hdl: Handle, offset: usize, len: usize, buffer: UserPtr<Out, u8>) -
 }
 
 #[syscall]
-fn phys_write(hdl: Handle, offset: usize, len: usize, buffer: UserPtr<In, u8>) -> Result {
+fn phys_write(hdl: Handle, offset: usize, len: usize, buffer: UserPtr<In>) -> Result {
     buffer.check_slice(len)?;
     let (feat, phys) = phys_check(hdl, offset, len)?;
-    if phys == VDSO.1 {
-        return Err(EACCES);
-    }
     if !feat.contains(Feature::WRITE) {
         return Err(EPERM);
     }
@@ -109,12 +109,64 @@ fn phys_write(hdl: Handle, offset: usize, len: usize, buffer: UserPtr<In, u8>) -
     Ok(())
 }
 
+static_assertions::const_assert!({
+    let a = Layout::new::<IoVec>();
+    let b = Layout::new::<(UserPtr<In>, usize)>();
+    a.size() == b.size() && a.align() == b.align()
+});
+
+#[allow(clippy::type_complexity)]
+fn check_physv<T: PtrType>(
+    hdl: Handle,
+    bufs: UserPtr<In, IoVec>,
+    count: usize,
+) -> Result<(Feature, space::Phys, Vec<(UserPtr<T>, usize)>)> {
+    hdl.check_null()?;
+    bufs.check_slice(count)?;
+    let (feat, phys) = SCHED.with_current(|cur| {
+        cur.space()
+            .handles()
+            .get::<space::Phys>(hdl)
+            .map(|obj| (obj.features(), space::Phys::clone(&obj)))
+    })?;
+    let bufs = {
+        let mut vec = Vec::<(UserPtr<T>, usize)>::with_capacity(count);
+        let mem = vec.spare_capacity_mut();
+        unsafe {
+            bufs.read_slice(mem.as_mut_ptr() as _, count)?;
+            vec.set_len(count);
+        }
+        vec
+    };
+    Ok((feat, phys, bufs))
+}
+
+#[syscall]
+fn phys_readv(hdl: Handle, offset: usize, bufs: UserPtr<In, IoVec>, count: usize) -> Result<usize> {
+    let (feat, phys, bufs) = check_physv(hdl, bufs, count)?;
+    if !feat.contains(Feature::READ) {
+        return Err(EPERM);
+    }
+    phys.read_vectored(offset, &bufs)
+}
+
+#[syscall]
+fn phys_writev(
+    hdl: Handle,
+    offset: usize,
+    bufs: UserPtr<In, IoVec>,
+    count: usize,
+) -> Result<usize> {
+    let (feat, phys, bufs) = check_physv(hdl, bufs, count)?;
+    if !feat.contains(Feature::WRITE) {
+        return Err(EPERM);
+    }
+    phys.write_vectored(offset, &bufs)
+}
+
 #[syscall]
 fn phys_sub(hdl: Handle, offset: usize, len: usize, copy: bool) -> Result<Handle> {
     let (feat, phys) = phys_check(hdl, offset, len)?;
-    if phys == VDSO.1 {
-        return Err(EACCES);
-    }
     if !feat.contains(Feature::READ) {
         return Err(EPERM);
     }
@@ -240,7 +292,7 @@ fn virt_map(hdl: Handle, mi_ptr: UserPtr<InOut, VirtMapInfo>) -> Result<*mut u8>
 }
 
 #[syscall]
-fn virt_reprot(hdl: Handle, base: UserPtr<In, u8>, len: usize, flags: Flags) -> Result {
+fn virt_reprot(hdl: Handle, base: UserPtr<In>, len: usize, flags: Flags) -> Result {
     hdl.check_null()?;
     base.check()?;
     let flags = check_flags(flags)?;
@@ -252,7 +304,7 @@ fn virt_reprot(hdl: Handle, base: UserPtr<In, u8>, len: usize, flags: Flags) -> 
 }
 
 #[syscall]
-fn virt_unmap(hdl: Handle, base: UserPtr<In, u8>, len: usize, drop_child: bool) -> Result {
+fn virt_unmap(hdl: Handle, base: UserPtr<In>, len: usize, drop_child: bool) -> Result {
     hdl.check_null()?;
     base.check()?;
     SCHED.with_current(|cur| {

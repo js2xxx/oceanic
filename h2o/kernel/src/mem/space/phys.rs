@@ -94,7 +94,15 @@ impl Phys {
     }
 
     #[inline]
-    pub fn read(&self, offset: usize, len: usize, buffer: UserPtr<Out, u8>) -> Result<usize> {
+    pub fn resize(&self, new_len: usize, zeroed: bool) -> Result {
+        match self {
+            Phys::Contiguous(_) => Err(EPERM),
+            Phys::Extensible(ext) => ext.resize(new_len, zeroed),
+        }
+    }
+
+    #[inline]
+    pub fn read(&self, offset: usize, len: usize, buffer: UserPtr<Out>) -> Result<usize> {
         match self {
             Phys::Contiguous(cont) => cont.read(offset, len, buffer),
             Phys::Extensible(ext) => ext.read(offset, len, buffer),
@@ -102,7 +110,7 @@ impl Phys {
     }
 
     #[inline]
-    pub fn write(&self, offset: usize, len: usize, buffer: UserPtr<In, u8>) -> Result<usize> {
+    pub fn write(&self, offset: usize, len: usize, buffer: UserPtr<In>) -> Result<usize> {
         match self {
             Phys::Contiguous(cont) => cont.write(offset, len, buffer),
             Phys::Extensible(ext) => ext.write(offset, len, buffer),
@@ -110,10 +118,18 @@ impl Phys {
     }
 
     #[inline]
-    pub fn resize(&self, new_len: usize, zeroed: bool) -> Result {
+    pub fn read_vectored(&self, offset: usize, bufs: &[(UserPtr<Out>, usize)]) -> Result<usize> {
         match self {
-            Phys::Contiguous(_) => Err(EPERM),
-            Phys::Extensible(ext) => ext.resize(new_len, zeroed),
+            Phys::Contiguous(cont) => cont.read_vectored(offset, bufs),
+            Phys::Extensible(ext) => ext.read_vectored(offset, bufs),
+        }
+    }
+
+    #[inline]
+    pub fn write_vectored(&self, offset: usize, bufs: &[(UserPtr<In>, usize)]) -> Result<usize> {
+        match self {
+            Phys::Contiguous(cont) => cont.write_vectored(offset, bufs),
+            Phys::Extensible(ext) => ext.write_vectored(offset, bufs),
         }
     }
 }

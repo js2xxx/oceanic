@@ -43,3 +43,10 @@ pub struct VirtMapInfo {
     pub align: usize,
     pub flags: Flags,
 }
+
+#[derive(Debug, Copy, Clone)]
+#[repr(C)]
+pub struct IoVec {
+    pub ptr: *mut u8,
+    pub len: usize,
+}

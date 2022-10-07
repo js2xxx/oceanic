@@ -18,7 +18,7 @@ use sv_call::{
 
 use crate::{
     sched::{Arsc, BasicEvent, Event, PREEMPT},
-    syscall::{In, Out, UserPtr},
+    syscall::{In, InPtrType, Out, OutPtrType, UserPtr},
 };
 
 #[derive(Debug)]
@@ -255,12 +255,7 @@ impl Phys {
         }
     }
 
-    pub fn read(
-        &self,
-        offset: usize,
-        len: usize,
-        buffer: UserPtr<Out, u8>,
-    ) -> sv_call::Result<usize> {
+    pub fn read(&self, offset: usize, len: usize, buffer: UserPtr<Out>) -> sv_call::Result<usize> {
         let offset = self.len.min(offset);
         let len = self.len.saturating_sub(offset).min(len);
 
@@ -281,12 +276,7 @@ impl Phys {
         Ok(len)
     }
 
-    pub fn write(
-        &self,
-        offset: usize,
-        len: usize,
-        buffer: UserPtr<In, u8>,
-    ) -> sv_call::Result<usize> {
+    pub fn write(&self, offset: usize, len: usize, buffer: UserPtr<In>) -> sv_call::Result<usize> {
         let offset = self.len.min(offset);
         let len = self.len.saturating_sub(offset).min(len);
 
@@ -304,6 +294,71 @@ impl Phys {
         })?;
         self.notify_read();
         Ok(len)
+    }
+
+    pub fn read_vectored<T: OutPtrType>(
+        &self,
+        mut offset: usize,
+        bufs: &[(UserPtr<T>, usize)],
+    ) -> sv_call::Result<usize> {
+        let mut read_len = 0;
+        PREEMPT.scope(|| {
+            let this = self.inner.try_read().ok_or(EAGAIN)?;
+            for buf in bufs {
+                let actual_offset = self.len.min(offset);
+                let len = self.len.saturating_sub(actual_offset).min(buf.1);
+
+                let mut buffer = buf.0.out();
+                for (base, len) in this.range(self.offset + actual_offset, len) {
+                    let src = *base.to_laddr(minfo::ID_OFFSET);
+                    unsafe {
+                        let src = slice::from_raw_parts(src, len);
+                        buffer.write_slice(src)?;
+                        buffer = UserPtr::new(buffer.as_ptr().add(len));
+                    }
+                }
+                read_len += len;
+                offset += len;
+                if len < buf.1 {
+                    break;
+                }
+            }
+            Ok::<_, sv_call::Error>(())
+        })?;
+        self.notify_read();
+        Ok(read_len)
+    }
+
+    pub fn write_vectored<T: InPtrType>(
+        &self,
+        mut offset: usize,
+        bufs: &[(UserPtr<T>, usize)],
+    ) -> sv_call::Result<usize> {
+        let mut written_len = 0;
+        PREEMPT.scope(|| {
+            let this = self.inner.try_read().ok_or(EAGAIN)?;
+            for buf in bufs {
+                let actual_offset = self.len.min(offset);
+                let len = self.len.saturating_sub(actual_offset).min(buf.1);
+
+                let mut buffer = buf.0.r#in();
+                for (base, len) in this.range(self.offset + actual_offset, len) {
+                    let dst = *base.to_laddr(minfo::ID_OFFSET);
+                    unsafe {
+                        buffer.read_slice(dst, len)?;
+                        buffer = UserPtr::new(buffer.as_ptr().add(len));
+                    }
+                }
+                written_len += len;
+                offset += len;
+                if len < buf.1 {
+                    break;
+                }
+            }
+            Ok::<_, sv_call::Error>(())
+        })?;
+        self.notify_read();
+        Ok(written_len)
     }
 }
 

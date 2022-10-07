@@ -40,7 +40,7 @@ where
         return Err(ENOMEM);
     }
     UserPtr::<In, Handle>::new(packet.handles).check_slice(packet.handle_count)?;
-    UserPtr::<In, u8>::new(packet.buffer).check_slice(packet.buffer_size)?;
+    UserPtr::<In>::new(packet.buffer).check_slice(packet.buffer_size)?;
 
     let handles = unsafe { slice::from_raw_parts(packet.handles, packet.handle_count) };
     if handles.contains(&hdl) {
@@ -64,7 +64,7 @@ where
 fn read_raw(packet_ptr: UserPtr<In, RawPacket>) -> Result<RawPacket> {
     let raw = unsafe { packet_ptr.read()? };
     UserPtr::<Out, Handle>::new(raw.handles).check_slice(raw.handle_cap)?;
-    UserPtr::<Out, u8>::new(raw.buffer).check_slice(raw.buffer_cap)?;
+    UserPtr::<Out>::new(raw.buffer).check_slice(raw.buffer_cap)?;
 
     Ok(raw)
 }
