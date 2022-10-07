@@ -57,6 +57,17 @@ impl Phys {
     }
 
     #[inline]
+    pub fn len(&self) -> usize {
+        self.inner.len()
+    }
+
+    #[inline]
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.inner.is_empty()
+    }
+
+    #[inline]
     pub fn read_with(&self, offset: usize, buf: Vec<u8>) -> Read {
         Read {
             offset,

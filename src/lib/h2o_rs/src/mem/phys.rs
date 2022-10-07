@@ -3,7 +3,11 @@ use alloc::{boxed::Box, vec::Vec};
 #[cfg(feature = "alloc")]
 use core::slice;
 
-use sv_call::{c_ty::{StatusOrValue, Status}, mem::IoVec, Syscall, EAGAIN, EINVAL, SV_PHYS};
+use sv_call::{
+    c_ty::{Status, StatusOrValue},
+    mem::IoVec,
+    Syscall, EAGAIN, EINVAL, SV_PHYS,
+};
 
 use super::{IoSlice, IoSliceMut, PAGE_SIZE};
 use crate::{

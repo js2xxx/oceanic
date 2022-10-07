@@ -74,7 +74,7 @@ impl PhysInner {
         let first = self.map.range(..offset).next_back();
         let first = first.and_then(|(&base, block)| {
             let offset = offset - base;
-            let len = block.len.saturating_sub(offset);
+            let len = block.len.saturating_sub(offset).min(len);
             (len > 0).then_some((PAddr::new(*block.base + offset), len))
         });
         let next = self

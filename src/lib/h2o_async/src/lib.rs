@@ -1,13 +1,13 @@
 #![no_std]
 #![feature(control_flow_enum)]
 
-
 pub mod dev;
 pub mod disp;
 pub mod exe;
+pub mod io;
 pub mod ipc;
-mod utils;
 pub mod mem;
+mod utils;
 
 pub use solvent_std as reexport_std;
 
@@ -71,6 +71,18 @@ pub mod test {
 
     pub async fn test_disp() {
         log::debug!("Has {} cpus available", solvent::task::cpu_num());
+
+        let phys = solvent::mem::Phys::allocate(4096, true).expect("Failed to allocate memory");
+        let stream =
+            unsafe { crate::io::Stream::new(solvent_std::io::RawStream { phys, seeker: 0 }) };
+        stream.write(&[1, 2, 3, 4, 5, 6, 7]).await.unwrap();
+        stream
+            .seek(solvent_std::io::SeekFrom::Current(-4))
+            .await
+            .unwrap();
+        let mut buf = [0; 10];
+        stream.read(&mut buf).await.unwrap();
+        log::debug!("{buf:?}");
 
         let (send, recv) = test_tx();
         let recv = crate::spawn(recv);

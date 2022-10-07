@@ -25,12 +25,15 @@ pub const PAGE_MASK: usize = PAGE_SIZE - 1;
 // SAFETY: Both the size and the alignment are 2^n-bounded.
 pub const PAGE_LAYOUT: Layout = unsafe { Layout::from_size_align_unchecked(PAGE_SIZE, PAGE_SIZE) };
 
-#[derive(Copy, Clone)]
+#[derive(Debug, Copy, Clone)]
 #[repr(transparent)]
 pub struct IoSlice<'a> {
     raw: IoVec,
     _marker: PhantomData<&'a [u8]>,
 }
+
+unsafe impl Send for IoSlice<'_> {}
+unsafe impl Sync for IoSlice<'_> {}
 
 impl<'a> IoSlice<'a> {
     #[inline]
@@ -97,12 +100,15 @@ impl<'a> Deref for IoSlice<'a> {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Debug)]
 #[repr(transparent)]
 pub struct IoSliceMut<'a> {
     raw: IoVec,
     _marker: PhantomData<&'a mut [u8]>,
 }
+
+unsafe impl<'a> Send for IoSliceMut<'a> {}
+unsafe impl<'a> Sync for IoSliceMut<'a> {}
 
 impl<'a> IoSliceMut<'a> {
     #[inline]

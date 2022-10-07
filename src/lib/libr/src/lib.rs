@@ -32,6 +32,7 @@ mod alloc2;
 pub mod env;
 pub mod ffi;
 pub mod hash;
+pub mod io;
 pub mod path;
 pub mod rt;
 pub mod sync;
