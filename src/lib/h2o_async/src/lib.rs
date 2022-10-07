@@ -1,10 +1,13 @@
 #![no_std]
+#![feature(control_flow_enum)]
+
 
 pub mod dev;
 pub mod disp;
 pub mod exe;
 pub mod ipc;
 mod utils;
+pub mod mem;
 
 pub use solvent_std as reexport_std;
 

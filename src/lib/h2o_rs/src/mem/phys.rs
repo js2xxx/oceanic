@@ -1,9 +1,9 @@
 #[cfg(feature = "alloc")]
-use alloc::vec::Vec;
+use alloc::{boxed::Box, vec::Vec};
 #[cfg(feature = "alloc")]
 use core::slice;
 
-use sv_call::{EINVAL, SV_PHYS};
+use sv_call::{c_ty::{StatusOrValue, Status}, mem::IoVec, Syscall, EAGAIN, EINVAL, SV_PHYS};
 
 use super::{IoSlice, IoSliceMut, PAGE_SIZE};
 use crate::{
@@ -108,6 +108,23 @@ impl Phys {
         Ok(len as usize)
     }
 
+    #[cfg(feature = "alloc")]
+    pub fn pack_read(&self, offset: usize, mut buf: Vec<u8>) -> PackRead {
+        buf.clear();
+        let cap = buf.spare_capacity_mut();
+        let raw_buf = Box::new(IoVec {
+            ptr: cap.as_mut_ptr() as _,
+            len: cap.len(),
+        });
+        let syscall =
+            unsafe { sv_call::sv_pack_phys_readv(unsafe { self.raw() }, offset, &*raw_buf, 1) };
+        PackRead {
+            raw_buf,
+            buf,
+            syscall,
+        }
+    }
+
     /// # Safety
     ///
     /// The caller must guarantee the memory safety of sharing the object.
@@ -122,6 +139,21 @@ impl Phys {
         }
         .into_res()?;
         Ok(len as usize)
+    }
+
+    #[cfg(feature = "alloc")]
+    pub fn pack_write(&self, offset: usize, buf: Vec<u8>) -> PackWrite {
+        let raw_buf = Box::new(IoVec {
+            ptr: buf.as_ptr() as *mut u8,
+            len: buf.len(),
+        });
+        let syscall =
+            unsafe { sv_call::sv_pack_phys_writev(unsafe { self.raw() }, offset, &*raw_buf, 1) };
+        PackWrite {
+            raw_buf,
+            buf,
+            syscall,
+        }
     }
 
     pub fn create_sub(&self, offset: usize, len: usize, copy: bool) -> Result<Self> {
@@ -142,5 +174,57 @@ impl Phys {
         } else {
             Err(EINVAL)
         }
+    }
+
+    #[inline]
+    pub fn pack_resize(&self, new_len: usize, zeroed: bool) -> PackResize {
+        PackResize(unsafe { sv_call::sv_pack_phys_resize(unsafe { self.raw() }, new_len, zeroed) })
+    }
+}
+
+#[cfg(feature = "alloc")]
+pub struct PackRead {
+    pub raw_buf: Box<IoVec>,
+    pub buf: Vec<u8>,
+    pub syscall: Syscall,
+}
+
+#[cfg(feature = "alloc")]
+unsafe impl Send for PackRead {}
+
+#[cfg(feature = "alloc")]
+impl PackRead {
+    pub fn receive(&mut self, res: StatusOrValue, canceled: bool) -> Result<usize> {
+        res.into_res().and((!canceled).then_some(0).ok_or(EAGAIN))
+    }
+}
+
+#[cfg(feature = "alloc")]
+pub struct PackWrite {
+    pub raw_buf: Box<IoVec>,
+    pub buf: Vec<u8>,
+    pub syscall: Syscall,
+}
+
+#[cfg(feature = "alloc")]
+unsafe impl Send for PackWrite {}
+
+#[cfg(feature = "alloc")]
+impl PackWrite {
+    pub fn receive(&mut self, res: StatusOrValue, canceled: bool) -> Result<usize> {
+        res.into_res().and((!canceled).then_some(0).ok_or(EAGAIN))
+    }
+}
+
+#[cfg(feature = "alloc")]
+pub struct PackResize(pub Syscall);
+
+#[cfg(feature = "alloc")]
+unsafe impl Send for PackResize {}
+
+#[cfg(feature = "alloc")]
+impl PackResize {
+    pub fn receive(&mut self, res: Status, canceled: bool) -> Result {
+        res.into_res().and((!canceled).then_some(()).ok_or(EAGAIN))
     }
 }

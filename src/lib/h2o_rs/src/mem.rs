@@ -5,7 +5,7 @@ mod virt;
 use core::{
     alloc::Layout,
     marker::PhantomData,
-    mem,
+    mem::{self, MaybeUninit},
     ops::{Deref, DerefMut},
     slice,
 };
@@ -13,7 +13,7 @@ use core::{
 pub use sv_call::mem::Flags;
 use sv_call::mem::IoVec;
 
-pub use self::{phys::Phys, space::Space, virt::Virt};
+pub use self::{phys::*, space::Space, virt::Virt};
 
 cfg_if::cfg_if! { if #[cfg(target_arch = "x86_64")] {
 
@@ -110,6 +110,17 @@ impl<'a> IoSliceMut<'a> {
         IoSliceMut {
             raw: IoVec {
                 ptr: data.as_mut_ptr(),
+                len: data.len(),
+            },
+            _marker: PhantomData,
+        }
+    }
+
+    #[inline]
+    pub fn uninit(data: &'a mut [MaybeUninit<u8>]) -> Self {
+        IoSliceMut {
+            raw: IoVec {
+                ptr: data.as_mut_ptr() as _,
                 len: data.len(),
             },
             _marker: PhantomData,
