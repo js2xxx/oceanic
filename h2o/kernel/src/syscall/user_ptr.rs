@@ -66,7 +66,7 @@ impl<T: Type, D> UserPtr<T, D> {
     }
 }
 
-impl<D> UserPtr<In, D> {
+impl<T: InType, D> UserPtr<T, D> {
     /// # Errors
     ///
     /// Returns error if the pointer is invalid for reads or if the pointer is
@@ -115,9 +115,16 @@ impl<D> UserPtr<In, D> {
         )
         .into_result()
     }
+
+    /// See `read_slice` for more information.
+    pub unsafe fn read_and_advance(&mut self, out: *mut D, count: usize) -> Result<()> {
+        self.read_slice(out, count)?;
+        self.data = self.data.add(count);
+        Ok(())
+    }
 }
 
-impl<D> UserPtr<Out, D> {
+impl<T: OutType, D> UserPtr<T, D> {
     /// # Errors
     ///
     /// Returns error if the pointer is invalid for writes or if the pointer is
@@ -156,6 +163,13 @@ impl<D> UserPtr<Out, D> {
             )
             .into_result()
         }
+    }
+
+    /// See `write_slice` for more information.
+    pub fn write_and_advance(&mut self, value: &[D]) -> Result<()> {
+        self.write_slice(value)?;
+        unsafe { self.data = self.data.add(value.len()) };
+        Ok(())
     }
 }
 
@@ -224,6 +238,14 @@ mod types {
     impl Type for In {}
     impl Type for Out {}
     impl Type for InOut {}
+
+    pub trait InType: Type {}
+    impl InType for In {}
+    impl InType for InOut {}
+
+    pub trait OutType: Type {}
+    impl OutType for Out {}
+    impl OutType for InOut {}
 }
 
 #[repr(C)]

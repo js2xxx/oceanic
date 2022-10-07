@@ -203,6 +203,16 @@ impl Phys {
         self.event.notify(0, SIG_READ | SIG_WRITE | SIG_MUTATE);
     }
 
+    pub fn resize(&self, new_len: usize, zeroed: bool) -> sv_call::Result {
+        PREEMPT.scope(|| {
+            let mut this = self.inner.try_write().ok_or(EAGAIN)?;
+            this.resize(new_len, zeroed)?;
+            Ok::<_, sv_call::Error>(())
+        })?;
+        self.notify_write();
+        Ok(())
+    }
+
     pub fn create_sub(&self, offset: usize, len: usize, copy: bool) -> sv_call::Result<Self> {
         if offset.contains_bit(PAGE_SHIFT) || len.contains_bit(PAGE_SHIFT) {
             return Err(sv_call::EALIGN);
@@ -294,16 +304,6 @@ impl Phys {
         })?;
         self.notify_read();
         Ok(len)
-    }
-
-    pub fn resize(&self, new_len: usize, zeroed: bool) -> sv_call::Result {
-        PREEMPT.scope(|| {
-            let mut this = self.inner.try_write().ok_or(EAGAIN)?;
-            this.resize(new_len, zeroed)?;
-            Ok::<_, sv_call::Error>(())
-        })?;
-        self.notify_write();
-        Ok(())
     }
 }
 

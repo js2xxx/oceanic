@@ -197,7 +197,7 @@ fn task_ctl(hdl: Handle, op: u32, data: UserPtr<InOut, Handle>) -> Result {
             Ok(())
         }
         task::TASK_CTL_SUSPEND => {
-            data.out().check()?;
+            data.check()?;
 
             let child = cur.child(hdl, Feature::EXECUTE)?;
 
@@ -216,7 +216,7 @@ fn task_ctl(hdl: Handle, op: u32, data: UserPtr<InOut, Handle>) -> Result {
             })?;
 
             let out = super::PREEMPT.scope(|| cur.handles().insert(st, None))?;
-            unsafe { data.out().write(out)? };
+            unsafe { data.write(out)? };
 
             Ok(())
         }
@@ -330,7 +330,7 @@ fn task_debug(hdl: Handle, op: u32, addr: usize, data: UserPtr<InOut, u8>, len: 
                     return Err(EPERM);
                 }
                 let slice = slice::from_raw_parts(addr as *mut u8, len);
-                data.out().write_slice(slice)
+                data.write_slice(slice)
             })
         },
         task::TASK_DBG_WRITE_MEM => unsafe {
@@ -338,7 +338,7 @@ fn task_debug(hdl: Handle, op: u32, addr: usize, data: UserPtr<InOut, u8>, len: 
                 if !feat.contains(Feature::WRITE) {
                     return Err(EPERM);
                 }
-                data.r#in().read_slice(addr as *mut u8, len)
+                data.read_slice(addr as *mut u8, len)
             })
         },
         task::TASK_DBG_EXCEP_HDL => {
@@ -352,7 +352,7 @@ fn task_debug(hdl: Handle, op: u32, addr: usize, data: UserPtr<InOut, u8>, len: 
                     })
                 })?;
 
-                unsafe { data.out().cast::<Handle>().write(hdl) }
+                unsafe { data.cast::<Handle>().write(hdl) }
             }
         }
         _ => Err(EINVAL),

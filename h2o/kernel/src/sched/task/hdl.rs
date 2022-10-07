@@ -205,12 +205,12 @@ mod syscall {
 
     #[syscall]
     fn obj_feat(hdl_ptr: UserPtr<InOut, Handle>, feat: Feature) -> Result {
-        let old = unsafe { hdl_ptr.r#in().read() }?;
+        let old = unsafe { hdl_ptr.read() }?;
         old.check_null()?;
         let mut obj = SCHED.with_current(|cur| cur.space().handles().remove_ref(old))?;
         let ret = obj.set_features(feat);
         let new = SCHED.with_current(|cur| cur.space().handles().insert_ref(obj))?;
-        unsafe { hdl_ptr.out().write(new) }?;
+        unsafe { hdl_ptr.write(new) }?;
         ret
     }
 

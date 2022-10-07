@@ -211,7 +211,7 @@ fn virt_drop(hdl: Handle) -> Result {
 #[syscall]
 fn virt_map(hdl: Handle, mi_ptr: UserPtr<InOut, VirtMapInfo>) -> Result<*mut u8> {
     hdl.check_null()?;
-    let mi = unsafe { mi_ptr.r#in().read() }?;
+    let mi = unsafe { mi_ptr.read() }?;
     let flags = check_flags(mi.flags)?;
     SCHED.with_current(|cur| {
         let virt = cur.space().handles().get::<Weak<space::Virt>>(hdl)?;
@@ -232,7 +232,7 @@ fn virt_map(hdl: Handle, mi_ptr: UserPtr<InOut, VirtMapInfo>) -> Result<*mut u8>
             flags,
         )?;
         unsafe {
-            let len = UserPtr::new(ptr::addr_of_mut!((*mi_ptr.as_ptr()).len));
+            let len = UserPtr::<Out, _>::new(ptr::addr_of_mut!((*mi_ptr.as_ptr()).len));
             len.write(size)?;
         }
         Ok(*addr)
