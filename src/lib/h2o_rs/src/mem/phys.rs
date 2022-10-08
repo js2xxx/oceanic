@@ -88,7 +88,11 @@ impl Phys {
 
     /// # Safety
     ///
-    /// The caller must guarantee the memory safety of sharing the object.
+    /// The caller must guarantee the memory safety of sharing the object if the
+    /// object is contiguous, or the object is mapped to a different address.
+    ///
+    /// Note: If the object is not contiguous, and it is not mapped to any
+    /// address, the kernel will guarantee its memory safety.
     pub unsafe fn write(&self, offset: usize, buffer: &[u8]) -> Result {
         if !buffer.is_empty() {
             // SAFETY: We don't move the ownership of the handle.
@@ -131,7 +135,11 @@ impl Phys {
 
     /// # Safety
     ///
-    /// The caller must guarantee the memory safety of sharing the object.
+    /// The caller must guarantee the memory safety of sharing the object if the
+    /// object is contiguous, or the object is mapped to a different address.
+    ///
+    /// Note: If the object is not contiguous, and it is not mapped to any
+    /// address, the kernel will guarantee its memory safety.
     pub unsafe fn write_vectored(&self, offset: usize, bufs: &[IoSlice<'_>]) -> Result<usize> {
         let len = unsafe {
             sv_call::sv_phys_writev(

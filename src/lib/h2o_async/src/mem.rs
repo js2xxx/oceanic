@@ -9,7 +9,7 @@ use core::{
 use futures::Future;
 use solvent::prelude::{
     IoSlice, IoSliceMut, PackRead, PackResize, PackWrite, Result, SerdeReg, Syscall, EAGAIN,
-    ENOENT, EPIPE, SIG_MUTATE, SIG_READ, SIG_WRITE,
+    ENOENT, EPIPE, SIG_READ, SIG_WRITE,
 };
 use solvent_std::{
     sync::channel::{oneshot, oneshot_, TryRecvError},
@@ -341,7 +341,7 @@ impl Future for Resize<'_> {
                 Err(EAGAIN) => match self.f.phys.disp.poll_send(
                     &self.f.phys.inner,
                     true,
-                    SIG_MUTATE,
+                    SIG_WRITE,
                     (self.f.phys.inner.pack_resize(self.new_len, self.zeroed), tx),
                     cx.waker(),
                 ) {

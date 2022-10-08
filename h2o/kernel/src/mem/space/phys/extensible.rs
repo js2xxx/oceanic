@@ -12,7 +12,7 @@ use bitop_ex::BitOpEx;
 use paging::{LAddr, PAddr, PAGE_SHIFT, PAGE_SIZE};
 use spin::RwLock;
 use sv_call::{
-    ipc::{SIG_MUTATE, SIG_READ, SIG_WRITE},
+    ipc::{SIG_READ, SIG_WRITE},
     EAGAIN,
 };
 
@@ -193,14 +193,14 @@ impl Phys {
 
     fn notify_read(&self) {
         if self.inner.reader_count() > 0 {
-            self.event.notify(0, SIG_READ | SIG_WRITE);
+            self.event.notify(0, SIG_READ);
         } else {
-            self.event.notify(0, SIG_READ | SIG_WRITE | SIG_MUTATE)
+            self.event.notify(0, SIG_READ | SIG_WRITE)
         }
     }
 
     fn notify_write(&self) {
-        self.event.notify(0, SIG_READ | SIG_WRITE | SIG_MUTATE);
+        self.event.notify(0, SIG_READ | SIG_WRITE);
     }
 
     pub fn resize(&self, new_len: usize, zeroed: bool) -> sv_call::Result {
@@ -282,7 +282,7 @@ impl Phys {
 
         let mut buffer = buffer;
         PREEMPT.scope(|| {
-            let this = self.inner.try_read().ok_or(EAGAIN)?;
+            let this = self.inner.try_write().ok_or(EAGAIN)?;
             for (base, len) in this.range(self.offset + offset, len) {
                 let dst = *base.to_laddr(minfo::ID_OFFSET);
                 unsafe {
@@ -292,7 +292,7 @@ impl Phys {
             }
             Ok::<_, sv_call::Error>(())
         })?;
-        self.notify_read();
+        self.notify_write();
         Ok(len)
     }
 
@@ -336,7 +336,7 @@ impl Phys {
     ) -> sv_call::Result<usize> {
         let mut written_len = 0;
         PREEMPT.scope(|| {
-            let this = self.inner.try_read().ok_or(EAGAIN)?;
+            let this = self.inner.try_write().ok_or(EAGAIN)?;
             for buf in bufs {
                 let actual_offset = self.len.min(offset);
                 let len = self.len.saturating_sub(actual_offset).min(buf.1);
@@ -357,7 +357,7 @@ impl Phys {
             }
             Ok::<_, sv_call::Error>(())
         })?;
-        self.notify_read();
+        self.notify_write();
         Ok(written_len)
     }
 }

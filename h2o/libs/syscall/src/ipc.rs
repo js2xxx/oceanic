@@ -19,4 +19,3 @@ pub const SIG_GENERIC: usize = 0b0000_0001;
 pub const SIG_READ: usize = 0b0000_0010;
 pub const SIG_WRITE: usize = 0b0000_0100;
 pub const SIG_TIMER: usize = 0b0000_1000;
-pub const SIG_MUTATE: usize = 0b0001_0000;

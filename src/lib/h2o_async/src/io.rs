@@ -54,7 +54,10 @@ impl Stream {
     /// # Safety
     ///
     /// The stream must holds the unique reference to the `Phys`, or the others
-    /// must not be operating when the stream is alive.
+    /// must not be operating when the stream is alive, if its memory safety is
+    /// not guaranteed by the kernel.
+    ///
+    /// See [`Phys::write`] for more information.
     #[inline]
     pub unsafe fn new(raw: RawStream) -> Self {
         Self::with_disp(raw, crate::dispatch())
@@ -63,7 +66,10 @@ impl Stream {
     /// # Safety
     ///
     /// The stream must holds the unique reference to the `Phys`, or the others
-    /// must not be operating when the stream is alive.
+    /// must not be operating when the stream is alive, if its memory safety is
+    /// not guaranteed by the kernel.
+    ///
+    /// See [`Phys::write`] for more information.
     pub unsafe fn with_disp(raw: RawStream, disp: DispSender) -> Self {
         let phys = Phys::with_disp(raw.phys, disp);
         Stream {
