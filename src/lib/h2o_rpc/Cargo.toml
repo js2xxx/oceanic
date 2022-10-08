@@ -10,7 +10,7 @@ call = [
 ]
 core = [
   "solvent/default",
-  "solvent-rpc-core/default",
+  "solvent-rpc-core/compact",
 ]
 default = ["std"]
 std = [
@@ -32,3 +32,4 @@ solvent-std = {path = "../libr", optional = true}
 cfg-if = "1.0"
 crossbeam = {version = "0.8", default-features = false, features = ["alloc"], optional = true}
 futures = {version = "0.3", default-features = false, features = ["alloc"], optional = true}
+thiserror-impl = "1.0"

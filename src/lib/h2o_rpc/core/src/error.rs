@@ -1,5 +1,5 @@
 #[doc(hidden)]
-mod thiserror; // Hacking `thiserror::Error`.
+pub mod thiserror; // Hacking `thiserror::Error`.
 use alloc::boxed::Box;
 use core as std; // Hacking `thiserror::Error`.
 use core::error::Error as Trait;

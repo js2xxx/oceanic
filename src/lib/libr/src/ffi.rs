@@ -7,13 +7,14 @@ use alloc::{
     rc::Rc,
     string::String,
     sync::Arc,
+    vec::Vec,
 };
 use core::{
     borrow::Borrow,
     cmp, fmt,
     hash::{Hash, Hasher},
     ops,
-    str::FromStr,
+    str::FromStr, mem,
 };
 
 use self::imp::{Buf, Slice};
@@ -1367,5 +1368,29 @@ impl<'a> FromIterator<Cow<'a, OsStr>> for OsString {
                 buf
             }
         }
+    }
+}
+
+impl OsString {
+    #[inline]
+    pub fn from_vec(vec: Vec<u8>) -> OsString {
+        Self::from_inner(Buf { inner: vec })
+    }
+
+    #[inline]
+    pub fn into_vec(self) -> Vec<u8> {
+        self.inner.inner
+    }
+}
+
+impl OsStr {
+    #[inline]
+    pub fn from_bytes(slice: &[u8]) -> &OsStr {
+        unsafe { mem::transmute(slice) }
+    }
+
+    #[inline]
+    pub fn as_bytes(&self) -> &[u8] {
+        self.bytes()
     }
 }

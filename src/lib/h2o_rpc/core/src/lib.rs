@@ -13,4 +13,4 @@ pub mod packet;
 
 pub use solvent_rpc_macros::*;
 
-pub use self::error::Error;
+pub use self::error::{thiserror, Error};

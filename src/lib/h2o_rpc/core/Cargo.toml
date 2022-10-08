@@ -5,7 +5,8 @@ version = "0.1.0"
 
 [features]
 call = ["solvent/call"]
-default = ["solvent/default"]
+compact = ["solvent/default"]
+default = ["compact"]
 
 [dependencies]
 # Local crates

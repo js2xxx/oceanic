@@ -1,4 +1,5 @@
 #![no_std]
+#![feature(error_in_core)]
 #![feature(result_option_inspect)]
 #![feature(type_alias_impl_trait)]
 
