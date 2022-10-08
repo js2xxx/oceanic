@@ -20,4 +20,5 @@ pub trait Event: Sized {
     fn serialize(self) -> Result<Packet, crate::Error>;
 }
 
+pub mod fs;
 pub mod loader;
