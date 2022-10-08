@@ -24,3 +24,5 @@ pub trait Loader {
     #[id(0x172386ab2733)]
     async fn get_object(path: Vec<CString>) -> Result<Vec<Phys>, usize>;
 }
+
+pub use loader::*;

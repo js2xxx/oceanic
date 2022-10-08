@@ -112,12 +112,10 @@ fn derive_enum(name: &Ident, variants: &Punctuated<Variant, Comma>) -> TokenStre
             {
                 #[allow(dead_code)]
                 use solvent_rpc::packet::SerdePacket;
-                #[allow(dead_code)]
-                use solvent_rpc::Error;
                 let index: usize = SerdePacket::deserialize(de)?;
                 let ret = match index {
                     #de
-                    _ => return Err(Error::TypeMismatch(alloc::format!(
+                    _ => return Err(solvent_rpc::Error::TypeMismatch(alloc::format!(
                         "unknown variant index {}, support 0..{}",
                         index,
                         #len

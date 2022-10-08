@@ -197,11 +197,20 @@ impl Method {
         } = self;
         let type_ident = Ident::new(type_ident_prefix, ident.span());
         let responder = self.responder_ident(prefix);
-        quote! {
-            #(#doc)*
-            #type_ident {
-                #args,
-                responder: #responder
+        if args.is_empty() {
+            quote! {
+                #(#doc)*
+                #type_ident {
+                    responder: #responder
+                }
+            }
+        } else {
+            quote! {
+                #(#doc)*
+                #type_ident {
+                    #args,
+                    responder: #responder
+                }
             }
         }
     }
@@ -271,6 +280,7 @@ impl Protocol {
         } = self;
 
         let ident_str = ident.to_string();
+        let core_mod = Ident::new(&ident_str.to_case(Case::Snake), ident.span());
         let std_mod = Ident::new(&(ident_str.to_case(Case::Snake) + "_std"), ident.span());
         let client = Ident::new(&(ident_str.clone() + "Client"), ident.span());
         let event_receiver = Ident::new(&(ident_str.clone() + "EventReceiver"), ident.span());
@@ -280,6 +290,7 @@ impl Protocol {
         let stream = Ident::new(&(ident_str.clone() + "Stream"), ident.span());
 
         let constants = method.iter().map(|method| method.constant(&vis));
+        let use_constants = method.iter().map(|method| &method.const_ident);
         let calls = method.iter().map(|method| method.call());
         let requests = method.iter().map(|method| method.request(&ident_str));
         let request_pats = method
@@ -288,7 +299,28 @@ impl Protocol {
         let responders = method.iter().map(|method| method.responder(&ident_str));
 
         let token = quote! {
-            #(#constants;)*
+            pub mod #core_mod {
+                #(#constants;)*
+
+                #(#doc)*
+                #[cfg(feature = "std")]
+                pub fn with_disp(disp: solvent_async::disp::DispSender) 
+                    -> (super::#std_mod::#client, super::#std_mod::#server)
+                {
+                    let (client, server) = crate::with_disp(disp);
+                    (
+                        super::#std_mod::#client::from_inner(client),
+                        super::#std_mod::#server::from_inner(server),
+                    )
+                }
+
+                #(#doc)*
+                #[cfg(feature = "std")]
+                #[inline]
+                pub fn channel() -> (super::#std_mod::#client, super::#std_mod::#server) {
+                    with_disp(solvent_async::dispatch())
+                }
+            }
 
             #[cfg(feature = "std")]
             mod #std_mod {
@@ -300,7 +332,7 @@ impl Protocol {
                 use solvent::ipc::Packet;
 
                 use solvent_rpc::{SerdePacket, Event};
-                use super::*;
+                use super::{*, #core_mod::{#(#use_constants,)*}};
 
                 #[allow(dead_code)]
                 fn assert_event() {
@@ -322,7 +354,7 @@ impl Protocol {
                     }
 
                     #[inline]
-                    fn from_inner(inner: crate::Client) -> Self {
+                    pub(super) fn from_inner(inner: crate::Client) -> Self {
                         #client { inner }
                     }
 
@@ -393,7 +425,7 @@ impl Protocol {
                     }
 
                     #[inline]
-                    fn from_inner(inner: crate::Server) -> Self {
+                    pub(super) fn from_inner(inner: crate::Server) -> Self {
                         #server { inner }
                     }
 
@@ -481,20 +513,6 @@ impl Protocol {
                 }
 
                 #(#responders)*
-
-                #(#doc)*
-                pub fn with_disp(disp: solvent_async::disp::DispSender) -> (#client, #server) {
-                    let (client, server) = crate::with_disp(disp);
-                    (
-                        <#client>::from_inner(client),
-                        <#server>::from_inner(server),
-                    )
-                }
-
-                #(#doc)*
-                pub fn channel() -> (#client, #server) {
-                    with_disp(solvent_async::dispatch())
-                }
             }
             #[cfg(feature = "std")]
             pub use #std_mod::*;
