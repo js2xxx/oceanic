@@ -7,6 +7,7 @@ pub mod exe;
 pub mod io;
 pub mod ipc;
 pub mod mem;
+pub mod sync;
 mod utils;
 
 pub use solvent_std as reexport_std;
@@ -14,7 +15,7 @@ pub use solvent_std as reexport_std;
 extern crate alloc;
 
 #[cfg(feature = "runtime")]
-pub use exe::{block_on, dispatch, spawn, spawn_blocking};
+pub use self::exe::{block_on, dispatch, spawn, spawn_blocking};
 
 #[cfg(feature = "runtime")]
 pub mod test {

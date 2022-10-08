@@ -13,8 +13,8 @@ use core::{
     borrow::Borrow,
     cmp, fmt,
     hash::{Hash, Hasher},
-    ops,
-    str::FromStr, mem,
+    mem, ops,
+    str::FromStr,
 };
 
 use self::imp::{Buf, Slice};

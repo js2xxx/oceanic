@@ -304,7 +304,7 @@ impl Protocol {
 
                 #(#doc)*
                 #[cfg(feature = "std")]
-                pub fn with_disp(disp: solvent_async::disp::DispSender) 
+                pub fn with_disp(disp: solvent_async::disp::DispSender)
                     -> (super::#std_mod::#client, super::#std_mod::#server)
                 {
                     let (client, server) = crate::with_disp(disp);

@@ -1,23 +1,13 @@
 use alloc::vec::Vec;
-use core::{
-    cell::UnsafeCell,
-    fmt,
-    future::poll_fn,
-    ops::{Deref, DerefMut},
-    sync::atomic::{AtomicBool, Ordering::*},
-    task::{Context, Poll, Waker},
-};
+use core::fmt;
 
 use solvent::prelude::{IoSlice, IoSliceMut};
-use solvent_std::{
-    io::{RawStream, SeekFrom},
-    sync::{Arsc, Mutex},
-};
+use solvent_std::io::{RawStream, SeekFrom};
 
-use crate::{disp::DispSender, mem::Phys};
+use crate::{disp::DispSender, mem::Phys, sync::Mutex};
 
 pub struct Stream {
-    inner: Lock,
+    inner: Mutex<Inner>,
 }
 
 impl fmt::Debug for Stream {
@@ -31,21 +21,12 @@ impl TryFrom<Stream> for RawStream {
     type Error = Stream;
 
     fn try_from(value: Stream) -> Result<Self, Self::Error> {
-        match Arsc::try_unwrap(value.inner.0) {
-            Ok(data) => {
-                if data.locked.load(Acquire) {
-                    Err(Stream {
-                        inner: Lock(Arsc::new(data)),
-                    })
-                } else {
-                    let inner = UnsafeCell::into_inner(data.inner);
-                    Ok(RawStream {
-                        phys: Phys::into_inner(inner.phys),
-                        seeker: inner.seeker,
-                    })
-                }
-            }
-            Err(inner) => Err(Stream { inner: Lock(inner) }),
+        match Mutex::try_unwrap(value.inner) {
+            Ok(inner) => Ok(RawStream {
+                phys: Phys::into_inner(inner.phys),
+                seeker: inner.seeker,
+            }),
+            Err(inner) => Err(Stream { inner }),
         }
     }
 }
@@ -73,32 +54,27 @@ impl Stream {
     pub unsafe fn with_disp(raw: RawStream, disp: DispSender) -> Self {
         let phys = Phys::with_disp(raw.phys, disp);
         Stream {
-            inner: Lock::new(Inner {
+            inner: Mutex::new(Inner {
                 phys,
                 seeker: raw.seeker,
             }),
         }
     }
 
-    #[inline]
-    async fn lock(&self) -> LockGuard {
-        poll_fn(|cx| self.inner.poll_lock(cx)).await
-    }
-
     pub async fn seek(&self, pos: SeekFrom) -> Result<usize, Error> {
-        self.lock().await.seek(pos).await
+        self.inner.lock().await.seek(pos).await
     }
 
     pub async fn read(&self, buf: &mut [u8]) -> Result<usize, Error> {
-        self.lock().await.read(buf).await
+        self.inner.lock().await.read(buf).await
     }
 
     pub async fn read_at(&self, pos: usize, buf: &mut [u8]) -> Result<usize, Error> {
-        self.lock().await.read_at(pos, buf).await
+        self.inner.lock().await.read_at(pos, buf).await
     }
 
     pub async fn read_vectored(&self, bufs: &mut [IoSliceMut<'_>]) -> Result<usize, Error> {
-        self.lock().await.read_vectored(bufs).await
+        self.inner.lock().await.read_vectored(bufs).await
     }
 
     pub async fn read_at_vectored(
@@ -106,19 +82,19 @@ impl Stream {
         pos: usize,
         bufs: &mut [IoSliceMut<'_>],
     ) -> Result<usize, Error> {
-        self.lock().await.read_at_vectored(pos, bufs).await
+        self.inner.lock().await.read_at_vectored(pos, bufs).await
     }
 
     pub async fn write(&self, buf: &[u8]) -> Result<usize, Error> {
-        self.lock().await.write(buf).await
+        self.inner.lock().await.write(buf).await
     }
 
     pub async fn write_at(&self, pos: usize, buf: &[u8]) -> Result<usize, Error> {
-        self.lock().await.write_at(pos, buf).await
+        self.inner.lock().await.write_at(pos, buf).await
     }
 
     pub async fn write_vectored(&self, bufs: &mut [IoSlice<'_>]) -> Result<usize, Error> {
-        self.lock().await.write_vectored(bufs).await
+        self.inner.lock().await.write_vectored(bufs).await
     }
 
     pub async fn write_at_vectored(
@@ -126,7 +102,7 @@ impl Stream {
         pos: usize,
         bufs: &mut [IoSlice<'_>],
     ) -> Result<usize, Error> {
-        self.lock().await.write_at_vectored(pos, bufs).await
+        self.inner.lock().await.write_at_vectored(pos, bufs).await
     }
 }
 
@@ -134,68 +110,6 @@ impl Stream {
 pub enum Error {
     Other(solvent::error::Error),
     InvalidSeek(SeekFrom),
-}
-
-struct Lock(Arsc<LockData>);
-
-unsafe impl Send for Lock {}
-unsafe impl Sync for Lock {}
-
-impl Lock {
-    fn new(inner: Inner) -> Self {
-        Lock(Arsc::new(LockData {
-            locked: AtomicBool::new(false),
-            inner: UnsafeCell::new(inner),
-            wakers: Mutex::new(Vec::new()),
-        }))
-    }
-
-    fn poll_lock(&self, cx: &mut Context<'_>) -> Poll<LockGuard> {
-        if self.0.locked.swap(true, Acquire) {
-            let mut list = self.0.wakers.lock();
-            if self.0.locked.swap(true, Acquire) {
-                if list.iter().all(|w| !w.will_wake(cx.waker())) {
-                    list.push(cx.waker().clone());
-                }
-                return Poll::Pending;
-            }
-        }
-        Poll::Ready(LockGuard(self.0.clone()))
-    }
-}
-
-struct LockData {
-    locked: AtomicBool,
-    inner: UnsafeCell<Inner>,
-    wakers: Mutex<Vec<Waker>>,
-}
-
-struct LockGuard(Arsc<LockData>);
-
-unsafe impl Send for LockGuard {}
-unsafe impl Sync for LockGuard {}
-
-impl Drop for LockGuard {
-    fn drop(&mut self) {
-        self.0.locked.store(false, Release);
-        self.0.wakers.lock().drain(..).for_each(Waker::wake);
-    }
-}
-
-impl Deref for LockGuard {
-    type Target = Inner;
-
-    #[inline]
-    fn deref(&self) -> &Self::Target {
-        unsafe { &*self.0.inner.get() }
-    }
-}
-
-impl DerefMut for LockGuard {
-    #[inline]
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        unsafe { &mut *self.0.inner.get() }
-    }
 }
 
 struct Inner {
