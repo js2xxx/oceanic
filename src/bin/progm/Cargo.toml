@@ -11,4 +11,6 @@ solvent-async = {path = "../../lib/h2o_async"}
 solvent-rpc = {path = "../../lib/h2o_rpc"}
 solvent-std = {path = "../../lib/libr"}
 # External crates
+async-task = {version = "4.3", default-features = false}
+futures = {version = "0.3", default-features = false, features = ["alloc"]}
 log = "0.4"

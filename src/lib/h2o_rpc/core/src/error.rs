@@ -31,7 +31,7 @@ pub enum Error {
     },
 
     #[error("invalid type when parsing buffer: {0}")]
-    TypeMismatch(#[source] Box<dyn Trait>),
+    TypeMismatch(#[source] Box<dyn Trait + Send + Sync + 'static>),
 
     #[error("invalid magic number: {0}")]
     InvalidMagic(usize),

@@ -43,12 +43,12 @@ bitflags::bitflags! {
 
 #[derive(SerdePacket, Debug, Clone)]
 pub struct Metadata {
-    pub file_type: Type,
+    pub file_type: FileType,
     pub len: usize,
 }
 
 #[derive(SerdePacket, Debug, Copy, Clone, PartialEq, Eq)]
-pub enum Type {
+pub enum FileType {
     File,
     Directory,
     FileLink,

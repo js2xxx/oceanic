@@ -17,16 +17,12 @@ impl fmt::Debug for Stream {
     }
 }
 
-impl TryFrom<Stream> for RawStream {
-    type Error = Stream;
-
-    fn try_from(value: Stream) -> Result<Self, Self::Error> {
-        match Mutex::try_unwrap(value.inner) {
-            Ok(inner) => Ok(RawStream {
-                phys: Phys::into_inner(inner.phys),
-                seeker: inner.seeker,
-            }),
-            Err(inner) => Err(Stream { inner }),
+impl From<Stream> for RawStream {
+    fn from(stream: Stream) -> Self {
+        let inner = stream.inner.into_inner();
+        RawStream {
+            phys: Phys::into_inner(inner.phys),
+            seeker: inner.seeker,
         }
     }
 }

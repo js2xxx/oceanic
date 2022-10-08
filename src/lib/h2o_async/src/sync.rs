@@ -1,3 +1,9 @@
+mod event;
 mod mutex;
+mod rw_lock;
 
-pub use self::mutex::*;
+pub use self::{
+    event::{Event, EventListener},
+    mutex::*,
+    rw_lock::*,
+};
