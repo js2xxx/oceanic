@@ -16,13 +16,13 @@ use crate::Error;
 
 #[derive(Debug)]
 #[repr(transparent)]
-pub struct Server {
+pub struct ServerImpl {
     inner: Arsc<Inner>,
 }
 
-impl Server {
+impl ServerImpl {
     pub fn new(channel: Channel) -> Self {
-        Server {
+        ServerImpl {
             inner: Arsc::new(Inner {
                 channel,
                 stop: AtomicBool::new(false),
@@ -31,50 +31,50 @@ impl Server {
     }
 
     #[inline]
-    pub fn serve(self) -> (PacketStream, EventSender) {
+    pub fn serve(self) -> (PacketStream, EventSenderImpl) {
         (
             PacketStream {
                 inner: self.inner.clone(),
             },
-            EventSender { inner: self.inner },
+            EventSenderImpl { inner: self.inner },
         )
     }
 }
 
-impl AsRef<Channel> for Server {
+impl AsRef<Channel> for ServerImpl {
     #[inline]
     fn as_ref(&self) -> &Channel {
         &self.inner.channel
     }
 }
 
-impl From<Channel> for Server {
+impl From<Channel> for ServerImpl {
     #[inline]
     fn from(channel: Channel) -> Self {
         Self::new(channel)
     }
 }
 
-impl TryFrom<Server> for Channel {
-    type Error = Server;
+impl TryFrom<ServerImpl> for Channel {
+    type Error = ServerImpl;
 
-    fn try_from(server: Server) -> Result<Self, Self::Error> {
+    fn try_from(server: ServerImpl) -> Result<Self, Self::Error> {
         match Arsc::try_unwrap(server.inner) {
             Ok(mut inner) => {
                 if !*inner.stop.get_mut() {
                     Ok(inner.channel)
                 } else {
-                    Err(Server {
+                    Err(ServerImpl {
                         inner: Arsc::new(inner),
                     })
                 }
             }
-            Err(inner) => Err(Server { inner }),
+            Err(inner) => Err(ServerImpl { inner }),
         }
     }
 }
 
-impl SerdePacket for Server {
+impl SerdePacket for ServerImpl {
     fn serialize(self, ser: &mut packet::Serializer) -> Result<(), Error> {
         match Channel::try_from(self) {
             Ok(channel) => Channel::into_inner(channel).serialize(ser),
@@ -113,7 +113,7 @@ impl Stream for PacketStream {
             Err(Error::Disconnected) => None,
             res => Some(res.map(|packet| Request {
                 packet,
-                responder: Responder(EventSender {
+                responder: Responder(EventSenderImpl {
                     inner: self.inner.clone(),
                 }),
             })),
@@ -129,11 +129,11 @@ impl FusedStream for PacketStream {
 }
 
 #[repr(transparent)]
-pub struct EventSender {
+pub struct EventSenderImpl {
     inner: Arsc<Inner>,
 }
 
-impl EventSender {
+impl EventSenderImpl {
     #[inline]
     pub fn send(&self, packet: Packet) -> Result<(), Error> {
         if self.inner.stop.load(Acquire) {
@@ -149,7 +149,7 @@ impl EventSender {
 }
 
 #[repr(transparent)]
-pub struct Responder(EventSender);
+pub struct Responder(EventSenderImpl);
 
 impl Responder {
     #[inline]
@@ -206,4 +206,21 @@ impl Inner {
         })?;
         Ok(())
     }
+}
+
+pub trait Server: SerdePacket + AsRef<Channel> + From<Channel> {
+    type RequestStream: FusedStream;
+    type EventSender;
+
+    fn from_inner(inner: ServerImpl) -> Self;
+
+    fn serve(self) -> (Self::RequestStream, Self::EventSender);
+}
+
+pub trait EventSender {
+    type Event: crate::Event;
+
+    fn send(&self, event: Self::Event) -> Result<(), Error>;
+
+    fn close(self);
 }

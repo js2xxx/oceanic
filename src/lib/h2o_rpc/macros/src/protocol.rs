@@ -187,6 +187,27 @@ impl Method {
         }
     }
 
+    fn sync_call(&self) -> TokenStream2 {
+        let Method {
+            ident,
+            doc,
+            const_ident,
+            args,
+            output,
+            ..
+        } = self;
+        let ser = self.call_arg();
+        quote! {
+            #(#doc)*
+            pub fn #ident (&self, #args) -> Result<#output, crate::Error> {
+                let mut packet = Default::default();
+                crate::packet::serialize(#const_ident, (#ser), &mut packet)?;
+                let packet = self.inner.call(packet)?;
+                crate::packet::deserialize(#const_ident, &packet, None)
+            }
+        }
+    }
+
     fn request(&self, prefix: &str) -> TokenStream2 {
         let Method {
             ident,
@@ -291,7 +312,9 @@ impl Protocol {
 
         let constants = method.iter().map(|method| method.constant(&vis));
         let use_constants = method.iter().map(|method| &method.const_ident);
+        let u2 = use_constants.clone();
         let calls = method.iter().map(|method| method.call());
+        let sync_calls = method.iter().map(|method| method.sync_call());
         let requests = method.iter().map(|method| method.request(&ident_str));
         let request_pats = method
             .iter()
@@ -301,25 +324,6 @@ impl Protocol {
         let token = quote! {
             pub mod #core_mod {
                 #(#constants;)*
-
-                #(#doc)*
-                #[cfg(feature = "std")]
-                pub fn with_disp(disp: solvent_async::disp::DispSender)
-                    -> (super::#std_mod::#client, super::#std_mod::#server)
-                {
-                    let (client, server) = crate::with_disp(disp);
-                    (
-                        super::#std_mod::#client::from_inner(client),
-                        super::#std_mod::#server::from_inner(server),
-                    )
-                }
-
-                #(#doc)*
-                #[cfg(feature = "std")]
-                #[inline]
-                pub fn channel() -> (super::#std_mod::#client, super::#std_mod::#server) {
-                    with_disp(solvent_async::dispatch())
-                }
             }
 
             #[cfg(feature = "std")]
@@ -340,96 +344,39 @@ impl Protocol {
                     inner::<#event>()
                 }
 
-                #(#doc)*
-                #[derive(Debug, Clone, SerdePacket)]
-                #vis struct #client {
-                    inner: crate::Client,
-                }
+                pub struct #ident;
 
-                impl #client {
-                    pub fn new(channel: Channel) -> Self {
-                        #client {
-                            inner: crate::Client::new(channel),
-                        }
-                    }
+                impl crate::Protocol for #ident {
+                    type Client = #client;
+                    type Server = #server;
 
-                    #[inline]
-                    pub(super) fn from_inner(inner: crate::Client) -> Self {
-                        #client { inner }
-                    }
-
-                    pub fn event_receiver(&self) -> Option<#event_receiver> {
-                        self.inner
-                            .event_receiver()
-                            .map(|inner| #event_receiver { inner })
-                    }
-
-                    #(#calls)*
-                }
-
-                impl AsRef<Channel> for #client {
-                    #[inline]
-                    fn as_ref(&self) -> &Channel {
-                        self.inner.as_ref()
-                    }
-                }
-
-                impl From<Channel> for #client {
-                    #[inline]
-                    fn from(channel: Channel) -> Self {
-                        Self::new(channel)
-                    }
-                }
-
-                impl TryFrom<#client> for Channel {
-                    type Error = #client;
-
-                    #[inline]
-                    fn try_from(client: #client) -> Result<Self, Self::Error> {
-                        Channel::try_from(client.inner).map_err(|inner| #client { inner })
-                    }
-                }
-
-                #vis struct #event_receiver {
-                    inner: crate::EventReceiver,
-                }
-
-                impl Stream for #event_receiver {
-                    type Item = Result<#event, crate::Error>;
-
-                    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-                        Poll::Ready(
-                            ready!(Pin::new(&mut self.inner).poll_next(cx))
-                                .map(|inner| inner.and_then(<#event>::deserialize)),
-                        )
-                    }
-                }
-
-                impl FusedStream for #event_receiver {
-                    fn is_terminated(&self) -> bool {
-                        self.inner.is_terminated()
-                    }
+                    type SyncClient = self::sync::#client;
                 }
 
                 #(#doc)*
                 #[derive(Debug, SerdePacket)]
                 pub struct #server {
-                    inner: crate::Server,
+                    inner: crate::ServerImpl,
                 }
 
                 impl #server {
                     pub fn new(channel: Channel) -> Self {
                         #server {
-                            inner: crate::Server::new(channel),
+                            inner: crate::ServerImpl::new(channel),
                         }
                     }
+                }
+
+                impl crate::Server for #server {
+                    type RequestStream = #stream;
+                    type EventSender = #event_sender;
 
                     #[inline]
-                    pub(super) fn from_inner(inner: crate::Server) -> Self {
+                    fn from_inner(inner: crate::ServerImpl) -> Self {
                         #server { inner }
                     }
 
-                    pub fn serve(self) -> (#stream, #event_sender) {
+                    fn serve(self) -> (#stream, #event_sender) {
                         let (stream, es) = self.inner.serve();
                         (
                             #stream { inner: stream },
@@ -497,7 +444,7 @@ impl Protocol {
                 }
 
                 pub struct #event_sender {
-                    inner: crate::EventSender,
+                    inner: crate::EventSenderImpl,
                 }
 
                 impl #event_sender {
@@ -505,14 +452,177 @@ impl Protocol {
                     pub fn send_raw(&self, packet: Packet) -> Result<(), crate::Error> {
                         self.inner.send(packet)
                     }
+                }
+
+                impl crate::EventSender for #event_sender {
+                    type Event = #event;
+
+                    fn send(&self, event: #event) -> Result<(), crate::Error> {
+                        let packet = <#event>::serialize(event)?;
+                        self.inner.send(packet)
+                    }
 
                     #[inline]
-                    pub fn close(self) {
+                    fn close(self) {
                         self.inner.close()
                     }
                 }
 
                 #(#responders)*
+
+                #(#doc)*
+                #[derive(Debug, Clone, SerdePacket)]
+                #vis struct #client {
+                    inner: crate::ClientImpl,
+                }
+
+                impl #client {
+                    pub fn new(channel: Channel) -> Self {
+                        #client {
+                            inner: crate::ClientImpl::new(channel),
+                        }
+                    }
+
+                    #(#calls)*
+                }
+
+                impl crate::Client for #client {
+                    type EventReceiver = #event_receiver;
+
+                    #[inline]
+                    fn from_inner(inner: crate::ClientImpl) -> Self {
+                        #client { inner }
+                    }
+
+                    fn event_receiver(&self) -> Option<#event_receiver> {
+                        self.inner
+                            .event_receiver()
+                            .map(|inner| #event_receiver { inner })
+                    }
+                }
+
+                impl AsRef<Channel> for #client {
+                    #[inline]
+                    fn as_ref(&self) -> &Channel {
+                        self.inner.as_ref()
+                    }
+                }
+
+                impl From<Channel> for #client {
+                    #[inline]
+                    fn from(channel: Channel) -> Self {
+                        Self::new(channel)
+                    }
+                }
+
+                impl TryFrom<#client> for Channel {
+                    type Error = #client;
+
+                    #[inline]
+                    fn try_from(client: #client) -> Result<Self, Self::Error> {
+                        Channel::try_from(client.inner).map_err(|inner| #client { inner })
+                    }
+                }
+
+                #vis struct #event_receiver {
+                    inner: crate::EventReceiverImpl,
+                }
+
+                impl Stream for #event_receiver {
+                    type Item = Result<#event, crate::Error>;
+
+                    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+                        Poll::Ready(
+                            ready!(Pin::new(&mut self.inner).poll_next(cx))
+                                .map(|inner| inner.and_then(<#event>::deserialize)),
+                        )
+                    }
+                }
+
+                impl FusedStream for #event_receiver {
+                    fn is_terminated(&self) -> bool {
+                        self.inner.is_terminated()
+                    }
+                }
+
+                pub mod sync {
+                    use core::{iter::FusedIterator, time::Duration};
+
+                    use solvent::ipc::Channel;
+
+                    use crate::{imp::Event, SerdePacket};
+                    use crate as solvent_rpc;
+                    use super::super::{*, #core_mod::{#(#u2,)*}};
+
+                    #(#doc)*
+                    #[derive(Debug, SerdePacket)]
+                    pub struct #client {
+                        inner: crate::sync::ClientImpl,
+                    }
+
+                    impl #client {
+                        pub fn new(channel: Channel) -> Self {
+                            #client {
+                                inner: crate::sync::ClientImpl::new(channel),
+                            }
+                        }
+
+                        #(#sync_calls)*
+                    }
+
+                    impl AsRef<Channel> for #client {
+                        #[inline]
+                        fn as_ref(&self) -> &Channel {
+                            self.inner.as_ref()
+                        }
+                    }
+
+                    impl From<Channel> for #client {
+                        #[inline]
+                        fn from(channel: Channel) -> Self {
+                            Self::new(channel)
+                        }
+                    }
+
+                    impl crate::sync::Client for #client {
+                        type EventReceiver = #event_receiver;
+
+                        #[inline]
+                        fn from_inner(inner: crate::sync::ClientImpl) -> Self {
+                            #client { inner }
+                        }
+
+                        #[inline]
+                        fn event_receiver(&self, timeout: Option<Duration>) -> Option<#event_receiver> {
+                            self.inner
+                                .event_receiver(timeout)
+                                .map(|inner| #event_receiver { inner })
+                        }
+                    }
+
+                    impl TryFrom<#client> for Channel {
+                        type Error = #client;
+
+                        #[inline]
+                        fn try_from(client: #client) -> Result<Self, Self::Error> {
+                            Channel::try_from(client.inner).map_err(|inner| #client { inner })
+                        }
+                    }
+
+                    #vis struct #event_receiver {
+                        inner: crate::sync::EventReceiverImpl,
+                    }
+
+                    impl Iterator for #event_receiver {
+                        type Item = Result<#event, crate::Error>;
+
+                        fn next(&mut self) -> Option<Self::Item> {
+                            self.inner.next().map(|inner| inner.and_then(<#event>::deserialize))
+                        }
+                    }
+
+                    impl FusedIterator for #event_receiver {}
+                }
             }
             #[cfg(feature = "std")]
             pub use #std_mod::*;

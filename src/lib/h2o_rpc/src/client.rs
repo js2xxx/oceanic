@@ -22,13 +22,13 @@ use solvent_std::sync::{Arsc, Mutex};
 use crate::Error;
 
 #[derive(Debug, Clone)]
-pub struct Client {
+pub struct ClientImpl {
     inner: Arsc<Inner>,
 }
 
-impl Client {
+impl ClientImpl {
     pub fn new(channel: Channel) -> Self {
-        Client {
+        ClientImpl {
             inner: Arsc::new(Inner {
                 next_id: AtomicUsize::new(1),
                 channel,
@@ -42,7 +42,7 @@ impl Client {
         }
     }
 
-    pub fn event_receiver(&self) -> Option<EventReceiver> {
+    pub fn event_receiver(&self) -> Option<EventReceiverImpl> {
         {
             let mut entry = self.inner.event.waker.lock();
             if let EventEntry::Init = *entry {
@@ -51,7 +51,7 @@ impl Client {
                 return None;
             }
         }
-        Some(EventReceiver {
+        Some(EventReceiverImpl {
             inner: self.inner.clone(),
             stop: false,
         })
@@ -74,40 +74,40 @@ impl Client {
     }
 }
 
-impl AsRef<Channel> for Client {
+impl AsRef<Channel> for ClientImpl {
     #[inline]
     fn as_ref(&self) -> &Channel {
         &self.inner.channel
     }
 }
 
-impl From<Channel> for Client {
+impl From<Channel> for ClientImpl {
     #[inline]
     fn from(channel: Channel) -> Self {
         Self::new(channel)
     }
 }
 
-impl TryFrom<Client> for Channel {
-    type Error = Client;
+impl TryFrom<ClientImpl> for Channel {
+    type Error = ClientImpl;
 
-    fn try_from(client: Client) -> Result<Self, Self::Error> {
+    fn try_from(client: ClientImpl) -> Result<Self, Self::Error> {
         match Arsc::try_unwrap(client.inner) {
             Ok(mut inner) => {
                 if inner.wakers.get_mut().is_empty() {
                     Ok(inner.channel)
                 } else {
-                    Err(Client {
+                    Err(ClientImpl {
                         inner: Arsc::new(inner),
                     })
                 }
             }
-            Err(inner) => Err(Client { inner }),
+            Err(inner) => Err(ClientImpl { inner }),
         }
     }
 }
 
-impl SerdePacket for Client {
+impl SerdePacket for ClientImpl {
     fn serialize(self, ser: &mut packet::Serializer) -> Result<(), Error> {
         match Channel::try_from(self) {
             Ok(channel) => Channel::into_inner(channel).serialize(ser),
@@ -121,14 +121,14 @@ impl SerdePacket for Client {
     }
 }
 
-pub struct EventReceiver {
+pub struct EventReceiverImpl {
     inner: Arsc<Inner>,
     stop: bool,
 }
 
-impl Unpin for EventReceiver {}
+impl Unpin for EventReceiverImpl {}
 
-impl Stream for EventReceiver {
+impl Stream for EventReceiverImpl {
     type Item = Result<Packet, Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
@@ -149,14 +149,14 @@ impl Stream for EventReceiver {
     }
 }
 
-impl FusedStream for EventReceiver {
+impl FusedStream for EventReceiverImpl {
     #[inline]
     fn is_terminated(&self) -> bool {
         self.stop
     }
 }
 
-impl Drop for EventReceiver {
+impl Drop for EventReceiverImpl {
     fn drop(&mut self) {
         *self.inner.event.waker.lock() = EventEntry::Init
     }
@@ -418,4 +418,20 @@ impl Inner {
             Poll::Pending
         }
     }
+}
+
+pub trait Client: SerdePacket + From<Channel> + AsRef<Channel> {
+    type EventReceiver: EventReceiver;
+
+    fn from_inner(inner: ClientImpl) -> Self;
+
+    fn event_receiver(&self) -> Option<Self::EventReceiver>;
+}
+
+pub trait EventReceiver: FusedStream<Item = Result<Self::Event, Error>> {
+    type Event: crate::Event;
+}
+
+impl<T: FusedStream<Item = Result<E, Error>>, E: crate::Event> EventReceiver for T {
+    type Event = E;
 }
