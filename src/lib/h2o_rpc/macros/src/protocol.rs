@@ -24,7 +24,7 @@ fn parse_event(input: TokenStream) -> Result<Path> {
         }
     }
     if input.is_empty() {
-        Ok(parse_quote!(crate::UnknownEvent))
+        Ok(parse_quote!(solvent_rpc::UnknownEvent))
     } else {
         syn::parse::<Wrapper>(input).map(|w| w.0)
     }
@@ -178,11 +178,11 @@ impl Method {
         let ser = self.call_arg();
         quote! {
             #(#doc)*
-            pub async fn #ident (&self, #args) -> Result<#output, crate::Error> {
+            pub async fn #ident (&self, #args) -> Result<#output, solvent_rpc::Error> {
                 let mut packet = Default::default();
-                crate::packet::serialize(#const_ident, (#ser), &mut packet)?;
+                solvent_rpc::packet::serialize(#const_ident, (#ser), &mut packet)?;
                 let packet = self.inner.call(packet).await?;
-                crate::packet::deserialize(#const_ident, &packet, None)
+                solvent_rpc::packet::deserialize(#const_ident, &packet, None)
             }
         }
     }
@@ -199,11 +199,11 @@ impl Method {
         let ser = self.call_arg();
         quote! {
             #(#doc)*
-            pub fn #ident (&self, #args) -> Result<#output, crate::Error> {
+            pub fn #ident (&self, #args) -> Result<#output, solvent_rpc::Error> {
                 let mut packet = Default::default();
-                crate::packet::serialize(#const_ident, (#ser), &mut packet)?;
+                solvent_rpc::packet::serialize(#const_ident, (#ser), &mut packet)?;
                 let packet = self.inner.call(packet)?;
-                crate::packet::deserialize(#const_ident, &packet, None)
+                solvent_rpc::packet::deserialize(#const_ident, &packet, None)
             }
         }
     }
@@ -253,7 +253,7 @@ impl Method {
         let pat = self.call_arg();
         quote! {
             #const_ident => {
-                let (#pat) = crate::packet::deserialize_body(de, None)?;
+                let (#pat) = solvent_rpc::packet::deserialize_body(de, None)?;
                 let responder = #responder {
                     inner: req.responder,
                 };
@@ -272,13 +272,13 @@ impl Method {
         let ident = self.responder_ident(prefix);
         quote! {
             pub struct #ident {
-                inner: crate::Responder,
+                inner: solvent_rpc::Responder,
             }
 
             impl #ident {
-                pub fn send(self, ret: #output) -> Result<(), crate::Error> {
+                pub fn send(self, ret: #output) -> Result<(), solvent_rpc::Error> {
                     let mut packet = Default::default();
-                    crate::packet::serialize(#const_ident, ret, &mut packet)?;
+                    solvent_rpc::packet::serialize(#const_ident, ret, &mut packet)?;
                     self.inner.send(packet, #close)
                 }
 
@@ -340,13 +340,13 @@ impl Protocol {
 
                 #[allow(dead_code)]
                 fn assert_event() {
-                    fn inner<T: crate::Event>() {}
+                    fn inner<T: Event>() {}
                     inner::<#event>()
                 }
 
                 pub struct #ident;
 
-                impl crate::Protocol for #ident {
+                impl solvent_rpc::Protocol for #ident {
                     type Client = #client;
                     type Server = #server;
 
@@ -355,24 +355,25 @@ impl Protocol {
 
                 #(#doc)*
                 #[derive(Debug, SerdePacket)]
-                pub struct #server {
-                    inner: crate::ServerImpl,
+                #[repr(transparent)]
+                #vis struct #server {
+                    inner: solvent_rpc::ServerImpl,
                 }
 
                 impl #server {
                     pub fn new(channel: Channel) -> Self {
                         #server {
-                            inner: crate::ServerImpl::new(channel),
+                            inner: solvent_rpc::ServerImpl::new(channel),
                         }
                     }
                 }
 
-                impl crate::Server for #server {
+                impl solvent_rpc::Server for #server {
                     type RequestStream = #stream;
                     type EventSender = #event_sender;
 
                     #[inline]
-                    fn from_inner(inner: crate::ServerImpl) -> Self {
+                    fn from_inner(inner: solvent_rpc::ServerImpl) -> Self {
                         #server { inner }
                     }
 
@@ -408,23 +409,24 @@ impl Protocol {
                     }
                 }
 
-                pub enum #request {
+                #vis enum #request {
                     #(#requests,)*
-                    Unknown(crate::Request),
+                    Unknown(solvent_rpc::Request),
                 }
 
-                pub struct #stream {
-                    inner: crate::PacketStream,
+                #[repr(transparent)]
+                #vis struct #stream {
+                    inner: solvent_rpc::PacketStream,
                 }
 
                 impl Stream for #stream {
-                    type Item = Result<#request, crate::Error>;
+                    type Item = Result<#request, solvent_rpc::Error>;
 
                     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
                         Poll::Ready(
                             ready!(Pin::new(&mut self.inner).poll_next(cx)).map(|res| match res {
                                 Ok(req) => {
-                                    let (m, de) = crate::packet::deserialize_metadata(&req.packet)?;
+                                    let (m, de) = solvent_rpc::packet::deserialize_metadata(&req.packet)?;
                                     match m {
                                         #(#request_pats)*
                                         _ => Ok(#request::Unknown(req)),
@@ -443,21 +445,22 @@ impl Protocol {
                     }
                 }
 
-                pub struct #event_sender {
-                    inner: crate::EventSenderImpl,
+                #[repr(transparent)]
+                #vis struct #event_sender {
+                    inner: solvent_rpc::EventSenderImpl,
                 }
 
                 impl #event_sender {
                     #[inline]
-                    pub fn send_raw(&self, packet: Packet) -> Result<(), crate::Error> {
+                    pub fn send_raw(&self, packet: Packet) -> Result<(), solvent_rpc::Error> {
                         self.inner.send(packet)
                     }
                 }
 
-                impl crate::EventSender for #event_sender {
+                impl solvent_rpc::EventSender for #event_sender {
                     type Event = #event;
 
-                    fn send(&self, event: #event) -> Result<(), crate::Error> {
+                    fn send(&self, event: #event) -> Result<(), solvent_rpc::Error> {
                         let packet = <#event>::serialize(event)?;
                         self.inner.send(packet)
                     }
@@ -472,25 +475,26 @@ impl Protocol {
 
                 #(#doc)*
                 #[derive(Debug, Clone, SerdePacket)]
+                #[repr(transparent)]
                 #vis struct #client {
-                    inner: crate::ClientImpl,
+                    inner: solvent_rpc::ClientImpl,
                 }
 
                 impl #client {
                     pub fn new(channel: Channel) -> Self {
                         #client {
-                            inner: crate::ClientImpl::new(channel),
+                            inner: solvent_rpc::ClientImpl::new(channel),
                         }
                     }
 
                     #(#calls)*
                 }
 
-                impl crate::Client for #client {
+                impl solvent_rpc::Client for #client {
                     type EventReceiver = #event_receiver;
 
                     #[inline]
-                    fn from_inner(inner: crate::ClientImpl) -> Self {
+                    fn from_inner(inner: solvent_rpc::ClientImpl) -> Self {
                         #client { inner }
                     }
 
@@ -524,12 +528,13 @@ impl Protocol {
                     }
                 }
 
+                #[repr(transparent)]
                 #vis struct #event_receiver {
-                    inner: crate::EventReceiverImpl,
+                    inner: solvent_rpc::EventReceiverImpl,
                 }
 
                 impl Stream for #event_receiver {
-                    type Item = Result<#event, crate::Error>;
+                    type Item = Result<#event, solvent_rpc::Error>;
 
                     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
                         Poll::Ready(
@@ -549,21 +554,22 @@ impl Protocol {
                     use core::{iter::FusedIterator, time::Duration};
 
                     use solvent::ipc::Channel;
+                    use solvent_rpc::{Event, SerdePacket};
 
-                    use crate::{imp::Event, SerdePacket};
-                    use crate as solvent_rpc;
+                    use super::solvent_rpc;
                     use super::super::{*, #core_mod::{#(#u2,)*}};
 
                     #(#doc)*
                     #[derive(Debug, SerdePacket)]
-                    pub struct #client {
-                        inner: crate::sync::ClientImpl,
+                    #[repr(transparent)]
+                    #vis struct #client {
+                        inner: solvent_rpc::sync::ClientImpl,
                     }
 
                     impl #client {
                         pub fn new(channel: Channel) -> Self {
                             #client {
-                                inner: crate::sync::ClientImpl::new(channel),
+                                inner: solvent_rpc::sync::ClientImpl::new(channel),
                             }
                         }
 
@@ -584,11 +590,11 @@ impl Protocol {
                         }
                     }
 
-                    impl crate::sync::Client for #client {
+                    impl solvent_rpc::sync::Client for #client {
                         type EventReceiver = #event_receiver;
 
                         #[inline]
-                        fn from_inner(inner: crate::sync::ClientImpl) -> Self {
+                        fn from_inner(inner: solvent_rpc::sync::ClientImpl) -> Self {
                             #client { inner }
                         }
 
@@ -609,12 +615,13 @@ impl Protocol {
                         }
                     }
 
+                    #[repr(transparent)]
                     #vis struct #event_receiver {
-                        inner: crate::sync::EventReceiverImpl,
+                        inner: solvent_rpc::sync::EventReceiverImpl,
                     }
 
                     impl Iterator for #event_receiver {
-                        type Item = Result<#event, crate::Error>;
+                        type Item = Result<#event, solvent_rpc::Error>;
 
                         fn next(&mut self) -> Option<Self::Item> {
                             self.inner.next().map(|inner| inner.and_then(<#event>::deserialize))

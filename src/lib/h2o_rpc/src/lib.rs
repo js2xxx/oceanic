@@ -7,6 +7,7 @@ extern crate alloc;
 
 #[cfg(feature = "std")]
 mod client;
+mod ifx;
 mod imp;
 #[cfg(feature = "std")]
 mod server;
@@ -15,6 +16,6 @@ pub mod sync;
 
 pub use solvent_rpc_core::*;
 
-pub use self::imp::*;
 #[cfg(feature = "std")]
 pub use self::{client::*, server::*};
+pub use self::{ifx::*, imp::*};
