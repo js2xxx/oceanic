@@ -1,82 +1,137 @@
 use convert_case::{Case, Casing};
-use proc_macro::TokenStream;
-use quote::{ToTokens, __private::TokenStream as TokenStream2, quote};
+use proc_macro2::TokenStream;
+use quote::{quote, ToTokens};
 use syn::{
     parse::{Parse, ParseStream},
     punctuated::Punctuated,
     *,
 };
 
-pub fn gen(args: TokenStream, input: Protocol) -> Result<TokenStream> {
-    let event = parse_event(args)?;
-    input.quote(event)
-}
-
-fn parse_event(input: TokenStream) -> Result<Path> {
-    struct Wrapper(Path);
-    impl Parse for Wrapper {
-        fn parse(input: ParseStream) -> Result<Self> {
-            let content;
-            parenthesized!(content in input);
-            Path::parse(&content).map(Wrapper)
-        }
-    }
-    if input.is_empty() {
-        Ok(parse_quote!(solvent_rpc::UnknownEvent))
-    } else {
-        syn::parse::<Wrapper>(input).map(|w| w.0)
-    }
-}
-
+#[derive(Debug)]
 pub struct Protocol {
-    vis: Visibility,
-    ident: Ident,
-    doc: Vec<Attribute>,
-    method: Punctuated<Method, Token![;]>,
+    pub vis: Visibility,
+    pub event: Path,
+    pub from: Punctuated<Path, Token![+]>,
+    pub ident: Ident,
+    pub doc: Vec<Attribute>,
+    pub method: Vec<Method>,
 }
 
 impl Parse for Protocol {
     fn parse(input: ParseStream) -> Result<Self> {
         let mut attr = Attribute::parse_outer(input)?;
-        attr.retain(|attr| attr.path.to_token_stream().to_string() == "doc");
+
+        let mut multiple_proto = false;
+        let mut event = None;
+        attr.retain(|attr| {
+            match attr.parse_meta() {
+                Ok(Meta::NameValue(MetaNameValue { path, .. })) if path.is_ident("doc") => {
+                    return true
+                }
+                Ok(Meta::List(MetaList { path, nested, .. })) if path.is_ident("protocol") => {
+                    let old = event.replace(parse_quote!(#nested));
+                    multiple_proto |= old.is_some();
+                }
+                Ok(Meta::Path(path)) if path.is_ident("protocol") => {
+                    let old = event.replace(parse_quote!(solvent_rpc::UnknownEvent));
+                    multiple_proto |= old.is_some();
+                }
+                _ => {}
+            }
+            false
+        });
+        if multiple_proto {
+            return Err(Error::new(
+                input.span(),
+                "The protocol must have exact one protocol attribute",
+            ));
+        }
+        let event = event.ok_or_else(|| {
+            Error::new(
+                input.span(),
+                "The protocol must have exact one protocol attribute",
+            )
+        })?;
+
         let vis = Visibility::parse(input)?;
         <Token![trait]>::parse(input)?;
         let ident = Ident::parse(input)?;
+        let from = if input.peek(Token![:]) {
+            <Token![:]>::parse(input)?;
+            Punctuated::parse_separated_nonempty(input)?
+        } else {
+            Punctuated::new()
+        };
         let content;
         braced!(content in input);
-        let method = Punctuated::parse_terminated(&content)?;
+        let method = Punctuated::<_, Token![;]>::parse_terminated(&content)?;
         Ok(Protocol {
             vis,
+            event,
+            from,
             ident,
             doc: attr,
-            method,
+            method: Vec::from_iter(method),
         })
     }
 }
 
+impl Protocol {
+    fn cast_from(
+        from: &Punctuated<Path, Token![+]>,
+        client_ident: Ident,
+    ) -> impl Iterator<Item = TokenStream> + '_ {
+        from.iter().map(move |from| {
+            let (mut parent, from_ident) = {
+                let mut path = from.clone();
+                let seg = path.segments.pop().unwrap();
+                (path, seg.into_value().ident)
+            };
+            let from_ident_str = from_ident.to_string();
+            let from_client = Ident::new(&(from_ident_str + "Client"), from_ident.span());
+            parent.segments.push(from_client.into());
+            let from_client = parent;
+            quote! {
+                impl From<#client_ident> for #from_client {
+                    #[inline]
+                    fn from(value: #client_ident) -> #from_client {
+                        solvent_rpc::Client::from_inner(value.inner)
+                    }
+                }
+
+                impl AsRef<#from_client> for #client_ident {
+                    #[inline]
+                    fn as_ref(&self) -> & #from_client {
+                        unsafe { core::mem::transmute(self) }
+                    }
+                }
+            }
+        })
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct Method {
-    id: Expr,
-    close: bool,
-    ident: Ident,
-    doc: Vec<Attribute>,
-    const_ident: Ident,
-    type_ident_prefix: String,
-    args: Punctuated<FnArg, Token![,]>,
-    output: Type,
+    pub id: u64,
+    pub close: bool,
+    pub ident: Ident,
+    pub doc: Vec<Attribute>,
+    pub const_ident: Ident,
+    pub type_ident_prefix: String,
+    pub args: Punctuated<FnArg, Token![,]>,
+    pub output: Type,
 }
 
 impl Parse for Method {
     fn parse(input: ParseStream) -> Result<Self> {
         let meta = Attribute::parse_outer(input)?;
 
-        let (id, close, doc) = {
-            let mut id = None;
+        let (close, doc) = {
             let mut close = false;
             let mut doc = Vec::with_capacity(meta.len());
 
             for meta in meta {
                 match &*meta.path.to_token_stream().to_string() {
-                    "id" => id = Some(meta.parse_args()?),
                     "close" => {
                         if !meta.tokens.is_empty() {
                             return Err(Error::new_spanned(
@@ -94,21 +149,11 @@ impl Parse for Method {
                 }
             }
 
-            (
-                id.ok_or_else(|| Error::new(input.span(), "Provide a method id"))?,
-                close,
-                doc,
-            )
+            (close, doc)
         };
         let sig = Signature::parse(input)?;
         if let Some(ref c) = sig.constness {
             return Err(Error::new(c.span, "Protocol methods cannot be const"));
-        }
-        if sig.asyncness.is_none() {
-            return Err(Error::new_spanned(
-                quote!(#sig),
-                "Protocol methods must be async",
-            ));
         }
         if let Some(ref u) = sig.unsafety {
             return Err(Error::new(u.span, "Protocol methods cannot be unsafe"));
@@ -136,7 +181,7 @@ impl Parse for Method {
         };
 
         Ok(Method {
-            id,
+            id: 0,
             close,
             ident,
             doc,
@@ -149,14 +194,14 @@ impl Parse for Method {
 }
 
 impl Method {
-    fn constant(&self, vis: &Visibility) -> TokenStream2 {
+    fn constant(&self, vis: &Visibility) -> TokenStream {
         let Method {
             id, const_ident, ..
         } = self;
-        quote!(#vis const #const_ident: usize = #id)
+        quote!(#vis const #const_ident: usize = #id as usize)
     }
 
-    fn call_arg(&self) -> TokenStream2 {
+    fn call_arg(&self) -> TokenStream {
         let iter = self.args.iter().map(|arg| match arg {
             FnArg::Typed(arg) => &*arg.pat,
             _ => unreachable!(),
@@ -164,7 +209,7 @@ impl Method {
         quote!(#(#iter,)*)
     }
 
-    fn call(&self) -> TokenStream2 {
+    fn call(&self) -> TokenStream {
         let Method {
             ident,
             doc,
@@ -185,7 +230,7 @@ impl Method {
         }
     }
 
-    fn sync_call(&self) -> TokenStream2 {
+    fn sync_call(&self) -> TokenStream {
         let Method {
             ident,
             doc,
@@ -206,7 +251,7 @@ impl Method {
         }
     }
 
-    fn request(&self, prefix: &str) -> TokenStream2 {
+    fn request(&self, prefix: &str) -> TokenStream {
         let Method {
             ident,
             doc,
@@ -239,7 +284,7 @@ impl Method {
         Ident::new(&ident, self.ident.span())
     }
 
-    fn request_pat(&self, prefix: &str, req_ident: &Ident) -> TokenStream2 {
+    fn request_pat(&self, prefix: &str, req_ident: &Ident) -> TokenStream {
         let responder = self.responder_ident(prefix);
         let Method {
             ident,
@@ -260,7 +305,7 @@ impl Method {
         }
     }
 
-    fn responder(&self, prefix: &str) -> TokenStream2 {
+    fn responder(&self, prefix: &str) -> TokenStream {
         let Method {
             const_ident,
             output,
@@ -290,9 +335,11 @@ impl Method {
 }
 
 impl Protocol {
-    fn quote(self, event: Path) -> Result<TokenStream> {
+    pub fn quote(self) -> Result<TokenStream> {
         let Protocol {
             vis,
+            event,
+            from,
             ident,
             doc,
             method,
@@ -307,6 +354,8 @@ impl Protocol {
         let request = Ident::new(&(ident_str.clone() + "Request"), ident.span());
         let server = Ident::new(&(ident_str.clone() + "Server"), ident.span());
         let stream = Ident::new(&(ident_str.clone() + "Stream"), ident.span());
+
+        let cast_froms = Protocol::cast_from(&from, client.clone());
 
         let constants = method.iter().map(|method| method.constant(&vis));
         let use_constants = method.iter().map(|method| &method.const_ident);
@@ -329,7 +378,7 @@ impl Protocol {
                 use core::task::*;
                 use core::pin::Pin;
 
-                use futures::{Future, Stream, stream::FusedStream};
+                use futures::{Stream, stream::FusedStream};
                 use solvent_async::ipc::Channel;
                 use solvent::ipc::Packet;
 
@@ -488,6 +537,8 @@ impl Protocol {
                     #(#calls)*
                 }
 
+                #(#cast_froms)*
+
                 impl solvent_rpc::Client for #client {
                     type EventReceiver = #event_receiver;
 
@@ -632,6 +683,6 @@ impl Protocol {
             #[cfg(feature = "std")]
             pub use #std_mod::*;
         };
-        Ok(token.into())
+        Ok(token)
     }
 }

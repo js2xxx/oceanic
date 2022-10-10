@@ -78,7 +78,7 @@ pub fn draw_logo(syst: &SystemTable<Boot>) {
     let (blt_buffer, dims) = get_logo_data();
 
     let res = unsafe { RESOLUTION.expect("Unset resolution (should it be initialized?)") };
-    let dest = ((res.0 - dims.0 as usize) / 2, (res.1 - dims.1 as usize) / 2);
+    let dest = ((res.0 - dims.0) / 2, (res.1 - dims.1) / 2);
 
     unsafe { self::gop(syst).as_mut() }
         .blt(BltOp::BufferToVideo {

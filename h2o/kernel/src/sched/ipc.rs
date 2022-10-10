@@ -218,10 +218,7 @@ mod syscall {
         let syscall = (!syscall.as_ptr().is_null())
             .then(|| {
                 let syscall = unsafe { syscall.read() }?;
-                if matches!(
-                    syscall.num as usize,
-                    SV_DISP_NEW | SV_DISP_PUSH | SV_DISP_POP
-                ) {
+                if matches!(syscall.num, SV_DISP_NEW | SV_DISP_PUSH | SV_DISP_POP) {
                     return Err(EPERM);
                 }
                 Ok(syscall)

@@ -9,7 +9,7 @@ cfg_if::cfg_if! {
 }
 
 /// The loader service interface.
-#[crate::protocol]
+#[protocol]
 pub trait Loader {
     /// Acquire a set of objects indexed by its path from the loader service
     /// provider.
@@ -21,8 +21,7 @@ pub trait Loader {
     /// # Errors
     ///
     /// If one of the acquired objects is not found, then its index is returned.
-    #[id(0x172386ab2733)]
-    async fn get_object(path: Vec<CString>) -> Result<Vec<Phys>, usize>;
+    fn get_object(path: Vec<CString>) -> Result<Vec<Phys>, usize>;
 }
 
 pub use loader::*;
