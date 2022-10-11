@@ -1,6 +1,6 @@
 use convert_case::{Case, Casing};
 use proc_macro2::TokenStream;
-use quote::{quote, ToTokens};
+use quote::{quote, spanned::Spanned, ToTokens};
 use syn::{
     parse::{Parse, ParseStream},
     punctuated::Punctuated,
@@ -174,6 +174,14 @@ impl Parse for Method {
         let type_ident_prefix = ident_str.to_case(Case::UpperCamel);
 
         let args = sig.inputs;
+        for arg in &args {
+            if let FnArg::Receiver(receiver) = arg {
+                return Err(Error::new(
+                    receiver.__span(),
+                    "Protocol method cannot have receiver args (auto included)",
+                ));
+            }
+        }
 
         let output = match sig.output {
             syn::ReturnType::Default => parse_quote!(()),

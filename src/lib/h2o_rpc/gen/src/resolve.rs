@@ -104,22 +104,33 @@ pub fn resolve(items: &mut [ProtoItem]) -> Result<(), String> {
         for method in methods {
             let hash = sha256::digest(prefix.clone() + "::" + &method.ident.to_string());
             method.id = u64::from_ne_bytes(hash.as_bytes()[..8].try_into().unwrap());
+        }
+    }
+    dependencies(items)?;
 
-            let client = Ident::new(&(proto.to_string() + "Client"), proto.span());
+    for item in items.iter_mut() {
+        let (proto, methods) = match &mut item.ty {
+            Protocol(proto) => (&proto.ident, &mut proto.method),
+            _ => continue,
+        };
+        for method in methods {
+            let client = Ident::new(&(proto.to_string() + "Client"), proto.span()).to_string();
+            let server = Ident::new(&(proto.to_string() + "Server"), proto.span()).to_string();
             for arg in &mut method.args {
                 let arg = match arg {
                     FnArg::Typed(arg) => arg,
                     _ => return Err("Method arguments cannot be receivers (auto included)".into()),
                 };
                 let ty = arg.ty.to_token_stream().to_string();
-                let ty = ty.replace("Self", &client.to_string());
+                let ty = ty.replace("SelfClient", &client);
+                let ty = ty.replace("SelfServer", &server);
                 arg.ty = parse_str(&ty).map_err(|err| err.to_string())?;
             }
             let ty = method.output.to_token_stream().to_string();
-            let ty = ty.replace("Self", &client.to_string());
+            let ty = ty.replace("SelfClient", &client);
+            let ty = ty.replace("SelfServer", &server);
             method.output = parse_str(&ty).map_err(|err| err.to_string())?;
         }
     }
-    dependencies(items)?;
     Ok(())
 }

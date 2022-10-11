@@ -9,7 +9,7 @@ pub struct RawStream {
     pub seeker: usize,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, SerdePacket)]
 pub enum SeekFrom {
     Start(usize),
     Current(isize),
