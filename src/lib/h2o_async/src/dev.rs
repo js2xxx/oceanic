@@ -1,4 +1,5 @@
 use core::{
+    num::NonZeroUsize,
     pin::Pin,
     task::{Context, Poll},
     time::Duration,
@@ -81,8 +82,8 @@ unsafe impl PackedSyscall for (PackIntrWait, oneshot_::Sender<Result<Instant>>) 
     }
 
     #[inline]
-    fn unpack(&mut self, result: usize, canceled: bool) -> Result {
-        let res = self.0.receive(SerdeReg::decode(result), canceled);
+    fn unpack(&mut self, result: usize, signal: Option<NonZeroUsize>) -> Result {
+        let res = self.0.receive(SerdeReg::decode(result), signal.is_none());
         self.1.send(res).map_err(|_| EPIPE)
     }
 }

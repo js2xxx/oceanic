@@ -48,6 +48,10 @@
                     "ty": "u64"
                 },
                 {
+                    "name": "level_triggered",
+                    "ty": "bool"
+                },
+                {
                     "name": "wake_all",
                     "ty": "bool"
                 },

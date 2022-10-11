@@ -1,5 +1,6 @@
 use alloc::boxed::Box;
 use core::{
+    num::NonZeroUsize,
     sync::atomic::{AtomicUsize, Ordering::*},
     task::{Poll, Waker},
 };
@@ -46,7 +47,7 @@ impl Dispatcher {
             Ok(res) => {
                 let Task { waker, mut pack } = self.tasks.remove(&res.key).ok_or(ETIME)?;
                 // We need to inform the task where an internal error occurred.
-                let res = pack.unpack(res.result, res.canceled);
+                let res = pack.unpack(res.result, NonZeroUsize::new(res.signal));
                 waker.wake();
                 Poll::Ready(res)
             }
@@ -187,7 +188,7 @@ impl Drop for DispReceiver {
             let tasks = self.disp.tasks.take();
             for (_, task) in tasks {
                 let Task { mut pack, waker } = task;
-                let _ = pack.unpack(0, true);
+                let _ = pack.unpack(0, None);
                 waker.wake();
             }
         }
@@ -209,5 +210,5 @@ pub fn dispatch(capacity: usize) -> (DispSender, DispReceiver) {
 pub unsafe trait PackedSyscall: Send {
     fn raw(&self) -> Option<Syscall>;
 
-    fn unpack(&mut self, result: usize, canceled: bool) -> Result;
+    fn unpack(&mut self, result: usize, signal: Option<NonZeroUsize>) -> Result;
 }

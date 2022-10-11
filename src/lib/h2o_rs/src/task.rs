@@ -80,7 +80,7 @@ impl Task {
     }
 
     pub fn join(self) -> Result<usize> {
-        self.try_wait(Duration::MAX, false, SIG_READ)?;
+        self.try_wait(Duration::MAX, true, false, SIG_READ)?;
         self.try_join().map_err(|(err, _)| err)
     }
 

@@ -1,6 +1,7 @@
 use alloc::vec::Vec;
 use core::{
     mem,
+    num::NonZeroUsize,
     ops::ControlFlow,
     pin::Pin,
     task::{Context, Poll},
@@ -136,8 +137,8 @@ unsafe impl PackedSyscall for (PackRead, oneshot_::Sender<Result<Vec<u8>>>) {
         Some(self.0.syscall)
     }
 
-    fn unpack(&mut self, result: usize, canceled: bool) -> Result {
-        let len = self.0.receive(SerdeReg::decode(result), canceled);
+    fn unpack(&mut self, result: usize, signal: Option<NonZeroUsize>) -> Result {
+        let len = self.0.receive(SerdeReg::decode(result), signal.is_none());
         self.1
             .send(len.map(|len| {
                 let mut buf = mem::take(&mut self.0.buf);
@@ -250,8 +251,8 @@ unsafe impl PackedSyscall for (PackWrite, oneshot_::Sender<Result<(Vec<u8>, usiz
         Some(self.0.syscall)
     }
 
-    fn unpack(&mut self, result: usize, canceled: bool) -> Result {
-        let len = self.0.receive(SerdeReg::decode(result), canceled);
+    fn unpack(&mut self, result: usize, signal: Option<NonZeroUsize>) -> Result {
+        let len = self.0.receive(SerdeReg::decode(result), signal.is_none());
         self.1
             .send(len.map(|len| (mem::take(&mut self.0.buf), len)))
             .map_err(|_| EPIPE)
@@ -310,8 +311,8 @@ unsafe impl PackedSyscall for (PackResize, oneshot_::Sender<Result>) {
         Some((self.0).0)
     }
 
-    fn unpack(&mut self, result: usize, canceled: bool) -> Result {
-        let res = self.0.receive(SerdeReg::decode(result), canceled);
+    fn unpack(&mut self, result: usize, signal: Option<NonZeroUsize>) -> Result {
+        let res = self.0.receive(SerdeReg::decode(result), signal.is_none());
         self.1.send(res).map_err(|_| EPIPE)
     }
 }

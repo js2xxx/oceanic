@@ -195,7 +195,7 @@ impl Phys {
         if self.inner.reader_count() > 0 {
             self.event.notify(0, SIG_READ);
         } else {
-            self.event.notify(0, SIG_READ | SIG_WRITE)
+            self.event.notify(0, SIG_READ | SIG_WRITE);
         }
     }
 

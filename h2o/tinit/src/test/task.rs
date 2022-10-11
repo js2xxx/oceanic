@@ -45,7 +45,7 @@ unsafe fn join(normal: Handle, fault: Handle) {
     log::trace!("join: normal = {:?}, fault = {:?}", normal, fault);
     let mut ret = Default::default();
 
-    sv_obj_wait(normal, u64::MAX, false, SIG_READ)
+    sv_obj_wait(normal, u64::MAX, true, false, SIG_READ)
         .into_res()
         .expect("Failed to wait for the task");
     sv_task_join(normal, &mut ret)
@@ -53,7 +53,7 @@ unsafe fn join(normal: Handle, fault: Handle) {
         .expect("Failed to join the task");
     assert_eq!(ret, 12345);
 
-    sv_obj_wait(fault, u64::MAX, false, SIG_READ)
+    sv_obj_wait(fault, u64::MAX, true, false, SIG_READ)
         .into_res()
         .expect("Failed to wait for the task");
     sv_task_join(fault, &mut ret)
@@ -162,7 +162,7 @@ unsafe fn debug_excep(task: Handle, st: Handle) {
         buffer_size: size_of::<Exception>(),
         buffer_cap: size_of::<Exception>(),
     };
-    sv_obj_wait(chan, u64::MAX, false, SIG_READ)
+    sv_obj_wait(chan, u64::MAX, true, false, SIG_READ)
         .into_res()
         .expect("Failed to wait for the channel");
     sv_chan_recv(chan, &mut packet)
@@ -179,7 +179,7 @@ unsafe fn debug_excep(task: Handle, st: Handle) {
         .into_res()
         .expect("Failed to send exception result");
 
-    sv_obj_wait(task, u64::MAX, false, SIG_READ)
+    sv_obj_wait(task, u64::MAX, true, false, SIG_READ)
         .into_res()
         .expect("Failed to wait for the task");
     let mut ret = Default::default();
@@ -215,7 +215,7 @@ unsafe fn kill(task: Handle) {
         .into_res()
         .expect("Failed to kill a task");
 
-    sv_obj_wait(task, u64::MAX, false, SIG_READ)
+    sv_obj_wait(task, u64::MAX, true, false, SIG_READ)
         .into_res()
         .expect("Failed to wait for the task");
     let mut ret = Default::default();

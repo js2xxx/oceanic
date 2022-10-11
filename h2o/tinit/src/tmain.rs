@@ -97,7 +97,7 @@ fn serve_load(load_rpc: Channel, bootfs: Directory, bootfs_phys: &Phys) -> Error
 
         match res {
             Ok(()) => hint::spin_loop(),
-            Err(ENOENT) => match load_rpc.try_wait(Duration::MAX, true, SIG_READ) {
+            Err(ENOENT) => match load_rpc.try_wait(Duration::MAX, true, true, SIG_READ) {
                 Ok(_) => {}
                 Err(err) => break err,
             },

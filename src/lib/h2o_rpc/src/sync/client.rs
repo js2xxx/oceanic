@@ -144,7 +144,7 @@ impl Inner {
     fn call(&self, packet: Packet) -> Result<Packet, Error> {
         self.call_inner(packet, |_| {
             self.channel
-                .try_wait(Duration::MAX, false, SIG_READ)
+                .try_wait(Duration::MAX, true, false, SIG_READ)
                 .map_err(Error::ClientReceive)?;
             Ok(())
         })
@@ -157,7 +157,7 @@ impl Inner {
                 return Err(Error::ClientReceive(ETIME));
             }
             self.channel
-                .try_wait(timeout - elapsed, false, SIG_READ)
+                .try_wait(timeout - elapsed, true, false, SIG_READ)
                 .map_err(Error::ClientReceive)?;
             Ok(())
         })
@@ -215,7 +215,7 @@ impl Inner {
     fn receive_event(&self) -> Result<Packet, Error> {
         self.receive_event_inner(|_| {
             self.channel
-                .try_wait(Duration::MAX, false, SIG_READ)
+                .try_wait(Duration::MAX, true, false, SIG_READ)
                 .map_err(Error::ClientReceive)?;
             Ok(())
         })
@@ -228,7 +228,7 @@ impl Inner {
                 return Err(Error::ClientReceive(ETIME));
             }
             self.channel
-                .try_wait(timeout - elapsed, false, SIG_READ)
+                .try_wait(timeout - elapsed, true, false, SIG_READ)
                 .map_err(Error::ClientReceive)?;
             Ok(())
         })

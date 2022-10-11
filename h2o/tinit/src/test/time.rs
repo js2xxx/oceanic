@@ -15,11 +15,11 @@ pub unsafe fn test() {
         .into_res()
         .expect("Failed to set timer");
     let time = Instant::now();
-    sv_obj_wait(disp, u64::MAX, false, SIG_READ)
+    sv_obj_wait(disp, u64::MAX, true, false, SIG_READ)
         .into_res()
         .expect("Failed to wait for dispatcher");
-    let mut canceled = false;
-    let k2 = sv_disp_pop(disp, &mut canceled, ptr::null_mut())
+    let mut signal = 0;
+    let k2 = sv_disp_pop(disp, &mut signal, ptr::null_mut())
         .into_res()
         .expect("Failed to wait for timer");
     assert_eq!(key, k2);

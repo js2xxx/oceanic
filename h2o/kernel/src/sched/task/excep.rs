@@ -43,8 +43,12 @@ pub fn dispatch_exception(frame: &mut Frame, vec: ExVec) -> bool {
         return false;
     }
 
-    let blocker =
-        crate::sched::Blocker::new(&(Arc::clone(excep_chan.event()) as _), false, SIG_READ);
+    let blocker = crate::sched::Blocker::new(
+        &(Arc::clone(excep_chan.event()) as _),
+        true,
+        false,
+        SIG_READ,
+    );
     if blocker.wait(None, Duration::MAX).is_err() {
         return false;
     }

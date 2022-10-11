@@ -48,8 +48,8 @@
                     "ty": "Handle"
                 },
                 {
-                    "name": "canceled",
-                    "ty": "*mut bool"
+                    "name": "signal",
+                    "ty": "*mut usize"
                 },
                 {
                     "name": "result",

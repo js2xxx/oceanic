@@ -163,7 +163,7 @@ struct Inner {
 impl Inner {
     fn receive(&self, timeout: Duration) -> Result<Packet, Error> {
         let mut packet = Default::default();
-        let res = self.channel.try_wait(timeout, false, SIG_READ);
+        let res = self.channel.try_wait(timeout, true, false, SIG_READ);
         let res = res.and_then(|_| self.channel.receive(&mut packet));
         res.map_err(|err| {
             if err == EPIPE {

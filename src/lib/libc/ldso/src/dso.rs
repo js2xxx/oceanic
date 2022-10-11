@@ -782,7 +782,7 @@ pub fn get_object(path: Vec<CString>) -> Result<Vec<Phys>, Error> {
 
         ldrpc.send(&mut packet).map_err(Error::DepGet)?;
         ldrpc
-            .try_wait(Duration::MAX, false, SIG_READ)
+            .try_wait(Duration::MAX, true, false, SIG_READ)
             .map_err(Error::DepGet)?;
         ldrpc.receive(&mut packet).map_err(Error::DepGet)?;
         assert_eq!(packet.id, NonZeroUsize::new(id));

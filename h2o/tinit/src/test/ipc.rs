@@ -64,7 +64,7 @@ pub unsafe fn test(virt: &Virt, stack: (*mut u8, *mut u8, Handle)) {
 
         {
             let mut receivee = rp(0, &mut [], &mut buf);
-            sv_obj_wait(c2, u64::MAX, false, SIG_READ)
+            sv_obj_wait(c2, u64::MAX, true, false, SIG_READ)
                 .into_res()
                 .expect("Failed to wait for the channel");
             let ret = sv_chan_recv(c2, &mut receivee);
@@ -102,7 +102,7 @@ pub unsafe fn test(virt: &Virt, stack: (*mut u8, *mut u8, Handle)) {
             let mut hdl = [Handle::NULL];
             let mut p = rp(0, &mut hdl, &mut buf);
 
-            sv_obj_wait(init_chan, u64::MAX, false, SIG_READ)
+            sv_obj_wait(init_chan, u64::MAX, true, false, SIG_READ)
                 .into_res()
                 .expect("Failed to wait for the channel");
             sv_chan_recv(init_chan, &mut p)
@@ -150,7 +150,7 @@ pub unsafe fn test(virt: &Virt, stack: (*mut u8, *mut u8, Handle)) {
 
         p.id = 0;
         ::log::trace!("Waiting for the initial response");
-        sv_obj_wait(c1, u64::MAX, false, SIG_READ)
+        sv_obj_wait(c1, u64::MAX, true, false, SIG_READ)
             .into_res()
             .expect("Failed to wait for the channel");
         ::log::trace!("Receiving the response");

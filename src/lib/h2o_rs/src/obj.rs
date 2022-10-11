@@ -56,12 +56,19 @@ pub trait Object: private::Sealed + fmt::Debug {
         sv_call::sv_obj_drop(unsafe { this.raw() }).into_res()
     }
 
-    fn try_wait(&self, timeout: Duration, wake_all: bool, signal: usize) -> Result<usize> {
+    fn try_wait(
+        &self,
+        timeout: Duration,
+        level_triggered: bool,
+        wake_all: bool,
+        signal: usize,
+    ) -> Result<usize> {
         unsafe {
             sv_call::sv_obj_wait(
                 // SAFETY: We don't move the ownership of the handle.
                 unsafe { self.raw() },
                 crate::time::try_into_us(timeout)?,
+                level_triggered,
                 wake_all,
                 signal,
             )
@@ -181,7 +188,7 @@ impl_obj!(@DROP, Dispatcher);
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct PopRes {
-    pub canceled: bool,
+    pub signal: usize,
     pub key: usize,
     pub result: usize,
 }
@@ -221,7 +228,7 @@ impl Dispatcher {
     pub fn pop_raw(&self) -> Result<PopRes> {
         let mut res = PopRes::default();
         let key = unsafe {
-            sv_call::sv_disp_pop(unsafe { self.raw() }, &mut res.canceled, &mut res.result)
+            sv_call::sv_disp_pop(unsafe { self.raw() }, &mut res.signal, &mut res.result)
         }
         .into_res()?;
         res.key = key as usize;
