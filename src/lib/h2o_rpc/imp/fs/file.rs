@@ -1,6 +1,16 @@
+use solvent::ipc::Packet;
+
 use super::*;
 
-#[protocol]
+bitflags::bitflags! {
+    #[derive(SerdePacket)]
+    pub struct EventFlags: u32 {
+        const READABLE = 0b001;
+        const WRITEABLE = 0b010;
+    }
+}
+
+#[protocol(EventFlags)]
 pub trait File: entry::Entry {
     fn stream() -> Result<RawStream, Error>;
 

@@ -14,6 +14,11 @@ pub struct Serializer<'a>(&'a mut Packet);
 
 impl<'a> Serializer<'a> {
     #[inline]
+    pub fn new(packet: &'a mut Packet) -> Self {
+        Serializer(packet)
+    }
+
+    #[inline]
     fn extend_from_slice(&mut self, slice: &[u8]) {
         self.0.buffer.extend_from_slice(slice);
     }
@@ -39,6 +44,14 @@ pub struct Deserializer<'a> {
 }
 
 impl<'a> Deserializer<'a> {
+    #[inline]
+    pub fn new(packet: &'a Packet) -> Self {
+        Deserializer {
+            buffer: &packet.buffer,
+            handles: &packet.handles,
+        }
+    }
+
     #[inline]
     pub fn is_empty(&self) -> bool {
         self.buffer.is_empty() && self.handles.is_empty()
@@ -392,10 +405,7 @@ pub fn serialize<T: SerdePacket>(
 }
 
 pub fn deserialize_metadata(input: &Packet) -> Result<(usize, Deserializer), Error> {
-    let mut de = Deserializer {
-        buffer: &input.buffer,
-        handles: &input.handles,
-    };
+    let mut de = Deserializer::new(input);
     let magic = usize::deserialize(&mut de)?;
     if magic != MAGIC {
         return Err(Error::InvalidMagic(magic));

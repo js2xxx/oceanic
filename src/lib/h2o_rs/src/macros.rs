@@ -5,6 +5,7 @@
 macro_rules! impl_obj_for {
     ($macro:ident) => {
         $macro!($crate::ipc::Channel);
+        $macro!($crate::ipc::Event);
         $macro!($crate::task::Task);
         $macro!($crate::task::SuspendToken);
         $macro!($crate::mem::Space);

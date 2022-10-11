@@ -390,12 +390,12 @@ impl Protocol {
                 use solvent_async::ipc::Channel;
                 use solvent::ipc::Packet;
 
-                use solvent_rpc::{SerdePacket, Event};
+                use solvent_rpc::SerdePacket;
                 use super::{*, #core_mod::{#(#use_constants,)*}};
 
                 #[allow(dead_code)]
                 fn assert_event() {
-                    fn inner<T: Event>() {}
+                    fn inner<T: solvent_rpc::Event>() {}
                     inner::<#event>()
                 }
 
@@ -516,7 +516,7 @@ impl Protocol {
                     type Event = #event;
 
                     fn send(&self, event: #event) -> Result<(), solvent_rpc::Error> {
-                        let packet = <#event>::serialize(event)?;
+                        let packet = solvent_rpc::Event::serialize(event)?;
                         self.inner.send(packet)
                     }
 
@@ -596,7 +596,7 @@ impl Protocol {
                     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
                         Poll::Ready(
                             ready!(Pin::new(&mut self.inner).poll_next(cx))
-                                .map(|inner| inner.and_then(<#event>::deserialize)),
+                                .map(|inner| inner.and_then(solvent_rpc::Event::deserialize)),
                         )
                     }
                 }
@@ -611,7 +611,7 @@ impl Protocol {
                     use core::{iter::FusedIterator, time::Duration};
 
                     use solvent::ipc::Channel;
-                    use solvent_rpc::{Event, SerdePacket};
+                    use solvent_rpc::SerdePacket;
 
                     use super::solvent_rpc;
                     use super::super::{*, #core_mod::{#(#u2,)*}};
@@ -681,7 +681,7 @@ impl Protocol {
                         type Item = Result<#event, solvent_rpc::Error>;
 
                         fn next(&mut self) -> Option<Self::Item> {
-                            self.inner.next().map(|inner| inner.and_then(<#event>::deserialize))
+                            self.inner.next().map(|inner| inner.and_then(solvent_rpc::Event::deserialize))
                         }
                     }
 
