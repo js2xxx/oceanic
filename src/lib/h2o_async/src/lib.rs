@@ -73,9 +73,14 @@ pub mod test {
     pub async fn test_disp() {
         log::debug!("Has {} cpus available", solvent::task::cpu_num());
 
-        let phys = solvent::mem::Phys::allocate(4096, true).expect("Failed to allocate memory");
-        let stream =
-            unsafe { crate::io::Stream::new(solvent_core::io::RawStream { phys, seeker: 0 }) };
+        let phys = solvent::mem::Phys::allocate(5, true).expect("Failed to allocate memory");
+        let stream = unsafe {
+            crate::io::Stream::new(solvent_core::io::RawStream {
+                phys,
+                len: 5,
+                seeker: 0,
+            })
+        };
         stream.write(&[1, 2, 3, 4, 5, 6, 7]).await.unwrap();
         stream
             .seek(solvent_core::io::SeekFrom::Current(-4))
