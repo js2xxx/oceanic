@@ -10,7 +10,7 @@ use core::{
 };
 
 use solvent::time::Instant;
-use solvent_std::sync::Arsc;
+use solvent_core::sync::Arsc;
 
 use super::Event;
 

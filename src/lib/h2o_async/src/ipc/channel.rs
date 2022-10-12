@@ -10,7 +10,7 @@ use core::{
 use solvent::prelude::{
     Handle, PackRecv, Packet, Result, SerdeReg, Syscall, EBUFFER, ENOENT, EPIPE, SIG_READ,
 };
-use solvent_std::{
+use solvent_core::{
     sync::channel::{oneshot, oneshot_, TryRecvError},
     thread::Backoff,
 };

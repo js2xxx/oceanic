@@ -12,7 +12,7 @@ async fn main() {
     log::debug!("Goodbye!");
 }
 
-solvent_async::entry!(main);
+solvent_async::entry!(main, solvent_std);
 
 #[link(name = "ldso")]
 extern "C" {

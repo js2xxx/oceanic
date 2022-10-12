@@ -11,7 +11,7 @@ use solvent::{
     error::Result,
     prelude::{Object, Syscall, ENOENT, EPIPE, ETIME},
 };
-use solvent_std::{
+use solvent_core::{
     sync::channel::{oneshot, oneshot_, TryRecvError},
     thread::Backoff,
 };

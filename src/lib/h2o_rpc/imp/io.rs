@@ -8,7 +8,7 @@ use core as std;
 use solvent::error::Error as RawError;
 use solvent_rpc_core::SerdePacket;
 #[cfg(feature = "std")]
-use solvent_std::io::{RawStream, SeekFrom};
+use solvent_core::io::{RawStream, SeekFrom};
 use thiserror_impl::Error;
 
 pub use self::entry::{FileType, Metadata};

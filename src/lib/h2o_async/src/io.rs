@@ -2,7 +2,7 @@ use alloc::vec::Vec;
 use core::fmt;
 
 use solvent::prelude::{IoSlice, IoSliceMut};
-use solvent_std::io::{RawStream, SeekFrom};
+use solvent_core::io::{RawStream, SeekFrom};
 
 use crate::{disp::DispSender, mem::Phys, sync::Mutex};
 

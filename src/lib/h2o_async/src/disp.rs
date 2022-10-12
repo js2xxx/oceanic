@@ -9,7 +9,7 @@ use futures::task::AtomicWaker;
 use solvent::prelude::{
     Dispatcher as Inner, Object, Result, Syscall, ENOENT, ENOSPC, EPIPE, ETIME,
 };
-use solvent_std::sync::{Arsc, CHashMap};
+use solvent_core::sync::{Arsc, CHashMap};
 
 struct Task {
     pack: Box<dyn PackedSyscall>,

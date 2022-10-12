@@ -12,7 +12,7 @@ use solvent::prelude::{
     IoSlice, IoSliceMut, PackRead, PackResize, PackWrite, Result, SerdeReg, Syscall, EAGAIN,
     ENOENT, EPIPE, SIG_READ, SIG_WRITE,
 };
-use solvent_std::{
+use solvent_core::{
     sync::channel::{oneshot, oneshot_, TryRecvError},
     thread::Backoff,
 };

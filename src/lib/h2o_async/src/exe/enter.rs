@@ -1,7 +1,7 @@
 use core::{cell::Cell, marker::PhantomData};
 
 use futures::Future;
-use solvent_std::thread_local;
+use solvent_core::thread_local;
 
 thread_local! {
     static STATE: Cell<State> = const { Cell::new(State::NotEntered) };

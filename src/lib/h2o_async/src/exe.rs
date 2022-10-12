@@ -15,7 +15,7 @@ use futures::{
     Future,
 };
 use solvent::prelude::EPIPE;
-use solvent_std::{
+use solvent_core::{
     sync::{Arsc, Injector, Lazy, Stealer, Worker},
     thread::{self, available_parallelism, Backoff},
     thread_local,
@@ -236,13 +236,14 @@ where
 
 #[macro_export]
 macro_rules! entry {
-    ($func:ident) => {
+    ($func:ident, $std:path) => {
         mod __h2o_async_inner {
             fn main() {
                 $crate::block_on(async { (super::$func)().await })
             }
 
-            $crate::reexport_std::entry!(main);
+            use $std as std;
+            std::entry!(main);
         }
     };
 }

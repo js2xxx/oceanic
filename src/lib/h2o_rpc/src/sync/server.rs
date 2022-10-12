@@ -5,8 +5,8 @@ use core::{
 };
 
 use solvent::prelude::{Channel, Object, Packet, EPIPE, SIG_READ};
+use solvent_core::sync::Arsc;
 use solvent_rpc_core::packet::{self, SerdePacket};
-use solvent_std::sync::Arsc;
 
 use crate::Error;
 

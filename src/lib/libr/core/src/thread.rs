@@ -223,7 +223,9 @@ impl Thread {
         static COUNTER: AtomicU64 = AtomicU64::new(1);
         NonZeroU64::new(COUNTER.fetch_add(1, Relaxed)).unwrap()
     }
-    pub(crate) fn new(name: Option<String>) -> Thread {
+
+    #[doc(hidden)]
+    pub fn new(name: Option<String>) -> Thread {
         Thread {
             inner: Arsc::pin(Inner {
                 name,
@@ -270,7 +272,8 @@ pub fn available_parallelism() -> NonZeroUsize {
     solvent::task::cpu_num()
 }
 
-pub(crate) mod current {
+#[doc(hidden)]
+pub mod current {
     use core::cell::RefCell;
 
     use super::*;
@@ -288,11 +291,13 @@ pub(crate) mod current {
         })
     }
 
+    #[doc(hidden)]
     #[inline]
     pub fn current() -> Option<Thread> {
         with_current(|cur| cur.clone())
     }
 
+    #[doc(hidden)]
     pub fn set(thread: Thread) {
         CURRENT.with_borrow_mut(move |current| *current = Some(thread))
     }

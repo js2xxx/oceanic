@@ -14,8 +14,8 @@ use solvent::{
     prelude::Object,
     time::Instant,
 };
+use solvent_core::sync::{Arsc, Mutex};
 use solvent_rpc_core::packet::{self, SerdePacket};
-use solvent_std::sync::{Arsc, Mutex};
 
 use crate::Error;
 

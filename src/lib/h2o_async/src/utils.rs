@@ -1,6 +1,6 @@
 use core::task::Poll;
 
-use solvent_std::sync::channel::{oneshot_, TryRecvError};
+use solvent_core::sync::channel::{oneshot_, TryRecvError};
 
 /// Check if the channel has already received a result from previous polling (or
 /// dispatcher's event).

@@ -10,7 +10,7 @@ pub mod mem;
 pub mod sync;
 mod utils;
 
-pub use solvent_std as reexport_std;
+pub use solvent_core as reexport_std;
 
 extern crate alloc;
 
@@ -75,10 +75,10 @@ pub mod test {
 
         let phys = solvent::mem::Phys::allocate(4096, true).expect("Failed to allocate memory");
         let stream =
-            unsafe { crate::io::Stream::new(solvent_std::io::RawStream { phys, seeker: 0 }) };
+            unsafe { crate::io::Stream::new(solvent_core::io::RawStream { phys, seeker: 0 }) };
         stream.write(&[1, 2, 3, 4, 5, 6, 7]).await.unwrap();
         stream
-            .seek(solvent_std::io::SeekFrom::Current(-4))
+            .seek(solvent_core::io::SeekFrom::Current(-4))
             .await
             .unwrap();
         let mut buf = [0; 10];

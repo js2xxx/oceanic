@@ -79,7 +79,7 @@ use core::{
 };
 
 use solvent::time::Instant;
-use solvent_std::{
+use solvent_core::{
     sync::{Arsc, Mutex, MutexGuard},
     thread::{self, Thread},
 };

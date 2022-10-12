@@ -9,8 +9,8 @@ use core::{
 use futures::{pin_mut, stream::FusedStream, Stream};
 use solvent::prelude::{Packet, EPIPE};
 use solvent_async::ipc::Channel;
+use solvent_core::sync::Arsc;
 use solvent_rpc_core::packet::{self, SerdePacket};
-use solvent_std::sync::Arsc;
 
 use crate::Error;
 

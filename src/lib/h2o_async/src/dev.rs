@@ -10,7 +10,7 @@ use solvent::{
     prelude::{PackIntrWait, Result, SerdeReg, Syscall, EPIPE, SIG_GENERIC},
     time::Instant,
 };
-use solvent_std::{
+use solvent_core::{
     sync::channel::{oneshot, oneshot_},
     thread::Backoff,
 };
