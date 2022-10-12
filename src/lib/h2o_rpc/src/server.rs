@@ -210,7 +210,7 @@ impl Inner {
 
 pub trait Server: SerdePacket + AsRef<Channel> + From<Channel> {
     type RequestStream: FusedStream;
-    type EventSender;
+    type EventSender: EventSender;
 
     fn from_inner(inner: ServerImpl) -> Self;
 
@@ -220,7 +220,15 @@ pub trait Server: SerdePacket + AsRef<Channel> + From<Channel> {
 pub trait EventSender {
     type Event: crate::Event;
 
-    fn send(&self, event: Self::Event) -> Result<(), Error>;
+    fn send_event(&self, event: Self::Event) -> Result<(), Error>;
+
+    #[inline]
+    fn send<T>(&self, event: T) -> Result<(), Error>
+    where
+        T: Into<Self::Event>,
+    {
+        self.send_event(event.into())
+    }
 
     fn close(self);
 }

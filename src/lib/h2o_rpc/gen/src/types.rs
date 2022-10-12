@@ -1,6 +1,6 @@
 use convert_case::{Case, Casing};
 use proc_macro2::TokenStream;
-use quote::{quote, spanned::Spanned, ToTokens};
+use quote::{format_ident, quote, spanned::Spanned, ToTokens};
 use syn::{
     parse::{Parse, ParseStream},
     punctuated::Punctuated,
@@ -10,7 +10,7 @@ use syn::{
 #[derive(Debug)]
 pub struct Protocol {
     pub vis: Visibility,
-    pub event: Path,
+    pub event: Vec<(Path, u64)>,
     pub from: Punctuated<Path, Token![+]>,
     pub ident: Ident,
     pub doc: Vec<Attribute>,
@@ -22,7 +22,7 @@ impl Parse for Protocol {
         let mut attr = Attribute::parse_outer(input)?;
 
         let mut multiple_proto = false;
-        let mut event = None;
+        let mut event: Option<Punctuated<Path, Token![,]>> = None;
         attr.retain(|attr| {
             match attr.parse_meta() {
                 Ok(Meta::NameValue(MetaNameValue { path, .. })) if path.is_ident("doc") => {
@@ -33,7 +33,7 @@ impl Parse for Protocol {
                     multiple_proto |= old.is_some();
                 }
                 Ok(Meta::Path(path)) if path.is_ident("protocol") => {
-                    let old = event.replace(parse_quote!(solvent_rpc::UnknownEvent));
+                    let old = event.replace(Punctuated::new());
                     multiple_proto |= old.is_some();
                 }
                 _ => {}
@@ -67,7 +67,7 @@ impl Parse for Protocol {
         let method = Punctuated::<_, Token![;]>::parse_terminated(&content)?;
         Ok(Protocol {
             vis,
-            event,
+            event: event.into_iter().map(|event| (event, 0)).collect(),
             from,
             ident,
             doc: attr,
@@ -87,8 +87,7 @@ impl Protocol {
                 let seg = path.segments.pop().unwrap();
                 (path, seg.into_value().ident)
             };
-            let from_ident_str = from_ident.to_string();
-            let from_client = Ident::new(&(from_ident_str + "Client"), from_ident.span());
+            let from_client = format_ident!("{from_ident}Client");
             parent.segments.push(from_client.into());
             let from_client = parent;
             quote! {
@@ -107,6 +106,63 @@ impl Protocol {
                 }
             }
         })
+    }
+
+    fn event_def(ident: Ident, event: &[(Path, u64)]) -> (Ident, TokenStream) {
+        let event_ident = format_ident!("{ident}Event");
+        let variant = event
+            .iter()
+            .map(|(path, _)| &path.segments.last().unwrap().ident);
+        let v2 = variant.clone();
+        let v3 = variant.clone();
+        let v4 = variant.clone();
+        let pat = variant
+            .clone()
+            .map(|ident| Ident::new(&ident.to_string().to_case(Case::Snake), ident.span()));
+        let path = event.iter().map(|(path, _)| path);
+        let p2 = path.clone();
+        let index = event.iter().map(|&(_, index)| index);
+        let i2 = index.clone();
+
+        let def = quote! {
+            pub enum #event_ident {
+                #(#variant (#path),)*
+                Unknown(Packet),
+            }
+
+            #(
+                impl From<#p2> for #event_ident {
+                    fn from(var: #p2) -> #event_ident {
+                        #event_ident::#v4(var)
+                    }
+                }
+            )*
+
+            impl solvent_rpc::Event for #event_ident {
+                fn deserialize(packet: Packet) -> Result<Self, crate::Error> {
+                    let mut de = solvent_rpc::packet::Deserializer::new(&packet);
+                    let id: u64 = solvent_rpc::packet::SerdePacket::deserialize(&mut de)?;
+                    Ok(match id {
+                        #(#index => #event_ident::#v2(solvent_rpc::packet::SerdePacket::deserialize(&mut de)?),)*
+                        _ => #event_ident::Unknown(packet),
+                    })
+                }
+
+                fn serialize(self) -> Result<Packet, crate::Error> {
+                    let mut packet = Default::default();
+                    let mut ser = solvent_rpc::packet::Serializer::new(&mut packet);
+                    Ok(match self {
+                        #(#event_ident::#v3(#pat) => {
+                            solvent_rpc::packet::SerdePacket::serialize(#i2, &mut ser)?;
+                            solvent_rpc::packet::SerdePacket::serialize(#pat, &mut ser)?;
+                            packet
+                        },)*
+                        #event_ident::Unknown(packet) => packet,
+                    })
+                }
+            }
+        };
+        (event_ident, def)
     }
 }
 
@@ -288,8 +344,7 @@ impl Method {
     }
 
     fn responder_ident(&self, prefix: &str) -> Ident {
-        let ident = prefix.to_string() + &self.type_ident_prefix + "Responder";
-        Ident::new(&ident, self.ident.span())
+        format_ident!("{prefix}{}Responder", self.type_ident_prefix)
     }
 
     fn request_pat(&self, prefix: &str, req_ident: &Ident) -> TokenStream {
@@ -354,6 +409,7 @@ impl Protocol {
         } = self;
 
         let ident_str = ident.to_string();
+        let event_path = event.iter().map(|(path, _)| path);
         let core_mod = Ident::new(&ident_str.to_case(Case::Snake), ident.span());
         let std_mod = Ident::new(&(ident_str.to_case(Case::Snake) + "_std"), ident.span());
         let client = Ident::new(&(ident_str.clone() + "Client"), ident.span());
@@ -363,6 +419,7 @@ impl Protocol {
         let server = Ident::new(&(ident_str.clone() + "Server"), ident.span());
         let stream = Ident::new(&(ident_str.clone() + "Stream"), ident.span());
 
+        let (event_ident, event_def) = Protocol::event_def(ident.clone(), &event);
         let cast_froms = Protocol::cast_from(&from, client.clone());
 
         let constants = method.iter().map(|method| method.constant(&vis));
@@ -395,8 +452,8 @@ impl Protocol {
 
                 #[allow(dead_code)]
                 fn assert_event() {
-                    fn inner<T: solvent_rpc::Event>() {}
-                    inner::<#event>()
+                    fn inner<T: solvent_rpc::packet::SerdePacket>() {}
+                    inner::<(#(#event_path),*)>()
                 }
 
                 pub struct #ident;
@@ -407,6 +464,8 @@ impl Protocol {
 
                     type SyncClient = self::sync::#client;
                 }
+
+                #event_def
 
                 #(#doc)*
                 #[derive(Debug, SerdePacket)]
@@ -513,9 +572,9 @@ impl Protocol {
                 }
 
                 impl solvent_rpc::EventSender for #event_sender {
-                    type Event = #event;
+                    type Event = #event_ident;
 
-                    fn send(&self, event: #event) -> Result<(), solvent_rpc::Error> {
+                    fn send_event(&self, event: #event_ident) -> Result<(), solvent_rpc::Error> {
                         let packet = solvent_rpc::Event::serialize(event)?;
                         self.inner.send(packet)
                     }
@@ -591,7 +650,7 @@ impl Protocol {
                 }
 
                 impl Stream for #event_receiver {
-                    type Item = Result<#event, solvent_rpc::Error>;
+                    type Item = Result<#event_ident, solvent_rpc::Error>;
 
                     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
                         Poll::Ready(
@@ -678,7 +737,7 @@ impl Protocol {
                     }
 
                     impl Iterator for #event_receiver {
-                        type Item = Result<#event, solvent_rpc::Error>;
+                        type Item = Result<#event_ident, solvent_rpc::Error>;
 
                         fn next(&mut self) -> Option<Self::Item> {
                             self.inner.next().map(|inner| inner.and_then(solvent_rpc::Event::deserialize))

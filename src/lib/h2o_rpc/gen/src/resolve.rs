@@ -82,11 +82,17 @@ fn dependencies(items: &mut [ProtoItem]) -> Result<(), String> {
         for from in froms {
             let from_ident = &from.segments.last().unwrap().ident;
             let methods = proto(items, map[from_ident]).method.clone();
+            let events = proto(items, map[from_ident]).event.clone();
             proto(items, index).method.extend(methods);
+            proto(items, index).event.extend(events);
         }
         let vec = &mut proto(items, index).method;
         vec.sort_by(|a, b| a.ident.cmp(&b.ident));
         vec.dedup_by(|a, b| a.ident == b.ident);
+
+        let vec = &mut proto(items, index).event;
+        vec.sort_by_key(|x| x.1);
+        vec.dedup_by_key(|x| x.1);
     }
 
     Ok(())
@@ -94,8 +100,12 @@ fn dependencies(items: &mut [ProtoItem]) -> Result<(), String> {
 
 pub fn resolve(items: &mut [ProtoItem]) -> Result<(), String> {
     for item in items.iter_mut() {
-        let (proto, methods) = match &mut item.ty {
-            Protocol(proto) => (&proto.ident, &mut proto.method),
+        let (proto, methods, events) = match &mut item.ty {
+            Protocol(proto) => (
+                &proto.ident,
+                &mut proto.method,
+                &mut proto.event,
+            ),
             _ => continue,
         };
         let mut prefix = item.parent.as_os_str().to_string_lossy().to_string();
@@ -104,6 +114,10 @@ pub fn resolve(items: &mut [ProtoItem]) -> Result<(), String> {
         for method in methods {
             let hash = sha256::digest(prefix.clone() + "::" + &method.ident.to_string());
             method.id = u64::from_ne_bytes(hash.as_bytes()[..8].try_into().unwrap());
+        }
+        for event in events {
+            let hash = sha256::digest(event.0.to_token_stream().to_string());
+            event.1 = u64::from_ne_bytes(hash.as_bytes()[..8].try_into().unwrap());
         }
     }
     dependencies(items)?;

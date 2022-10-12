@@ -1,5 +1,5 @@
 use solvent::prelude::Packet;
-use solvent_rpc_core::packet::{SerdePacket, Deserializer, Serializer};
+use solvent_rpc_core::packet::{Deserializer, SerdePacket, Serializer};
 
 #[cfg(feature = "std")]
 pub trait Protocol {
@@ -77,19 +77,5 @@ impl<T: SerdePacket> Event for T {
         let mut ser = Serializer::new(&mut packet);
         SerdePacket::serialize(self, &mut ser)?;
         Ok(packet)
-    }
-}
-
-pub struct UnknownEvent(pub Packet);
-
-impl Event for UnknownEvent {
-    #[inline]
-    fn deserialize(packet: Packet) -> Result<Self, crate::Error> {
-        Ok(Self(packet))
-    }
-
-    #[inline]
-    fn serialize(self) -> Result<Packet, crate::Error> {
-        Ok(self.0)
     }
 }

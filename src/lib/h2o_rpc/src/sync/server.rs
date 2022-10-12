@@ -192,17 +192,9 @@ impl Inner {
 
 pub trait Server: SerdePacket + AsRef<Channel> + From<Channel> {
     type RequestIter: FusedIterator;
-    type EventSender;
+    type EventSender: crate::EventSender;
 
     fn from_inner(inner: ServerImpl) -> Self;
 
     fn serve(self) -> (Self::RequestIter, Self::EventSender);
-}
-
-pub trait EventSender {
-    type Event: crate::Event;
-
-    fn send(&self, event: Self::Event) -> Result<(), Error>;
-
-    fn close(self);
 }

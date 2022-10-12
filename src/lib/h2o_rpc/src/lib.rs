@@ -10,7 +10,13 @@ mod client;
 mod ifx;
 #[path ="../target/imp/mod.rs"]
 #[rustfmt::skip]
-#[allow(dead_code, unused, clippy::module_inception, clippy::let_unit_value)]
+#[allow(
+    dead_code, 
+    unused, 
+    clippy::module_inception, 
+    clippy::let_unit_value,
+    clippy::match_single_binding,
+)]
 mod imp;
 #[cfg(feature = "std")]
 mod server;
