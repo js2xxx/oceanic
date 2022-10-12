@@ -17,6 +17,9 @@ use core::{
     str::FromStr,
 };
 
+use solvent_rpc_core as solvent_rpc;
+use solvent_rpc_core::SerdePacket;
+
 use self::imp::{Buf, Slice};
 
 /// A type that can represent owned, mutable platform-native strings, but is
@@ -93,6 +96,8 @@ use self::imp::{Buf, Slice};
 /// [`CStr`]: crate::ffi::CStr
 /// [conversions]: super#conversions
 /// [into]: Into::into
+
+#[derive(SerdePacket)]
 pub struct OsString {
     inner: Buf,
 }

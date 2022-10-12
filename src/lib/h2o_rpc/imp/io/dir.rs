@@ -1,8 +1,15 @@
+use alloc::string::String;
+
+#[cfg(feature = "std")]
+use entry::EntryServer;
+#[cfg(feature = "std")]
+use solvent_core::path::PathBuf;
+
 use super::*;
 
 #[derive(SerdePacket, Debug, Clone)]
 pub struct DirEntry {
-    pub name: Vec<u8>,
+    pub name: String,
     pub metadata: Metadata,
 }
 
@@ -15,15 +22,9 @@ pub trait DirIter {
 pub trait Directory: entry::Entry {
     fn iter() -> Result<DirIterClient, Error>;
 
-    fn open(path: Vec<u8>, options: OpenOptions, conn: entry::EntryServer) -> Result<(), Error>;
+    fn rename(old: PathBuf, new: PathBuf) -> Result<(), Error>;
 
-    fn rename(old: Vec<u8>, new: Vec<u8>) -> Result<(), Error>;
+    fn link(old: PathBuf, new: PathBuf) -> Result<(), Error>;
 
-    fn link(old: Vec<u8>, new: Vec<u8>) -> Result<(), Error>;
-
-    fn unlink(path: Vec<u8>) -> Result<(), Error>;
-
-    fn mount(path: Vec<u8>, provider: FsClient) -> Result<(), Error>;
-
-    fn unmount(path: Vec<u8>) -> Result<(), Error>;
+    fn unlink(path: PathBuf) -> Result<(), Error>;
 }

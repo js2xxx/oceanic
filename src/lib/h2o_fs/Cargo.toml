@@ -1,0 +1,10 @@
+[package]
+edition = "2021"
+name = "solvent-fs"
+version = "0.1.0"
+
+[dependencies]
+# Local crates
+solvent-async = {path = "../h2o_async"}
+solvent-rpc = {path = "../h2o_rpc"}
+solvent-std = {path = "../libr"}

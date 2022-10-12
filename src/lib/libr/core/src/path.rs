@@ -20,6 +20,9 @@ use core::{
     str::FromStr,
 };
 
+use solvent_rpc_core as solvent_rpc;
+use solvent_rpc_core::SerdePacket;
+
 use self::imp::*;
 use crate::ffi::{OsStr, OsString};
 
@@ -1088,6 +1091,8 @@ impl FusedIterator for Ancestors<'_> {}
 // `#[repr(transparent)]`. Anyway, `PathBuf` representation and layout are
 // considered implementation detail, are not documented and must not be relied
 // upon.
+
+#[derive(SerdePacket)]
 pub struct PathBuf {
     inner: OsString,
 }

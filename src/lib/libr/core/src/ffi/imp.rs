@@ -11,7 +11,10 @@ use alloc::{
 };
 use core::{fmt, fmt::Write, mem, str, str::Utf8Chunks};
 
-#[derive(Hash)]
+use solvent_rpc_core as solvent_rpc;
+use solvent_rpc_core::SerdePacket;
+
+#[derive(Hash, SerdePacket)]
 #[repr(transparent)]
 pub struct Buf {
     pub inner: Vec<u8>,

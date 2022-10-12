@@ -19,7 +19,7 @@ use solvent_rpc_core::packet::{self, SerdePacket};
 
 use crate::Error;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ClientImpl {
     inner: Arsc<Inner>,
 }

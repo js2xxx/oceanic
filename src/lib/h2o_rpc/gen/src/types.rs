@@ -412,12 +412,15 @@ impl Protocol {
         let event_path = event.iter().map(|(path, _)| path);
         let core_mod = Ident::new(&ident_str.to_case(Case::Snake), ident.span());
         let std_mod = Ident::new(&(ident_str.to_case(Case::Snake) + "_std"), ident.span());
-        let client = Ident::new(&(ident_str.clone() + "Client"), ident.span());
-        let event_receiver = Ident::new(&(ident_str.clone() + "EventReceiver"), ident.span());
-        let event_sender = Ident::new(&(ident_str.clone() + "EventSender"), ident.span());
-        let request = Ident::new(&(ident_str.clone() + "Request"), ident.span());
-        let server = Ident::new(&(ident_str.clone() + "Server"), ident.span());
-        let stream = Ident::new(&(ident_str.clone() + "Stream"), ident.span());
+        let sync_mod = Ident::new(&(ident_str.to_case(Case::Snake) + "_sync"), ident.span());
+        let client = format_ident!("{ident}Client");
+        let sync_client = format_ident!("{ident}SyncClient");
+        let event_receiver = format_ident!("{ident}EventReceiver");
+        let sync_event_receiver = format_ident!("{ident}SyncEventReceiver");
+        let event_sender = format_ident!("{ident}EventSender");
+        let request = format_ident!("{ident}Request");
+        let server = format_ident!("{ident}Server");
+        let stream = format_ident!("{ident}Stream");
 
         let (event_ident, event_def) = Protocol::event_def(ident.clone(), &event);
         let cast_froms = Protocol::cast_from(&from, client.clone());
@@ -462,7 +465,7 @@ impl Protocol {
                     type Client = #client;
                     type Server = #server;
 
-                    type SyncClient = self::sync::#client;
+                    type SyncClient = #sync_client;
                 }
 
                 #event_def
@@ -665,90 +668,91 @@ impl Protocol {
                         self.inner.is_terminated()
                     }
                 }
-
-                pub mod sync {
-                    use core::{iter::FusedIterator, time::Duration};
-
-                    use solvent::ipc::Channel;
-                    use solvent_rpc::SerdePacket;
-
-                    use super::solvent_rpc;
-                    use super::super::{*, #core_mod::{#(#u2,)*}};
-
-                    #(#doc)*
-                    #[derive(Debug, SerdePacket)]
-                    #[repr(transparent)]
-                    #vis struct #client {
-                        inner: solvent_rpc::sync::ClientImpl,
-                    }
-
-                    impl #client {
-                        pub fn new(channel: Channel) -> Self {
-                            #client {
-                                inner: solvent_rpc::sync::ClientImpl::new(channel),
-                            }
-                        }
-
-                        #(#sync_calls)*
-                    }
-
-                    impl AsRef<Channel> for #client {
-                        #[inline]
-                        fn as_ref(&self) -> &Channel {
-                            self.inner.as_ref()
-                        }
-                    }
-
-                    impl From<Channel> for #client {
-                        #[inline]
-                        fn from(channel: Channel) -> Self {
-                            Self::new(channel)
-                        }
-                    }
-
-                    impl solvent_rpc::sync::Client for #client {
-                        type EventReceiver = #event_receiver;
-
-                        #[inline]
-                        fn from_inner(inner: solvent_rpc::sync::ClientImpl) -> Self {
-                            #client { inner }
-                        }
-
-                        #[inline]
-                        fn event_receiver(&self, timeout: Option<Duration>) -> Option<#event_receiver> {
-                            self.inner
-                                .event_receiver(timeout)
-                                .map(|inner| #event_receiver { inner })
-                        }
-                    }
-
-                    impl TryFrom<#client> for Channel {
-                        type Error = #client;
-
-                        #[inline]
-                        fn try_from(client: #client) -> Result<Self, Self::Error> {
-                            Channel::try_from(client.inner).map_err(|inner| #client { inner })
-                        }
-                    }
-
-                    #[repr(transparent)]
-                    #vis struct #event_receiver {
-                        inner: solvent_rpc::sync::EventReceiverImpl,
-                    }
-
-                    impl Iterator for #event_receiver {
-                        type Item = Result<#event_ident, solvent_rpc::Error>;
-
-                        fn next(&mut self) -> Option<Self::Item> {
-                            self.inner.next().map(|inner| inner.and_then(solvent_rpc::Event::deserialize))
-                        }
-                    }
-
-                    impl FusedIterator for #event_receiver {}
-                }
             }
             #[cfg(feature = "std")]
-            pub use #std_mod::*;
+            pub use self::#std_mod::*;
+            #[cfg(feature = "std")]
+            pub mod #sync_mod {
+                use ::core::{iter::FusedIterator, time::Duration};
+
+                use solvent::ipc::Channel;
+                use solvent_rpc::SerdePacket;
+
+                use super::{*, #core_mod::{#(#u2,)*}};
+
+                #(#doc)*
+                #[derive(Debug, Clone, SerdePacket)]
+                #[repr(transparent)]
+                #vis struct #client {
+                    inner: solvent_rpc::sync::ClientImpl,
+                }
+
+                impl #client {
+                    pub fn new(channel: Channel) -> Self {
+                        #client {
+                            inner: solvent_rpc::sync::ClientImpl::new(channel),
+                        }
+                    }
+
+                    #(#sync_calls)*
+                }
+
+                impl AsRef<Channel> for #client {
+                    #[inline]
+                    fn as_ref(&self) -> &Channel {
+                        self.inner.as_ref()
+                    }
+                }
+
+                impl From<Channel> for #client {
+                    #[inline]
+                    fn from(channel: Channel) -> Self {
+                        Self::new(channel)
+                    }
+                }
+
+                impl solvent_rpc::sync::Client for #client {
+                    type EventReceiver = #event_receiver;
+
+                    #[inline]
+                    fn from_inner(inner: solvent_rpc::sync::ClientImpl) -> Self {
+                        #client { inner }
+                    }
+
+                    #[inline]
+                    fn event_receiver(&self, timeout: Option<Duration>) -> Option<#event_receiver> {
+                        self.inner
+                            .event_receiver(timeout)
+                            .map(|inner| #event_receiver { inner })
+                    }
+                }
+
+                impl TryFrom<#client> for Channel {
+                    type Error = #client;
+
+                    #[inline]
+                    fn try_from(client: #client) -> Result<Self, Self::Error> {
+                        Channel::try_from(client.inner).map_err(|inner| #client { inner })
+                    }
+                }
+
+                #[repr(transparent)]
+                #vis struct #event_receiver {
+                    inner: solvent_rpc::sync::EventReceiverImpl,
+                }
+
+                impl Iterator for #event_receiver {
+                    type Item = Result<#event_ident, solvent_rpc::Error>;
+
+                    fn next(&mut self) -> Option<Self::Item> {
+                        self.inner.next().map(|inner| inner.and_then(solvent_rpc::Event::deserialize))
+                    }
+                }
+
+                impl FusedIterator for #event_receiver {}
+            }
+            #[cfg(feature = "std")]
+            pub use self::#sync_mod::{#client as #sync_client, #event_receiver as #sync_event_receiver};
         };
         Ok(token)
     }

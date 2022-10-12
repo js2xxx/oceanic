@@ -1,3 +1,5 @@
+#[cfg(feature = "std")]
+use entry::EntryServer;
 use solvent::ipc::Packet;
 
 use super::*;

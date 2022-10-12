@@ -5,6 +5,7 @@
 #![feature(coerce_unsized)]
 #![feature(const_mut_refs)]
 #![feature(const_trait_impl)]
+#![feature(dispatch_from_dyn)]
 #![feature(dropck_eyepatch)]
 #![feature(error_in_core)]
 #![feature(extend_one)]

@@ -5,7 +5,7 @@ use core::{
     fmt,
     marker::{PhantomData, Unsize},
     mem::{self, ManuallyDrop, MaybeUninit},
-    ops::{CoerceUnsized, Deref, Receiver},
+    ops::{CoerceUnsized, Deref, DispatchFromDyn, Receiver},
     pin::Pin,
     ptr::{self, NonNull},
     sync::atomic::{self, AtomicUsize, Ordering::*},
@@ -31,6 +31,8 @@ struct ArscInner<T: ?Sized, A: Allocator> {
 impl<T: ?Sized, A: Allocator> Receiver for Arsc<T, A> {}
 
 impl<T: ?Sized + Unsize<U>, U: ?Sized, A: Allocator> CoerceUnsized<Arsc<U, A>> for Arsc<T, A> {}
+
+impl<T: ?Sized + Unsize<U>, U: ?Sized, A: Allocator> DispatchFromDyn<Arsc<U, A>> for Arsc<T, A> {}
 
 unsafe impl<T: ?Sized + Send + Sync, A: Allocator + Send + Sync> Send for Arsc<T, A> {}
 
@@ -246,6 +248,20 @@ impl<T: ?Sized, A: Allocator> Deref for Arsc<T, A> {
     fn deref(&self) -> &Self::Target {
         // SAFETY: Allowed immutable reference.
         unsafe { &self.inner.as_ref().data }
+    }
+}
+
+impl<A: Allocator> Arsc<dyn Any + Send + Sync, A> {
+    pub fn downcast<T: Any + Send + Sync>(self) -> core::result::Result<Arsc<T, A>, Self> {
+        if (*self).is::<T>() {
+            unsafe {
+                let inner = self.inner.cast::<ArscInner<T, A>>();
+                mem::forget(self);
+                Ok(Arsc::from_inner(inner))
+            }
+        } else {
+            Err(self)
+        }
     }
 }
 
