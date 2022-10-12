@@ -101,11 +101,7 @@ fn dependencies(items: &mut [ProtoItem]) -> Result<(), String> {
 pub fn resolve(items: &mut [ProtoItem]) -> Result<(), String> {
     for item in items.iter_mut() {
         let (proto, methods, events) = match &mut item.ty {
-            Protocol(proto) => (
-                &proto.ident,
-                &mut proto.method,
-                &mut proto.event,
-            ),
+            Protocol(proto) => (&proto.ident, &mut proto.method, &mut proto.event),
             _ => continue,
         };
         let mut prefix = item.parent.as_os_str().to_string_lossy().to_string();
