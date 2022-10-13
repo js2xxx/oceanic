@@ -179,14 +179,13 @@ impl LocalFs {
         }
     }
 
-    #[inline]
-    pub fn canonicalize(&self, path: &Path) -> Result<PathBuf, Error> {
-        fn inner(path: &Path, cwd: &Mutex<PathBuf>) -> Option<PathBuf> {
+    fn canonicalize_with(path: &Path, cwd: &Path) -> Result<PathBuf, Error> {
+        fn inner(path: &Path, cwd: &Path) -> Option<PathBuf> {
             let mut out = PathBuf::new();
             let path = if path.is_absolute() {
                 path.to_path_buf()
             } else {
-                cwd.lock().join(path)
+                cwd.join(path)
             };
             for comp in path.components() {
                 match comp {
@@ -202,9 +201,15 @@ impl LocalFs {
             }
             Some(out)
         }
-        inner(path, &self.cwd).ok_or_else(|| Error::InvalidPath(path.to_path_buf()))
+        inner(path, cwd).ok_or_else(|| Error::InvalidPath(path.to_path_buf()))
     }
 
+    #[inline]
+    pub fn canonicalize(&self, path: &Path) -> Result<PathBuf, Error> {
+        Self::canonicalize_with(path, &self.cwd.lock())
+    }
+
+    #[inline]
     pub fn open(&self, path: &Path, options: OpenOptions, conn: Channel) -> Result<(), Error> {
         let path = self.canonicalize(path)?;
         self.root.clone().open(&path, options, conn)
@@ -216,11 +221,13 @@ impl LocalFs {
         Ok(())
     }
 
+    #[inline]
     pub fn mount(&self, path: &Path, remote: EntryClient) -> Result<(), Error> {
         let path = self.canonicalize(path)?;
         self.root.clone().create(&path, remote)
     }
 
+    #[inline]
     pub fn unmount(&self, path: &Path, all: bool) -> Result<(), Error> {
         let path = self.canonicalize(path)?;
         self.root.clone().remove(&path, all)
@@ -275,6 +282,63 @@ impl LocalFs {
                 Ok(DirIter::Remote(dir.iter()?))
             }
         }
+    }
+
+    pub fn unlink(&self, path: &Path) -> Result<(), Error> {
+        let path = self.canonicalize(path)?;
+        let (node, comps) = self.root.clone().open_node(&path, &mut None)?;
+        match *node {
+            Node::Dir(_) => Err(Error::LocalFs(path)),
+            Node::Remote(ref remote) => {
+                let metadata = remote.metadata()??;
+                if metadata.file_type != FileType::Directory {
+                    return Err(Error::InvalidType(metadata.file_type));
+                }
+                let (t, conn) = Channel::new();
+                let dir = DirectoryClient::from(t);
+                remote.clone_connection(conn)?;
+
+                let rest = PathBuf::from_iter(comps);
+                dir.unlink(rest)?
+            }
+        }
+    }
+
+    fn two_path_op<F>(&self, src: &Path, dst: &Path, f: F) -> Result<(), Error>
+    where
+        F: FnOnce(DirectoryClient, PathBuf, PathBuf) -> Result<(), Error>,
+    {
+        let cwd = self.cwd.lock();
+        let src = Self::canonicalize_with(src, &cwd)?;
+        let dst = Self::canonicalize_with(dst, &cwd)?;
+        drop(cwd);
+
+        let mut lcp = PathBuf::new();
+        for (old, new) in src.iter().zip(&dst) {
+            if old == new {
+                lcp.push(old);
+            } else {
+                break;
+            }
+        }
+        let src = src.strip_prefix(&lcp).unwrap();
+        let dst = dst.strip_prefix(&lcp).unwrap();
+
+        let (t, conn) = Channel::new();
+        let dir = DirectoryClient::from(t);
+        self.root.clone().open(&lcp, OpenOptions::WRITE, conn)?;
+
+        f(dir, src.into(), dst.into())
+    }
+
+    #[inline]
+    pub fn rename(&self, src: &Path, dst: &Path) -> Result<(), Error> {
+        self.two_path_op(src, dst, |dir, src, dst| dir.rename(src, dst)?)
+    }
+
+    #[inline]
+    pub fn link(&self, src: &Path, dst: &Path) -> Result<(), Error> {
+        self.two_path_op(src, dst, |dir, src, dst| dir.link(src, dst)?)
     }
 }
 

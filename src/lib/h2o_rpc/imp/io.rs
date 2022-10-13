@@ -36,9 +36,6 @@ pub enum Error {
     #[error("at a path within the local FS, use direct query instead")]
     LocalFs(PathBuf),
 
-    #[error("at a path out of the local FS, use RPC call instead")]
-    ExternalFs(PathBuf),
-
     #[error("found dissatisfactory {0:?}")]
     InvalidType(FileType),
 
