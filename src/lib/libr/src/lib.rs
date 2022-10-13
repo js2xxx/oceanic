@@ -7,6 +7,7 @@
 #![feature(never_type)]
 #![feature(nonnull_slice_from_raw_parts)]
 #![feature(thread_local)]
+#![feature(unzip_option)]
 
 extern crate alloc;
 

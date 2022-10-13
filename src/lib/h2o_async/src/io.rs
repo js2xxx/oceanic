@@ -36,6 +36,7 @@ impl Stream {
     /// not guaranteed by the kernel.
     ///
     /// See [`Phys::write`] for more information.
+    #[cfg(feature = "runtime")]
     #[inline]
     pub unsafe fn new(raw: RawStream) -> Self {
         Self::with_disp(raw, crate::dispatch())

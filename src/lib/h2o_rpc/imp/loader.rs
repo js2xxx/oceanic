@@ -1,10 +1,9 @@
+use crate as solvent_rpc;
 cfg_if::cfg_if! {
     if #[cfg(feature = "std")] {
         use alloc::{ffi::CString, vec::Vec};
 
         use solvent::prelude::Phys;
-
-        use crate as solvent_rpc;
     }
 }
 

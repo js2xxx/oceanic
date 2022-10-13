@@ -2,7 +2,10 @@ pub mod dir;
 pub mod entry;
 pub mod file;
 
-use alloc::{string::{String, ToString}, vec::Vec};
+use alloc::{
+    string::{String, ToString},
+    vec::Vec,
+};
 use core as std;
 
 use solvent::error::Error as RawError;
@@ -29,6 +32,12 @@ pub enum Error {
 
     #[error("at the end of the iterator")]
     IterEnd,
+
+    #[error("at a path within the local FS, use direct query instead")]
+    LocalFs(PathBuf),
+
+    #[error("at a path out of the local FS, use RPC call instead")]
+    ExternalFs(PathBuf),
 
     #[error("found dissatisfactory {0:?}")]
     InvalidType(FileType),
@@ -74,4 +83,3 @@ bitflags::bitflags! {
         const TRUNCATE = 0b0010_0000;
     }
 }
-

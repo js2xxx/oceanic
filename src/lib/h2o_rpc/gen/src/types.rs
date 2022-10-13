@@ -127,7 +127,7 @@ impl Protocol {
         let def = quote! {
             pub enum #event_ident {
                 #(#variant (#path),)*
-                Unknown(Packet),
+                Unknown(solvent::ipc::Packet),
             }
 
             #(
@@ -139,7 +139,7 @@ impl Protocol {
             )*
 
             impl solvent_rpc::Event for #event_ident {
-                fn deserialize(packet: Packet) -> Result<Self, crate::Error> {
+                fn deserialize(packet: solvent::ipc::Packet) -> Result<Self, crate::Error> {
                     let mut de = solvent_rpc::packet::Deserializer::new(&packet);
                     let id: u64 = solvent_rpc::packet::SerdePacket::deserialize(&mut de)?;
                     Ok(match id {
@@ -148,7 +148,7 @@ impl Protocol {
                     })
                 }
 
-                fn serialize(self) -> Result<Packet, crate::Error> {
+                fn serialize(self) -> Result<solvent::ipc::Packet, crate::Error> {
                     let mut packet = Default::default();
                     let mut ser = solvent_rpc::packet::Serializer::new(&mut packet);
                     Ok(match self {
@@ -441,13 +441,14 @@ impl Protocol {
                 #(#constants;)*
             }
 
-            #[cfg(feature = "std")]
+            #event_def
+
+            #[cfg(feature = "runtime")]
             mod #std_mod {
                 use core::task::*;
                 use core::pin::Pin;
 
                 use futures::{Stream, stream::FusedStream};
-                use solvent_async::ipc::Channel;
                 use solvent::ipc::Packet;
 
                 use solvent_rpc::SerdePacket;
@@ -468,7 +469,6 @@ impl Protocol {
                     type SyncClient = #sync_client;
                 }
 
-                #event_def
 
                 #(#doc)*
                 #[derive(Debug, SerdePacket)]
@@ -478,7 +478,7 @@ impl Protocol {
                 }
 
                 impl #server {
-                    pub fn new(channel: Channel) -> Self {
+                    pub fn new(channel: solvent_async::ipc::Channel) -> Self {
                         #server {
                             inner: solvent_rpc::ServerImpl::new(channel),
                         }
@@ -503,26 +503,27 @@ impl Protocol {
                     }
                 }
 
-                impl AsRef<Channel> for #server {
+                impl AsRef<solvent_async::ipc::Channel> for #server {
                     #[inline]
-                    fn as_ref(&self) -> &Channel {
+                    fn as_ref(&self) -> &solvent_async::ipc::Channel {
                         self.inner.as_ref()
                     }
                 }
 
-                impl From<Channel> for #server {
+                impl From<solvent_async::ipc::Channel> for #server {
                     #[inline]
-                    fn from(channel: Channel) -> Self {
+                    fn from(channel: solvent_async::ipc::Channel) -> Self {
                         Self::new(channel)
                     }
                 }
 
-                impl TryFrom<#server> for Channel {
+                impl TryFrom<#server> for solvent_async::ipc::Channel {
                     type Error = #server;
 
                     #[inline]
                     fn try_from(server: #server) -> Result<Self, Self::Error> {
-                        Channel::try_from(server.inner).map_err(|inner| #server { inner })
+                        solvent_async::ipc::Channel::try_from(server.inner)
+                            .map_err(|inner| #server { inner })
                     }
                 }
 
@@ -598,7 +599,7 @@ impl Protocol {
                 }
 
                 impl #client {
-                    pub fn new(channel: Channel) -> Self {
+                    pub fn new(channel: solvent_async::ipc::Channel) -> Self {
                         #client {
                             inner: solvent_rpc::ClientImpl::new(channel),
                         }
@@ -624,26 +625,26 @@ impl Protocol {
                     }
                 }
 
-                impl AsRef<Channel> for #client {
+                impl AsRef<solvent_async::ipc::Channel> for #client {
                     #[inline]
-                    fn as_ref(&self) -> &Channel {
+                    fn as_ref(&self) -> &solvent_async::ipc::Channel {
                         self.inner.as_ref()
                     }
                 }
 
-                impl From<Channel> for #client {
+                impl From<solvent_async::ipc::Channel> for #client {
                     #[inline]
-                    fn from(channel: Channel) -> Self {
+                    fn from(channel: solvent_async::ipc::Channel) -> Self {
                         Self::new(channel)
                     }
                 }
 
-                impl TryFrom<#client> for Channel {
+                impl TryFrom<#client> for solvent_async::ipc::Channel {
                     type Error = #client;
 
                     #[inline]
                     fn try_from(client: #client) -> Result<Self, Self::Error> {
-                        Channel::try_from(client.inner).map_err(|inner| #client { inner })
+                        solvent_async::ipc::Channel::try_from(client.inner).map_err(|inner| #client { inner })
                     }
                 }
 
@@ -669,13 +670,12 @@ impl Protocol {
                     }
                 }
             }
-            #[cfg(feature = "std")]
+            #[cfg(feature = "runtime")]
             pub use self::#std_mod::*;
             #[cfg(feature = "std")]
             pub mod #sync_mod {
                 use ::core::{iter::FusedIterator, time::Duration};
 
-                use solvent::ipc::Channel;
                 use solvent_rpc::SerdePacket;
 
                 use super::{*, #core_mod::{#(#u2,)*}};
@@ -688,7 +688,7 @@ impl Protocol {
                 }
 
                 impl #client {
-                    pub fn new(channel: Channel) -> Self {
+                    pub fn new(channel: solvent::ipc::Channel) -> Self {
                         #client {
                             inner: solvent_rpc::sync::ClientImpl::new(channel),
                         }
@@ -697,16 +697,16 @@ impl Protocol {
                     #(#sync_calls)*
                 }
 
-                impl AsRef<Channel> for #client {
+                impl AsRef<solvent::ipc::Channel> for #client {
                     #[inline]
-                    fn as_ref(&self) -> &Channel {
+                    fn as_ref(&self) -> &solvent::ipc::Channel {
                         self.inner.as_ref()
                     }
                 }
 
-                impl From<Channel> for #client {
+                impl From<solvent::ipc::Channel> for #client {
                     #[inline]
-                    fn from(channel: Channel) -> Self {
+                    fn from(channel: solvent::ipc::Channel) -> Self {
                         Self::new(channel)
                     }
                 }
@@ -727,12 +727,13 @@ impl Protocol {
                     }
                 }
 
-                impl TryFrom<#client> for Channel {
+                impl TryFrom<#client> for solvent::ipc::Channel {
                     type Error = #client;
 
                     #[inline]
                     fn try_from(client: #client) -> Result<Self, Self::Error> {
-                        Channel::try_from(client.inner).map_err(|inner| #client { inner })
+                        solvent::ipc::Channel::try_from(client.inner)
+                            .map_err(|inner| #client { inner })
                     }
                 }
 

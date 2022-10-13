@@ -1,7 +1,7 @@
 use solvent::prelude::Packet;
 use solvent_rpc_core::packet::{Deserializer, SerdePacket, Serializer};
 
-#[cfg(feature = "std")]
+#[cfg(feature = "runtime")]
 pub trait Protocol {
     type Client: crate::Client;
     type Server: crate::Server;
@@ -20,7 +20,10 @@ pub trait Protocol {
 
     #[inline]
     fn channel() -> (Self::Client, Self::Server) {
-        Self::with_disp(solvent_async::dispatch())
+        #[cfg(feature = "runtime")]
+        return Self::with_disp(solvent_async::dispatch());
+        #[cfg(not(feature = "runtime"))]
+        unimplemented!("The runtime feature must be selected")
     }
 
     fn sync_client_with_disp(
@@ -33,28 +36,31 @@ pub trait Protocol {
 
     #[inline]
     fn sync_channel() -> (Self::SyncClient, Self::Server) {
-        Self::sync_client_with_disp(solvent_async::dispatch())
+        #[cfg(feature = "runtime")]
+        return Self::sync_client_with_disp(solvent_async::dispatch());
+        #[cfg(not(feature = "runtime"))]
+        unimplemented!("The runtime feature must be selected")
     }
 }
 
-#[cfg(feature = "std")]
+#[cfg(feature = "runtime")]
 pub fn with_disp<P: Protocol>(disp: solvent_async::disp::DispSender) -> (P::Client, P::Server) {
     P::with_disp(disp)
 }
 
-#[cfg(feature = "std")]
+#[cfg(feature = "runtime")]
 pub fn channel<P: Protocol>() -> (P::Client, P::Server) {
     P::channel()
 }
 
-#[cfg(feature = "std")]
+#[cfg(feature = "runtime")]
 pub fn sync_client_with_disp<P: Protocol>(
     disp: solvent_async::disp::DispSender,
 ) -> (P::SyncClient, P::Server) {
     P::sync_client_with_disp(disp)
 }
 
-#[cfg(feature = "std")]
+#[cfg(feature = "runtime")]
 pub fn sync_channel<P: Protocol>() -> (P::SyncClient, P::Server) {
     P::sync_channel()
 }

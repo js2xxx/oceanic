@@ -31,6 +31,7 @@ pub trait AsyncObject: Object {
         signal: usize,
     ) -> Self::TryWait<'_>;
 
+    #[allow(unused)]
     fn try_wait(&self, level_triggered: bool, signal: usize) -> Self::TryWait<'_> {
         #[cfg(feature = "runtime")]
         return self.try_wait_with(crate::dispatch(), level_triggered, signal);

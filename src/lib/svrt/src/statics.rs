@@ -77,6 +77,24 @@ pub fn root_virt() -> Ref<'static, Virt> {
     try_get_root_virt().expect("Failed to get the root virt: uninitialized or failed to receive")
 }
 
+pub fn try_with_startup_args<F, R>(f: F) -> Result<R>
+where
+    F: FnOnce(&mut StartupArgs) -> R,
+{
+    init_or(|| unsafe {
+        let _lock = STARTUP_LOCK.lock();
+        let sa = STARTUP_ARGS.assume_init_mut();
+        Ok(f(sa))
+    })
+}
+
+pub fn with_startup_args<F, R>(f: F) -> R
+where
+    F: FnOnce(&mut StartupArgs) -> R,
+{
+    try_with_startup_args(f).expect("The runtime should be initialized first")
+}
+
 /// # Safety
 ///
 /// The caller must ensure that the ownership of the root virt is not

@@ -8,7 +8,7 @@ use solvent_rpc::{
 };
 use solvent_rpc_core as solvent_rpc;
 
-#[derive(Debug, Copy, Clone, BitfieldSpecifier)]
+#[derive(Debug, Copy, Clone, BitfieldSpecifier, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(u16)]
 #[bits = 16]
 pub enum HandleType {
@@ -18,6 +18,7 @@ pub enum HandleType {
     ProgramPhys,
     LoadRpc,
     BootfsPhys,
+    LocalFs,
 }
 
 #[derive(Copy, Clone)]

@@ -1,19 +1,24 @@
 use alloc::{
-    collections::BTreeMap,
+    collections::{btree_map, BTreeMap},
     string::{String, ToString},
 };
 use core::iter::Peekable;
 
-use solvent_rpc::io::{
-    entry::{entry_sync::EntryClient, EntryServer},
-    Error, FileType, Metadata, OpenOptions,
+use solvent::{
+    ipc::Channel,
+    prelude::{Handle, Object},
 };
-use solvent_std::{
+use solvent_core::{
     path::{Component, Components, Path, PathBuf},
     sync::{Arsc, Mutex, MutexGuard},
 };
+use solvent_rpc::io::{
+    dir::{directory_sync::DirectoryClient, DirEntry},
+    entry::entry_sync::EntryClient,
+    Error, FileType, Metadata, OpenOptions,
+};
 
-use crate::entry::Entry;
+use crate::dir::sync::{Remote, RemoteIter};
 
 enum Node {
     Dir(Mutex<BTreeMap<String, Arsc<Node>>>),
@@ -40,23 +45,6 @@ impl Clone for LocalFs {
             root: self.root.clone(),
             cwd: Mutex::new("".into()),
         }
-    }
-}
-
-impl Entry for Node {
-    #[inline]
-    fn open(
-        self: Arsc<Self>,
-        path: &Path,
-        options: OpenOptions,
-        conn: EntryServer,
-    ) -> Result<(), Error> {
-        self.open(path, options, conn)
-    }
-
-    #[inline]
-    fn metadata(&self) -> Result<Metadata, Error> {
-        self.metadata()
     }
 }
 
@@ -87,11 +75,11 @@ impl Node {
         self: Arsc<Self>,
         path: &Path,
         options: OpenOptions,
-        conn: EntryServer,
+        conn: Channel,
     ) -> Result<(), Error> {
         let (node, comps) = self.open_node(path, &mut None)?;
         match *node {
-            Node::Dir(_) => Err(Error::InvalidType(FileType::Directory)),
+            Node::Dir(_) => Err(Error::LocalFs(path.to_path_buf())),
             Node::Remote(ref remote) => {
                 let path = PathBuf::from_iter(comps);
                 remote.open(path, options, conn)?
@@ -191,32 +179,145 @@ impl LocalFs {
         }
     }
 
-    fn node_and_path(&self, path: &Path) -> Result<(PathBuf, Arsc<Node>), Error> {
-        let path =
-            canonicalize(path, &self.cwd).ok_or_else(|| Error::InvalidPath(path.to_path_buf()))?;
-        Ok((path, self.root.clone()))
+    #[inline]
+    pub fn canonicalize(&self, path: &Path) -> Result<PathBuf, Error> {
+        fn inner(path: &Path, cwd: &Mutex<PathBuf>) -> Option<PathBuf> {
+            let mut out = PathBuf::new();
+            let path = if path.is_absolute() {
+                path.to_path_buf()
+            } else {
+                cwd.lock().join(path)
+            };
+            for comp in path.components() {
+                match comp {
+                    Component::Prefix(_) => return None,
+                    Component::RootDir | Component::CurDir => {}
+                    Component::ParentDir => {
+                        if !out.pop() {
+                            return None;
+                        }
+                    }
+                    Component::Normal(comp) => out.push(comp.to_str()?),
+                }
+            }
+            Some(out)
+        }
+        inner(path, &self.cwd).ok_or_else(|| Error::InvalidPath(path.to_path_buf()))
     }
 
-    pub fn open(&self, path: &Path, options: OpenOptions, conn: EntryServer) -> Result<(), Error> {
-        let (path, node) = self.node_and_path(path)?;
-        node.open(&path, options, conn)
+    pub fn open(&self, path: &Path, options: OpenOptions, conn: Channel) -> Result<(), Error> {
+        let path = self.canonicalize(path)?;
+        self.root.clone().open(&path, options, conn)
     }
 
-    pub fn cd(&self, path: &Path) -> Result<(), Error> {
-        let path =
-            canonicalize(path, &self.cwd).ok_or_else(|| Error::InvalidPath(path.to_path_buf()))?;
+    pub fn chdir(&self, path: &Path) -> Result<(), Error> {
+        let path = self.canonicalize(path)?;
         *self.cwd.lock() = path;
         Ok(())
     }
 
     pub fn mount(&self, path: &Path, remote: EntryClient) -> Result<(), Error> {
-        let (path, node) = self.node_and_path(path)?;
-        node.create(&path, remote)
+        let path = self.canonicalize(path)?;
+        self.root.clone().create(&path, remote)
     }
 
     pub fn unmount(&self, path: &Path, all: bool) -> Result<(), Error> {
-        let (path, node) = self.node_and_path(path)?;
-        node.remove(&path, all)
+        let path = self.canonicalize(path)?;
+        self.root.clone().remove(&path, all)
+    }
+
+    pub fn metadata(&self, path: &Path) -> Result<Metadata, Error> {
+        let path = self.canonicalize(path)?;
+        let (node, mut comps) = self.root.clone().open_node(&path, &mut None)?;
+        match *node {
+            Node::Dir(..) => Ok(node.metadata()?),
+            Node::Remote(ref remote) if comps.peek().is_some() => {
+                let path = PathBuf::from_iter(comps);
+                let (t, conn) = Channel::new();
+                let client = EntryClient::from(t);
+                remote.open(path, OpenOptions::READ, conn)??;
+                client.metadata()?
+            }
+            Node::Remote(ref remote) => remote.metadata()?,
+        }
+    }
+
+    pub fn read_dir(&self, path: &Path) -> Result<DirIter, Error> {
+        let path = self.canonicalize(path)?;
+        let (node, mut comps) = self.root.clone().open_node(&path, &mut None)?;
+        match *node {
+            Node::Dir(..) => {
+                let builder = LocalIterBuilder {
+                    node,
+                    guard_builder: |node: &Arsc<Node>| match **node {
+                        Node::Dir(ref dir) => dir.lock(),
+                        _ => unreachable!(),
+                    },
+                    iter_builder: |guard| guard.iter(),
+                };
+                Ok(DirIter::Local(builder.build()))
+            }
+            Node::Remote(ref remote) if comps.peek().is_some() => {
+                let path = PathBuf::from_iter(comps);
+                let (t, conn) = Channel::new();
+                let dir = Remote(DirectoryClient::from(t));
+                remote.open(path, OpenOptions::READ, conn)??;
+                Ok(DirIter::Remote(dir.iter()?))
+            }
+            Node::Remote(ref remote) => {
+                let metadata = remote.metadata()??;
+                if metadata.file_type != FileType::Directory {
+                    return Err(Error::InvalidType(metadata.file_type));
+                }
+                let (t, conn) = Channel::new();
+                let dir = Remote(DirectoryClient::from(t));
+                remote.clone_connection(conn)?;
+                Ok(DirIter::Remote(dir.iter()?))
+            }
+        }
+    }
+}
+
+#[ouroboros::self_referencing]
+pub struct LocalIter {
+    node: Arsc<Node>,
+    #[borrows(node)]
+    #[covariant]
+    guard: MutexGuard<'this, BTreeMap<String, Arsc<Node>>>,
+    #[borrows(guard)]
+    #[covariant]
+    iter: btree_map::Iter<'this, String, Arsc<Node>>,
+}
+
+impl Iterator for LocalIter {
+    type Item = Result<DirEntry, Error>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.with_iter_mut(|iter| {
+            let (name, node) = iter.next()?;
+            let metadata = node.metadata();
+            Some(metadata.map(|metadata| DirEntry {
+                name: name.to_string(),
+                metadata,
+            }))
+        })
+    }
+}
+
+pub enum DirIter {
+    Local(LocalIter),
+    Remote(RemoteIter),
+}
+
+impl Iterator for DirIter {
+    type Item = Result<DirEntry, Error>;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            DirIter::Local(local) => local.next(),
+            DirIter::Remote(remote) => remote.next(),
+        }
     }
 }
 
@@ -226,27 +327,52 @@ impl Default for LocalFs {
     }
 }
 
-/// # Returns
+static mut LOCAL_FS: Option<LocalFs> = None;
+
+/// # Safety
 ///
-/// The canonicalized path and whether the original has a root prefix.
-fn canonicalize(path: &Path, cwd: &Mutex<PathBuf>) -> Option<PathBuf> {
-    let mut out = PathBuf::new();
-    let path = if path.is_absolute() {
-        path.to_path_buf()
-    } else {
-        cwd.lock().join(path)
-    };
-    for comp in path.components() {
-        match comp {
-            Component::Prefix(_) => return None,
-            Component::RootDir | Component::CurDir => {}
-            Component::ParentDir => {
-                if !out.pop() {
-                    return None;
-                }
-            }
-            Component::Normal(comp) => out.push(comp.to_str()?),
+/// The function must be called only during the initialization of the whole
+/// process.
+pub unsafe fn init_rt(
+    handles: &mut BTreeMap<svrt::HandleInfo, Handle>,
+    paths: impl Iterator<Item = impl AsRef<Path>>,
+    cwd: Option<impl AsRef<Path>>,
+) {
+    let iter = handles.drain_filter(|info, _| info.handle_type() == svrt::HandleType::LocalFs);
+
+    let local_fs = LocalFs::new();
+    for ((_, handle), path) in iter.zip(paths) {
+        let remote = EntryClient::from(unsafe { Channel::from_raw(handle) });
+        let res = local_fs.mount(path.as_ref(), remote);
+        if let Err(err) = res {
+            log::warn!("Error when mounting the local FS: {err}");
         }
     }
-    Some(out)
+    if let Some(cwd) = cwd {
+        let path = cwd.as_ref();
+        let res = local_fs.chdir(path);
+        if let Err(err) = res {
+            log::warn!("Error when cwding the local FS to {path:?}: {err}");
+        }
+    }
+
+    let old = LOCAL_FS.replace(local_fs);
+    assert!(
+        old.is_none(),
+        "The local FS should only be initialized once"
+    );
+}
+
+/// # Safety
+///
+/// The function must be called only during the finalization of the whole
+/// process.
+pub unsafe fn fini_rt() {
+    LOCAL_FS = None;
+}
+
+#[inline]
+pub fn local() -> &'static LocalFs {
+    // SAFETY: The local FS should be initialized before `main`.
+    unsafe { LOCAL_FS.as_ref().expect("The local FS is uninitialized") }
 }

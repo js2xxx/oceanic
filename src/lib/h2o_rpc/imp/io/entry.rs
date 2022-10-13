@@ -1,3 +1,5 @@
+use solvent::ipc::Channel;
+
 use super::*;
 
 #[derive(SerdePacket, Debug, Clone)]
@@ -14,9 +16,9 @@ pub enum FileType {
 
 #[protocol]
 pub trait Entry: crate::core::Cloneable + crate::core::Closeable {
-    fn clone_with(perm: Permission, server: SelfServer) -> Result<(), Error>;
+    fn clone_with(perm: Permission, conn: Channel) -> Result<(), Error>;
 
-    fn open(path: PathBuf, options: OpenOptions, conn: EntryServer) -> Result<(), Error>;
+    fn open(path: PathBuf, options: OpenOptions, conn: Channel) -> Result<(), Error>;
 
     fn metadata() -> Result<Metadata, Error>;
 

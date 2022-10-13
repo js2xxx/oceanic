@@ -1,6 +1,6 @@
-#[cfg(feature = "std")]
+#[cfg(feature = "runtime")]
 use entry::EntryServer;
-use solvent::ipc::Packet;
+use solvent::ipc::{Packet, Channel};
 
 use super::*;
 

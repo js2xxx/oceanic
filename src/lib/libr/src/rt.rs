@@ -3,7 +3,10 @@ use core::error::Error;
 
 use solvent::prelude::Channel;
 
-use crate::thread::{self, Thread};
+use crate::{
+    env,
+    thread::{self, Thread},
+};
 
 pub(crate) static mut ARGS: Vec<u8> = Vec::new();
 
@@ -48,6 +51,7 @@ impl<E: Error> Termination for Result<!, E> {
     }
 }
 
+#[doc(hidden)]
 pub fn lang_start<R: Termination>(channel: Channel, main: fn() -> R) -> R {
     #[link(name = "ldso")]
     extern "C" {
@@ -67,8 +71,24 @@ pub fn lang_start<R: Termination>(channel: Channel, main: fn() -> R) -> R {
         thread::current::set(Thread::new(None));
     }
 
-    let ret = main();
+    let ret = {
+        let path_prefix = "--local-fs-paths=";
+        let paths = env::args().find(|arg| arg.starts_with(path_prefix));
+        let (_, cwd) = env::vars().find(|(key, _)| key == "CWD").unzip();
+        if let Some(paths) = paths {
+            let paths = paths.strip_prefix(path_prefix).unwrap();
+            let cwd = cwd.as_deref();
+            svrt::with_startup_args(|sa| unsafe {
+                solvent_fs::init_rt(&mut sa.handles, paths.split(','), cwd)
+            })
+        }
 
+        let ret = main();
+
+        unsafe { solvent_fs::fini_rt() };
+
+        ret
+    };
     unsafe {
         ARGS = Vec::new();
         __libc_exit_fini();

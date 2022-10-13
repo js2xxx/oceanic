@@ -1,14 +1,15 @@
 use core::any::Any;
 
-use solvent_rpc::io::{entry::EntryServer, Error, Metadata, OpenOptions};
-use solvent_std::{path::Path, sync::Arsc};
+use solvent::prelude::Channel;
+use solvent_core::{path::Path, sync::Arsc};
+use solvent_rpc::io::{Error, Metadata, OpenOptions};
 
 pub trait Entry: IntoAny + Send + Sync + 'static {
     fn open(
         self: Arsc<Self>,
         path: &Path,
         options: OpenOptions,
-        conn: EntryServer,
+        conn: Channel,
     ) -> Result<(), Error>;
 
     fn metadata(&self) -> Result<Metadata, Error>;

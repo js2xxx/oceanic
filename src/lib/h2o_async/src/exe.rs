@@ -15,10 +15,11 @@ use futures::{
     Future,
 };
 use solvent::prelude::EPIPE;
+#[cfg(feature = "runtime")]
+use solvent_core::{sync::Lazy, thread::available_parallelism, thread_local};
 use solvent_core::{
-    sync::{Arsc, Injector, Lazy, Stealer, Worker},
-    thread::{self, available_parallelism, Backoff},
-    thread_local,
+    sync::{Arsc, Injector, Stealer, Worker},
+    thread::{self, Backoff},
 };
 
 use crate::disp::{DispReceiver, DispSender};

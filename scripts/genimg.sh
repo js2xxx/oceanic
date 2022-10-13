@@ -8,7 +8,7 @@ tar vcf H2O.k KERNEL TINIT BOOT.fs
 cd img
 
 rm -f efi.img
-dd if=/dev/zero of=efi.img bs=1k count=11520
+dd if=/dev/zero of=efi.img bs=1k count=23040
 mkfs.vfat efi.img
 sudo mount efi.img mnt
 sudo mkdir -p mnt/EFI/BOOT

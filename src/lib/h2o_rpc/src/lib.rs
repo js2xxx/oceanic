@@ -5,20 +5,20 @@
 
 extern crate alloc;
 
-#[cfg(feature = "std")]
+#[cfg(feature = "runtime")]
 mod client;
 mod ifx;
 #[path ="../target/imp/mod.rs"]
 #[rustfmt::skip]
 #[allow(unused, clippy::all)]
 mod imp;
-#[cfg(feature = "std")]
+#[cfg(feature = "runtime")]
 mod server;
 #[cfg(feature = "std")]
 pub mod sync;
 
 pub use solvent_rpc_core::*;
 
-#[cfg(feature = "std")]
+#[cfg(feature = "runtime")]
 pub use self::{client::*, server::*};
 pub use self::{ifx::*, imp::*};

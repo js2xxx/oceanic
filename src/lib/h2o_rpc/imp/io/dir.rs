@@ -1,7 +1,8 @@
 use alloc::string::String;
 
-#[cfg(feature = "std")]
+#[cfg(feature = "runtime")]
 use entry::EntryServer;
+use solvent::ipc::Channel;
 #[cfg(feature = "std")]
 use solvent_core::path::PathBuf;
 
@@ -20,7 +21,7 @@ pub trait DirIter {
 
 #[protocol]
 pub trait Directory: entry::Entry {
-    fn iter() -> Result<DirIterClient, Error>;
+    fn iter(conn: Channel) -> Result<(), Error>;
 
     fn rename(old: PathBuf, new: PathBuf) -> Result<(), Error>;
 
