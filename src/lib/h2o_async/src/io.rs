@@ -42,6 +42,15 @@ impl Stream {
         Self::with_disp(raw, crate::dispatch())
     }
 
+    pub fn into_raw(this: Self) -> RawStream {
+        let Inner { phys, len, seeker } = this.inner.into_inner();
+        RawStream {
+            phys: phys.into(),
+            len,
+            seeker,
+        }
+    }
+
     /// # Safety
     ///
     /// The stream must holds the unique reference to the `Phys`, or the others

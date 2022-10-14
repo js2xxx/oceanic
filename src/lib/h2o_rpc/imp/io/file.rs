@@ -7,8 +7,7 @@ use super::*;
 bitflags::bitflags! {
     #[derive(SerdePacket)]
     pub struct EventFlags: u32 {
-        const READABLE = 0b001;
-        const WRITEABLE = 0b010;
+        const UNLOCK = 0b0000_0001;
     }
 }
 

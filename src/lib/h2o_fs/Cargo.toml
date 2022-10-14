@@ -16,5 +16,6 @@ solvent-rpc = {path = "../h2o_rpc", default-features = false, features = ["std"]
 svrt = {path = "../svrt"}
 # External crates
 async-trait = "0.1"
+futures = {version = "0.3", default-features = false, features = ["alloc"]}
 log = "0.4"
 ouroboros = {version = "0.15", default-features = false}

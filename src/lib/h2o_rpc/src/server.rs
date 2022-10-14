@@ -128,6 +128,7 @@ impl FusedStream for PacketStream {
     }
 }
 
+#[derive(Clone)]
 #[repr(transparent)]
 pub struct EventSenderImpl {
     inner: Arsc<Inner>,

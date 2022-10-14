@@ -41,6 +41,13 @@ impl AsRef<Inner> for Phys {
     }
 }
 
+impl From<Phys> for Inner {
+    #[inline]
+    fn from(value: Phys) -> Self {
+        value.inner
+    }
+}
+
 impl Phys {
     #[cfg(feature = "runtime")]
     pub fn new(inner: Inner) -> Phys {

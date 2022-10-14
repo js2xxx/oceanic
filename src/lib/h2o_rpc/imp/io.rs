@@ -33,6 +33,9 @@ pub enum Error {
     #[error("at the end of the iterator")]
     IterEnd,
 
+    #[error("the entry is busy (locked)")]
+    WouldBlock,
+
     #[error("at a path within the local FS, use direct query instead")]
     LocalFs(PathBuf),
 
@@ -53,6 +56,16 @@ pub enum Error {
 
     #[error("unknown error: {0}")]
     Other(#[source] RawError),
+}
+
+#[cfg(feature = "std")]
+impl From<solvent_async::io::Error> for Error {
+    fn from(value: solvent_async::io::Error) -> Self {
+        match value {
+            solvent_async::io::Error::InvalidSeek(..) => Self::InvalidSeek,
+            solvent_async::io::Error::Other(err) => Self::Other(err),
+        }
+    }
 }
 
 #[cfg(feature = "std")]
