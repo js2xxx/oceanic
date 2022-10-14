@@ -271,7 +271,7 @@ impl LocalFs {
                 let (t, conn) = Channel::new();
                 let dir = Remote(DirectoryClient::from(t));
                 remote.open(path, OpenOptions::READ, conn)??;
-                Ok(DirIter::Remote(dir.iter()?))
+                Ok(DirIter::Remote(dir.iter()))
             }
             Node::Remote(ref remote) => {
                 let metadata = remote.metadata()??;
@@ -281,7 +281,7 @@ impl LocalFs {
                 let (t, conn) = Channel::new();
                 let dir = Remote(DirectoryClient::from(t));
                 remote.clone_connection(conn)?;
-                Ok(DirIter::Remote(dir.iter()?))
+                Ok(DirIter::Remote(dir.iter()))
             }
         }
     }

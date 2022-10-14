@@ -152,10 +152,6 @@ async fn handle_impl<S: StreamIo>(
                 })
             }
             FileRequest::Seek { pos, responder } => responder.send(file.seek(pos).await),
-            FileRequest::SetMetadata {
-                metadata,
-                responder,
-            } => responder.send(file.as_file().set_metadata(metadata)),
             FileRequest::Write { buf, responder } => {
                 responder.send(if !options.contains(OpenOptions::WRITE) {
                     Err(Error::PermissionDenied(Permission::WRITE))

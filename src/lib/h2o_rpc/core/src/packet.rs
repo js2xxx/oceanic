@@ -274,6 +274,19 @@ impl<T: SerdePacket> SerdePacket for Vec<T> {
     }
 }
 
+impl<T: SerdePacket> SerdePacket for Option<Vec<T>> {
+    #[inline]
+    fn serialize(self, ser: &mut Serializer) -> Result<(), Error> {
+        self.unwrap_or_default().serialize(ser)
+    }
+
+    #[inline]
+    fn deserialize(de: &mut Deserializer) -> Result<Self, Error> {
+        let vec = Vec::<T>::deserialize(de)?;
+        Ok((!vec.is_empty()).then_some(vec))
+    }
+}
+
 impl SerdePacket for String {
     #[inline]
     fn serialize(self, ser: &mut Serializer) -> Result<(), Error> {
@@ -286,6 +299,19 @@ impl SerdePacket for String {
     }
 }
 
+impl SerdePacket for Option<String> {
+    #[inline]
+    fn serialize(self, ser: &mut Serializer) -> Result<(), Error> {
+        self.unwrap_or_default().serialize(ser)
+    }
+
+    #[inline]
+    fn deserialize(de: &mut Deserializer) -> Result<Self, Error> {
+        let string = String::deserialize(de)?;
+        Ok((!string.is_empty()).then_some(string))
+    }
+}
+
 impl SerdePacket for CString {
     #[inline]
     fn serialize(self, ser: &mut Serializer) -> Result<(), Error> {
@@ -295,6 +321,19 @@ impl SerdePacket for CString {
     fn deserialize(de: &mut Deserializer) -> Result<Self, Error> {
         let bytes = Vec::<u8>::deserialize(de)?;
         CString::from_vec_with_nul(bytes).map_err(|err| Error::TypeMismatch(err.into()))
+    }
+}
+
+impl SerdePacket for Option<CString> {
+    #[inline]
+    fn serialize(self, ser: &mut Serializer) -> Result<(), Error> {
+        self.unwrap_or_default().serialize(ser)
+    }
+
+    #[inline]
+    fn deserialize(de: &mut Deserializer) -> Result<Self, Error> {
+        let string = CString::deserialize(de)?;
+        Ok((!string.as_bytes().is_empty()).then_some(string))
     }
 }
 

@@ -19,6 +19,4 @@ pub trait Entry: crate::core::Cloneable + crate::core::Closeable {
     fn open(path: PathBuf, options: OpenOptions, conn: Channel) -> Result<(), Error>;
 
     fn metadata() -> Result<Metadata, Error>;
-
-    fn set_metadata(metadata: Metadata) -> Result<(), Error>;
 }

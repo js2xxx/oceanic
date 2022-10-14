@@ -15,13 +15,8 @@ pub struct DirEntry {
 }
 
 #[protocol]
-pub trait DirIter {
-    fn next() -> Result<DirEntry, Error>;
-}
-
-#[protocol]
 pub trait Directory: entry::Entry {
-    fn iter(conn: Channel) -> Result<(), Error>;
+    fn next_dirent(last: Option<String>) -> Result<DirEntry, Error>;
 
     fn rename(old: PathBuf, new: PathBuf) -> Result<(), Error>;
 
