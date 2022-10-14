@@ -10,10 +10,7 @@ use solvent::{
     prelude::{PackIntrWait, Result, SerdeReg, Syscall, EPIPE, SIG_GENERIC},
     time::Instant,
 };
-use solvent_core::{
-    sync::channel::{oneshot, oneshot_},
-    thread::Backoff,
-};
+use solvent_core::{sync::channel::oneshot, thread::Backoff};
 
 use crate::disp::{DispSender, PackedSyscall};
 
@@ -55,7 +52,7 @@ impl Interrupt {
     }
 
     #[inline]
-    pub fn wait_until_async(&self, deadline: Instant) -> WaitUntil<'_> {
+    pub fn wait_until(&self, deadline: Instant) -> WaitUntil<'_> {
         WaitUntil {
             intr: self,
             deadline,
@@ -65,17 +62,12 @@ impl Interrupt {
     }
 
     #[inline]
-    pub async fn wait_until(&self, now: Instant) -> Result<Instant> {
-        self.wait_until_async(now).await
-    }
-
-    #[inline]
     pub async fn wait_next(&self) -> Result<Instant> {
         self.wait_until(Instant::now()).await
     }
 }
 
-unsafe impl PackedSyscall for (PackIntrWait, oneshot_::Sender<Result<Instant>>) {
+unsafe impl PackedSyscall for (PackIntrWait, oneshot::Sender<Result<Instant>>) {
     #[inline]
     fn raw(&self) -> Option<Syscall> {
         Some(self.0.syscall)
@@ -92,7 +84,7 @@ unsafe impl PackedSyscall for (PackIntrWait, oneshot_::Sender<Result<Instant>>) 
 pub struct WaitUntil<'a> {
     intr: &'a Interrupt,
     deadline: Instant,
-    result: Option<oneshot_::Receiver<Result<Instant>>>,
+    result: Option<oneshot::Receiver<Result<Instant>>>,
     key: Option<usize>,
 }
 

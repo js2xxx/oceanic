@@ -13,6 +13,8 @@ pub trait Entry: IntoAny + Send + Sync + 'static {
     ) -> Result<(), Error>;
 
     fn metadata(&self) -> Result<Metadata, Error>;
+
+    fn set_metadata(&self, metadata: Metadata) -> Result<(), Error>;
 }
 
 pub trait IntoAny: Any {

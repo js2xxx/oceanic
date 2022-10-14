@@ -42,6 +42,12 @@ impl ClientImpl {
         }
     }
 
+    pub fn into_sync(self) -> Result<crate::sync::ClientImpl, Self> {
+        let channel = Channel::try_from(self)?;
+        let channel = solvent::ipc::Channel::from(channel);
+        Ok(crate::sync::ClientImpl::from(channel))
+    }
+
     pub fn event_receiver(&self) -> Option<EventReceiverImpl> {
         {
             let mut entry = self.inner.event.waker.lock();
@@ -422,8 +428,19 @@ impl Inner {
 
 pub trait Client: SerdePacket + From<Channel> + AsRef<Channel> {
     type EventReceiver: EventReceiver;
+    type Sync: crate::sync::Client;
 
     fn from_inner(inner: ClientImpl) -> Self;
+
+    fn into_inner(this: Self) -> ClientImpl;
+
+    #[inline]
+    fn into_sync(self) -> Result<Self::Sync, Self> {
+        Self::into_inner(self)
+            .into_sync()
+            .map(<Self::Sync as crate::sync::Client>::from_inner)
+            .map_err(Self::from_inner)
+    }
 
     fn event_receiver(&self) -> Option<Self::EventReceiver>;
 }

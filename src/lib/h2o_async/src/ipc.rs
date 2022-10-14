@@ -12,7 +12,7 @@ use solvent::{
     prelude::{Object, Syscall, ENOENT, EPIPE, ETIME},
 };
 use solvent_core::{
-    sync::channel::{oneshot, oneshot_, TryRecvError},
+    sync::channel::{oneshot, TryRecvError},
     thread::Backoff,
 };
 
@@ -63,7 +63,7 @@ impl<T: Object> AsyncObject for T {
 
 pub struct PackWait;
 
-unsafe impl PackedSyscall for (PackWait, oneshot_::Sender<Result<usize>>) {
+unsafe impl PackedSyscall for (PackWait, oneshot::Sender<Result<usize>>) {
     #[inline]
     fn raw(&self) -> Option<Syscall> {
         None
@@ -85,7 +85,7 @@ pub struct TryWait<'a, T> {
     disp: DispSender,
     level_triggered: bool,
     signal: usize,
-    result: Option<oneshot_::Receiver<Result<usize>>>,
+    result: Option<oneshot::Receiver<Result<usize>>>,
     key: Option<usize>,
 }
 

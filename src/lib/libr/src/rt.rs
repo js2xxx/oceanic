@@ -79,13 +79,13 @@ pub fn lang_start<R: Termination>(channel: Channel, main: fn() -> R) -> R {
             let paths = paths.strip_prefix(path_prefix).unwrap();
             let cwd = cwd.as_deref();
             svrt::with_startup_args(|sa| unsafe {
-                solvent_fs::init_rt(&mut sa.handles, paths.split(','), cwd)
+                solvent_fs::fs::init_rt(&mut sa.handles, paths.split(','), cwd)
             })
         }
 
         let ret = main();
 
-        unsafe { solvent_fs::fini_rt() };
+        unsafe { solvent_fs::fs::fini_rt() };
 
         ret
     };

@@ -92,9 +92,6 @@ impl PhysInner {
     }
 
     fn allocate(len: usize, zeroed: bool) -> Result<Self, AllocError> {
-        if len == 0 {
-            return Err(AllocError);
-        }
         let len = len.round_up_bit(PAGE_SHIFT);
 
         let mut map = BTreeMap::new();

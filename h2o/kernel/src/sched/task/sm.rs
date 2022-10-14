@@ -9,7 +9,12 @@ use bitvec::prelude::BitVec;
 use derive_builder::Builder;
 use spin::Mutex;
 
-use super::{ctx, idle, sig::Signal, tid::{self, WeakTid}, Space, Tid, Type};
+use super::{
+    ctx, idle,
+    sig::Signal,
+    tid::{self, WeakTid},
+    Space, Tid, Type,
+};
 use crate::{
     cpu::{time::Instant, CpuMask},
     sched::{ipc::Channel, Arsc, BasicEvent, Event, PREEMPT, SIG_READ},

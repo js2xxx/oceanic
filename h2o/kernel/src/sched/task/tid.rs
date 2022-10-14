@@ -16,7 +16,6 @@ static TID_ALLOC: Azy<spin::Mutex<IdAllocator>> =
     Azy::new(|| spin::Mutex::new(IdAllocator::new(0..=(NR_TASKS as u64 - 1))));
 
 #[derive(Debug, Clone)]
-#[repr(C)]
 pub struct Tid {
     raw: NonZeroU32,
     ti: Arc<TaskInfo>,

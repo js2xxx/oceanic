@@ -1,7 +1,7 @@
 use super::Arsc;
 
 mod blocking;
-pub mod oneshot_;
+pub mod oneshot;
 
 #[derive(Debug)]
 pub struct RecvError;
@@ -19,10 +19,10 @@ pub enum TryRecvError {
 
 #[inline]
 #[must_use]
-pub fn oneshot<T>() -> (oneshot_::Sender<T>, oneshot_::Receiver<T>) {
-    let packet = Arsc::new(oneshot_::Packet::new());
+pub fn oneshot<T>() -> (oneshot::Sender<T>, oneshot::Receiver<T>) {
+    let packet = Arsc::new(oneshot::Packet::new());
     (
-        oneshot_::Sender::new(Arsc::clone(&packet)),
-        oneshot_::Receiver::new(packet),
+        oneshot::Sender::new(Arsc::clone(&packet)),
+        oneshot::Receiver::new(packet),
     )
 }

@@ -1,6 +1,6 @@
 #[cfg(feature = "runtime")]
 use entry::EntryServer;
-use solvent::ipc::{Packet, Channel};
+use solvent::ipc::{Channel, Packet};
 
 use super::*;
 
@@ -14,8 +14,12 @@ bitflags::bitflags! {
 
 #[protocol(EventFlags)]
 pub trait File: entry::Entry {
-    fn stream() -> Result<RawStream, Error>;
+    /// Lock the entire file excluively until the connection is closed.
+    ///
+    /// If the file supports memory-backed stream, the stream will be returned.
+    fn lock() -> Result<Result<RawStream, ()>, Error>;
 
+    /// Flush the cached content into the underlying file.
     fn flush() -> Result<(), Error>;
 
     fn read(len: usize) -> Result<Vec<u8>, Error>;

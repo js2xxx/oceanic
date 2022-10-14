@@ -11,7 +11,7 @@ use solvent::prelude::{
     Handle, PackRecv, Packet, Result, SerdeReg, Syscall, EBUFFER, ENOENT, EPIPE, SIG_READ,
 };
 use solvent_core::{
-    sync::channel::{oneshot, oneshot_, TryRecvError},
+    sync::channel::{oneshot, TryRecvError},
     thread::Backoff,
 };
 
@@ -36,6 +36,13 @@ impl AsRef<Inner> for Channel {
     #[inline]
     fn as_ref(&self) -> &Inner {
         &self.inner
+    }
+}
+
+impl From<Channel> for Inner {
+    #[inline]
+    fn from(value: Channel) -> Self {
+        value.inner
     }
 }
 
@@ -111,7 +118,7 @@ pub(crate) struct SendData {
     pub packet: Packet,
 }
 
-unsafe impl PackedSyscall for (PackRecv, oneshot_::Sender<SendData>) {
+unsafe impl PackedSyscall for (PackRecv, oneshot::Sender<SendData>) {
     #[inline]
     fn raw(&self) -> Option<Syscall> {
         Some(self.0.syscall)
@@ -135,7 +142,7 @@ unsafe impl PackedSyscall for (PackRecv, oneshot_::Sender<SendData>) {
 pub struct Receive<'a> {
     channel: &'a Channel,
     packet: Packet,
-    result: Option<oneshot_::Receiver<SendData>>,
+    result: Option<oneshot::Receiver<SendData>>,
     key: Option<usize>,
 }
 
@@ -195,7 +202,7 @@ impl<'a> Receive<'a> {
         mut packet: Packet,
         recv: Recv,
         pack_send: PackSend,
-    ) -> ControlFlow<Poll<Result<Packet>>, (Packet, oneshot_::Sender<SendData>)>
+    ) -> ControlFlow<Poll<Result<Packet>>, (Packet, oneshot::Sender<SendData>)>
     where
         Recv: FnOnce(&mut Self, &mut Packet) -> Result,
         PackSend:
@@ -203,7 +210,7 @@ impl<'a> Receive<'a> {
                 &mut Self,
                 Packet,
             )
-                -> core::result::Result<Result<usize>, (PackRecv, oneshot_::Sender<SendData>)>,
+                -> core::result::Result<Result<usize>, (PackRecv, oneshot::Sender<SendData>)>,
     {
         match recv(self, &mut packet) {
             Err(ENOENT) => match pack_send(self, packet) {

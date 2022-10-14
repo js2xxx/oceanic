@@ -612,10 +612,16 @@ impl Protocol {
 
                 impl solvent_rpc::Client for #client {
                     type EventReceiver = #event_receiver;
+                    type Sync = #sync_client;
 
                     #[inline]
                     fn from_inner(inner: solvent_rpc::ClientImpl) -> Self {
                         #client { inner }
+                    }
+
+                    #[inline]
+                    fn into_inner(this: Self) -> solvent_rpc::ClientImpl {
+                        this.inner
                     }
 
                     fn event_receiver(&self) -> Option<#event_receiver> {

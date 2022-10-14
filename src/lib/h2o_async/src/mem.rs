@@ -13,7 +13,7 @@ use solvent::prelude::{
     ENOENT, EPIPE, SIG_READ, SIG_WRITE,
 };
 use solvent_core::{
-    sync::channel::{oneshot, oneshot_, TryRecvError},
+    sync::channel::{oneshot, TryRecvError},
     thread::Backoff,
 };
 
@@ -131,7 +131,7 @@ impl Phys {
     }
 }
 
-unsafe impl PackedSyscall for (PackRead, oneshot_::Sender<Result<Vec<u8>>>) {
+unsafe impl PackedSyscall for (PackRead, oneshot::Sender<Result<Vec<u8>>>) {
     #[inline]
     fn raw(&self) -> Option<Syscall> {
         Some(self.0.syscall)
@@ -157,7 +157,7 @@ struct FutInner<'a> {
 impl<'a> FutInner<'a> {
     fn result_recv<T>(
         &mut self,
-        result: &mut Option<oneshot_::Receiver<Result<T>>>,
+        result: &mut Option<oneshot::Receiver<Result<T>>>,
         cx: &mut Context,
     ) -> ControlFlow<Poll<Result<T>>> {
         match result.take() {
@@ -195,7 +195,7 @@ impl<'a> FutInner<'a> {
 
 #[must_use]
 pub struct Read<'a> {
-    result: Option<oneshot_::Receiver<Result<Vec<u8>>>>,
+    result: Option<oneshot::Receiver<Result<Vec<u8>>>>,
     offset: usize,
     buf: Vec<u8>,
     f: FutInner<'a>,
@@ -245,7 +245,7 @@ impl Future for Read<'_> {
     }
 }
 
-unsafe impl PackedSyscall for (PackWrite, oneshot_::Sender<Result<(Vec<u8>, usize)>>) {
+unsafe impl PackedSyscall for (PackWrite, oneshot::Sender<Result<(Vec<u8>, usize)>>) {
     #[inline]
     fn raw(&self) -> Option<Syscall> {
         Some(self.0.syscall)
@@ -264,7 +264,7 @@ pub struct Write<'a> {
     offset: usize,
     buf: Vec<u8>,
     #[allow(clippy::type_complexity)]
-    result: Option<oneshot_::Receiver<Result<(Vec<u8>, usize)>>>,
+    result: Option<oneshot::Receiver<Result<(Vec<u8>, usize)>>>,
     f: FutInner<'a>,
 }
 
@@ -305,7 +305,7 @@ impl Future for Write<'_> {
     }
 }
 
-unsafe impl PackedSyscall for (PackResize, oneshot_::Sender<Result>) {
+unsafe impl PackedSyscall for (PackResize, oneshot::Sender<Result>) {
     #[inline]
     fn raw(&self) -> Option<Syscall> {
         Some((self.0).0)
@@ -321,7 +321,7 @@ unsafe impl PackedSyscall for (PackResize, oneshot_::Sender<Result>) {
 pub struct Resize<'a> {
     new_len: usize,
     zeroed: bool,
-    result: Option<oneshot_::Receiver<Result>>,
+    result: Option<oneshot::Receiver<Result>>,
     f: FutInner<'a>,
 }
 

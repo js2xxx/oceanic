@@ -1,11 +1,9 @@
 #![no_std]
 #![feature(btree_drain_filter)]
 
-mod dir;
-mod entry;
-mod file;
-mod fs;
+pub mod dir;
+pub mod entry;
+pub mod file;
+pub mod fs;
 
 extern crate alloc;
-
-pub use self::fs::*;
