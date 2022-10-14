@@ -72,7 +72,7 @@ fn exec_inner(
 ) -> sv_call::Result<Init> {
     let ty = Type::pass(ty, cur.ty())?;
     let ti = TaskInfo::builder()
-        .from(Some(cur.clone()))
+        .from(cur.downgrade())
         .excep_chan(Arsc::try_new(Default::default())?)
         .name(name.unwrap_or(format!("{}.func{}", cur.name(), archop::rand::get())))
         .ty(ty)
@@ -119,7 +119,7 @@ fn create(name: Option<String>, space: Arc<Space>) -> sv_call::Result<(Init, sv_
 
     let ty = cur.ty();
     let ti = TaskInfo::builder()
-        .from(Some(cur.clone()))
+        .from(cur.downgrade())
         .excep_chan(Arsc::try_new(Default::default())?)
         .name(name.unwrap_or(format!("{}.func{}", cur.name(), archop::rand::get())))
         .ty(ty)

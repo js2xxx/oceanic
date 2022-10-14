@@ -98,15 +98,17 @@ impl Node {
         } else {
             return Err(Error::InvalidType(FileType::File));
         };
-        if all {
-            let _ = entries.remove(rest);
+        let old = if all {
+            entries.remove(rest)
         } else if let Some(node) = entries.get(rest) {
             if let Node::Dir(..) = **node {
                 return Err(Error::InvalidType(FileType::Directory));
             }
-            let _ = entries.remove(rest);
-        }
-        Ok(())
+            entries.remove(rest)
+        } else {
+            None
+        };
+        old.map(drop).ok_or(Error::NotFound)
     }
 
     #[inline]
@@ -386,6 +388,7 @@ impl Iterator for DirIter {
 }
 
 impl Default for LocalFs {
+    #[inline]
     fn default() -> Self {
         Self::new()
     }
