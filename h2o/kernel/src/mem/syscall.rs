@@ -7,7 +7,7 @@ use core::{alloc::Layout, ptr};
 use bitop_ex::BitOpEx;
 use paging::LAddr;
 use sv_call::{
-    mem::{Flags, IoVec, MemInfo, VirtMapInfo, PhysOptions},
+    mem::{Flags, IoVec, MemInfo, PhysOptions, VirtMapInfo},
     *,
 };
 

@@ -8,13 +8,21 @@ use solvent_core::path::PathBuf;
 
 use super::*;
 
+bitflags::bitflags! {
+    #[derive(Default, SerdePacket)]
+    pub struct EventFlags: u32 {
+        const ADD = 0b0000_0001;
+        const REMOVE = 0b0000_0010;
+    }
+}
+
 #[derive(SerdePacket, Debug, Clone)]
 pub struct DirEntry {
     pub name: String,
     pub metadata: Metadata,
 }
 
-#[protocol]
+#[protocol(EventFlags)]
 pub trait Directory: entry::Entry {
     fn next_dirent(last: Option<String>) -> Result<DirEntry, Error>;
 

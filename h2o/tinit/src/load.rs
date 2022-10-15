@@ -1,7 +1,7 @@
 use core::{alloc::Layout, ptr::NonNull};
 
 use bootfs::parse::Directory;
-use solvent::prelude::{Error as SError, Flags, Phys, Virt, PAGE_LAYOUT, PAGE_SIZE, PhysOptions};
+use solvent::prelude::{Error as SError, Flags, Phys, PhysOptions, Virt, PAGE_LAYOUT, PAGE_SIZE};
 use sv_call::{task::DEFAULT_STACK_SIZE, ENOENT};
 
 const STACK_PROTECTOR_SIZE: usize = PAGE_SIZE;

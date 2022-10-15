@@ -6,7 +6,7 @@ use alloc::vec::Vec;
 use core::{mem, ops::Range};
 
 use goblin::elf64::{header::*, program_header::*, section_header::*};
-use solvent::prelude::{Flags, Phys, Virt, PAGE_MASK, PhysOptions};
+use solvent::prelude::{Flags, Phys, PhysOptions, Virt, PAGE_MASK};
 
 #[derive(Debug)]
 pub enum Error {

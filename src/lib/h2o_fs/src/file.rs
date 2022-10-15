@@ -18,6 +18,15 @@ use crate::entry::Entry;
 pub trait File: Entry {
     async fn lock(&self, stream: Option<RawStream>) -> Result<Option<Stream>, Error>;
 
+    /// # Errors
+    ///
+    /// This function will return an error if the unlock operation failed.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure the file is locked before calling this function.
+    unsafe fn unlock(&self) -> Result<(), Error>;
+
     async fn flush(&self) -> Result<(), Error>;
 
     async fn read_at(&self, pos: usize, buf: &mut [u8]) -> Result<usize, Error>;

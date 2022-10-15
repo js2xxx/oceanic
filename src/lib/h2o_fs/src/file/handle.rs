@@ -5,7 +5,7 @@ use rpc::FileRequest;
 use solvent_async::io::Stream;
 use solvent_core::{io::RawStream, path::Path, sync::Arsc};
 use solvent_rpc::{
-    io::{file as rpc, OpenOptions, Permission, Error},
+    io::{file as rpc, Error, OpenOptions, Permission},
     Server,
 };
 

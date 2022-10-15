@@ -5,7 +5,7 @@ use solvent::ipc::{Channel, Packet};
 use super::*;
 
 bitflags::bitflags! {
-    #[derive(SerdePacket)]
+    #[derive(Default, SerdePacket)]
     pub struct EventFlags: u32 {
         const UNLOCK = 0b0000_0001;
     }

@@ -69,6 +69,7 @@ mod runtime {
     pub struct DirectFile<F: File> {
         inner: Arsc<F>,
         seeker: usize,
+        locked: bool,
     }
 
     impl<F: File> DirectFile<F> {
@@ -76,6 +77,7 @@ mod runtime {
             DirectFile {
                 inner: file,
                 seeker,
+                locked: false,
             }
         }
     }
@@ -88,9 +90,13 @@ mod runtime {
             &self.inner
         }
 
-        #[inline]
         async fn lock(&mut self) -> Result<Option<Stream>, Error> {
-            self.inner.lock(None).await
+            if self.locked {
+                return Ok(None);
+            }
+            let res = self.inner.lock(None).await?;
+            self.locked = true;
+            Ok(res)
         }
 
         #[inline]
@@ -141,10 +147,19 @@ mod runtime {
         }
     }
 
+    impl<F: File> Drop for DirectFile<F> {
+        fn drop(&mut self) {
+            if self.locked {
+                let _ = unsafe { self.inner.unlock() };
+            }
+        }
+    }
+
     pub struct StreamFile<F: File> {
         inner: Arsc<F>,
         raw: Option<Stream>,
         event: FileEventSender,
+        locked: bool,
     }
 
     impl<F: File> StreamFile<F> {
@@ -153,6 +168,7 @@ mod runtime {
                 inner: file,
                 raw: Some(raw),
                 event,
+                locked: false,
             }
         }
     }
@@ -172,9 +188,16 @@ mod runtime {
             &self.inner
         }
 
-        #[inline]
         async fn lock(&mut self) -> Result<Option<Stream>, Error> {
-            self.inner.lock(self.raw.take().map(Stream::into_raw)).await
+            if self.locked {
+                return Ok(None);
+            }
+            let res = self
+                .inner
+                .lock(self.raw.take().map(Stream::into_raw))
+                .await?;
+            self.locked = true;
+            Ok(res)
         }
 
         #[inline]
@@ -210,7 +233,10 @@ mod runtime {
 
     impl<F: File> Drop for StreamFile<F> {
         fn drop(&mut self) {
-            let _ = self.event.send(EventFlags::UNLOCK);
+            if self.locked {
+                let _ = unsafe { self.inner.unlock() };
+                let _ = self.event.send(EventFlags::UNLOCK);
+            }
         }
     }
 }

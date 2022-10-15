@@ -79,12 +79,8 @@ pub mod test {
 
         let phys = solvent::mem::Phys::allocate(5, PhysOptions::ZEROED | PhysOptions::RESIZABLE)
             .expect("Failed to allocate memory");
-        let stream = unsafe {
-            crate::io::Stream::new(solvent_core::io::RawStream {
-                phys,
-                seeker: 0,
-            })
-        };
+        let stream =
+            unsafe { crate::io::Stream::new(solvent_core::io::RawStream { phys, seeker: 0 }) };
         stream.write(&[1, 2, 3, 4, 5, 6, 7]).await.unwrap();
         stream
             .seek(solvent_core::io::SeekFrom::Current(-4))
