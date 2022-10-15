@@ -238,7 +238,7 @@ pub unsafe fn test(virt: &Virt) -> (*mut u8, *mut u8, Handle) {
     assert_eq!(ret.into_res(), Err(EPERM));
 
     let flags = Flags::READABLE | Flags::WRITABLE | Flags::USER_ACCESS;
-    let stack_phys = sv_phys_alloc(DEFAULT_STACK_SIZE, false)
+    let stack_phys = sv_phys_alloc(DEFAULT_STACK_SIZE, Default::default())
         .into_res()
         .expect("Failed to allocate memory");
     let stack_phys2 = sv_obj_clone(stack_phys)

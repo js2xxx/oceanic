@@ -1,6 +1,7 @@
 use alloc::{boxed::Box, string::String};
 
 use async_trait::async_trait;
+use solvent_core::path::Path;
 use solvent_rpc::io::{dir::DirEntry, Error};
 
 use crate::entry::Entry;
@@ -8,6 +9,15 @@ use crate::entry::Entry;
 #[async_trait]
 pub trait Directory: Entry {
     async fn next_dirent(&self, last: Option<String>) -> Result<DirEntry, Error>;
+}
+
+#[async_trait]
+pub trait DirectoryMut: Directory {
+    async fn rename(&self, old: &Path, new: &Path) -> Result<(), Error>;
+
+    async fn link(&self, old: &Path, new: &Path) -> Result<(), Error>;
+
+    async fn unlink(&self, path: &Path) -> Result<(), Error>;
 }
 
 pub mod sync {
@@ -19,24 +29,20 @@ pub mod sync {
     };
 
     #[derive(Clone)]
-    pub struct Remote(pub directory_sync::DirectoryClient);
-
-    impl Remote {
-        #[inline]
-        pub fn iter(self) -> RemoteIter {
-            RemoteIter {
-                inner: self.0,
-                last: None,
-                stop: false,
-            }
-        }
-    }
-
-    #[derive(Clone)]
     pub struct RemoteIter {
         inner: directory_sync::DirectoryClient,
         last: Option<String>,
         stop: bool,
+    }
+
+    impl From<directory_sync::DirectoryClient> for RemoteIter {
+        fn from(dir: directory_sync::DirectoryClient) -> Self {
+            RemoteIter {
+                inner: dir,
+                last: None,
+                stop: false,
+            }
+        }
     }
 
     impl Iterator for RemoteIter {

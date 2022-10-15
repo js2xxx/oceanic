@@ -1,4 +1,5 @@
 use alloc::string::String;
+use sv_call::mem::PhysOptions;
 use core::ops::Range;
 
 use bitop_ex::BitOpEx;
@@ -29,7 +30,7 @@ fn map_addr(
         .ok_or(sv_call::ERANGE)?;
     let phys = match phys {
         Some(phys) => phys,
-        None => Phys::allocate(len, true, false)?,
+        None => Phys::allocate(len, PhysOptions::ZEROED, false)?,
     };
     virt.map(Some(offset), phys, 0, space::page_aligned(len), flags)?;
     Ok(())

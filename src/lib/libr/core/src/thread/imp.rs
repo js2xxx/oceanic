@@ -33,7 +33,7 @@ impl Thread {
             }
         }
         let guard = Guard(&virt);
-        let phys = Phys::allocate(stack, false)?;
+        let phys = Phys::allocate(stack, Default::default())?;
 
         let range = virt.map_phys(
             Some(PAGE_SIZE),

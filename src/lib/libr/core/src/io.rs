@@ -6,7 +6,6 @@ use solvent_rpc_core as solvent_rpc;
 #[derive(SerdePacket)]
 pub struct RawStream {
     pub phys: Phys,
-    pub len: usize,
     pub seeker: usize,
 }
 

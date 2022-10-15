@@ -1,7 +1,7 @@
 use alloc::vec::Vec;
 use core::fmt;
 
-use solvent::prelude::{IoSlice, IoSliceMut, PAGE_MASK};
+use solvent::prelude::{IoSlice, IoSliceMut};
 use solvent_core::io::{RawStream, SeekFrom};
 
 use crate::{disp::DispSender, mem::Phys, sync::Mutex};
@@ -14,17 +14,6 @@ impl fmt::Debug for Stream {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Stream").finish_non_exhaustive()
-    }
-}
-
-impl From<Stream> for RawStream {
-    fn from(stream: Stream) -> Self {
-        let inner = stream.inner.into_inner();
-        RawStream {
-            phys: Phys::into_inner(inner.phys),
-            len: inner.len,
-            seeker: inner.seeker,
-        }
     }
 }
 
@@ -43,10 +32,9 @@ impl Stream {
     }
 
     pub fn into_raw(this: Self) -> RawStream {
-        let Inner { phys, len, seeker } = this.inner.into_inner();
+        let Inner { phys, seeker } = this.inner.into_inner();
         RawStream {
             phys: phys.into(),
-            len,
             seeker,
         }
     }
@@ -63,7 +51,6 @@ impl Stream {
         Stream {
             inner: Mutex::new(Inner {
                 phys,
-                len: raw.len,
                 seeker: raw.seeker,
             }),
         }
@@ -114,8 +101,7 @@ impl Stream {
     }
 
     pub async fn resize(&self, new_len: usize) -> Result<(), Error> {
-        let mut inner = self.inner.lock().await;
-        inner.len = new_len;
+        let inner = self.inner.lock().await;
         let res = inner.phys.resize(new_len, true).await;
         res.map_err(Error::Other)
     }
@@ -129,7 +115,6 @@ pub enum Error {
 
 struct Inner {
     phys: Phys,
-    len: usize,
     seeker: usize,
 }
 
@@ -150,7 +135,7 @@ impl Inner {
                 }
             }
             SeekFrom::End(delta) => {
-                let len = self.len;
+                let len = self.phys.len();
                 if delta >= 0 {
                     self.seeker = len + delta as usize;
                 } else {
@@ -168,9 +153,10 @@ impl Inner {
     async fn read_vectored(&mut self, bufs: &mut [IoSliceMut<'_>]) -> Result<usize, Error> {
         let mut cache = Vec::new();
         let mut read_len = 0;
+        let len = self.phys.len();
         for buf in bufs.iter_mut().filter(|buf| !buf.is_empty()) {
             cache.clear();
-            cache.reserve(buf.len().min(self.len.saturating_sub(self.seeker)));
+            cache.reserve(buf.len().min(len.saturating_sub(self.seeker)));
             self.phys
                 .read(self.seeker, &mut cache)
                 .await
@@ -193,9 +179,10 @@ impl Inner {
     ) -> Result<usize, Error> {
         let mut cache = Vec::new();
         let mut read_len = 0;
+        let len = self.phys.len();
         for buf in bufs.iter_mut().filter(|buf| !buf.is_empty()) {
             cache.clear();
-            cache.reserve(buf.len().min(self.len.saturating_sub(self.seeker)));
+            cache.reserve(buf.len().min(len.saturating_sub(self.seeker)));
             self.phys
                 .read(pos, &mut cache)
                 .await
@@ -249,7 +236,8 @@ impl Inner {
 
     async fn write_vectored(&mut self, mut bufs: &mut [IoSlice<'_>]) -> Result<usize, Error> {
         IoSlice::advance_slices(&mut bufs, 0);
-        match Self::write_inner(&self.phys, self.len, &mut self.seeker, bufs).await? {
+        let len = self.phys.len();
+        match Self::write_inner(&self.phys, len, &mut self.seeker, bufs).await? {
             Ok(written_len) => Ok(written_len),
             Err(len1) => {
                 IoSlice::advance_slices(&mut bufs, len1);
@@ -257,12 +245,9 @@ impl Inner {
                     Ok(len1)
                 } else {
                     let additional: usize = bufs.iter().map(|buf| buf.len()).sum();
-                    self.len += additional;
-                    self.phys
-                        .resize((self.len + PAGE_MASK) & !PAGE_MASK, true)
-                        .await
-                        .map_err(Error::Other)?;
-                    let res = Self::write_inner(&self.phys, self.len, &mut self.seeker, bufs).await;
+                    let len = len + additional;
+                    self.phys.resize(len, true).await.map_err(Error::Other)?;
+                    let res = Self::write_inner(&self.phys, len, &mut self.seeker, bufs).await;
                     res.map(|res| {
                         len1 + match res {
                             Ok(len2) => len2,
@@ -280,7 +265,8 @@ impl Inner {
         mut bufs: &mut [IoSlice<'_>],
     ) -> Result<usize, Error> {
         IoSlice::advance_slices(&mut bufs, 0);
-        match Self::write_inner(&self.phys, self.len, &mut pos, bufs).await? {
+        let len = self.phys.len();
+        match Self::write_inner(&self.phys, len, &mut pos, bufs).await? {
             Ok(written_len) => Ok(written_len),
             Err(len1) => {
                 IoSlice::advance_slices(&mut bufs, len1);
@@ -288,12 +274,9 @@ impl Inner {
                     Ok(len1)
                 } else {
                     let additional: usize = bufs.iter().map(|buf| buf.len()).sum();
-                    self.len += additional;
-                    self.phys
-                        .resize((self.len + PAGE_MASK) & !PAGE_MASK, true)
-                        .await
-                        .map_err(Error::Other)?;
-                    let res = Self::write_inner(&self.phys, self.len, &mut pos, bufs).await;
+                    let len = len + additional;
+                    self.phys.resize(len, true).await.map_err(Error::Other)?;
+                    let res = Self::write_inner(&self.phys, len, &mut pos, bufs).await;
                     res.map(|res| {
                         len1 + match res {
                             Ok(len2) => len2,

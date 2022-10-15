@@ -18,7 +18,7 @@ use solvent_rpc::io::{
     Error, FileType, Metadata, OpenOptions,
 };
 
-use crate::dir::sync::{Remote, RemoteIter};
+use crate::dir::sync::RemoteIter;
 
 enum Node {
     Dir(Mutex<BTreeMap<String, Arsc<Node>>>),
@@ -269,9 +269,8 @@ impl LocalFs {
             Node::Remote(ref remote) if comps.peek().is_some() => {
                 let path = PathBuf::from_iter(comps);
                 let (t, conn) = Channel::new();
-                let dir = Remote(DirectoryClient::from(t));
                 remote.open(path, OpenOptions::READ, conn)??;
-                Ok(DirIter::Remote(dir.iter()))
+                Ok(DirIter::Remote(DirectoryClient::from(t).into()))
             }
             Node::Remote(ref remote) => {
                 let metadata = remote.metadata()??;
@@ -279,9 +278,8 @@ impl LocalFs {
                     return Err(Error::InvalidType(metadata.file_type));
                 }
                 let (t, conn) = Channel::new();
-                let dir = Remote(DirectoryClient::from(t));
                 remote.clone_connection(conn)?;
-                Ok(DirIter::Remote(dir.iter()))
+                Ok(DirIter::Remote(DirectoryClient::from(t).into()))
             }
         }
     }

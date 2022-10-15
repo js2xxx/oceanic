@@ -21,7 +21,11 @@ pub use self::exe::{block_on, dispatch, spawn, spawn_blocking};
 pub mod test {
     use core::future::Future;
 
-    use solvent::{ipc::Packet, prelude::Handle, random};
+    use solvent::{
+        ipc::Packet,
+        prelude::{Handle, PhysOptions},
+        random,
+    };
 
     const NUM_PACKET: usize = 2000;
 
@@ -73,11 +77,11 @@ pub mod test {
     pub async fn test_disp() {
         log::debug!("Has {} cpus available", solvent::task::cpu_num());
 
-        let phys = solvent::mem::Phys::allocate(5, true).expect("Failed to allocate memory");
+        let phys = solvent::mem::Phys::allocate(5, PhysOptions::ZEROED | PhysOptions::RESIZABLE)
+            .expect("Failed to allocate memory");
         let stream = unsafe {
             crate::io::Stream::new(solvent_core::io::RawStream {
                 phys,
-                len: 5,
                 seeker: 0,
             })
         };
@@ -87,8 +91,8 @@ pub mod test {
             .await
             .unwrap();
         let mut buf = [0; 10];
-        stream.read(&mut buf).await.unwrap();
-        log::debug!("{buf:?}");
+        let len = stream.read(&mut buf).await.unwrap();
+        assert_eq!(&buf[..len], [4, 5, 6, 7]);
 
         let (send, recv) = test_tx();
         let recv = crate::spawn(recv);

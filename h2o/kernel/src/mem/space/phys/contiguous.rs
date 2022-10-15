@@ -75,6 +75,7 @@ impl Phys {
         if size == 0 {
             return Err(sv_call::ENOMEM);
         }
+        let size = size.round_up_bit(PAGE_SHIFT);
 
         let mut inner = Arsc::try_new_uninit()?;
         let layout = unsafe { Layout::from_size_align_unchecked(size, PAGE_SIZE) }.pad_to_align();

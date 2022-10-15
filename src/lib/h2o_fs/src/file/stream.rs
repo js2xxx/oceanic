@@ -46,13 +46,19 @@ pub trait StreamIo {
 
     async fn read(&mut self, buf: &mut [u8]) -> Result<usize, Error>;
 
+    async fn read_at(&mut self, pos: usize, buf: &mut [u8]) -> Result<usize, Error>;
+
     async fn write(&mut self, buf: &[u8]) -> Result<usize, Error>;
+
+    async fn write_at(&mut self, pos: usize, buf: &[u8]) -> Result<usize, Error>;
+
+    async fn resize(&mut self, new_len: usize) -> Result<(), Error>;
 
     async fn seek(&mut self, pos: SeekFrom) -> Result<usize, Error>;
 }
 
 #[cfg(feature = "runtime")]
-mod std {
+mod runtime {
     use solvent_rpc::{
         io::file::{EventFlags, FileEventSender},
         EventSender,
@@ -94,10 +100,26 @@ mod std {
             Ok(read_len)
         }
 
+        #[inline]
+        async fn read_at(&mut self, pos: usize, buf: &mut [u8]) -> Result<usize, Error> {
+            self.inner.read_at(pos, buf).await
+        }
+
+        #[inline]
         async fn write(&mut self, buf: &[u8]) -> Result<usize, Error> {
             let written_len = self.inner.write_at(self.seeker, buf).await?;
             self.seeker += written_len;
             Ok(written_len)
+        }
+
+        #[inline]
+        async fn write_at(&mut self, pos: usize, buf: &[u8]) -> Result<usize, Error> {
+            self.inner.write_at(pos, buf).await
+        }
+
+        #[inline]
+        async fn resize(&mut self, new_len: usize) -> Result<(), Error> {
+            self.inner.resize(new_len).await
         }
 
         async fn seek(&mut self, pos: SeekFrom) -> Result<usize, Error> {
@@ -150,18 +172,37 @@ mod std {
             &self.inner
         }
 
+        #[inline]
         async fn lock(&mut self) -> Result<Option<Stream>, Error> {
             self.inner.lock(self.raw.take().map(Stream::into_raw)).await
         }
 
+        #[inline]
         async fn read(&mut self, buf: &mut [u8]) -> Result<usize, Error> {
             Ok(self.stream()?.read(buf).await?)
         }
 
+        #[inline]
+        async fn read_at(&mut self, pos: usize, buf: &mut [u8]) -> Result<usize, Error> {
+            Ok(self.stream()?.read_at(pos, buf).await?)
+        }
+
+        #[inline]
         async fn write(&mut self, buf: &[u8]) -> Result<usize, Error> {
             Ok(self.stream()?.write(buf).await?)
         }
 
+        #[inline]
+        async fn write_at(&mut self, pos: usize, buf: &[u8]) -> Result<usize, Error> {
+            Ok(self.stream()?.write_at(pos, buf).await?)
+        }
+
+        #[inline]
+        async fn resize(&mut self, new_len: usize) -> Result<(), Error> {
+            Ok(self.stream()?.resize(new_len).await?)
+        }
+
+        #[inline]
         async fn seek(&mut self, pos: SeekFrom) -> Result<usize, Error> {
             Ok(self.stream()?.seek(pos).await?)
         }
@@ -174,4 +215,4 @@ mod std {
     }
 }
 #[cfg(feature = "runtime")]
-pub use std::*;
+pub use runtime::*;

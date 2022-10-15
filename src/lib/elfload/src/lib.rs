@@ -6,7 +6,7 @@ use alloc::vec::Vec;
 use core::{mem, ops::Range};
 
 use goblin::elf64::{header::*, program_header::*, section_header::*};
-use solvent::prelude::{Flags, Phys, Virt, PAGE_MASK};
+use solvent::prelude::{Flags, Phys, Virt, PAGE_MASK, PhysOptions};
 
 #[derive(Debug)]
 pub enum Error {
@@ -149,7 +149,7 @@ pub fn map_segment(
     if asize > 0 {
         let address = address + fsize;
 
-        let mem = Phys::allocate(asize, true).map_err(Error::PhysAlloc)?;
+        let mem = Phys::allocate(asize, PhysOptions::ZEROED).map_err(Error::PhysAlloc)?;
 
         let cdata = phys.read(fend, csize).map_err(Error::PhysRead)?;
         unsafe { mem.write(0, &cdata) }.map_err(Error::PhysWrite)?;

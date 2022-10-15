@@ -3,6 +3,7 @@ use alloc::{boxed::Box, vec::Vec};
 #[cfg(feature = "alloc")]
 use core::slice;
 
+pub use sv_call::mem::PhysOptions;
 use sv_call::{
     c_ty::{Status, StatusOrValue},
     mem::IoVec,
@@ -25,9 +26,8 @@ crate::impl_obj!(@CLONE, Phys);
 crate::impl_obj!(@DROP, Phys);
 
 impl Phys {
-    pub fn allocate(size: usize, zeroed: bool) -> Result<Self> {
-        let len = size.next_multiple_of(PAGE_SIZE);
-        let handle = unsafe { sv_call::sv_phys_alloc(len, zeroed) }.into_res()?;
+    pub fn allocate(size: usize, options: PhysOptions) -> Result<Self> {
+        let handle = unsafe { sv_call::sv_phys_alloc(size, options) }.into_res()?;
         // SAFETY: The handle is freshly allocated.
         Ok(unsafe { Self::from_raw(handle) })
     }
@@ -47,17 +47,27 @@ impl Phys {
         Ok(unsafe { Self::from_raw(handle) })
     }
 
+    /// # Note
+    ///
+    /// This function is rather expensive and is not preferred for frequent use.
+    /// Also, for resizable objects, the result may be inconsistent and should
+    /// just be used for hinting like pre-allocating buffers for R/W operations.
+    ///
+    /// FIXME: See the implementation in the kernel.
     pub fn len(&self) -> usize {
         unsafe { sv_call::sv_phys_size(unsafe { self.raw() }) }
             .into_res()
             .expect("Failed to get the size of the physical object") as usize
     }
 
+    /// # Note
+    ///
+    /// See `Phys::len` for more info.
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
-    pub fn read_into(&self, offset: usize, buffer: &mut [u8]) -> Result {
+    pub fn read_into(&self, offset: usize, buffer: &mut [u8]) -> Result<usize> {
         if !buffer.is_empty() {
             unsafe {
                 sv_call::sv_phys_read(
@@ -68,9 +78,10 @@ impl Phys {
                     buffer.as_mut_ptr(),
                 )
                 .into_res()
+                .map(|len| len as usize)
             }
         } else {
-            Ok(())
+            Ok(0)
         }
     }
 
@@ -80,7 +91,7 @@ impl Phys {
         // SAFETY: The content is from the object, guaranteed to be valid.
         unsafe {
             let slice = slice::from_raw_parts_mut(ret.as_mut_ptr(), len);
-            self.read_into(offset, slice)?;
+            let len = self.read_into(offset, slice)?;
             ret.set_len(len);
         }
         Ok(ret)
@@ -93,13 +104,14 @@ impl Phys {
     ///
     /// Note: If the object is not contiguous, and it is not mapped to any
     /// address, the kernel will guarantee its memory safety.
-    pub unsafe fn write(&self, offset: usize, buffer: &[u8]) -> Result {
+    pub unsafe fn write(&self, offset: usize, buffer: &[u8]) -> Result<usize> {
         if !buffer.is_empty() {
             // SAFETY: We don't move the ownership of the handle.
             sv_call::sv_phys_write(unsafe { self.raw() }, offset, buffer.len(), buffer.as_ptr())
                 .into_res()
+                .map(|len| len as usize)
         } else {
-            Ok(())
+            Ok(0)
         }
     }
 

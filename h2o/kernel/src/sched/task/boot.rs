@@ -18,7 +18,7 @@ pub static VDSO: Azy<(Flags, Phys)> = Azy::new(|| {
     let flags = Flags::READABLE | Flags::EXECUTABLE | Flags::USER_ACCESS;
     let vdso_mem = Phys::allocate(
         VDSO_DATA.len().round_up_bit(paging::PAGE_SHIFT),
-        false,
+        Default::default(),
         true,
     )
     .expect("Failed to allocate memory for VDSO");

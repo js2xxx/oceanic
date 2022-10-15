@@ -13,8 +13,8 @@
                     "ty": "usize"
                 },
                 {
-                    "name": "zeroed",
-                    "ty": "bool"
+                    "name": "options",
+                    "ty": "PhysOptions"
                 }
             ]
         },
@@ -30,7 +30,7 @@
         },
         {
             "name": "sv_phys_read",
-            "returns": "()",
+            "returns": "usize",
             "args": [
                 {
                     "name": "hdl",
@@ -52,7 +52,7 @@
         },
         {
             "name": "sv_phys_write",
-            "returns": "()",
+            "returns": "usize",
             "args": [
                 {
                     "name": "hdl",

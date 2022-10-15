@@ -7,7 +7,7 @@ use core::{alloc::Layout, ptr};
 use bitop_ex::BitOpEx;
 use paging::LAddr;
 use sv_call::{
-    mem::{Flags, IoVec, MemInfo, VirtMapInfo},
+    mem::{Flags, IoVec, MemInfo, VirtMapInfo, PhysOptions},
     *,
 };
 
@@ -43,8 +43,8 @@ fn features_to_flags(feat: Feature) -> Flags {
 }
 
 #[syscall]
-fn phys_alloc(size: usize, zeroed: bool) -> Result<Handle> {
-    let phys = PREEMPT.scope(|| space::Phys::allocate(size, zeroed, false))?;
+fn phys_alloc(size: usize, options: PhysOptions) -> Result<Handle> {
+    let phys = PREEMPT.scope(|| space::Phys::allocate(size, options, false))?;
     SCHED.with_current(|cur| {
         let event = phys.event();
         cur.space().handles().insert(phys, Some(event))
@@ -77,36 +77,35 @@ fn phys_check(hdl: Handle, offset: usize, len: usize) -> Result<(Feature, space:
     if phys == VDSO.1 {
         return Err(EACCES);
     }
-    if offset_end > phys.len() {
-        return Err(ERANGE);
-    }
     Ok((feat, phys))
 }
 
 #[syscall]
-fn phys_read(hdl: Handle, offset: usize, len: usize, buffer: UserPtr<Out>) -> Result {
+fn phys_read(hdl: Handle, offset: usize, len: usize, buffer: UserPtr<Out>) -> Result<usize> {
     buffer.check_slice(len)?;
     let (feat, phys) = phys_check(hdl, offset, len)?;
     if !feat.contains(Feature::READ) {
         return Err(EPERM);
     }
     if len > 0 {
-        phys.read(offset, len, buffer)?;
+        phys.read(offset, len, buffer)
+    } else {
+        Ok(0)
     }
-    Ok(())
 }
 
 #[syscall]
-fn phys_write(hdl: Handle, offset: usize, len: usize, buffer: UserPtr<In>) -> Result {
+fn phys_write(hdl: Handle, offset: usize, len: usize, buffer: UserPtr<In>) -> Result<usize> {
     buffer.check_slice(len)?;
     let (feat, phys) = phys_check(hdl, offset, len)?;
     if !feat.contains(Feature::WRITE) {
         return Err(EPERM);
     }
     if len > 0 {
-        phys.write(offset, len, buffer)?;
+        phys.write(offset, len, buffer)
+    } else {
+        Ok(0)
     }
-    Ok(())
 }
 
 static_assertions::const_assert!({

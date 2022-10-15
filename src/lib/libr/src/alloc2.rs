@@ -14,7 +14,7 @@ unsafe fn alloc_pages(n: usize) -> Option<NonNull<[heap::Page]>> {
         Flags::READABLE | Flags::WRITABLE | Flags::EXECUTABLE | Flags::USER_ACCESS
     };
     let (layout, _) = Layout::new::<heap::Page>().repeat(n).ok()?;
-    let phys = solvent::mem::Phys::allocate(layout.size(), false).ok()?;
+    let phys = solvent::mem::Phys::allocate(layout.size(), Default::default()).ok()?;
     let ptr = svrt::root_virt().map(None, phys, 0, layout, flags).ok()?;
     Some(NonNull::slice_from_raw_parts(ptr.cast::<heap::Page>(), n))
 }

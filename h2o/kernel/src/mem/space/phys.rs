@@ -4,7 +4,7 @@ mod extensible;
 use alloc::sync::Weak;
 
 use paging::PAddr;
-use sv_call::{Feature, Result, EPERM};
+use sv_call::{mem::PhysOptions, Feature, Result, EPERM};
 
 use crate::{
     sched::{task::hdl::DefaultFeature, BasicEvent, Event},
@@ -14,19 +14,20 @@ use crate::{
 type Cont = self::contiguous::Phys;
 type PinnedCont = self::contiguous::PinnedPhys;
 
-type Ext = self::extensible::Phys;
-type PinnedExt = self::extensible::PinnedPhys;
+use self::extensible::*;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Phys {
     Contiguous(Cont),
-    Extensible(Ext),
+    Static(Static),
+    Dynamic(Dynamic),
 }
 
 #[derive(Debug)]
 pub enum PinnedPhys {
     Contiguous(PinnedCont),
-    Extensible(PinnedExt),
+    Static(PinnedStatic),
+    Dynamic(PinnedDynamic),
 }
 
 impl Phys {
@@ -38,34 +39,37 @@ impl Phys {
     /// # Errors
     ///
     /// Returns error if the heap memory is exhausted or the size is zero.
-    pub fn allocate(size: usize, zeroed: bool, contiguous: bool) -> Result<Self> {
+    pub fn allocate(size: usize, options: PhysOptions, contiguous: bool) -> Result<Self> {
+        let resizable = options.contains(PhysOptions::RESIZABLE);
         Ok(if contiguous {
-            Phys::Contiguous(Cont::allocate(size, zeroed)?)
+            if resizable {
+                return Err(EPERM);
+            }
+            Phys::Contiguous(Cont::allocate(size, options.contains(PhysOptions::ZEROED))?)
         } else {
-            Phys::Extensible(Ext::allocate(size, zeroed)?)
+            let zeroed = options.contains(PhysOptions::ZEROED);
+            if resizable {
+                Phys::Dynamic(Dynamic::allocate(size, zeroed)?)
+            } else {
+                Phys::Static(Static::allocate(size, zeroed)?)
+            }
         })
     }
 
     pub fn event(&self) -> Weak<dyn Event> {
         match self {
-            Phys::Contiguous(_) => Weak::<BasicEvent>::new() as _,
-            Phys::Extensible(ext) => ext.event(),
+            Phys::Dynamic(d) => d.event(),
+            _ => Weak::<BasicEvent>::new() as _,
         }
     }
 
     #[inline]
+    #[allow(clippy::len_without_is_empty)]
     pub fn len(&self) -> usize {
         match self {
             Phys::Contiguous(cont) => cont.len(),
-            Phys::Extensible(ext) => ext.len(),
-        }
-    }
-
-    #[inline]
-    pub fn is_empty(&self) -> bool {
-        match self {
-            Phys::Contiguous(cont) => cont.is_empty(),
-            Phys::Extensible(ext) => ext.is_empty(),
+            Phys::Static(s) => s.len(),
+            Phys::Dynamic(d) => d.len(),
         }
     }
 
@@ -73,7 +77,8 @@ impl Phys {
     pub fn pin(this: Self) -> Result<PinnedPhys> {
         match this {
             Phys::Contiguous(cont) => Ok(PinnedPhys::Contiguous(Cont::pin(cont))),
-            Phys::Extensible(ext) => Ok(PinnedPhys::Extensible(Ext::pin(ext)?)),
+            Phys::Static(ext) => Ok(PinnedPhys::Static(Static::pin(ext))),
+            Phys::Dynamic(ext) => Ok(PinnedPhys::Dynamic(Dynamic::pin(ext)?)),
         }
     }
 
@@ -81,7 +86,8 @@ impl Phys {
     pub fn create_sub(&self, offset: usize, len: usize, copy: bool) -> Result<Self> {
         match self {
             Phys::Contiguous(cont) => cont.create_sub(offset, len, copy).map(Phys::Contiguous),
-            Phys::Extensible(ext) => ext.create_sub(offset, len, copy).map(Phys::Extensible),
+            Phys::Static(ext) => ext.create_sub(offset, len, copy).map(Phys::Static),
+            Phys::Dynamic(_) => Err(EPERM),
         }
     }
 
@@ -89,15 +95,15 @@ impl Phys {
     pub fn base(&self) -> PAddr {
         match self {
             Phys::Contiguous(cont) => cont.base(),
-            Phys::Extensible(_) => unimplemented!("Extensible phys have multiple bases"),
+            _ => unimplemented!("Extensible phys have multiple bases"),
         }
     }
 
     #[inline]
     pub fn resize(&self, new_len: usize, zeroed: bool) -> Result {
         match self {
-            Phys::Contiguous(_) => Err(EPERM),
-            Phys::Extensible(ext) => ext.resize(new_len, zeroed),
+            Phys::Dynamic(d) => d.resize(new_len, zeroed),
+            _ => Err(EPERM),
         }
     }
 
@@ -105,7 +111,8 @@ impl Phys {
     pub fn read(&self, offset: usize, len: usize, buffer: UserPtr<Out>) -> Result<usize> {
         match self {
             Phys::Contiguous(cont) => cont.read(offset, len, buffer),
-            Phys::Extensible(ext) => ext.read(offset, len, buffer),
+            Phys::Static(s) => s.read(offset, len, buffer),
+            Phys::Dynamic(d) => d.read(offset, len, buffer),
         }
     }
 
@@ -113,7 +120,8 @@ impl Phys {
     pub fn write(&self, offset: usize, len: usize, buffer: UserPtr<In>) -> Result<usize> {
         match self {
             Phys::Contiguous(cont) => cont.write(offset, len, buffer),
-            Phys::Extensible(ext) => ext.write(offset, len, buffer),
+            Phys::Static(s) => s.write(offset, len, buffer),
+            Phys::Dynamic(d) => d.write(offset, len, buffer),
         }
     }
 
@@ -121,7 +129,8 @@ impl Phys {
     pub fn read_vectored(&self, offset: usize, bufs: &[(UserPtr<Out>, usize)]) -> Result<usize> {
         match self {
             Phys::Contiguous(cont) => cont.read_vectored(offset, bufs),
-            Phys::Extensible(ext) => ext.read_vectored(offset, bufs),
+            Phys::Static(s) => s.read_vectored(offset, bufs),
+            Phys::Dynamic(d) => d.read_vectored(offset, bufs),
         }
     }
 
@@ -129,7 +138,8 @@ impl Phys {
     pub fn write_vectored(&self, offset: usize, bufs: &[(UserPtr<In>, usize)]) -> Result<usize> {
         match self {
             Phys::Contiguous(cont) => cont.write_vectored(offset, bufs),
-            Phys::Extensible(ext) => ext.write_vectored(offset, bufs),
+            Phys::Static(s) => s.write_vectored(offset, bufs),
+            Phys::Dynamic(d) => d.write_vectored(offset, bufs),
         }
     }
 }
@@ -137,27 +147,31 @@ impl Phys {
 impl PinnedPhys {
     #[inline]
     pub fn map_iter(&self, offset: usize, len: usize) -> impl Iterator<Item = (PAddr, usize)> + '_ {
-        enum Either<A, B> {
+        enum OneOf<A, B, C> {
             A(A),
             B(B),
+            C(C),
         }
-        impl<A, B, T> Iterator for Either<A, B>
+        impl<A, B, C, T> Iterator for OneOf<A, B, C>
         where
             A: Iterator<Item = T>,
             B: Iterator<Item = T>,
+            C: Iterator<Item = T>,
         {
             type Item = T;
             fn next(&mut self) -> Option<Self::Item> {
                 match self {
-                    Either::A(a) => a.next(),
-                    Either::B(b) => b.next(),
+                    OneOf::A(a) => a.next(),
+                    OneOf::B(b) => b.next(),
+                    OneOf::C(c) => c.next(),
                 }
             }
         }
 
         match self {
-            PinnedPhys::Contiguous(cont) => Either::A(cont.map_iter(offset, len)),
-            PinnedPhys::Extensible(ext) => Either::B(ext.map_iter(offset, len)),
+            PinnedPhys::Contiguous(cont) => OneOf::A(cont.map_iter(offset, len)),
+            PinnedPhys::Static(s) => OneOf::B(s.map_iter(offset, len)),
+            PinnedPhys::Dynamic(d) => OneOf::C(d.map_iter(offset, len)),
         }
     }
 }

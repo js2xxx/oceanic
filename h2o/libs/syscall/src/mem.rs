@@ -12,13 +12,34 @@ bitflags! {
         const EXECUTABLE  = 1 << 3;
         const UNCACHED    = 1 << 4;
     }
+
+    #[derive(Default)]
+    #[repr(transparent)]
+    pub struct PhysOptions: u32 {
+        const RESIZABLE = 1 << 0;
+        const ZEROED = 1 << 1;
+    }
 }
 
 impl SerdeReg for Flags {
+    #[inline]
     fn encode(self) -> usize {
         self.bits() as usize
     }
 
+    #[inline]
+    fn decode(val: usize) -> Self {
+        Self::from_bits_truncate(val as u32)
+    }
+}
+
+impl SerdeReg for PhysOptions {
+    #[inline]
+    fn encode(self) -> usize {
+        self.bits() as usize
+    }
+
+    #[inline]
     fn decode(val: usize) -> Self {
         Self::from_bits_truncate(val as u32)
     }
