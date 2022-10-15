@@ -45,7 +45,7 @@ async fn handle_impl<S: StreamIo>(
         let request = match request {
             Ok(request) => request,
             Err(err) => {
-                log::warn!("RPC receive error: {err}");
+                log::warn!("file RPC receive error: {err}");
                 break;
             }
         };
@@ -132,13 +132,13 @@ async fn handle_impl<S: StreamIo>(
                 file.write_at(offset, &buf).await
             }),
             FileRequest::Unknown(_) => {
-                log::warn!("RPC received unknown request");
+                log::warn!("file RPC received unknown request");
                 break;
             }
         };
 
         if let Err(err) = res {
-            log::warn!("RPC send error: {err}");
+            log::warn!("file RPC send error: {err}");
             break;
         }
     }

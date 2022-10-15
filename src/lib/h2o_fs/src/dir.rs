@@ -1,9 +1,14 @@
+#[cfg(feature = "runtime")]
+mod handle;
+
 use alloc::{boxed::Box, string::String};
 
 use async_trait::async_trait;
 use solvent_core::path::Path;
 use solvent_rpc::io::{dir::DirEntry, Error};
 
+#[cfg(feature = "runtime")]
+pub use self::handle::*;
 use crate::entry::Entry;
 
 #[async_trait]
