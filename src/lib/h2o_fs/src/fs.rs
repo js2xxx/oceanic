@@ -15,7 +15,7 @@ use solvent_core::{
 use solvent_rpc::io::{
     dir::{directory_sync::DirectoryClient, DirEntry},
     entry::entry_sync::EntryClient,
-    Error, FileType, Metadata, OpenOptions,
+    Error, FileType, Metadata, OpenOptions, Permission,
 };
 
 use crate::dir::sync::RemoteIter;
@@ -63,6 +63,7 @@ impl Node {
         Ok(match self {
             Node::Dir(entries) => Metadata {
                 file_type: FileType::Directory,
+                perm: Permission::all(),
                 len: entries.lock().len(),
             },
             Node::Remote(remote) => remote

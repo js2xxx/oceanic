@@ -5,6 +5,7 @@ use super::*;
 #[derive(SerdePacket, Debug, Clone)]
 pub struct Metadata {
     pub file_type: FileType,
+    pub perm: Permission,
     pub len: usize,
 }
 

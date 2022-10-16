@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use solvent::prelude::{Channel, Phys};
 use solvent_async::io::Stream;
 use solvent_core::{io::RawStream, path::Path, sync::Arsc};
-use solvent_rpc::io::{file::FileServer, Error, FileType, Metadata, OpenOptions};
+use solvent_rpc::io::{file::FileServer, Error, FileType, Metadata, OpenOptions, Permission};
 
 use crate::{
     entry::Entry,
@@ -14,7 +14,19 @@ use crate::{
 
 pub struct MemFile {
     phys: Phys,
+    perm: Permission,
     locked: AtomicBool,
+}
+
+impl MemFile {
+    #[inline]
+    pub fn new(phys: Phys, perm: Permission) -> Self {
+        MemFile {
+            phys,
+            perm,
+            locked: AtomicBool::new(false),
+        }
+    }
 }
 
 impl Entry for MemFile {
@@ -30,6 +42,10 @@ impl Entry for MemFile {
         if self.locked.load(Acquire) {
             return Err(Error::WouldBlock);
         }
+        let require = options.require();
+        if !self.perm.contains(require) {
+            return Err(Error::PermissionDenied(require - self.perm));
+        }
         let stream = RawStream {
             phys: self.phys.clone(),
             seeker: 0,
@@ -44,6 +60,7 @@ impl Entry for MemFile {
     fn metadata(&self) -> Result<Metadata, Error> {
         Ok(Metadata {
             file_type: FileType::File,
+            perm: self.perm,
             len: self.phys.len(),
         })
     }

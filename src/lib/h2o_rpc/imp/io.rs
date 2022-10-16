@@ -48,6 +48,9 @@ pub enum Error {
     #[error("invalid path: {0:?}")]
     InvalidPath(PathBuf),
 
+    #[error("name length too long: {0}")]
+    InvalidNameLength(usize),
+
     #[error("permission `{0:?}` denied")]
     PermissionDenied(Permission),
 
@@ -91,5 +94,18 @@ bitflags::bitflags! {
         const CREATE = 0b0000_1000;
         const CREATE_NEW = 0b0001_0000;
         const TRUNCATE = 0b0010_0000;
+    }
+}
+
+impl OpenOptions {
+    pub fn require(self) -> Permission {
+        let mut ret = Default::default();
+        if self.contains(OpenOptions::READ) {
+            ret |= Permission::READ;
+        }
+        if self.contains(OpenOptions::WRITE) {
+            ret |= Permission::WRITE;
+        }
+        ret
     }
 }
