@@ -1,13 +1,14 @@
 use core::{
     fmt,
     future::Future,
+    mem::ManuallyDrop,
     pin::Pin,
     sync::atomic::{AtomicBool, Ordering::*},
     task::{ready, Context, Poll},
 };
 
 use futures::{pin_mut, stream::FusedStream, Stream};
-use solvent::prelude::{Packet, EPIPE};
+use solvent::prelude::{Handle, Object, Packet, EPIPE};
 use solvent_async::ipc::Channel;
 use solvent_core::sync::Arsc;
 use solvent_rpc_core::packet::{self, SerdePacket};
@@ -144,6 +145,12 @@ impl EventSenderImpl {
     }
 
     #[inline]
+    pub fn as_raw(&self) -> Handle {
+        // SAFETY: `solvent` marks unsafe use for `Object::from_raw`
+        unsafe { self.inner.channel.as_ref().raw() }
+    }
+
+    #[inline]
     pub fn close(self) {
         self.inner.stop.store(true, Release);
     }
@@ -229,6 +236,24 @@ pub trait EventSender {
         T: Into<Self::Event>,
     {
         self.send_event(event.into())
+    }
+
+    /// Send an event from a raw handle.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the handle is the inner channel of this
+    /// event sender.
+    unsafe fn send_from_raw<T>(handle: Handle, event: T)
+    where
+        T: Into<Self::Event>,
+    {
+        // SAFETY: We don't take the ownership from the handle, and the handle is the
+        // inner channel of this event sender.
+        let channel = unsafe { ManuallyDrop::new(solvent::ipc::Channel::from_raw(handle)) };
+        if let Ok(mut packet) = crate::Event::serialize(event.into()) {
+            let _ = channel.send(&mut packet);
+        }
     }
 
     fn close(self);

@@ -1,12 +1,14 @@
+mod event;
 #[cfg(feature = "runtime")]
 mod handle;
 
 use alloc::{boxed::Box, string::String};
 
 use async_trait::async_trait;
-use solvent_core::path::Path;
+use solvent_core::sync::Arsc;
 use solvent_rpc::io::{dir::DirEntry, Error};
 
+pub use self::event::*;
 #[cfg(feature = "runtime")]
 pub use self::handle::*;
 use crate::entry::Entry;
@@ -18,11 +20,21 @@ pub trait Directory: Entry {
 
 #[async_trait]
 pub trait DirectoryMut: Directory {
-    async fn rename(&self, old: &Path, new: &Path) -> Result<(), Error>;
+    async fn rename(
+        self: Arsc<Self>,
+        src: &str,
+        dst_parent: Arsc<dyn DirectoryMut>,
+        dst: &str,
+    ) -> Result<(), Error>;
 
-    async fn link(&self, old: &Path, new: &Path) -> Result<(), Error>;
+    async fn link(
+        self: Arsc<Self>,
+        src: &str,
+        dst_parent: Arsc<dyn DirectoryMut>,
+        dst: &str,
+    ) -> Result<(), Error>;
 
-    async fn unlink(&self, path: &Path) -> Result<(), Error>;
+    async fn unlink(&self, name: &str) -> Result<(), Error>;
 }
 
 pub mod sync {

@@ -1,18 +1,23 @@
 use futures::StreamExt;
+use solvent::prelude::Handle;
 use solvent_core::{path::Path, sync::Arsc};
 use solvent_rpc::{
-    io::{dir as rpc, Error, OpenOptions, Permission},
-    Error as RpcError, Server,
+    io::{
+        dir::{self as rpc, DirectoryEventSender, EventFlags},
+        Error, OpenOptions, Permission,
+    },
+    Error as RpcError, EventSender, Server,
 };
 
-use super::{Directory, DirectoryMut};
+use super::{Directory, DirectoryMut, EventTokens};
 
 pub async fn handle<D: Directory>(
     dir: Arsc<D>,
+    tokens: EventTokens,
     server: rpc::DirectoryServer,
     options: OpenOptions,
 ) {
-    let (mut requests, _) = server.serve();
+    let (mut requests, event) = server.serve();
     while let Some(request) = requests.next().await {
         let request = match request {
             Ok(request) => request,
@@ -21,7 +26,7 @@ pub async fn handle<D: Directory>(
                 break;
             }
         };
-        match handle_request(&dir, request, options).await {
+        match handle_request(&dir, &tokens, request, options, &event).await {
             HandleRequest::Break => break,
             HandleRequest::Next(Err(err)) => log::warn!("dir RPC send error: {err}"),
             HandleRequest::Continue(_) => log::warn!("dir RPC received unknown request"),
@@ -32,10 +37,12 @@ pub async fn handle<D: Directory>(
 
 pub async fn handle_mut<D: DirectoryMut>(
     dir: Arsc<D>,
+    tokens: EventTokens,
     server: rpc::DirectoryServer,
     options: OpenOptions,
 ) {
-    let (mut requests, _) = server.serve();
+    let (mut requests, event) = server.serve();
+    let mut handle = None;
     while let Some(request) = requests.next().await {
         let request = match request {
             Ok(request) => request,
@@ -44,12 +51,15 @@ pub async fn handle_mut<D: DirectoryMut>(
                 break;
             }
         };
-        match handle_request_mut(&dir, request, options).await {
+        match handle_request_mut(&dir, &tokens, request, options, &event, &mut handle).await {
             HandleRequest::Break => break,
             HandleRequest::Next(Err(err)) => log::warn!("dir RPC send error: {err}"),
             HandleRequest::Continue(_) => log::warn!("dir RPC received unknown request"),
             _ => {}
         }
+    }
+    if let Some(handle) = handle {
+        tokens.remove(handle).await
     }
 }
 
@@ -61,13 +71,18 @@ enum HandleRequest {
 
 async fn handle_request<D: Directory>(
     dir: &Arsc<D>,
+    tokens: &EventTokens,
     request: rpc::DirectoryRequest,
     options: OpenOptions,
+    event: &rpc::DirectoryEventSender,
 ) -> HandleRequest {
     let res = match request {
         rpc::DirectoryRequest::CloneConnection { conn, responder } => {
-            match dir.clone().open(Path::new(""), options, conn) {
-                Ok(()) => responder.send(()),
+            match dir
+                .clone()
+                .open(tokens.clone(), Path::new(""), options, conn)
+            {
+                Ok(_) => responder.send(()),
                 Err(_) => {
                     responder.close();
                     return HandleRequest::Break;
@@ -91,7 +106,15 @@ async fn handle_request<D: Directory>(
             options,
             conn,
             responder,
-        } => responder.send(dir.clone().open(&path, options, conn)),
+        } => responder.send({
+            dir.clone()
+                .open(tokens.clone(), &path, options, conn)
+                .map(|res| {
+                    if res {
+                        let _ = event.send(EventFlags::ADD);
+                    }
+                })
+        }),
         request => return HandleRequest::Continue(request),
     };
     HandleRequest::Next(res)
@@ -99,40 +122,89 @@ async fn handle_request<D: Directory>(
 
 async fn handle_request_mut<D: DirectoryMut>(
     dir: &Arsc<D>,
+    tokens: &EventTokens,
     request: rpc::DirectoryRequest,
     options: OpenOptions,
+    event: &rpc::DirectoryEventSender,
+    handle: &mut Option<Handle>,
 ) -> HandleRequest {
-    let request = match handle_request(dir, request, options).await {
+    let request = match handle_request(dir, tokens, request, options, event).await {
         HandleRequest::Continue(res) => res,
         hr => return hr,
     };
 
     let res = match request {
+        rpc::DirectoryRequest::EventToken { responder } => responder.send({
+            if !options.contains(OpenOptions::WRITE) {
+                Err(Error::PermissionDenied(Permission::WRITE))
+            } else {
+                let raw = event.as_raw();
+                *handle = Some(raw);
+                // SAFETY: `raw` is the raw reference of a `DirectoryEventSender`.
+                unsafe { tokens.insert(dir.clone(), raw, options) }.await;
+                Ok(raw)
+            }
+        }),
         rpc::DirectoryRequest::Link {
-            old,
-            new,
+            src,
+            dst_parent,
+            dst,
             responder,
         } => responder.send({
             if options.contains(OpenOptions::WRITE) {
-                dir.link(&old, &new).await
+                match tokens
+                    .take_if(dst_parent, |ent, options| {
+                        ent.clone().into_any().downcast::<D>().is_ok()
+                            && options.contains(OpenOptions::WRITE)
+                    })
+                    .await
+                {
+                    Some(dst_p) => {
+                        let res = dir.clone().link(&src, dst_p, &dst).await;
+                        res.inspect(|_| unsafe {
+                            // SAFETY: The handle is taken from `tokens`.
+                            DirectoryEventSender::send_from_raw(dst_parent, EventFlags::ADD)
+                        })
+                    }
+                    None => Err(Error::PermissionDenied(Permission::WRITE)),
+                }
             } else {
                 Err(Error::PermissionDenied(Permission::WRITE))
             }
         }),
         rpc::DirectoryRequest::Rename {
-            old,
-            new,
+            src,
+            dst_parent,
+            dst,
             responder,
         } => responder.send({
             if options.contains(OpenOptions::WRITE) {
-                dir.rename(&old, &new).await
+                match tokens
+                    .take_if(dst_parent, |ent, options| {
+                        ent.clone().into_any().downcast::<D>().is_ok()
+                            && options.contains(OpenOptions::WRITE)
+                    })
+                    .await
+                {
+                    Some(dst_p) => {
+                        let res = dir.clone().rename(&src, dst_p, &dst).await;
+                        res.inspect(|_| unsafe {
+                            let _ = event.send(EventFlags::REMOVE);
+                            // SAFETY: The handle is taken from `tokens`.
+                            DirectoryEventSender::send_from_raw(dst_parent, EventFlags::ADD)
+                        })
+                    }
+                    None => Err(Error::PermissionDenied(Permission::WRITE)),
+                }
             } else {
                 Err(Error::PermissionDenied(Permission::WRITE))
             }
         }),
-        rpc::DirectoryRequest::Unlink { path, responder } => responder.send({
+        rpc::DirectoryRequest::Unlink { name, responder } => responder.send({
             if options.contains(OpenOptions::WRITE) {
-                dir.unlink(&path).await
+                dir.unlink(&name)
+                    .await
+                    .inspect(|_| drop(event.send(EventFlags::REMOVE)))
             } else {
                 Err(Error::PermissionDenied(Permission::WRITE))
             }

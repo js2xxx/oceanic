@@ -54,6 +54,12 @@ pub enum Error {
     #[error("permission `{0:?}` denied")]
     PermissionDenied(Permission),
 
+    #[error("Two-path operation error: {ancestor:?} is the ancestor of or equals {descendant:?}")]
+    IsAncestorOrEquals {
+        ancestor: PathBuf,
+        descendant: PathBuf,
+    },
+
     #[error("RPC error: {0}")]
     RpcError(String),
 

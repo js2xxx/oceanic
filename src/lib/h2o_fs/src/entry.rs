@@ -4,13 +4,16 @@ use solvent::prelude::Channel;
 use solvent_core::{path::Path, sync::Arsc};
 use solvent_rpc::io::{Error, Metadata, OpenOptions};
 
+use crate::dir::EventTokens;
+
 pub trait Entry: IntoAny + Send + Sync + 'static {
     fn open(
         self: Arsc<Self>,
+        tokens: EventTokens,
         path: &Path,
         options: OpenOptions,
         conn: Channel,
-    ) -> Result<(), Error>;
+    ) -> Result<bool, Error>;
 
     fn metadata(&self) -> Result<Metadata, Error>;
 }

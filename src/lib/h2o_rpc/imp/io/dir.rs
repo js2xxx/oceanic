@@ -5,6 +5,8 @@ use entry::EntryServer;
 use solvent::ipc::Channel;
 #[cfg(feature = "std")]
 use solvent_core::path::PathBuf;
+#[cfg(feature = "std")]
+use solvent::obj::Handle;
 
 use super::*;
 
@@ -26,9 +28,11 @@ pub struct DirEntry {
 pub trait Directory: entry::Entry {
     fn next_dirent(last: Option<String>) -> Result<DirEntry, Error>;
 
-    fn rename(old: PathBuf, new: PathBuf) -> Result<(), Error>;
+    fn event_token() -> Result<Handle, Error>;
 
-    fn link(old: PathBuf, new: PathBuf) -> Result<(), Error>;
+    fn rename(src: String, dst_parent: Handle, dst: String) -> Result<(), Error>;
 
-    fn unlink(path: PathBuf) -> Result<(), Error>;
+    fn link(src: String, dst_parent: Handle, dst: String) -> Result<(), Error>;
+
+    fn unlink(name: String) -> Result<(), Error>;
 }

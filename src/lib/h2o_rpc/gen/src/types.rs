@@ -573,6 +573,11 @@ impl Protocol {
                     pub fn send_raw(&self, packet: Packet) -> Result<(), solvent_rpc::Error> {
                         self.inner.send(packet)
                     }
+
+                    #[inline]
+                    pub fn as_raw(&self) -> solvent::prelude::Handle {
+                        self.inner.as_raw()
+                    }
                 }
 
                 impl solvent_rpc::EventSender for #event_sender {

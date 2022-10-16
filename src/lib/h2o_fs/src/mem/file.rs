@@ -8,6 +8,7 @@ use solvent_core::{io::RawStream, path::Path, sync::Arsc};
 use solvent_rpc::io::{file::FileServer, Error, FileType, Metadata, OpenOptions, Permission};
 
 use crate::{
+    dir::EventTokens,
     entry::Entry,
     file::{handle_mapped, File},
 };
@@ -32,10 +33,11 @@ impl MemFile {
 impl Entry for MemFile {
     fn open(
         self: Arsc<Self>,
+        tokens: EventTokens,
         path: &Path,
         options: OpenOptions,
         conn: Channel,
-    ) -> Result<(), Error> {
+    ) -> Result<bool, Error> {
         if path != Path::new("") {
             return Err(Error::InvalidType(FileType::File));
         }
@@ -51,9 +53,9 @@ impl Entry for MemFile {
             seeker: 0,
         };
         let server = FileServer::new(conn.into());
-        let task = handle_mapped(self, stream, server, options);
+        let task = handle_mapped(self, tokens, stream, server, options);
         solvent_async::spawn(task).detach();
-        Ok(())
+        Ok(false)
     }
 
     #[inline]

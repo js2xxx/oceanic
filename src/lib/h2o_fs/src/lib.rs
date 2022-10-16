@@ -1,5 +1,6 @@
 #![no_std]
 #![feature(btree_drain_filter)]
+#![feature(result_option_inspect)]
 
 pub mod dir;
 pub mod entry;

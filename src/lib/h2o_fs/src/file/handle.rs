@@ -10,34 +10,37 @@ use solvent_rpc::{
 };
 
 use super::{stream::*, File};
-use crate::entry::Entry;
+use crate::{dir::EventTokens, entry::Entry};
 
 #[inline]
 pub async fn handle<F: File>(
     file: Arsc<F>,
+    tokens: EventTokens,
     seeker: usize,
     server: rpc::FileServer,
     options: OpenOptions,
 ) {
     let (requests, _) = server.serve();
     let direct = DirectFile::new(file, seeker);
-    handle_impl(direct, requests, options).await
+    handle_impl(direct, tokens, requests, options).await
 }
 
 #[inline]
 pub async fn handle_mapped<F: File>(
     file: Arsc<F>,
+    tokens: EventTokens,
     cache: RawStream,
     server: rpc::FileServer,
     options: OpenOptions,
 ) {
     let (requests, event) = server.serve();
     let stream = StreamFile::new(file, unsafe { Stream::new(cache) }, event);
-    handle_impl(stream, requests, options).await
+    handle_impl(stream, tokens, requests, options).await
 }
 
 async fn handle_impl<S: StreamIo>(
     mut file: S,
+    tokens: EventTokens,
     mut requests: rpc::FileStream,
     options: OpenOptions,
 ) {
@@ -52,8 +55,8 @@ async fn handle_impl<S: StreamIo>(
         let res = match request {
             FileRequest::CloneConnection { conn, responder } => {
                 let file = Arsc::clone(file.as_file());
-                match file.open(Path::new(""), options, conn) {
-                    Ok(()) => responder.send(()),
+                match file.open(tokens.clone(), Path::new(""), options, conn) {
+                    Ok(_) => responder.send(()),
                     Err(_) => {
                         responder.close();
                         break;
@@ -77,7 +80,7 @@ async fn handle_impl<S: StreamIo>(
                 responder,
             } => {
                 let file = Arsc::clone(file.as_file());
-                responder.send(file.open(&path, options, conn))
+                responder.send(file.open(tokens.clone(), &path, options, conn).map(drop))
             }
             FileRequest::Read { len, responder } => responder.send({
                 if !options.contains(OpenOptions::READ) {
