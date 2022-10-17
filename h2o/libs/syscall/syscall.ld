@@ -5,9 +5,9 @@ SECTIONS
     . = SIZEOF_HEADERS;
     .note.gnu.build-id  : { *(.note.gnu.build-id) } :note
 
-    .text       : { *(.text*) }     :load
-    .rodata     : { *(.rodata*) }   :load
-    .dynamic    : { *(.dynamic*) }  :load :dynamic
+    .text                   : { *(.text*) }     :load
+    .rodata ALIGN (0x10)    : { *(.rodata*) }   :load
+    .dynamic                : { *(.dynamic*) }  :load :dynamic
 
     /DISCARD/ : { *(.comment*) }
 }
