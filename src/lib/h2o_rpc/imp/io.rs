@@ -100,6 +100,7 @@ bitflags::bitflags! {
         const CREATE = 0b0000_1000;
         const CREATE_NEW = 0b0001_0000;
         const TRUNCATE = 0b0010_0000;
+        const EXECUTE = 0b0100_0000;
     }
 }
 
@@ -111,6 +112,9 @@ impl OpenOptions {
         }
         if self.contains(OpenOptions::WRITE) {
             ret |= Permission::WRITE;
+        }
+        if self.contains(OpenOptions::EXECUTE) {
+            ret |= Permission::EXECUTE;
         }
         ret
     }

@@ -75,13 +75,18 @@ pub fn lang_start<R: Termination>(channel: Channel, main: fn() -> R) -> R {
         let path_prefix = "--local-fs-paths=";
         let paths = env::args().find(|arg| arg.starts_with(path_prefix));
         let (_, cwd) = env::vars().find(|(key, _)| key == "CWD").unzip();
-        if let Some(paths) = paths {
-            let paths = paths.strip_prefix(path_prefix).unwrap();
-            let cwd = cwd.as_deref();
-            svrt::with_startup_args(|sa| unsafe {
-                solvent_fs::fs::init_rt(&mut sa.handles, paths.split(','), cwd)
-            })
-        }
+        svrt::with_startup_args(|sa| unsafe {
+            if let Some(paths) = paths {
+                let paths = paths.strip_prefix(path_prefix).unwrap();
+                solvent_fs::fs::init_rt(&mut sa.handles, paths.split(','), cwd.as_deref())
+            } else {
+                solvent_fs::fs::init_rt(
+                    &mut sa.handles,
+                    ([] as [&str; 0]).into_iter(),
+                    cwd.as_deref(),
+                )
+            }
+        });
 
         let ret = main();
 

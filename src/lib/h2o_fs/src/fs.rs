@@ -2,7 +2,7 @@ use alloc::{
     collections::{btree_map, BTreeMap},
     string::{String, ToString},
 };
-use core::iter::Peekable;
+use core::{iter::Peekable, sync::atomic};
 
 use solvent::{
     ipc::Channel,
@@ -279,35 +279,40 @@ impl LocalFs {
     }
 
     #[inline]
-    pub fn canonicalize(&self, path: &Path) -> Result<PathBuf, Error> {
-        Self::canonicalize_with(path, &self.cwd.lock())
+    pub fn canonicalize<P: AsRef<Path>>(&self, path: P) -> Result<PathBuf, Error> {
+        Self::canonicalize_with(path.as_ref(), &self.cwd.lock())
     }
 
     #[inline]
-    pub fn open(&self, path: &Path, options: OpenOptions, conn: Channel) -> Result<(), Error> {
+    pub fn open<P: AsRef<Path>>(
+        &self,
+        path: P,
+        options: OpenOptions,
+        conn: Channel,
+    ) -> Result<(), Error> {
         let path = self.canonicalize(path)?;
         self.root.clone().open(&path, options, conn)
     }
 
-    pub fn chdir(&self, path: &Path) -> Result<(), Error> {
+    pub fn chdir<P: AsRef<Path>>(&self, path: P) -> Result<(), Error> {
         let path = self.canonicalize(path)?;
         *self.cwd.lock() = path;
         Ok(())
     }
 
     #[inline]
-    pub fn mount(&self, path: &Path, remote: EntryClient) -> Result<(), Error> {
+    pub fn mount<P: AsRef<Path>>(&self, path: P, remote: EntryClient) -> Result<(), Error> {
         let path = self.canonicalize(path)?;
         self.root.clone().create(&path, remote)
     }
 
     #[inline]
-    pub fn unmount(&self, path: &Path, all: bool) -> Result<(), Error> {
+    pub fn unmount<P: AsRef<Path>>(&self, path: P, all: bool) -> Result<(), Error> {
         let path = self.canonicalize(path)?;
         self.root.clone().remove(&path, all)
     }
 
-    pub fn metadata(&self, path: &Path) -> Result<Metadata, Error> {
+    pub fn metadata<P: AsRef<Path>>(&self, path: P) -> Result<Metadata, Error> {
         let path = self.canonicalize(path)?;
         let (node, mut comps) = self.root.clone().open_node(&path, &mut None)?;
         match *node {
@@ -323,7 +328,7 @@ impl LocalFs {
         }
     }
 
-    pub fn read_dir(&self, path: &Path) -> Result<DirIter, Error> {
+    pub fn read_dir<P: AsRef<Path>>(&self, path: P) -> Result<DirIter, Error> {
         let path = self.canonicalize(path)?;
         let (node, mut comps) = self.root.clone().open_node(&path, &mut None)?;
         match *node {
@@ -356,7 +361,7 @@ impl LocalFs {
         }
     }
 
-    pub fn unlink(&self, path: &Path) -> Result<(), Error> {
+    pub fn unlink<P: AsRef<Path>>(&self, path: P) -> Result<(), Error> {
         let path = self.canonicalize(path)?;
         let parent = path
             .parent()
@@ -448,20 +453,20 @@ impl LocalFs {
     }
 
     #[inline]
-    pub fn rename(&self, src: &Path, dst: &Path) -> Result<(), Error> {
+    pub fn rename<P1: AsRef<Path>, P2: AsRef<Path>>(&self, src: P1, dst: P2) -> Result<(), Error> {
         self.two_path_op(
-            src,
-            dst,
+            src.as_ref(),
+            dst.as_ref(),
             |dir, src, dst_parent, dst| dir.rename(src, dst_parent, dst)?,
             |node, _, src, dst| node.copy_local(src, dst, true),
         )
     }
 
     #[inline]
-    pub fn link(&self, src: &Path, dst: &Path) -> Result<(), Error> {
+    pub fn link<P1: AsRef<Path>, P2: AsRef<Path>>(&self, src: P1, dst: P2) -> Result<(), Error> {
         self.two_path_op(
-            src,
-            dst,
+            src.as_ref(),
+            dst.as_ref(),
             |dir, src, dst_parent, dst| dir.link(src, dst_parent, dst)?,
             |_, lcp, _, _| Err(Error::LocalFs(lcp)),
         )
@@ -534,7 +539,7 @@ pub unsafe fn init_rt(
     let local_fs = LocalFs::new();
     for ((_, handle), path) in iter.zip(paths) {
         let remote = EntryClient::from(unsafe { Channel::from_raw(handle) });
-        let res = local_fs.mount(path.as_ref(), remote);
+        let res = local_fs.mount(path, remote);
         if let Err(err) = res {
             log::warn!("Error when mounting the local FS: {err}");
         }
@@ -548,6 +553,8 @@ pub unsafe fn init_rt(
     }
 
     let old = LOCAL_FS.replace(local_fs);
+    atomic::fence(atomic::Ordering::Release);
+
     assert!(
         old.is_none(),
         "The local FS should only be initialized once"

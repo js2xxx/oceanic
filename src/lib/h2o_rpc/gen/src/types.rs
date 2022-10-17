@@ -77,10 +77,10 @@ impl Parse for Protocol {
 }
 
 impl Protocol {
-    fn cast_from(
-        from: &Punctuated<Path, Token![+]>,
-        client_ident: Ident,
-    ) -> impl Iterator<Item = TokenStream> + '_ {
+    fn cast_from<'a>(
+        from: &'a Punctuated<Path, Token![+]>,
+        client_ident: &'a Ident,
+    ) -> impl Iterator<Item = TokenStream> + 'a {
         from.iter().map(move |from| {
             let (mut parent, from_ident) = {
                 let mut path = from.clone();
@@ -95,6 +95,37 @@ impl Protocol {
                     #[inline]
                     fn from(value: #client_ident) -> #from_client {
                         solvent_rpc::Client::from_inner(value.inner)
+                    }
+                }
+
+                impl AsRef<#from_client> for #client_ident {
+                    #[inline]
+                    fn as_ref(&self) -> & #from_client {
+                        unsafe { core::mem::transmute(self) }
+                    }
+                }
+            }
+        })
+    }
+
+    fn cast_from_sync<'a>(
+        from: &'a Punctuated<Path, Token![+]>,
+        client_ident: &'a Ident,
+    ) -> impl Iterator<Item = TokenStream> + 'a {
+        from.iter().map(move |from| {
+            let (mut parent, from_ident) = {
+                let mut path = from.clone();
+                let seg = path.segments.pop().unwrap();
+                (path, seg.into_value().ident)
+            };
+            let from_client = format_ident!("{from_ident}SyncClient");
+            parent.segments.push(from_client.into());
+            let from_client = parent;
+            quote! {
+                impl From<#client_ident> for #from_client {
+                    #[inline]
+                    fn from(value: #client_ident) -> #from_client {
+                        solvent_rpc::sync::Client::from_inner(value.inner)
                     }
                 }
 
@@ -423,7 +454,8 @@ impl Protocol {
         let stream = format_ident!("{ident}Stream");
 
         let (event_ident, event_def) = Protocol::event_def(ident.clone(), &event);
-        let cast_froms = Protocol::cast_from(&from, client.clone());
+        let cast_froms = Protocol::cast_from(&from, &client);
+        let cast_froms_sync = Protocol::cast_from_sync(&from, &client);
 
         let constants = method.iter().map(|method| method.constant(&vis));
         let use_constants = method.iter().map(|method| &method.const_ident);
@@ -721,6 +753,8 @@ impl Protocol {
                         Self::new(channel)
                     }
                 }
+
+                #(#cast_froms_sync)*
 
                 impl solvent_rpc::sync::Client for #client {
                     type EventReceiver = #event_receiver;
