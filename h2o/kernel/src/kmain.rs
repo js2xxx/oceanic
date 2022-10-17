@@ -17,7 +17,6 @@
 #![feature(int_log)]
 #![feature(layout_for_ptr)]
 #![feature(linked_list_cursors)]
-#![feature(map_first_last)]
 #![feature(map_try_insert)]
 #![feature(new_uninit)]
 #![feature(nonnull_slice_from_raw_parts)]

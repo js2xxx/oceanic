@@ -1,3 +1,5 @@
+mod builder;
+
 use alloc::{
     boxed::Box,
     collections::{btree_map::Entry as MapEntry, BTreeMap},
@@ -15,6 +17,7 @@ use solvent_rpc::io::{
     Error, FileType, Metadata, OpenOptions, Permission,
 };
 
+pub use self::builder::*;
 use crate::{
     dir::{handle, handle_mut, Directory, DirectoryMut, EventTokens},
     entry::Entry,
@@ -314,7 +317,13 @@ impl DirectoryMut for MemDirMut {
         dst_parent.insert(dst.into(), ent)
     }
 
+    #[inline]
     async fn unlink(&self, name: &str) -> Result<(), Error> {
         self.remove(name).map(drop)
     }
+}
+
+#[inline]
+pub fn builder() -> Builder {
+    Builder::new()
 }
