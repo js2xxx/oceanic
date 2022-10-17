@@ -149,17 +149,17 @@ pub enum RecursiveBuild {
 }
 
 pub trait RecursiveBuilder: Iterator<Item = RecursiveBuild> + Sized {
-    fn build(self, root_perm: Permission) -> Result<Arsc<MemDir>, Error> {
+    fn build(mut self, root_perm: Permission) -> Result<Arsc<MemDir>, Error> {
         let mut root = MemDir {
             entries: BTreeMap::new(),
             perm: root_perm,
         };
-        build_recursive(self, &mut root)?;
+        build_recursive(&mut self, &mut root)?;
         Ok(Arsc::new(root))
     }
 
     fn build_mut<F: FileInserter + 'static>(
-        self,
+        mut self,
         root_perm: Permission,
         file_inserter: Arsc<F>,
     ) -> Result<Arsc<MemDirMut>, Error> {
@@ -169,7 +169,7 @@ pub trait RecursiveBuilder: Iterator<Item = RecursiveBuild> + Sized {
             path: "".into(),
             file_inserter: file_inserter.clone(),
         };
-        build_recursive_mut(self, &mut root, file_inserter)?;
+        build_recursive_mut(&mut self, &mut root, file_inserter)?;
         Ok(Arsc::new(root))
     }
 }
@@ -177,7 +177,7 @@ pub trait RecursiveBuilder: Iterator<Item = RecursiveBuild> + Sized {
 impl<T: Iterator<Item = RecursiveBuild> + Sized> RecursiveBuilder for T {}
 
 fn build_recursive(
-    mut iter: impl Iterator<Item = RecursiveBuild>,
+    iter: &mut impl Iterator<Item = RecursiveBuild>,
     dir: &mut MemDir,
 ) -> Result<(), Error> {
     while let Some(build) = iter.next() {
@@ -188,7 +188,7 @@ fn build_recursive(
                         entries: BTreeMap::new(),
                         perm,
                     };
-                    build_recursive(iter.by_ref(), &mut sub)?;
+                    build_recursive(iter, &mut sub)?;
                     ent.insert(Arsc::new(sub));
                 }
                 MapEntry::Occupied(_) => return Err(Error::Exists),
@@ -206,7 +206,7 @@ fn build_recursive(
 }
 
 fn build_recursive_mut<F: FileInserter + 'static>(
-    mut iter: impl Iterator<Item = RecursiveBuild>,
+    iter: &mut impl Iterator<Item = RecursiveBuild>,
     dir: &mut MemDirMut,
     file_inserter: Arsc<F>,
 ) -> Result<(), Error> {
@@ -220,7 +220,7 @@ fn build_recursive_mut<F: FileInserter + 'static>(
                         path: dir.path.join(name),
                         file_inserter: file_inserter.clone(),
                     };
-                    build_recursive_mut(iter.by_ref(), &mut sub, file_inserter.clone())?;
+                    build_recursive_mut(iter, &mut sub, file_inserter.clone())?;
                     ent.insert(Arsc::new(sub));
                 }
                 MapEntry::Occupied(_) => return Err(Error::Exists),
