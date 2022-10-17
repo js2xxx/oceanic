@@ -14,7 +14,6 @@ use futures::{
     task::{FutureObj, Spawn, SpawnError},
     Future,
 };
-use solvent::prelude::EPIPE;
 #[cfg(feature = "runtime")]
 use solvent_core::{sync::Lazy, thread::available_parallelism, thread_local};
 use solvent_core::{
@@ -22,7 +21,7 @@ use solvent_core::{
     thread::{self, Backoff},
 };
 
-use crate::disp::{DispReceiver, DispSender};
+use crate::disp::{DispError, DispReceiver, DispSender};
 
 struct Blocking<G>(Option<G>);
 
@@ -183,7 +182,7 @@ fn io_thread(rx: DispReceiver, pool: Arsc<Inner>) {
         match rx.poll_receive() {
             Poll::Ready(res) => match res {
                 Ok(()) => backoff.reset(),
-                Err(EPIPE) => break,
+                Err(DispError::Disconnected) => break,
                 Err(err) => log::warn!("Error while polling for dispatcher: {:?}", err),
             },
             Poll::Pending => {

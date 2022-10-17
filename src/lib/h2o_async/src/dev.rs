@@ -97,7 +97,7 @@ impl Future for WaitUntil<'_> {
         }
 
         if let Some(key) = self.key {
-            self.intr.disp.update(key, cx.waker())?;
+            self.intr.disp.update(key, cx.waker()).expect("update");
             return Poll::Pending;
         }
 
@@ -121,7 +121,7 @@ impl Future for WaitUntil<'_> {
                 );
                 match res {
                     Err((_, pack)) => pack,
-                    Ok(Err(err)) => break Poll::Ready(Err(err)),
+                    Ok(Err(err)) => panic!("poll send: {err:?}"),
                     Ok(Ok(key)) => {
                         self.key = Some(key);
                         break Poll::Pending;

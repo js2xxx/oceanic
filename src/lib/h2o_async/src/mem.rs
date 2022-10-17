@@ -183,7 +183,7 @@ impl<'a> FutInner<'a> {
                         if let Err(err) = self
                             .key
                             .ok_or(ENOENT)
-                            .and_then(|key| self.phys.disp.update(key, cx.waker()))
+                            .map(|key| self.phys.disp.update(key, cx.waker()).expect("update"))
                         {
                             Poll::Ready(Err(err))
                         } else {
@@ -233,7 +233,7 @@ impl Future for Read<'_> {
                         cx.waker(),
                     ) {
                         Err(pack) => (buf, tx) = (pack.0.buf, pack.1),
-                        Ok(Err(err)) => return Poll::Ready(Err(err)),
+                        Ok(Err(err)) => panic!("poll send: {err:?}"),
                         Ok(Ok(key)) => {
                             self.f.key = Some(key);
                             return Poll::Pending;
@@ -299,7 +299,7 @@ impl Future for Write<'_> {
                     cx.waker(),
                 ) {
                     Err(pack) => (buf, tx) = (pack.0.buf, pack.1),
-                    Ok(Err(err)) => return Poll::Ready(Err(err)),
+                    Ok(Err(err)) => panic!("poll send: {err:?}"),
                     Ok(Ok(key)) => {
                         self.f.key = Some(key);
                         return Poll::Pending;
@@ -354,7 +354,7 @@ impl Future for Resize<'_> {
                     cx.waker(),
                 ) {
                     Err(pack) => tx = pack.1,
-                    Ok(Err(err)) => return Poll::Ready(Err(err)),
+                    Ok(Err(err)) => panic!("poll send: {err:?}"),
                     Ok(Ok(key)) => {
                         self.f.key = Some(key);
                         return Poll::Pending;

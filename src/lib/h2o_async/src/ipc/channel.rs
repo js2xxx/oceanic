@@ -15,7 +15,7 @@ use solvent_core::{
     thread::Backoff,
 };
 
-use crate::disp::{DispSender, PackedSyscall};
+use crate::disp::{DispError, DispSender, PackedSyscall};
 
 type Inner = solvent::ipc::Channel;
 
@@ -177,7 +177,7 @@ impl<'a> Receive<'a> {
                     if let Err(err) = self
                         .key
                         .ok_or(ENOENT)
-                        .and_then(|key| self.channel.disp.update(key, cx.waker()))
+                        .map(|key| self.channel.disp.update(key, cx.waker()).expect("update"))
                     {
                         return ControlFlow::Break(Poll::Ready(Err(err)));
                     }
@@ -205,17 +205,18 @@ impl<'a> Receive<'a> {
     ) -> ControlFlow<Poll<Result<Packet>>, (Packet, oneshot::Sender<SendData>)>
     where
         Recv: FnOnce(&mut Self, &mut Packet) -> Result,
-        PackSend:
-            FnOnce(
-                &mut Self,
-                Packet,
-            )
-                -> core::result::Result<Result<usize>, (PackRecv, oneshot::Sender<SendData>)>,
+        PackSend: FnOnce(
+            &mut Self,
+            Packet,
+        ) -> core::result::Result<
+            core::result::Result<usize, DispError>,
+            (PackRecv, oneshot::Sender<SendData>),
+        >,
     {
         match recv(self, &mut packet) {
             Err(ENOENT) => match pack_send(self, packet) {
                 Err(pack) => ControlFlow::Continue((pack.0.packet, pack.1)),
-                Ok(Err(err)) => ControlFlow::Break(Poll::Ready(Err(err))),
+                Ok(Err(err)) => panic!("poll send: {err:?}"),
                 Ok(Ok(key)) => {
                     self.key = Some(key);
                     ControlFlow::Break(Poll::Pending)

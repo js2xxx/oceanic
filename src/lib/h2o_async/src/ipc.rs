@@ -101,7 +101,7 @@ impl<'a, T: Object> Future for TryWait<'a, T> {
                     if let Err(err) = self
                         .key
                         .ok_or(ENOENT)
-                        .and_then(|key| self.disp.update(key, cx.waker()))
+                        .map(|key| self.disp.update(key, cx.waker()).expect("update"))
                     {
                         return Poll::Ready(Err(err));
                     }
@@ -125,7 +125,7 @@ impl<'a, T: Object> Future for TryWait<'a, T> {
                     tx = pack.1;
                     backoff.snooze()
                 }
-                Ok(Err(err)) => break Poll::Ready(Err(err)),
+                Ok(Err(err)) => panic!("poll send: {err:?}"),
                 Ok(Ok(key)) => {
                     self.key = Some(key);
                     break Poll::Pending;

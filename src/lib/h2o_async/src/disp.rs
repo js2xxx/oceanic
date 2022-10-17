@@ -1,27 +1,34 @@
 use alloc::boxed::Box;
 use core::{
     num::NonZeroUsize,
-    sync::atomic::{AtomicUsize, Ordering::*},
+    sync::atomic::{AtomicBool, AtomicUsize, Ordering::*},
     task::{Poll, Waker},
 };
 
 use futures::task::AtomicWaker;
-use solvent::prelude::{
-    Dispatcher as Inner, Object, Result, Syscall, ENOENT, ENOSPC, EPIPE, ETIME,
-};
+use solvent::prelude::{Dispatcher as Inner, Object, Syscall, ENOENT, ENOSPC};
 use solvent_core::sync::{Arsc, CHashMap};
+
+use self::DispError::*;
 
 struct Task {
     pack: Box<dyn PackedSyscall>,
     waker: AtomicWaker,
 }
 
-const NORMAL: usize = 0;
-const DISCONNECTED: usize = isize::MAX as usize;
+#[derive(Debug)]
+pub enum DispError {
+    Disconnected,
+    TimeOut,
+    DidntWait,
+    Unpack(solvent::prelude::Error),
+    PushRaw(solvent::prelude::Error),
+    PopRaw(solvent::prelude::Error),
+}
 
 struct Dispatcher {
     inner: Inner,
-    state: AtomicUsize,
+    stop: AtomicBool,
     num_recv: AtomicUsize,
     tasks: CHashMap<usize, Task>,
 }
@@ -36,45 +43,50 @@ impl Dispatcher {
     fn new(capacity: usize) -> Self {
         Dispatcher {
             inner: Inner::new(capacity),
-            state: AtomicUsize::new(NORMAL),
+            stop: AtomicBool::new(false),
             num_recv: AtomicUsize::new(1),
             tasks: CHashMap::new(),
         }
     }
 
-    fn poll_receive(&self) -> Poll<Result> {
+    #[inline]
+    fn disconnected(self: &Arsc<Self>) -> bool {
+        self.stop.load(Acquire) || Arsc::count(self) <= 1
+    }
+
+    fn poll_receive(self: &Arsc<Self>) -> Poll<Result<(), DispError>> {
         match self.inner.pop_raw() {
             Ok(res) => {
-                let Task { waker, mut pack } = self.tasks.remove(&res.key).ok_or(ETIME)?;
+                let Task { waker, mut pack } = self.tasks.remove(&res.key).ok_or(TimeOut)?;
                 // We need to inform the task where an internal error occurred.
                 let res = pack.unpack(res.result, NonZeroUsize::new(res.signal));
                 waker.wake();
-                Poll::Ready(res)
+                Poll::Ready(res.map_err(Unpack))
             }
             Err(ENOENT) => {
-                if self.state.load(SeqCst) == DISCONNECTED {
-                    Poll::Ready(Err(EPIPE))
+                if self.disconnected() {
+                    Poll::Ready(Err(Disconnected))
                 } else {
                     Poll::Pending
                 }
             }
-            Err(err) => Err(err)?,
+            Err(err) => Err(PopRaw(err))?,
         }
     }
 
     fn poll_send<P>(
-        &self,
+        self: &Arsc<Self>,
         obj: &impl Object,
         level_triggered: bool,
         signal: usize,
         pack: P,
         waker: &Waker,
-    ) -> core::result::Result<Result<usize>, P>
+    ) -> Result<Result<usize, DispError>, P>
     where
         P: PackedSyscall + 'static,
     {
-        if self.state.load(SeqCst) == DISCONNECTED {
-            return Ok(Err(EPIPE));
+        if self.disconnected() {
+            return Ok(Err(Disconnected));
         }
 
         let syscall = pack.raw();
@@ -85,7 +97,7 @@ impl Dispatcher {
             Err(ENOSPC) => return Err(pack),
             key => match key {
                 Ok(key) => key,
-                Err(err) => return Ok(Err(err)),
+                Err(err) => return Ok(Err(PushRaw(err))),
             },
         };
         let task = Task {
@@ -97,16 +109,16 @@ impl Dispatcher {
         Ok(Ok(key))
     }
 
-    fn update(&self, key: usize, waker: &Waker) -> Result {
-        if self.state.load(SeqCst) == DISCONNECTED {
-            return Err(EPIPE);
+    fn update(self: &Arsc<Self>, key: usize, waker: &Waker) -> Result<(), DispError> {
+        if self.disconnected() {
+            return Err(Disconnected);
         }
 
         if let Some(task) = self.tasks.get_mut(&key) {
             task.waker.register(waker);
             Ok(())
         } else {
-            Err(ENOENT)
+            Err(DidntWait)
         }
     }
 }
@@ -136,7 +148,7 @@ impl DispSender {
         signal: usize,
         pack: P,
         waker: &Waker,
-    ) -> core::result::Result<Result<usize>, P>
+    ) -> Result<Result<usize, DispError>, P>
     where
         P: PackedSyscall + 'static,
     {
@@ -145,15 +157,8 @@ impl DispSender {
     }
 
     #[inline]
-    pub fn update(&self, key: usize, waker: &Waker) -> Result {
+    pub fn update(&self, key: usize, waker: &Waker) -> Result<(), DispError> {
         self.disp.update(key, waker)
-    }
-}
-
-impl Drop for DispSender {
-    #[inline]
-    fn drop(&mut self) {
-        self.disp.state.store(DISCONNECTED, SeqCst);
     }
 }
 
@@ -168,7 +173,7 @@ impl DispReceiver {
     }
 
     #[inline]
-    pub fn poll_receive(&self) -> Poll<Result> {
+    pub fn poll_receive(&self) -> Poll<Result<(), DispError>> {
         self.disp.poll_receive()
     }
 }
@@ -183,7 +188,7 @@ impl Clone for DispReceiver {
 
 impl Drop for DispReceiver {
     fn drop(&mut self) {
-        self.disp.state.store(DISCONNECTED, SeqCst);
+        self.disp.stop.store(true, SeqCst);
         if self.disp.num_recv.fetch_sub(1, SeqCst) == 0 {
             let tasks = self.disp.tasks.take();
             for (_, task) in tasks {
@@ -210,5 +215,5 @@ pub fn dispatch(capacity: usize) -> (DispSender, DispReceiver) {
 pub unsafe trait PackedSyscall: Send {
     fn raw(&self) -> Option<Syscall>;
 
-    fn unpack(&mut self, result: usize, signal: Option<NonZeroUsize>) -> Result;
+    fn unpack(&mut self, result: usize, signal: Option<NonZeroUsize>) -> solvent::prelude::Result;
 }
