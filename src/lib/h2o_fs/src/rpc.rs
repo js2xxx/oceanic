@@ -46,7 +46,7 @@ where
         options: OpenOptions,
         conn: Channel,
     ) -> Result<bool, Error> {
-        if options != OpenOptions::READ | OpenOptions::WRITE {
+        if options - OpenOptions::EXPECT_RPC != OpenOptions::READ | OpenOptions::WRITE {
             return Err(Error::PermissionDenied(options.require()));
         }
         if path != Path::new("") {

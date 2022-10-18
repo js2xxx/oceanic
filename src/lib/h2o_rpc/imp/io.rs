@@ -63,6 +63,9 @@ pub enum Error {
     #[error("RPC error: {0}")]
     RpcError(String),
 
+    #[error("invalid data: {0}")]
+    InvalidData(String),
+
     #[error("unknown error: {0}")]
     Other(#[source] RawError),
 }
@@ -94,13 +97,16 @@ bitflags::bitflags! {
 
     #[derive(SerdePacket)]
     pub struct OpenOptions: u32 {
-        const READ = 0b0000_0001;
-        const WRITE = 0b0000_0010;
-        const APPEND = 0b0000_0100;
-        const CREATE = 0b0000_1000;
-        const CREATE_NEW = 0b0001_0000;
-        const TRUNCATE = 0b0010_0000;
-        const EXECUTE = 0b0100_0000;
+        const READ = 0b0000_0000_0001;
+        const WRITE = 0b0000_0000_0010;
+        const APPEND = 0b0000_0000_0100;
+        const CREATE = 0b0000_0000_1000;
+        const CREATE_NEW = 0b0000_0001_0000;
+        const TRUNCATE = 0b0000_0010_0000;
+        const EXECUTE = 0b0000_0100_0000;
+        const EXPECT_FILE = 0b0000_1000_0000;
+        const EXPECT_DIR = 0b0001_0000_0000;
+        const EXPECT_RPC = 0b0010_0000_0000;
     }
 }
 

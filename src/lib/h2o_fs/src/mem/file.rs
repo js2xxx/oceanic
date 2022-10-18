@@ -38,7 +38,9 @@ impl Entry for MemFile {
         options: OpenOptions,
         conn: Channel,
     ) -> Result<bool, Error> {
-        if path != Path::new("") {
+        if path != Path::new("")
+            || options.intersects(OpenOptions::EXPECT_DIR | OpenOptions::EXPECT_RPC)
+        {
             return Err(Error::InvalidType(FileType::File));
         }
         if self.locked.load(Acquire) {

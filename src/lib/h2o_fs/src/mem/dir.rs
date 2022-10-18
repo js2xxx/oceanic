@@ -64,6 +64,9 @@ impl Entry for MemDir {
             }
             Some(_) => Err(Error::InvalidPath(path.into())),
             None => {
+                if options.intersects(OpenOptions::EXPECT_FILE | OpenOptions::EXPECT_RPC) {
+                    return Err(Error::InvalidType(FileType::Directory))
+                }
                 let require = options.require();
                 if !self.perm.contains(require) {
                     return Err(Error::PermissionDenied(require - self.perm));
@@ -222,6 +225,9 @@ impl Entry for MemDirMut {
             }
             Some(_) => Err(Error::InvalidPath(path.into())),
             None => {
+                if options.intersects(OpenOptions::EXPECT_FILE | OpenOptions::EXPECT_RPC) {
+                    return Err(Error::InvalidType(FileType::Directory))
+                }
                 if options.contains(OpenOptions::CREATE_NEW) {
                     return Err(Error::Exists);
                 }
