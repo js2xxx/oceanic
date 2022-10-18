@@ -27,7 +27,7 @@ runtime = ["std", "solvent-async/runtime"]
 # Local crates
 solvent = {path = "../h2o_rs", default-features = false}
 solvent-async = {path = "../h2o_async", optional = true, default-features = false}
-solvent-core = {path = "../libr/core", optional = true}
+solvent-core = {path = "../h2o_std/core", optional = true}
 solvent-rpc-core = {path = "core", default-features = false}
 # External crates
 bitflags = "1.3"
