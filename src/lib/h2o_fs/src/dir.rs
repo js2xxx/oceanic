@@ -34,7 +34,7 @@ pub trait DirectoryMut: Directory {
         dst: &str,
     ) -> Result<(), Error>;
 
-    async fn unlink(&self, name: &str) -> Result<(), Error>;
+    async fn unlink(&self, name: &str, expect_dir: bool) -> Result<(), Error>;
 }
 
 pub mod sync {

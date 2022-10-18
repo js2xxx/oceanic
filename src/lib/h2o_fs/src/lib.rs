@@ -10,8 +10,8 @@ use alloc::{
 use solvent::prelude::Channel;
 use solvent_core::path::{Path, PathBuf};
 use solvent_rpc::io::{
-    dir::DirectorySyncClient, entry::EntrySyncClient, file::FileSyncClient, Error, Metadata,
-    OpenOptions,
+    dir::DirectorySyncClient, entry::EntrySyncClient, file::FileSyncClient, Error, FileType,
+    Metadata, OpenOptions,
 };
 
 pub mod dir;
@@ -88,6 +88,63 @@ pub fn write<P: AsRef<Path>, B: AsRef<[u8]>>(path: P, buf: B) -> Result<(), Erro
             let buf = Vec::from(&buf[written..]);
             written += file.write(buf)??;
         }
+    }
+    Ok(())
+}
+
+#[inline]
+pub fn rename<P1: AsRef<Path>, P2: AsRef<Path>>(src: P1, dst: P2) -> Result<(), Error> {
+    fs::local().rename(src, dst)
+}
+
+#[inline]
+pub fn link<P1: AsRef<Path>, P2: AsRef<Path>>(src: P1, dst: P2) -> Result<(), Error> {
+    fs::local().link(src, dst)
+}
+
+#[inline]
+pub fn unlink<P: AsRef<Path>>(path: P) -> Result<(), Error> {
+    fs::local().unlink(path, false)
+}
+
+#[inline]
+pub fn remove_dir<P: AsRef<Path>>(path: P) -> Result<(), Error> {
+    fs::local().unlink(path, true)
+}
+
+pub fn remove_dir_all<P: AsRef<Path>>(path: P) -> Result<(), Error> {
+    fn inner(client: DirectorySyncClient) -> Result<(), Error> {
+        let mut name = None;
+        loop {
+            let dirent = client.next_dirent(name)?;
+            match dirent {
+                Err(Error::IterEnd) => break Ok(()),
+                Ok(dirent) => {
+                    if dirent.metadata.file_type == FileType::Directory {
+                        let (t, conn) = Channel::new();
+                        client.open(
+                            dirent.name.clone().into(),
+                            OpenOptions::READ | OpenOptions::WRITE | OpenOptions::EXPECT_DIR,
+                            conn,
+                        )??;
+                        inner(DirectorySyncClient::from(t))?;
+                        client.unlink(dirent.name.clone(), true)??;
+                    } else {
+                        client.unlink(dirent.name.clone(), false)??;
+                    }
+                    name = Some(dirent.name);
+                }
+                Err(err) => break Err(err),
+            }
+        }
+    }
+    let path = path.as_ref();
+    let metadata = metadata(path)?;
+    if metadata.file_type == FileType::Directory {
+        inner(open_dir(path, OpenOptions::READ | OpenOptions::WRITE)?)?;
+        remove_dir(path)?;
+    } else {
+        unlink(path)?;
     }
     Ok(())
 }

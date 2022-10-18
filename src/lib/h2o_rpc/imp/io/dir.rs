@@ -34,5 +34,5 @@ pub trait Directory: entry::Entry {
 
     fn link(src: String, dst_parent: Handle, dst: String) -> Result<(), Error>;
 
-    fn unlink(name: String) -> Result<(), Error>;
+    fn unlink(name: String, expect_dir: bool) -> Result<(), Error>;
 }

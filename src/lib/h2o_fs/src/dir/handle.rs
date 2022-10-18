@@ -200,9 +200,13 @@ async fn handle_request_mut<D: DirectoryMut>(
                 Err(Error::PermissionDenied(Permission::WRITE))
             }
         }),
-        rpc::DirectoryRequest::Unlink { name, responder } => responder.send({
+        rpc::DirectoryRequest::Unlink {
+            name,
+            expect_dir,
+            responder,
+        } => responder.send({
             if options.contains(OpenOptions::WRITE) {
-                dir.unlink(&name)
+                dir.unlink(&name, expect_dir)
                     .await
                     .inspect(|_| drop(event.send(EventFlags::REMOVE)))
             } else {

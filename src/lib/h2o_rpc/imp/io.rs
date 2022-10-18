@@ -60,6 +60,9 @@ pub enum Error {
         descendant: PathBuf,
     },
 
+    #[error("Directory not empty, thus cannot be directly unlinked")]
+    DirNotEmpty,
+
     #[error("RPC error: {0}")]
     RpcError(String),
 

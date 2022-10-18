@@ -237,7 +237,7 @@ impl Node {
         }
 
         if remove_src {
-            src_parent.unlink(src_file.into())??;
+            src_parent.unlink(src_file.into(), false)??;
         }
 
         Ok(())
@@ -360,7 +360,7 @@ impl LocalFs {
         }
     }
 
-    pub fn unlink<P: AsRef<Path>>(&self, path: P) -> Result<(), Error> {
+    pub fn unlink<P: AsRef<Path>>(&self, path: P, expect_dir: bool) -> Result<(), Error> {
         let path = self.canonicalize(path)?;
         let parent = path
             .parent()
@@ -374,7 +374,7 @@ impl LocalFs {
             .file_name()
             .and_then(|s| s.to_str().map(|s| s.to_string()));
         let file_name = file_name.ok_or(Error::InvalidPath(path))?;
-        dir.unlink(file_name)?
+        dir.unlink(file_name, expect_dir)?
     }
 
     fn two_path_op<Op, OpLocal>(

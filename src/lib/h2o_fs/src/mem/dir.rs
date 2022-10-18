@@ -65,7 +65,7 @@ impl Entry for MemDir {
             Some(_) => Err(Error::InvalidPath(path.into())),
             None => {
                 if options.intersects(OpenOptions::EXPECT_FILE | OpenOptions::EXPECT_RPC) {
-                    return Err(Error::InvalidType(FileType::Directory))
+                    return Err(Error::InvalidType(FileType::Directory));
                 }
                 let require = options.require();
                 if !self.perm.contains(require) {
@@ -84,7 +84,7 @@ impl Entry for MemDir {
         Ok(Metadata {
             file_type: FileType::Directory,
             perm: self.perm,
-            len: 0,
+            len: self.entries.len(),
         })
     }
 }
@@ -226,7 +226,7 @@ impl Entry for MemDirMut {
             Some(_) => Err(Error::InvalidPath(path.into())),
             None => {
                 if options.intersects(OpenOptions::EXPECT_FILE | OpenOptions::EXPECT_RPC) {
-                    return Err(Error::InvalidType(FileType::Directory))
+                    return Err(Error::InvalidType(FileType::Directory));
                 }
                 if options.contains(OpenOptions::CREATE_NEW) {
                     return Err(Error::Exists);
@@ -247,7 +247,7 @@ impl Entry for MemDirMut {
         Ok(Metadata {
             file_type: FileType::Directory,
             perm: self.perm,
-            len: 0,
+            len: self.entries.lock().len(),
         })
     }
 }
@@ -324,8 +324,23 @@ impl DirectoryMut for MemDirMut {
     }
 
     #[inline]
-    async fn unlink(&self, name: &str) -> Result<(), Error> {
-        self.remove(name).map(drop)
+    async fn unlink(&self, name: &str, expect_dir: bool) -> Result<(), Error> {
+        let mut entries = self.entries.lock();
+        match entries.entry(name.into()) {
+            MapEntry::Vacant(_) => Err(Error::NotFound),
+            MapEntry::Occupied(ent) => {
+                let entry = ent.get();
+                let metadata = entry.metadata()?;
+                if expect_dir && metadata.file_type != FileType::Directory {
+                    return Err(Error::InvalidType(metadata.file_type));
+                }
+                if metadata.file_type == FileType::Directory && metadata.len > 0 {
+                    return Err(Error::DirNotEmpty);
+                }
+                ent.remove();
+                Ok(())
+            }
+        }
     }
 }
 
