@@ -13,6 +13,7 @@ pub struct Metadata {
 pub enum FileType {
     File,
     Directory,
+    RpcNode,
 }
 
 #[protocol]

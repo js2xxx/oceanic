@@ -90,15 +90,14 @@ impl Node {
     }
 
     fn remove(self: Arsc<Self>, path: &Path, all: bool) -> Result<(), Error> {
-        let parent = path
+        let parent_path = path
             .parent()
             .ok_or_else(|| Error::PermissionDenied(Default::default()))?;
-        let (parent, _) = self.open_node(parent, &mut None)?;
+        let (parent, _) = self.open_node(parent_path, &mut None)?;
         let rest = path.file_name().unwrap().to_str().unwrap();
-        let mut entries = if let Node::Dir(ref dir) = *parent {
-            dir.lock()
-        } else {
-            return Err(Error::InvalidType(FileType::File));
+        let mut entries = match *parent {
+            Node::Dir(ref dir) => dir.lock(),
+            _ => return Err(Error::LocalFs(parent_path.into())),
         };
         let old = if all {
             entries.remove(rest)
@@ -144,7 +143,7 @@ impl Node {
                             }
                         }
                     } else {
-                        return Err(Error::InvalidType(FileType::File));
+                        return Err(Error::LocalFs(path.into()));
                     };
                     node = child;
                 }

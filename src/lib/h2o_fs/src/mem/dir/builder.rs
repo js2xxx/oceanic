@@ -7,7 +7,7 @@ use solvent_core::{
     path::{Path, PathBuf},
     sync::{Arsc, Mutex},
 };
-use solvent_rpc::io::{Error, FileType, Permission};
+use solvent_rpc::io::{Error, Permission};
 
 use super::{FileInserter, MemDir, MemDirMut};
 use crate::entry::Entry;
@@ -20,7 +20,7 @@ pub struct Builder {
 
 enum BuilderInner {
     Dir(Builder),
-    File(Arsc<dyn Entry>),
+    Entry(Arsc<dyn Entry>),
 }
 
 impl Builder {
@@ -44,7 +44,7 @@ impl Builder {
             .to_str()
             .ok_or_else(|| Error::InvalidPath(path.into()))?;
         if comps.peek().is_none() {
-            let file = BuilderInner::File(entry);
+            let file = BuilderInner::Entry(entry);
             match self.entries.entry(comp.into()) {
                 MapEntry::Vacant(entry) => {
                     self.perm |= perm;
@@ -63,7 +63,7 @@ impl Builder {
             };
             let dir = match dir {
                 BuilderInner::Dir(dir) => dir,
-                BuilderInner::File(_) => return Err(Error::InvalidType(FileType::File)),
+                BuilderInner::Entry(_) => return Err(Error::LocalFs(comp.into())),
             };
             self.perm |= perm;
             let path = PathBuf::from_iter(comps);
@@ -92,7 +92,7 @@ impl Builder {
         };
         let dir = match dir {
             BuilderInner::Dir(dir) => dir,
-            BuilderInner::File(_) => return Err(Error::InvalidType(FileType::File)),
+            BuilderInner::Entry(_) => return Err(Error::LocalFs(comp.into())),
         };
         self.perm |= perm;
         if comps.peek().is_some() {
@@ -105,7 +105,7 @@ impl Builder {
     pub fn build(self) -> Arsc<MemDir> {
         let entries = self.entries.into_iter().map(|(name, entry)| match entry {
             BuilderInner::Dir(builder) => (name, builder.build() as Arsc<dyn Entry>),
-            BuilderInner::File(entry) => (name, entry),
+            BuilderInner::Entry(entry) => (name, entry),
         });
         Arsc::new(MemDir {
             entries: entries.collect(),
@@ -131,7 +131,7 @@ impl Builder {
                     builder.build_mut_inner(path, file_inserter.clone()) as Arsc<dyn Entry>,
                 )
             }
-            BuilderInner::File(entry) => (name, entry),
+            BuilderInner::Entry(entry) => (name, entry),
         });
         Arsc::new(MemDirMut {
             entries: Mutex::new(entries.collect()),

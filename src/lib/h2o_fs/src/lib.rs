@@ -8,5 +8,7 @@ pub mod file;
 pub mod fs;
 #[cfg(feature = "runtime")]
 pub mod mem;
+#[cfg(feature = "runtime")]
+pub mod rpc;
 
 extern crate alloc;

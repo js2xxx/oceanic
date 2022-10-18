@@ -20,10 +20,7 @@ pub trait Protocol {
 
     #[inline]
     fn channel() -> (Self::Client, Self::Server) {
-        #[cfg(feature = "runtime")]
-        return Self::with_disp(solvent_async::dispatch());
-        #[cfg(not(feature = "runtime"))]
-        unimplemented!("The runtime feature must be selected")
+        Self::with_disp(solvent_async::dispatch())
     }
 
     fn sync_client_with_disp(
@@ -36,10 +33,7 @@ pub trait Protocol {
 
     #[inline]
     fn sync_channel() -> (Self::SyncClient, Self::Server) {
-        #[cfg(feature = "runtime")]
-        return Self::sync_client_with_disp(solvent_async::dispatch());
-        #[cfg(not(feature = "runtime"))]
-        unimplemented!("The runtime feature must be selected")
+        Self::sync_client_with_disp(solvent_async::dispatch())
     }
 }
 
