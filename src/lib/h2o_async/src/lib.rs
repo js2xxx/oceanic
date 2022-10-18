@@ -8,6 +8,7 @@ pub mod io;
 pub mod ipc;
 pub mod mem;
 pub mod sync;
+pub mod time;
 mod utils;
 
 pub use solvent_core as reexport_std;

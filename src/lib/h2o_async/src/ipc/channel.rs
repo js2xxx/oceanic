@@ -95,20 +95,6 @@ impl Channel {
         *packet = temp;
         Ok(())
     }
-
-    pub async fn handle<G, F, R>(&self, handler: G) -> Result<R>
-    where
-        G: FnOnce(Packet) -> F,
-        F: Future<Output = Result<(R, Packet)>>,
-    {
-        let mut packet = Packet::default();
-        self.receive(&mut packet).await?;
-        let id = packet.id;
-        let (ret, mut packet) = handler(packet).await?;
-        packet.id = id;
-        self.send(&mut packet)?;
-        Ok(ret)
-    }
 }
 
 pub(crate) struct SendData {

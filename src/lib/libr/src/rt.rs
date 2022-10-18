@@ -2,6 +2,7 @@ use alloc::vec::Vec;
 use core::error::Error;
 
 use solvent::prelude::Channel;
+use solvent_fs::fs;
 
 use crate::{
     env,
@@ -72,15 +73,13 @@ pub fn lang_start<R: Termination>(channel: Channel, main: fn() -> R) -> R {
     }
 
     let ret = {
-        let path_prefix = "--local-fs-paths=";
-        let paths = env::args().find(|arg| arg.starts_with(path_prefix));
         let (_, cwd) = env::vars().find(|(key, _)| key == "CWD").unzip();
+        let (_, paths) = env::vars().find(|(key, _)| key == "LFS").unzip();
         svrt::with_startup_args(|sa| unsafe {
             if let Some(paths) = paths {
-                let paths = paths.strip_prefix(path_prefix).unwrap();
-                solvent_fs::fs::init_rt(&mut sa.handles, paths.split(','), cwd.as_deref())
+                fs::init_rt(&mut sa.handles, paths.split(','), cwd.as_deref())
             } else {
-                solvent_fs::fs::init_rt(
+                fs::init_rt(
                     &mut sa.handles,
                     ([] as [&str; 0]).into_iter(),
                     cwd.as_deref(),
@@ -90,7 +89,7 @@ pub fn lang_start<R: Termination>(channel: Channel, main: fn() -> R) -> R {
 
         let ret = main();
 
-        unsafe { solvent_fs::fs::fini_rt() };
+        unsafe { fs::fini_rt() };
 
         ret
     };

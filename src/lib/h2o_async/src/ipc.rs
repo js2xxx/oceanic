@@ -24,32 +24,24 @@ pub trait AsyncObject: Object {
     where
         Self: 'a;
 
-    fn try_wait_with(
-        &self,
-        disp: DispSender,
+    fn try_wait_with<'a>(
+        &'a self,
+        disp: &'a DispSender,
         level_triggered: bool,
         signal: usize,
-    ) -> Self::TryWait<'_>;
-
-    #[allow(unused)]
-    fn try_wait(&self, level_triggered: bool, signal: usize) -> Self::TryWait<'_> {
-        #[cfg(feature = "runtime")]
-        return self.try_wait_with(crate::dispatch(), level_triggered, signal);
-        #[cfg(not(feature = "runtime"))]
-        unimplemented!("This method cannot run without builtin async runtime")
-    }
+    ) -> Self::TryWait<'a>;
 }
 
 impl<T: Object> AsyncObject for T {
     type TryWait<'a> = TryWait<'a, T> where T: 'a;
 
     #[inline]
-    fn try_wait_with(
-        &self,
-        disp: DispSender,
+    fn try_wait_with<'a>(
+        &'a self,
+        disp: &'a DispSender,
         level_triggered: bool,
         signal: usize,
-    ) -> Self::TryWait<'_> {
+    ) -> Self::TryWait<'a> {
         TryWait {
             obj: self,
             disp,
@@ -82,7 +74,7 @@ unsafe impl PackedSyscall for (PackWait, oneshot::Sender<Result<usize>>) {
 #[must_use]
 pub struct TryWait<'a, T> {
     obj: &'a T,
-    disp: DispSender,
+    disp: &'a DispSender,
     level_triggered: bool,
     signal: usize,
     result: Option<oneshot::Receiver<Result<usize>>>,
