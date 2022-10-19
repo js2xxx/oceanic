@@ -138,6 +138,7 @@ async fn handle_impl<S: StreamIo>(
                 log::warn!("file RPC received unknown request");
                 break;
             }
+            FileRequest::Phys { options, responder } => responder.send(file.phys(options).await),
         };
 
         if let Err(err) = res {

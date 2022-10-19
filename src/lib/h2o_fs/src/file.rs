@@ -5,9 +5,10 @@ mod stream;
 use alloc::boxed::Box;
 
 use async_trait::async_trait;
+use solvent::prelude::Phys;
 use solvent_async::io::Stream;
 use solvent_core::io::RawStream;
-use solvent_rpc::io::Error;
+use solvent_rpc::io::{Error, file::PhysOptions};
 
 #[cfg(feature = "runtime")]
 pub use self::handle::{handle, handle_mapped};
@@ -41,4 +42,6 @@ pub trait File: Entry {
     }
 
     async fn resize(&self, new_len: usize) -> Result<(), Error>;
+
+    async fn phys(&self, options: PhysOptions) -> Result<Phys, Error>;
 }

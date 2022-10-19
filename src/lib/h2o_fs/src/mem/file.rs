@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use solvent::prelude::{Channel, Phys};
 use solvent_async::io::Stream;
 use solvent_core::{io::RawStream, path::Path, sync::Arsc};
-use solvent_rpc::io::{file::FileServer, Error, FileType, Metadata, OpenOptions, Permission};
+use solvent_rpc::io::{file::{FileServer, PhysOptions}, Error, FileType, Metadata, OpenOptions, Permission};
 
 use crate::{
     dir::EventTokens,
@@ -106,5 +106,13 @@ impl File for MemFile {
 
     async fn resize(&self, _: usize) -> Result<(), Error> {
         unimplemented!("Default implementation in `StreamFile`")
+    }
+
+    async fn phys(&self, options: PhysOptions) -> Result<Phys, Error> {
+        if self.locked.load(Acquire) {
+            return Err(Error::WouldBlock)
+        }
+        let copy = options == PhysOptions::Copy;
+        self.phys.create_sub(0, self.phys.len(), copy).map_err(Error::Other)
     }
 }

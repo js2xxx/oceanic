@@ -2,10 +2,10 @@ use alloc::boxed::Box;
 use core::ops::Deref;
 
 use async_trait::async_trait;
-use solvent::prelude::Channel;
+use solvent::prelude::{Channel, Phys};
 use solvent_async::io::Stream;
 use solvent_core::{io::SeekFrom, sync::Arsc};
-use solvent_rpc::io::Error;
+use solvent_rpc::io::{file::PhysOptions, Error};
 
 use super::File;
 
@@ -55,6 +55,8 @@ pub trait StreamIo {
     async fn resize(&mut self, new_len: usize) -> Result<(), Error>;
 
     async fn seek(&mut self, pos: SeekFrom) -> Result<usize, Error>;
+
+    async fn phys(&self, options: PhysOptions) -> Result<Phys, Error>;
 }
 
 #[cfg(feature = "runtime")]
@@ -145,6 +147,11 @@ mod runtime {
             self.seeker = new;
             Ok(new)
         }
+
+        #[inline]
+        async fn phys(&self, options: PhysOptions) -> Result<Phys, Error> {
+            self.inner.phys(options).await
+        }
     }
 
     impl<F: File> Drop for DirectFile<F> {
@@ -228,6 +235,11 @@ mod runtime {
         #[inline]
         async fn seek(&mut self, pos: SeekFrom) -> Result<usize, Error> {
             Ok(self.stream()?.seek(pos).await?)
+        }
+        
+        #[inline]
+        async fn phys(&self, options: PhysOptions) -> Result<Phys, Error> {
+            self.inner.phys(options).await
         }
     }
 

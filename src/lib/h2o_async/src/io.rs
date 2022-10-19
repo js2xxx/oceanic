@@ -39,6 +39,11 @@ impl Stream {
         }
     }
 
+    #[inline]
+    pub fn into_phys(this: Self) -> solvent::mem::Phys {
+        Self::into_raw(this).phys
+    }
+
     /// # Safety
     ///
     /// The stream must holds the unique reference to the `Phys`, or the others

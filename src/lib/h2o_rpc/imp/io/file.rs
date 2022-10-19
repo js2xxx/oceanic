@@ -1,6 +1,6 @@
 #[cfg(feature = "runtime")]
 use entry::EntryServer;
-use solvent::ipc::{Channel, Packet};
+use solvent::{ipc::{Channel, Packet}, mem::Phys};
 
 use super::*;
 
@@ -9,6 +9,13 @@ bitflags::bitflags! {
     pub struct EventFlags: u32 {
         const UNLOCK = 0b0000_0001;
     }
+}
+
+#[derive(SerdePacket, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[repr(u32)]
+pub enum PhysOptions {
+    Shared = 0,
+    Copy = 1,
 }
 
 #[protocol(EventFlags)]
@@ -32,4 +39,6 @@ pub trait File: entry::Entry {
     fn write_at(offset: usize, buf: Vec<u8>) -> Result<usize, Error>;
 
     fn resize(new_len: usize) -> Result<(), Error>;
+
+    fn phys(options: PhysOptions) -> Result<Phys, Error>;
 }
