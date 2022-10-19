@@ -559,6 +559,16 @@ impl Protocol {
                     }
                 }
 
+                impl TryFrom<#server> for solvent::ipc::Channel {
+                    type Error = #server;
+
+                    #[inline]
+                    fn try_from(server: #server) -> Result<Self, Self::Error> {
+                        solvent::ipc::Channel::try_from(server.inner)
+                            .map_err(|inner| #server { inner })
+                    }
+                }
+
                 #vis enum #request {
                     #(#requests,)*
                     Unknown(solvent_rpc::Request),
@@ -758,10 +768,17 @@ impl Protocol {
 
                 impl solvent_rpc::sync::Client for #client {
                     type EventReceiver = #event_receiver;
+                    #[cfg(feature = "runtime")]
+                    type Async = super::#client;
 
                     #[inline]
                     fn from_inner(inner: solvent_rpc::sync::ClientImpl) -> Self {
                         #client { inner }
+                    }
+
+                    #[inline]
+                    fn into_inner(this: Self) -> solvent_rpc::sync::ClientImpl {
+                        this.inner
                     }
 
                     #[inline]

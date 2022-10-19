@@ -3,7 +3,6 @@ use core::{ffi::CStr, ptr::NonNull};
 
 use either::Either;
 use solvent::prelude::{Flags, Object, Phys, PAGE_MASK};
-use solvent_async::ipc::Channel;
 use solvent_fs::{
     entry::Entry,
     fs,
@@ -108,7 +107,7 @@ pub fn mount() {
                 Default::default(),
                 Path::new(""),
                 OpenOptions::READ | OpenOptions::EXECUTE,
-                Channel::try_from(server).unwrap().into(),
+                server.try_into().unwrap(),
             )
             .expect("Failed to open a connection");
         fs::local()

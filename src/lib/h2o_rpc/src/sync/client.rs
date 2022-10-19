@@ -38,6 +38,13 @@ impl ClientImpl {
         }
     }
 
+    #[cfg(feature = "runtime")]
+    fn into_async(self) -> Result<crate::ClientImpl, Self> {
+        let channel = Channel::try_from(self)?;
+        let channel = solvent_async::ipc::Channel::new(channel);
+        Ok(crate::ClientImpl::from(channel))
+    }
+
     #[inline]
     pub fn call(&self, packet: Packet) -> Result<Packet, Error> {
         self.inner.call(packet)
@@ -271,8 +278,21 @@ impl Inner {
 
 pub trait Client: SerdePacket + From<Channel> + AsRef<Channel> {
     type EventReceiver: EventReceiver;
+    #[cfg(feature = "runtime")]
+    type Async: crate::Client;
 
     fn from_inner(inner: ClientImpl) -> Self;
+
+    fn into_inner(this: Self) -> ClientImpl;
+
+    #[inline]
+    #[cfg(feature = "runtime")]
+    fn into_async(self) -> Result<Self::Async, Self> {
+        Self::into_inner(self)
+            .into_async()
+            .map(<Self::Async as crate::Client>::from_inner)
+            .map_err(Self::from_inner)
+    }
 
     fn event_receiver(&self, timeout: Option<Duration>) -> Option<Self::EventReceiver>;
 }

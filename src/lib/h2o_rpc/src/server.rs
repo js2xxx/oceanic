@@ -75,6 +75,15 @@ impl TryFrom<ServerImpl> for Channel {
     }
 }
 
+impl TryFrom<ServerImpl> for solvent::ipc::Channel {
+    type Error = ServerImpl;
+
+    #[inline]
+    fn try_from(value: ServerImpl) -> Result<Self, Self::Error> {
+        Channel::try_from(value).map(Into::into)
+    }
+}
+
 impl SerdePacket for ServerImpl {
     fn serialize(self, ser: &mut packet::Serializer) -> Result<(), Error> {
         match Channel::try_from(self) {

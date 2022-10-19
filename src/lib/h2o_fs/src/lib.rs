@@ -19,6 +19,8 @@ pub mod entry;
 pub mod file;
 pub mod fs;
 #[cfg(feature = "runtime")]
+pub mod loader;
+#[cfg(feature = "runtime")]
 pub mod mem;
 #[cfg(feature = "runtime")]
 pub mod rpc;
