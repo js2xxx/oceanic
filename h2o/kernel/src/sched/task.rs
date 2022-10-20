@@ -114,7 +114,7 @@ fn exec(
     })
 }
 
-fn create(name: Option<String>, space: Arc<Space>) -> sv_call::Result<(Init, sv_call::Handle)> {
+fn create(name: Option<String>, space: Arc<Space>, init_chan: sv_call::Handle) -> sv_call::Result<(Init, sv_call::Handle)> {
     let cur = super::SCHED.with_current(|cur| Ok(cur.tid.clone()))?;
 
     let ty = cur.ty();
@@ -129,7 +129,8 @@ fn create(name: Option<String>, space: Arc<Space>) -> sv_call::Result<(Init, sv_
 
     let tid = tid::allocate(ti).map_err(|_| sv_call::EBUSY)?;
 
-    let kstack = ctx::Kstack::new(None, ty);
+    let mut kstack = ctx::Kstack::new(None, ty);
+    kstack.task_frame_mut().set_args(init_chan.raw() as _, 0);
     let ext_frame = ctx::ExtFrame::zeroed();
 
     let init = Init::new(tid, space, kstack, ext_frame);

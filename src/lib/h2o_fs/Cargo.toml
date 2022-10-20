@@ -9,6 +9,7 @@ runtime = ["solvent-async/runtime", "solvent-rpc/runtime"]
 
 [dependencies]
 # Local crates
+elfload = {path = "../elfload"}
 solvent = {path = "../h2o_rs"}
 solvent-async = {path = "../h2o_async", default-features = false}
 solvent-core = {path = "../h2o_std/core"}

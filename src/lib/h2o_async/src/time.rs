@@ -102,4 +102,3 @@ impl Stream for Intervals<'_> {
         fut.poll(cx).map(Some)
     }
 }
-

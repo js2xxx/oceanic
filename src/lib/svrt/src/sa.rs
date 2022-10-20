@@ -70,7 +70,7 @@ impl Ord for HandleInfo {
 
 pub(crate) const STARTUP_ARGS: usize = 0x1873ddab8;
 
-#[derive(SerdePacket)]
+#[derive(SerdePacket, Default)]
 pub struct StartupArgs {
     pub handles: BTreeMap<HandleInfo, Handle>,
     pub args: Vec<u8>,

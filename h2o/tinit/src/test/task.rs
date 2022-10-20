@@ -278,7 +278,7 @@ pub unsafe fn test(virt: &Virt) -> (*mut u8, *mut u8, Handle) {
 
     let mut st = Handle::NULL;
     let task = {
-        let t = sv_task_new(null_mut(), 0, Handle::NULL, &mut st)
+        let t = sv_task_new(null_mut(), 0, Handle::NULL, Handle::NULL, &mut st)
             .into_res()
             .expect("Failed to create task");
         let frame = Gpr {

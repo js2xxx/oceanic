@@ -130,23 +130,33 @@ fn task_new(
     name: UserPtr<In>,
     name_len: usize,
     space: Handle,
+    init_chan: Handle,
     st: UserPtr<Out, Handle>,
 ) -> Result<Handle> {
     let name = get_name(name, name_len)?;
 
-    let new_space = if space == Handle::NULL {
-        SCHED.with_current(|cur| Ok(Arc::clone(cur.space())))?
-    } else {
-        SCHED.with_current(|cur| {
-            cur.space()
-                .handles()
-                .remove::<Space>(space)
-                .map(Ref::into_raw)
-        })?
+    let (init_chan, space) = SCHED.with_current(|cur| {
+        let handles = cur.space().handles();
+        let init_chan = if init_chan == Handle::NULL {
+            None
+        } else {
+            Some(handles.remove::<crate::sched::ipc::Channel>(init_chan)?)
+        };
+        if space == Handle::NULL {
+            Ok((init_chan, Arc::clone(cur.space())))
+        } else {
+            let space = handles.remove::<Space>(space)?;
+            Ok((init_chan, Ref::into_raw(space)))
+        }
+    })?;
+    let init_chan = match init_chan {
+        Some(obj) => PREEMPT.scope(|| space.handles().insert_ref(obj))?,
+        None => Handle::NULL,
     };
+
     let mut sus_slot = Arsc::try_new_uninit()?;
 
-    let (task, hdl) = super::create(name, Arc::clone(&new_space))?;
+    let (task, hdl) = super::create(name, Arc::clone(&space), init_chan)?;
 
     let task = super::Ready::block(
         super::IntoReady::into_ready(task, unsafe { crate::cpu::id() }, MIN_TIME_GRAN),

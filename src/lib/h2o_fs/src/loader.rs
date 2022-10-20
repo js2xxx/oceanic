@@ -1,4 +1,5 @@
 use alloc::vec::Vec;
+use core::borrow::Borrow;
 
 use futures::StreamExt;
 use solvent::prelude::Phys;
@@ -13,12 +14,12 @@ use solvent_rpc::{
     Protocol, Server,
 };
 
-pub async fn get_object_from_dir<D: AsRef<DirectoryClient>, P: AsRef<Path>>(
+pub async fn get_object_from_dir<D: Borrow<DirectoryClient>, P: AsRef<Path>>(
     dir: D,
     path: P,
 ) -> Result<Phys, Error> {
     let (file, server) = File::channel();
-    let dir = dir.as_ref();
+    let dir = dir.borrow();
     dir.open(
         path.as_ref().into(),
         OpenOptions::READ,
@@ -28,7 +29,7 @@ pub async fn get_object_from_dir<D: AsRef<DirectoryClient>, P: AsRef<Path>>(
     file.phys(PhysOptions::Copy).await?
 }
 
-pub async fn get_object<D: AsRef<DirectoryClient>, P: AsRef<Path>>(
+pub async fn get_object<D: Borrow<DirectoryClient>, P: AsRef<Path>>(
     dir: impl Iterator<Item = D>,
     path: P,
 ) -> Option<Phys> {
@@ -42,7 +43,7 @@ pub async fn get_object<D: AsRef<DirectoryClient>, P: AsRef<Path>>(
     None
 }
 
-pub async fn serve<D: AsRef<DirectoryClient>>(
+pub async fn serve<D: Borrow<DirectoryClient>>(
     server: LoaderServer,
     dir: impl Iterator<Item = D> + Clone,
 ) {

@@ -62,6 +62,10 @@
                     "ty": "Handle"
                 },
                 {
+                    "name": "init_chan",
+                    "ty": "Handle"
+                },
+                {
                     "name": "st",
                     "ty": "*mut Handle"
                 }

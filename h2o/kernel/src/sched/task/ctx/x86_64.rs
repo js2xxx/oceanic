@@ -111,6 +111,12 @@ impl Frame {
     }
 
     #[inline]
+    pub fn set_args(&mut self, arg0: u64, arg1: u64) {
+        self.rdi = arg0;
+        self.rsi = arg1;
+    }
+
+    #[inline]
     pub fn syscall_args(&self) -> Syscall {
         Syscall {
             num: self.rax as usize,

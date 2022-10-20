@@ -2,6 +2,7 @@ use alloc::{
     collections::{btree_map::Entry as MapEntry, BTreeMap},
     string::String,
 };
+use core::mem;
 
 use solvent_core::{
     path::{Path, PathBuf},
@@ -102,11 +103,13 @@ impl Builder {
         Ok(self)
     }
 
-    pub fn build(self) -> Arsc<MemDir> {
-        let entries = self.entries.into_iter().map(|(name, entry)| match entry {
-            BuilderInner::Dir(builder) => (name, builder.build() as Arsc<dyn Entry>),
-            BuilderInner::Entry(entry) => (name, entry),
-        });
+    pub fn build(&mut self) -> Arsc<MemDir> {
+        let entries = mem::take(&mut self.entries)
+            .into_iter()
+            .map(|(name, entry)| match entry {
+                BuilderInner::Dir(mut builder) => (name, builder.build() as Arsc<dyn Entry>),
+                BuilderInner::Entry(entry) => (name, entry),
+            });
         Arsc::new(MemDir {
             entries: entries.collect(),
             perm: self.perm,
@@ -114,8 +117,11 @@ impl Builder {
     }
 
     #[inline]
-    pub fn build_mut<F: FileInserter + 'static>(self, file_inserter: Arsc<F>) -> Arsc<MemDirMut> {
-        self.build_mut_inner("".into(), file_inserter)
+    pub fn build_mut<F: FileInserter + 'static>(
+        &mut self,
+        file_inserter: Arsc<F>,
+    ) -> Arsc<MemDirMut> {
+        mem::take(self).build_mut_inner("".into(), file_inserter)
     }
 
     fn build_mut_inner<F: FileInserter + 'static>(

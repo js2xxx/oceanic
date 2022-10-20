@@ -24,6 +24,13 @@ pub trait AsyncObject: Object {
     where
         Self: 'a;
 
+    /// The generic async reactor API for kernel objects.
+    ///
+    /// # Note
+    ///
+    /// The corresponding kernel objects should have implemented their own
+    /// proactor API, which is better in performance, and should be
+    /// preferred to use instead of this method.
     fn try_wait_with<'a>(
         &'a self,
         disp: &'a DispSender,

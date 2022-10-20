@@ -1,6 +1,8 @@
 #![no_std]
 #![feature(btree_drain_filter)]
+#![feature(extend_one)]
 #![feature(result_option_inspect)]
+#![feature(slice_ptr_get)]
 
 use alloc::{
     string::{String, ToString},
@@ -22,6 +24,7 @@ pub mod fs;
 pub mod loader;
 #[cfg(feature = "runtime")]
 pub mod mem;
+pub mod process;
 #[cfg(feature = "runtime")]
 pub mod rpc;
 

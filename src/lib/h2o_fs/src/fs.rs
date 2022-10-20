@@ -173,6 +173,29 @@ impl Node {
         }
     }
 
+    fn export(
+        self: Arsc<Self>,
+        path: PathBuf,
+        output: &mut impl Extend<(PathBuf, EntryClient)>,
+    ) -> Result<(), Error> {
+        match *self {
+            Node::Dir(ref dir) => {
+                let entries = dir.lock();
+                output.extend_reserve(entries.len().saturating_sub(1));
+                for (name, node) in entries.iter() {
+                    node.clone().export(path.join(name), output)?;
+                }
+            }
+            Node::Remote(ref remote) => {
+                let (t, conn) = Channel::new();
+                remote.clone_connection(conn)?;
+                let remote = EntryClient::from(t);
+                output.extend(Some((path, remote)));
+            }
+        }
+        Ok(())
+    }
+
     fn copy_local(
         self: Arsc<Self>,
         src: PathBuf,
@@ -358,6 +381,10 @@ impl LocalFs {
                 Ok(DirIter::Remote(DirectoryClient::from(t).into()))
             }
         }
+    }
+
+    pub fn export(&self, output: &mut impl Extend<(PathBuf, EntryClient)>) -> Result<(), Error> {
+        self.root.clone().export(PathBuf::new(), output)
     }
 
     pub fn unlink<P: AsRef<Path>>(&self, path: P, expect_dir: bool) -> Result<(), Error> {

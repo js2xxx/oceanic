@@ -236,7 +236,7 @@ mod runtime {
         async fn seek(&mut self, pos: SeekFrom) -> Result<usize, Error> {
             Ok(self.stream()?.seek(pos).await?)
         }
-        
+
         #[inline]
         async fn phys(&self, options: PhysOptions) -> Result<Phys, Error> {
             self.inner.phys(options).await

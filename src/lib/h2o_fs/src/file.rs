@@ -8,7 +8,7 @@ use async_trait::async_trait;
 use solvent::prelude::Phys;
 use solvent_async::io::Stream;
 use solvent_core::io::RawStream;
-use solvent_rpc::io::{Error, file::PhysOptions};
+use solvent_rpc::io::{file::PhysOptions, Error};
 
 #[cfg(feature = "runtime")]
 pub use self::handle::{handle, handle_mapped};

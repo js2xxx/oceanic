@@ -104,6 +104,17 @@ pub trait Object: private::Sealed + fmt::Debug {
     }
 }
 
+/// # Errors
+///
+/// This function will return an error if the handle is invalid.
+///
+/// # Safety
+///
+/// The caller must guarantee that the ownership is with the handle.
+pub unsafe fn drop_raw(handle: Handle) -> Result {
+    unsafe { sv_call::sv_obj_drop(handle) }.into_res()
+}
+
 #[macro_export]
 macro_rules! impl_obj {
     ($name:ident, $num:ident) => {

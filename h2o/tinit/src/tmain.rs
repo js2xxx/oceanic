@@ -171,7 +171,10 @@ extern "C" fn tmain(init_chan: sv_call::Handle) {
     let dl_args = StartupArgs {
         handles: [
             (HandleType::RootVirt.into(), Virt::into_raw(virt.clone())),
-            (HandleType::VdsoPhys.into(), Phys::into_raw(vdso_phys)),
+            (
+                HandleType::VdsoPhys.into(),
+                Phys::into_raw(vdso_phys.clone()),
+            ),
             (HandleType::ProgramPhys.into(), Phys::into_raw(bin)),
             (HandleType::LoadRpc.into(), Channel::into_raw(load_rpc.1)),
         ]
@@ -189,6 +192,7 @@ extern "C" fn tmain(init_chan: sv_call::Handle) {
     let exe_args = StartupArgs {
         handles: [
             (HandleType::RootVirt.into(), Virt::into_raw(virt)),
+            (HandleType::VdsoPhys.into(), Phys::into_raw(vdso_phys)),
             (
                 HandleType::BootfsPhys.into(),
                 Phys::into_raw(bootfs_phys.clone()),

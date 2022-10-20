@@ -1,5 +1,5 @@
 use alloc::{boxed::Box, collections::BTreeMap, ffi::CString, format, string::String, vec::Vec};
-use core::{array, iter, mem};
+use core::{array, iter, mem, ptr::NonNull};
 
 use solvent::{
     impl_obj_for,
@@ -245,6 +245,19 @@ impl<T: SerdePacket, E: SerdePacket> SerdePacket for Result<T, E> {
             }
         };
         Ok(ret)
+    }
+}
+
+impl SerdePacket for NonNull<u8> {
+    #[inline]
+    fn serialize(self, ser: &mut Serializer) -> Result<(), Error> {
+        usize::serialize(self.as_ptr() as _, ser)
+    }
+
+    fn deserialize(de: &mut Deserializer) -> Result<Self, Error> {
+        let value = usize::deserialize(de)?;
+        NonNull::new(value as *mut u8)
+            .ok_or_else(|| Error::TypeMismatch("The pointer is null".into()))
     }
 }
 

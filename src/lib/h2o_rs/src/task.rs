@@ -7,11 +7,8 @@ use core::{
     time::Duration,
 };
 
-use sv_call::{
-    ipc::SIG_READ,
-    task::{ctx::Gpr, *},
-    Error, Handle, SV_SUSPENDTOKEN, SV_TASK,
-};
+pub use sv_call::task::{ctx::Gpr, *};
+use sv_call::{ipc::SIG_READ, Error, Handle, SV_SUSPENDTOKEN, SV_TASK};
 
 use crate::{error::Result, ipc::Channel, mem::Space, obj::Object};
 
@@ -22,7 +19,11 @@ crate::impl_obj!(Task, SV_TASK);
 crate::impl_obj!(@DROP, Task);
 
 impl Task {
-    pub fn try_new(name: Option<&str>, space: Option<Space>) -> Result<(Self, SuspendToken)> {
+    pub fn try_new(
+        name: Option<&str>,
+        space: Option<Space>,
+        init_chan: Option<Channel>,
+    ) -> Result<(Self, SuspendToken)> {
         let name = name.map(|name| name.as_bytes());
         let mut st = Handle::NULL;
         let handle = unsafe {
@@ -30,6 +31,7 @@ impl Task {
                 name.map_or(null(), |name| name.as_ptr()),
                 name.map_or(0, |name| name.len()),
                 space.map_or(Handle::NULL, Space::into_raw),
+                init_chan.map_or(Handle::NULL, Channel::into_raw),
                 &mut st,
             )
             .into_res()?
@@ -38,8 +40,12 @@ impl Task {
         Ok(unsafe { (Self::from_raw(handle), SuspendToken::from_raw(st)) })
     }
 
-    pub fn new(name: Option<&str>, space: Option<Space>) -> (Self, SuspendToken) {
-        Self::try_new(name, space).expect("Failed to create a task")
+    pub fn new(
+        name: Option<&str>,
+        space: Option<Space>,
+        init_chan: Option<Channel>,
+    ) -> (Self, SuspendToken) {
+        Self::try_new(name, space, init_chan).expect("Failed to create a task")
     }
 
     pub fn exec(
