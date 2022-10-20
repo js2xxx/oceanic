@@ -40,6 +40,7 @@ pub(super) static IDLE: Lazy<Tid> = Lazy::new(|| {
     let kstack = ctx::Kstack::new(Some(entry), Type::Kernel);
 
     let tid = tid::allocate(ti).expect("Tid exhausted");
+    space.set_main(&tid);
 
     let init = Init::new(tid.clone(), space, kstack, ctx::ExtFrame::zeroed());
     crate::sched::SCHED.unblock(init, true);

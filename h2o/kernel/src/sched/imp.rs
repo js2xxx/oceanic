@@ -166,7 +166,7 @@ impl Scheduler {
     /// # Panics
     ///
     /// Panics if the scheduler unexpectedly returns.
-    pub fn exit_current(&self, retval: usize) -> ! {
+    pub fn exit_current(&self, retval: usize, kill_all: bool) -> ! {
         self.canary.assert();
         let pree = PREEMPT.lock();
 
@@ -181,6 +181,10 @@ impl Scheduler {
             SCHED_INFO[self.cpu]
                 .expected_runtime
                 .fetch_sub(current.time_slice.as_micros() as u64, Release);
+
+            if kill_all {
+                current.space().try_stop(&current.tid);
+            }
         }
 
         let _ = self.schedule_impl(Instant::now(), pree, None, |task| {
@@ -221,6 +225,25 @@ impl Scheduler {
             None => return Some(pree),
         };
         log::trace!("Checking task {:?}'s pending signal", cur.tid.raw());
+
+        if cur.space().has_to_stop() {
+            log::trace!(
+                "Killing task {:?}, P{} due to main task stopped",
+                cur.tid.raw(),
+                PREEMPT.raw()
+            );
+
+            SCHED_INFO[self.cpu]
+                .expected_runtime
+                .fetch_sub(cur.time_slice.as_micros() as u64, Release);
+
+            let _ = self.schedule_impl(cur_time, pree, None, |task| {
+                task::Ready::exit(task, sv_call::EKILLED.into_retval());
+                Ok(())
+            });
+            unreachable!("Dead task");
+        }
+
         let ti = &*cur.tid;
 
         if ti.ty() == task::Type::Kernel {
@@ -234,6 +257,7 @@ impl Scheduler {
                 SCHED_INFO[self.cpu]
                     .expected_runtime
                     .fetch_sub(cur.time_slice.as_micros() as u64, Release);
+                cur.space().try_stop(&cur.tid);
 
                 let _ = self.schedule_impl(cur_time, pree, None, |task| {
                     task::Ready::exit(task, sv_call::EKILLED.into_retval());

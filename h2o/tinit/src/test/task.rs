@@ -36,7 +36,7 @@ unsafe extern "C" fn func(_: Handle, arg: u32) {
         },
         _ => {}
     }
-    sv_task_exit(12345)
+    sv_task_exit(12345, false)
         .into_res()
         .expect("Failed to exit the task");
 }

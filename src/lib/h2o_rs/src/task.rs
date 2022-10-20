@@ -188,8 +188,8 @@ impl SuspendToken {
 ///
 /// This function doesn't clean up the current self-maintained context, and the
 /// caller must ensure it is destroyed before calling this function.
-pub unsafe fn exit(retval: usize) -> ! {
-    let _ = sv_call::sv_task_exit(retval);
+pub unsafe fn exit(retval: usize, kill_all: bool) -> ! {
+    let _ = sv_call::sv_task_exit(retval, kill_all);
     unreachable!("The task failed to exit");
 }
 

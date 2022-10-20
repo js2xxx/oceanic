@@ -48,8 +48,8 @@ unsafe impl DefaultFeature for SuspendToken {
 }
 
 #[syscall]
-fn task_exit(retval: usize) -> Result {
-    SCHED.exit_current(retval);
+fn task_exit(retval: usize, kill_all: bool) -> Result {
+    SCHED.exit_current(retval, kill_all);
     #[allow(unreachable_code)]
     Err(EKILLED)
 }
@@ -156,7 +156,7 @@ fn task_new(
 
     let mut sus_slot = Arsc::try_new_uninit()?;
 
-    let (task, hdl) = super::create(name, Arc::clone(&space), init_chan)?;
+    let (task, hdl) = super::create(name, space, init_chan)?;
 
     let task = super::Ready::block(
         super::IntoReady::into_ready(task, unsafe { crate::cpu::id() }, MIN_TIME_GRAN),

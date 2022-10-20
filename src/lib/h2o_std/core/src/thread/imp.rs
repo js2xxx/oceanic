@@ -60,7 +60,7 @@ impl Thread {
                 __libc_allocate_tcb();
                 Box::from_raw(arg as *mut Box<dyn FnOnce()>)();
                 __libc_deallocate_tcb();
-                exit(0);
+                exit(0, false);
             }
         }
     }

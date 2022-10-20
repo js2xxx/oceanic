@@ -22,7 +22,7 @@ pub extern "C" fn exit(s: i32) -> ! {
 /// caller must ensure it is destroyed before calling this function.
 #[no_mangle]
 pub unsafe extern "C" fn _Exit(s: i32) -> ! {
-    solvent::task::exit(s as usize);
+    solvent::task::exit(s as usize, true);
 }
 
 /// # Safety

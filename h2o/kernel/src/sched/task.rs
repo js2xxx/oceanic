@@ -81,6 +81,7 @@ fn exec_inner(
         .unwrap();
 
     let tid = tid::allocate(ti).map_err(|_| sv_call::EBUSY)?;
+    space.set_main(&tid);
 
     let entry = ctx::Entry {
         entry: s.entry,
@@ -128,6 +129,7 @@ fn create(name: Option<String>, space: Arc<Space>, init_chan: sv_call::Handle) -
         .unwrap();
 
     let tid = tid::allocate(ti).map_err(|_| sv_call::EBUSY)?;
+    space.set_main(&tid);
 
     let mut kstack = ctx::Kstack::new(None, ty);
     kstack.task_frame_mut().set_args(init_chan.raw() as _, 0);

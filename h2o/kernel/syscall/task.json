@@ -12,6 +12,10 @@
                 {
                     "name": "retval",
                     "ty": "usize"
+                },
+                {
+                    "name": "kill_all",
+                    "ty": "bool"
                 }
             ]
         },

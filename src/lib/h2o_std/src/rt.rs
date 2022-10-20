@@ -110,7 +110,7 @@ macro_rules! entry {
                 unsafe { solvent::prelude::Object::from_raw(init_chan) },
                 $main,
             );
-            unsafe { solvent::task::exit(0) };
+            unsafe { solvent::task::exit(0, false) };
         }
     };
 }
