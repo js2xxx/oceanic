@@ -64,7 +64,7 @@ pub unsafe fn test(virt: &Virt, stack: (*mut u8, *mut u8, Handle)) {
 
         {
             let mut receivee = rp(0, &mut [], &mut buf);
-            sv_obj_wait(c2, u64::MAX, false, SIG_READ)
+            sv_obj_wait(c2, u64::MAX, true, false, SIG_READ)
                 .into_res()
                 .expect("Failed to wait for the channel");
             let ret = sv_chan_recv(c2, &mut receivee);
@@ -95,31 +95,32 @@ pub unsafe fn test(virt: &Virt, stack: (*mut u8, *mut u8, Handle)) {
 
     // Multiple tasks.
     {
+        const MSG_ID: usize = 123;
         unsafe extern "C" fn func(init_chan: Handle) {
             ::log::trace!("func here: {:?}", init_chan);
             let mut buf = [0; 7];
             let mut hdl = [Handle::NULL];
             let mut p = rp(0, &mut hdl, &mut buf);
 
-            sv_obj_wait(init_chan, u64::MAX, false, SIG_READ)
+            sv_obj_wait(init_chan, u64::MAX, true, false, SIG_READ)
                 .into_res()
                 .expect("Failed to wait for the channel");
             sv_chan_recv(init_chan, &mut p)
                 .into_res()
                 .expect("Failed to receive the init packet");
-            assert_eq!(p.id, CUSTOM_MSG_ID_END);
+            assert_eq!(p.id, MSG_ID);
             for b in buf.iter_mut() {
                 *b += 5;
             }
             assert_eq!(sv_int_get(hdl[0]).into_res(), Ok(12345));
             ::log::trace!("Responding");
-            p.id = CUSTOM_MSG_ID_END;
+            p.id = MSG_ID;
             sv_chan_send(init_chan, &p)
                 .into_res()
                 .expect("Failed to send the response");
 
             ::log::trace!("Finished");
-            sv_task_exit(0).into_res().expect("Failed to exit the task");
+            sv_task_exit(0, false).into_res().expect("Failed to exit the task");
         }
 
         let other = {
@@ -142,18 +143,21 @@ pub unsafe fn test(virt: &Virt, stack: (*mut u8, *mut u8, Handle)) {
         let mut hdl = [e];
 
         ::log::trace!("Sending the initial packet");
-        let mut p = rp(0, &mut hdl, &mut buf);
-        let id = sv_chan_csend(c1, &p)
+        let mut p = rp(MSG_ID, &mut hdl, &mut buf);
+        sv_chan_send(c1, &p)
             .into_res()
-            .expect("Failed to send init packet") as usize;
-        assert_eq!(id, CUSTOM_MSG_ID_END);
+            .expect("Failed to send init packet");
 
         p.id = 0;
+        ::log::trace!("Waiting for the initial response");
+        sv_obj_wait(c1, u64::MAX, true, false, SIG_READ)
+            .into_res()
+            .expect("Failed to wait for the channel");
         ::log::trace!("Receiving the response");
-        sv_chan_crecv(c1, CUSTOM_MSG_ID_END, &mut p, u64::MAX)
+        sv_chan_recv(c1, &mut p)
             .into_res()
             .expect("Failed to receive the response");
-        assert_eq!(p.id, CUSTOM_MSG_ID_END);
+        assert_eq!(p.id, MSG_ID);
         assert_eq!(buf, [6, 7, 8, 9, 10, 11, 12]);
 
         ::log::trace!("Finished");

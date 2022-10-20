@@ -1,206 +1,274 @@
-[
-    {
-        "name": "sv_phys_alloc",
-        "returns": "Handle",
-        "args": [
-            {
-                "name": "size",
-                "ty": "usize"
-            },
-            {
-                "name": "zeroed",
-                "ty": "bool"
-            }
-        ]
-    },
-    {
-        "name": "sv_phys_size",
-        "returns": "usize",
-        "args": [
-            {
-                "name": "hdl",
-                "ty": "Handle"
-            }
-        ]
-    },
-    {
-        "name": "sv_phys_read",
-        "returns": "()",
-        "args": [
-            {
-                "name": "hdl",
-                "ty": "Handle"
-            },
-            {
-                "name": "offset",
-                "ty": "usize"
-            },
-            {
-                "name": "len",
-                "ty": "usize"
-            },
-            {
-                "name": "buffer",
-                "ty": "*mut u8"
-            }
-        ]
-    },
-    {
-        "name": "sv_phys_write",
-        "returns": "()",
-        "args": [
-            {
-                "name": "hdl",
-                "ty": "Handle"
-            },
-            {
-                "name": "offset",
-                "ty": "usize"
-            },
-            {
-                "name": "len",
-                "ty": "usize"
-            },
-            {
-                "name": "buffer",
-                "ty": "*const u8"
-            }
-        ]
-    },
-    {
-        "name": "sv_phys_sub",
-        "returns": "Handle",
-        "args": [
-            {
-                "name": "hdl",
-                "ty": "Handle"
-            },
-            {
-                "name": "offset",
-                "ty": "usize"
-            },
-            {
-                "name": "len",
-                "ty": "usize"
-            },
-            {
-                "name": "copy",
-                "ty": "bool"
-            }
-        ]
-    },
-    {
-        "name": "sv_virt_alloc",
-        "returns": "Handle",
-        "args": [
-            {
-                "name": "hdl",
-                "ty": "Handle"
-            },
-            {
-                "name": "offset",
-                "ty": "usize"
-            },
-            {
-                "name": "size",
-                "ty": "usize"
-            },
-            {
-                "name": "align",
-                "ty": "usize"
-            }
-        ]
-    },
-    {
-        "name": "sv_virt_info",
-        "returns": "*mut u8",
-        "args": [
-            {
-                "name": "hdl",
-                "ty": "Handle"
-            },
-            {
-                "name": "size",
-                "ty": "*mut usize"
-            }
-        ]
-    },
-    {
-        "name": "sv_virt_drop",
-        "returns": "()",
-        "args": [
-            {
-                "name": "hdl",
-                "ty": "Handle"
-            }
-        ]
-    },
-    {
-        "name": "sv_virt_map",
-        "returns": "*mut u8",
-        "args": [
-            {
-                "name": "hdl",
-                "ty": "Handle"
-            },
-            {
-                "name": "mi",
-                "ty": "*const VirtMapInfo"
-            }
-        ]
-    },
-    {
-        "name": "sv_virt_reprot",
-        "returns": "()",
-        "args": [
-            {
-                "name": "hdl",
-                "ty": "Handle"
-            },
-            {
-                "name": "base",
-                "ty": "*mut u8"
-            },
-            {
-                "name": "len",
-                "ty": "usize"
-            },
-            {
-                "name": "flags",
-                "ty": "Flags"
-            }
-        ]
-    },
-    {
-        "name": "sv_virt_unmap",
-        "returns": "()",
-        "args": [
-            {
-                "name": "hdl",
-                "ty": "Handle"
-            },
-            {
-                "name": "base",
-                "ty": "*mut u8"
-            },
-            {
-                "name": "len",
-                "ty": "usize"
-            },
-            {
-                "name": "drop_child",
-                "ty": "bool"
-            }
-        ]
-    },
-    {
-        "name": "sv_mem_info",
-        "returns": "()",
-        "args": [
-            {
-                "name": "info",
-                "ty": "*mut MemInfo"
-            }
-        ]
-    }
-]
+{
+    "types": [
+        "Phys",
+        "Virt"
+    ],
+    "funcs": [
+        {
+            "name": "sv_phys_alloc",
+            "returns": "Handle",
+            "args": [
+                {
+                    "name": "size",
+                    "ty": "usize"
+                },
+                {
+                    "name": "options",
+                    "ty": "PhysOptions"
+                }
+            ]
+        },
+        {
+            "name": "sv_phys_size",
+            "returns": "usize",
+            "args": [
+                {
+                    "name": "hdl",
+                    "ty": "Handle"
+                }
+            ]
+        },
+        {
+            "name": "sv_phys_read",
+            "returns": "usize",
+            "args": [
+                {
+                    "name": "hdl",
+                    "ty": "Handle"
+                },
+                {
+                    "name": "offset",
+                    "ty": "usize"
+                },
+                {
+                    "name": "len",
+                    "ty": "usize"
+                },
+                {
+                    "name": "buffer",
+                    "ty": "*mut u8"
+                }
+            ]
+        },
+        {
+            "name": "sv_phys_write",
+            "returns": "usize",
+            "args": [
+                {
+                    "name": "hdl",
+                    "ty": "Handle"
+                },
+                {
+                    "name": "offset",
+                    "ty": "usize"
+                },
+                {
+                    "name": "len",
+                    "ty": "usize"
+                },
+                {
+                    "name": "buffer",
+                    "ty": "*const u8"
+                }
+            ]
+        },
+        {
+            "name": "sv_phys_readv",
+            "returns": "usize",
+            "args": [
+                {
+                    "name": "hdl",
+                    "ty": "Handle"
+                },
+                {
+                    "name": "offset",
+                    "ty": "usize"
+                },
+                {
+                    "name": "bufs",
+                    "ty": "*const IoVec"
+                },
+                {
+                    "name": "count",
+                    "ty": "usize"
+                }
+            ]
+        },
+        {
+            "name": "sv_phys_writev",
+            "returns": "usize",
+            "args": [
+                {
+                    "name": "hdl",
+                    "ty": "Handle"
+                },
+                {
+                    "name": "offset",
+                    "ty": "usize"
+                },
+                {
+                    "name": "bufs",
+                    "ty": "*const IoVec"
+                },
+                {
+                    "name": "count",
+                    "ty": "usize"
+                }
+            ]
+        },
+        {
+            "name": "sv_phys_sub",
+            "returns": "Handle",
+            "args": [
+                {
+                    "name": "hdl",
+                    "ty": "Handle"
+                },
+                {
+                    "name": "offset",
+                    "ty": "usize"
+                },
+                {
+                    "name": "len",
+                    "ty": "usize"
+                },
+                {
+                    "name": "copy",
+                    "ty": "bool"
+                }
+            ]
+        },
+        {
+            "name": "sv_phys_resize",
+            "returns": "()",
+            "args": [
+                {
+                    "name": "hdl",
+                    "ty": "Handle"
+                },
+                {
+                    "name": "new_len",
+                    "ty": "usize"
+                },
+                {
+                    "name": "zeroed",
+                    "ty": "bool"
+                }
+            ]
+        },
+        {
+            "name": "sv_virt_alloc",
+            "returns": "Handle",
+            "args": [
+                {
+                    "name": "hdl",
+                    "ty": "Handle"
+                },
+                {
+                    "name": "offset",
+                    "ty": "usize"
+                },
+                {
+                    "name": "size",
+                    "ty": "usize"
+                },
+                {
+                    "name": "align",
+                    "ty": "usize"
+                }
+            ]
+        },
+        {
+            "name": "sv_virt_info",
+            "returns": "*mut u8",
+            "args": [
+                {
+                    "name": "hdl",
+                    "ty": "Handle"
+                },
+                {
+                    "name": "size",
+                    "ty": "*mut usize"
+                }
+            ]
+        },
+        {
+            "name": "sv_virt_drop",
+            "returns": "()",
+            "args": [
+                {
+                    "name": "hdl",
+                    "ty": "Handle"
+                }
+            ]
+        },
+        {
+            "name": "sv_virt_map",
+            "returns": "*mut u8",
+            "args": [
+                {
+                    "name": "hdl",
+                    "ty": "Handle"
+                },
+                {
+                    "name": "mi",
+                    "ty": "*mut VirtMapInfo"
+                }
+            ]
+        },
+        {
+            "name": "sv_virt_reprot",
+            "returns": "()",
+            "args": [
+                {
+                    "name": "hdl",
+                    "ty": "Handle"
+                },
+                {
+                    "name": "base",
+                    "ty": "*mut u8"
+                },
+                {
+                    "name": "len",
+                    "ty": "usize"
+                },
+                {
+                    "name": "flags",
+                    "ty": "Flags"
+                }
+            ]
+        },
+        {
+            "name": "sv_virt_unmap",
+            "returns": "()",
+            "args": [
+                {
+                    "name": "hdl",
+                    "ty": "Handle"
+                },
+                {
+                    "name": "base",
+                    "ty": "*mut u8"
+                },
+                {
+                    "name": "len",
+                    "ty": "usize"
+                },
+                {
+                    "name": "drop_child",
+                    "ty": "bool"
+                }
+            ]
+        },
+        {
+            "name": "sv_mem_info",
+            "returns": "()",
+            "args": [
+                {
+                    "name": "info",
+                    "ty": "*mut MemInfo"
+                }
+            ]
+        }
+    ]
+}

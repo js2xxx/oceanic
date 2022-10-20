@@ -33,12 +33,24 @@ pub struct Blocker {
 }
 
 impl Blocker {
-    pub fn new(event: &Arc<dyn Event>, wake_all: bool, signal: usize) -> Arc<Self> {
+    pub fn new(
+        event: &Arc<dyn Event>,
+        level_triggered: bool,
+        wake_all: bool,
+        signal: usize,
+    ) -> Arc<Self> {
         let ret = Arc::new(Blocker {
             wake_all,
             wo: WaitObject::new(),
             event: Arc::downgrade(event) as _,
-            waiter_data: WaiterData::new(TriggerMode::Level, signal),
+            waiter_data: WaiterData::new(
+                if level_triggered {
+                    TriggerMode::Level
+                } else {
+                    TriggerMode::Edge
+                },
+                signal,
+            ),
             status: Mutex::new((true, 0)),
         });
         event.wait(Arc::clone(&ret) as _);
@@ -111,13 +123,20 @@ struct Request {
 }
 
 #[derive(Debug)]
+struct Ready {
+    canceled: bool,
+    signal: usize,
+    request: Request,
+}
+
+#[derive(Debug)]
 pub struct Dispatcher {
     next_key: AtomicUsize,
     event: Arc<BasicEvent>,
 
     capacity: usize,
     pending: Mutex<Vec<Request>>,
-    ready: SegQueue<(bool, Request)>,
+    ready: SegQueue<Ready>,
 }
 
 impl Dispatcher {
@@ -162,14 +181,24 @@ impl Dispatcher {
         Ok(key)
     }
 
-    pub fn pop(self: &Arc<Self>) -> Option<(bool, usize, Option<Syscall>)> {
-        let (canceled, req) = self.ready.pop()?;
-        if let Some(event) = req.event.upgrade() {
+    pub fn pop(
+        self: &Arc<Self>,
+        key: &mut usize,
+        signal_slot: &mut usize,
+    ) -> Option<(bool, Option<Syscall>)> {
+        let Ready {
+            canceled,
+            signal,
+            request,
+        } = self.ready.pop()?;
+        if let Some(event) = request.event.upgrade() {
             event.unwait(&(Arc::clone(self) as _));
         }
-        let res = if !canceled { req.syscall } else { None };
+        let res = if !canceled { request.syscall } else { None };
         self.event.notify(0, SIG_WRITE);
-        Some((canceled, req.key, res))
+        *key = request.key;
+        *signal_slot = signal;
+        Some((canceled, res))
     }
 }
 
@@ -187,14 +216,18 @@ impl Waiter for Dispatcher {
                 let (e, _) = req.event.as_ptr().to_raw_parts();
                 e == event && req.waiter_data.can_signal(signal, false)
             });
-            iter.for_each(|req| {
-                self.ready.push((false, req));
+            iter.for_each(|request| {
+                self.ready.push(Ready {
+                    canceled: false,
+                    signal,
+                    request,
+                });
                 has_cancel = true;
             });
         });
 
         if has_cancel {
-            self.event.notify(0, SIG_READ)
+            self.event.notify(0, SIG_READ);
         }
     }
 
@@ -214,15 +247,19 @@ impl Waiter for Dispatcher {
                 let (e, _) = req.event.as_ptr().to_raw_parts();
                 e == event && req.waiter_data.can_signal(signal, on_wait)
             });
-            iter.for_each(|req| {
-                self.ready.push((false, req));
+            iter.for_each(|request| {
+                self.ready.push(Ready {
+                    canceled: false,
+                    signal,
+                    request,
+                });
                 has_notify = true;
             });
             pending.is_empty()
         });
 
         if has_notify {
-            self.event.notify(0, SIG_READ)
+            self.event.notify(0, SIG_READ);
         }
         empty
     }

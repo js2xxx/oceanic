@@ -1,10 +1,19 @@
-use core::{marker::PhantomData, mem, mem::ManuallyDrop, ops::Deref, ptr, time::Duration};
+use core::{fmt, marker::PhantomData, mem, mem::ManuallyDrop, ops::Deref, ptr, time::Duration};
 
+use sv_call::SV_DISPATCHER;
 pub use sv_call::{Feature, Handle, SerdeReg, Syscall};
 
 use crate::error::Result;
 
-pub trait Object {
+pub(crate) mod private {
+    pub trait Sealed {}
+}
+
+pub trait Object: private::Sealed + fmt::Debug {
+    const ID: usize;
+
+    const NAME: &'static str;
+
     /// # Safety
     ///
     /// The ownership of the object must not be moved if it's still in use.
@@ -47,12 +56,19 @@ pub trait Object {
         sv_call::sv_obj_drop(unsafe { this.raw() }).into_res()
     }
 
-    fn try_wait(&self, timeout: Duration, wake_all: bool, signal: usize) -> Result<usize> {
+    fn try_wait(
+        &self,
+        timeout: Duration,
+        level_triggered: bool,
+        wake_all: bool,
+        signal: usize,
+    ) -> Result<usize> {
         unsafe {
             sv_call::sv_obj_wait(
                 // SAFETY: We don't move the ownership of the handle.
                 unsafe { self.raw() },
                 crate::time::try_into_us(timeout)?,
+                level_triggered,
                 wake_all,
                 signal,
             )
@@ -88,10 +104,26 @@ pub trait Object {
     }
 }
 
+/// # Errors
+///
+/// This function will return an error if the handle is invalid.
+///
+/// # Safety
+///
+/// The caller must guarantee that the ownership is with the handle.
+pub unsafe fn drop_raw(handle: Handle) -> Result {
+    unsafe { sv_call::sv_obj_drop(handle) }.into_res()
+}
+
 #[macro_export]
 macro_rules! impl_obj {
-    ($name:ident) => {
+    ($name:ident, $num:ident) => {
+        impl $crate::obj::private::Sealed for $name {}
         impl $crate::obj::Object for $name {
+            const ID: usize = $num;
+
+            const NAME: &'static str = stringify!($name);
+
             unsafe fn raw(&self) -> sv_call::Handle {
                 self.0
             }
@@ -159,14 +191,15 @@ impl<'a, T: ?Sized> Deref for Ref<'a, T> {
 }
 
 #[repr(transparent)]
+#[derive(Debug)]
 pub struct Dispatcher(sv_call::Handle);
-impl_obj!(Dispatcher);
+impl_obj!(Dispatcher, SV_DISPATCHER);
 impl_obj!(@CLONE, Dispatcher);
 impl_obj!(@DROP, Dispatcher);
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct PopRes {
-    pub canceled: bool,
+    pub signal: usize,
     pub key: usize,
     pub result: usize,
 }
@@ -206,7 +239,7 @@ impl Dispatcher {
     pub fn pop_raw(&self) -> Result<PopRes> {
         let mut res = PopRes::default();
         let key = unsafe {
-            sv_call::sv_disp_pop(unsafe { self.raw() }, &mut res.canceled, &mut res.result)
+            sv_call::sv_disp_pop(unsafe { self.raw() }, &mut res.signal, &mut res.result)
         }
         .into_res()?;
         res.key = key as usize;

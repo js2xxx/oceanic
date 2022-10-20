@@ -105,7 +105,7 @@ mod syscall {
     };
 
     #[syscall]
-    fn log(buffer: UserPtr<In, u8>, len: usize) -> Result {
+    fn log(buffer: UserPtr<In>, len: usize) -> Result {
         buffer.check_slice(len)?;
         let string =
             core::str::from_utf8(unsafe { core::slice::from_raw_parts(buffer.as_ptr(), len) })?;

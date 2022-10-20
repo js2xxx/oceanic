@@ -7,7 +7,7 @@ use core::{
 
 use solvent::{
     c_ty::{StatusOrHandle, StatusOrValue},
-    prelude::{Handle, Object, Ref, Result, Virt, EEXIST, ENOENT},
+    prelude::{Channel, Handle, Object, Ref, Result, Virt, EEXIST, ENOENT, ETYPE},
 };
 use spin::Mutex;
 
@@ -25,7 +25,13 @@ const SS_UNINIT: usize = 0;
 const SS_PROGRESS: usize = 1;
 const SS_INIT: usize = 2;
 
-pub fn init_rt(args: StartupArgs) -> Result<Vec<u8>> {
+pub fn init_rt(init_chan: &Channel) -> Result<Vec<u8>> {
+    let args = {
+        let mut packet = Default::default();
+        init_chan.receive(&mut packet)?;
+        solvent_rpc_core::packet::deserialize(crate::STARTUP_ARGS, &packet, None)
+            .map_err(|_| ETYPE)?
+    };
     loop {
         let value = STARTUP_STATE.load(Acquire);
         match value {
@@ -69,6 +75,24 @@ pub fn try_get_root_virt() -> Result<Ref<'static, Virt>> {
 
 pub fn root_virt() -> Ref<'static, Virt> {
     try_get_root_virt().expect("Failed to get the root virt: uninitialized or failed to receive")
+}
+
+pub fn try_with_startup_args<F, R>(f: F) -> Result<R>
+where
+    F: FnOnce(&mut StartupArgs) -> R,
+{
+    init_or(|| unsafe {
+        let _lock = STARTUP_LOCK.lock();
+        let sa = STARTUP_ARGS.assume_init_mut();
+        Ok(f(sa))
+    })
+}
+
+pub fn with_startup_args<F, R>(f: F) -> R
+where
+    F: FnOnce(&mut StartupArgs) -> R,
+{
+    try_with_startup_args(f).expect("The runtime should be initialized first")
 }
 
 /// # Safety

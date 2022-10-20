@@ -137,7 +137,7 @@ unsafe fn exception(frame_ptr: *mut Frame, vec: def::ExVec) {
                     });
                 }
                 // Kill the fucking task.
-                SCHED.exit_current(sv_call::EFAULT.into_retval())
+                SCHED.exit_current(sv_call::EFAULT.into_retval(), true)
             }
             // unreachable!()
         }

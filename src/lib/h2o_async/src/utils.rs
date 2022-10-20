@@ -1,10 +1,10 @@
 use core::task::Poll;
 
-use solvent_std::sync::channel::{oneshot_, TryRecvError};
+use solvent_core::sync::channel::{oneshot, TryRecvError};
 
 /// Check if the channel has already received a result from previous polling (or
 /// dispatcher's event).
-pub(crate) fn simple_recv<T>(result: &mut Option<oneshot_::Receiver<T>>) -> Option<Poll<T>> {
+pub(crate) fn simple_recv<T>(result: &mut Option<oneshot::Receiver<T>>) -> Option<Poll<T>> {
     if let Some(rx) = result.take() {
         match rx.try_recv() {
             // Has a result, return it

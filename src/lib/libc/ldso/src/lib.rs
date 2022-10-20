@@ -30,11 +30,7 @@ fn dl_main(init_chan: Channel) -> rxx::DlReturn {
     dso::init().expect("Failed to initialize the DSO list");
     dbglog::init(log::Level::Debug);
 
-    let startup_args = init_chan
-        .receive::<StartupArgs>()
-        .expect("Failed to receive boot message");
-
-    let _args = init_rt(startup_args).expect("Failed to initialize runtime");
+    let _args = svrt::init_rt(&init_chan).expect("Failed to initialize runtime");
 
     let prog = take_startup_handle(HandleType::ProgramPhys.into());
     let prog = unsafe { Phys::from_raw(prog) };
@@ -56,6 +52,7 @@ extern "C" fn __libc_start_init() {
 
 #[no_mangle]
 extern "C" fn __libc_exit_fini() {
+    crate::ffi::__libc_deallocate_tcb();
     dso::dso_list().lock().do_fini();
 }
 

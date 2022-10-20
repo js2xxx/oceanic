@@ -86,23 +86,23 @@ pub trait Event: Debug + Send + Sync {
     }
 
     #[inline]
-    fn notify(&self, clear: usize, set: usize) {
-        self.notify_impl(clear, set);
+    fn notify(&self, clear: usize, set: usize) -> usize {
+        self.notify_impl(clear, set)
     }
 
-    fn notify_impl(&self, clear: usize, set: usize) {
+    fn notify_impl(&self, clear: usize, set: usize) -> usize {
         let mut prev = self.event_data().signal.load(SeqCst);
         let signal = loop {
             let new = (prev & !clear) | set;
             if prev == new {
-                return;
+                return prev;
             }
             match self
                 .event_data()
                 .signal
                 .compare_exchange_weak(prev, new, SeqCst, SeqCst)
             {
-                Ok(_) if prev & new == new => return,
+                Ok(_) if prev & new == new => return new,
                 Ok(_) => break new,
                 Err(signal) => {
                     prev = signal;
@@ -115,6 +115,7 @@ pub trait Event: Debug + Send + Sync {
                 .waiters
                 .retain(|_, waiter| !waiter.try_on_notify(self as *const _ as _, signal, false))
         });
+        signal
     }
 }
 
@@ -173,12 +174,50 @@ mod syscall {
     use super::*;
     use crate::{
         cpu::{arch::apic::TriggerMode, time},
-        sched::{Blocker, Dispatcher, WaiterData, SCHED},
+        sched::{BasicEvent, Blocker, Dispatcher, WaiterData, SCHED},
         syscall::{In, Out, UserPtr},
     };
 
     #[syscall]
-    fn obj_wait(hdl: Handle, timeout_us: u64, wake_all: bool, signal: usize) -> Result<usize> {
+    fn event_new(init_signal: usize) -> Result<Handle> {
+        let obj = BasicEvent::new(init_signal);
+        let event = Arc::downgrade(&obj) as _;
+        SCHED.with_current(|cur| cur.space().handles().insert_raw(obj, Some(event)))
+    }
+
+    #[syscall]
+    fn event_notify(hdl: Handle, clear: usize, set: usize) -> Result<usize> {
+        hdl.check_null()?;
+        let event = SCHED.with_current(|cur| {
+            cur.space()
+                .handles()
+                .get::<BasicEvent>(hdl)
+                .map(|event| Arc::clone(&event))
+        })?;
+        Ok(event.notify(clear, set))
+    }
+
+    #[syscall]
+    fn event_cancel(hdl: Handle) -> Result {
+        hdl.check_null()?;
+        let event = SCHED.with_current(|cur| {
+            cur.space()
+                .handles()
+                .get::<BasicEvent>(hdl)
+                .map(|event| Arc::clone(&event))
+        })?;
+        event.cancel();
+        Ok(())
+    }
+
+    #[syscall]
+    fn obj_wait(
+        hdl: Handle,
+        timeout_us: u64,
+        level_triggered: bool,
+        wake_all: bool,
+        signal: usize,
+    ) -> Result<usize> {
         let pree = PREEMPT.lock();
         let cur = unsafe { (*SCHED.current()).as_ref().ok_or(ESRCH) }?;
 
@@ -188,7 +227,7 @@ mod syscall {
         }
         let event = obj.event().upgrade().ok_or(EPIPE)?;
 
-        let blocker = Blocker::new(&event, wake_all, signal);
+        let blocker = Blocker::new(&event, level_triggered, wake_all, signal);
         blocker.wait(Some(pree), time::from_us(timeout_us))?;
 
         let (detach_ret, signal) = blocker.detach();
@@ -218,10 +257,7 @@ mod syscall {
         let syscall = (!syscall.as_ptr().is_null())
             .then(|| {
                 let syscall = unsafe { syscall.read() }?;
-                if matches!(
-                    syscall.num as usize,
-                    SV_DISP_NEW | SV_DISP_PUSH | SV_DISP_POP
-                ) {
+                if matches!(syscall.num, SV_DISP_NEW | SV_DISP_PUSH | SV_DISP_POP) {
                     return Err(EPERM);
                 }
                 Ok(syscall)
@@ -254,20 +290,26 @@ mod syscall {
     #[syscall]
     fn disp_pop(
         disp: Handle,
-        canceled: UserPtr<Out, bool>,
+        signal_slot: UserPtr<Out, usize>,
         result: UserPtr<Out, usize>,
     ) -> Result<usize> {
         disp.check_null()?;
-        let (c, key, r) = SCHED.with_current(|cur| {
+        let mut key = 0;
+        let mut signal = 0;
+        let (c, r) = SCHED.with_current(|cur| {
             let disp = cur.space().handles().get::<Dispatcher>(disp)?;
             if !disp.features().contains(Feature::READ) {
                 return Err(EPERM);
             }
-            disp.pop().ok_or(ENOENT)
+            disp.pop(&mut key, &mut signal).ok_or(ENOENT)
         })?;
 
-        if !canceled.as_ptr().is_null() {
-            canceled.write(c)?;
+        if !signal_slot.as_ptr().is_null() {
+            if c {
+                signal_slot.write(0)?;
+            } else {
+                signal_slot.write(signal)?;
+            }
         }
         let r = r.map_or(0, crate::syscall::handle);
         if !result.as_ptr().is_null() {

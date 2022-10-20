@@ -1,148 +1,188 @@
-use alloc::alloc::Global;
-use core::alloc::{Allocator, Layout};
+mod contiguous;
+mod extensible;
 
-use bitop_ex::BitOpEx;
-use paging::{LAddr, PAddr, PAGE_SHIFT, PAGE_SIZE};
-use sv_call::{Feature, Result};
+use alloc::sync::Weak;
 
-use crate::sched::{task::hdl::DefaultFeature, Arsc};
+use paging::PAddr;
+use sv_call::{mem::PhysOptions, Feature, Result, EPERM};
+
+use crate::{
+    sched::{task::hdl::DefaultFeature, BasicEvent, Event},
+    syscall::{In, Out, UserPtr},
+};
+
+type Cont = self::contiguous::Phys;
+type PinnedCont = self::contiguous::PinnedPhys;
+
+use self::extensible::*;
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Phys {
+    Contiguous(Cont),
+    Static(Static),
+    Dynamic(Dynamic),
+}
 
 #[derive(Debug)]
-struct PhysInner {
-    from_allocator: bool,
-    base: PAddr,
-    size: usize,
-}
-
-impl PhysInner {
-    unsafe fn new_manual(from_allocator: bool, base: PAddr, size: usize) -> PhysInner {
-        PhysInner {
-            from_allocator,
-            base,
-            size,
-        }
-    }
-}
-
-impl Drop for PhysInner {
-    fn drop(&mut self) {
-        if self.from_allocator {
-            let ptr = unsafe { self.base.to_laddr(minfo::ID_OFFSET).as_non_null_unchecked() };
-            let layout =
-                unsafe { Layout::from_size_align_unchecked(self.size, PAGE_SIZE) }.pad_to_align();
-            unsafe { Global.deallocate(ptr, layout) };
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct Phys {
-    offset: usize,
-    len: usize,
-    inner: Arsc<PhysInner>,
-}
-
-impl From<Arsc<PhysInner>> for Phys {
-    fn from(inner: Arsc<PhysInner>) -> Self {
-        Phys {
-            offset: 0,
-            len: inner.size,
-            inner,
-        }
-    }
+pub enum PinnedPhys {
+    Contiguous(PinnedCont),
+    Static(PinnedStatic),
+    Dynamic(PinnedDynamic),
 }
 
 impl Phys {
     #[inline]
     pub fn new(base: PAddr, size: usize) -> Result<Self> {
-        unsafe { Arsc::try_new(PhysInner::new_manual(false, base, size)) }
-            .map_err(sv_call::Error::from)
-            .map(Self::from)
+        Ok(Phys::Contiguous(Cont::new(base, size)?))
     }
 
     /// # Errors
     ///
     /// Returns error if the heap memory is exhausted or the size is zero.
-    pub fn allocate(size: usize, zeroed: bool) -> Result<Self> {
-        if size == 0 {
-            return Err(sv_call::ENOMEM);
-        }
-
-        let mut inner = Arsc::try_new_uninit()?;
-        let layout = unsafe { Layout::from_size_align_unchecked(size, PAGE_SIZE) }.pad_to_align();
-        let mem = if zeroed {
-            Global.allocate_zeroed(layout)
-        } else {
-            Global.allocate(layout)
-        };
-
-        mem.map(|ptr| unsafe {
-            Arsc::get_mut_unchecked(&mut inner).write(PhysInner::new_manual(
-                true,
-                LAddr::from(ptr).to_paddr(minfo::ID_OFFSET),
-                size,
-            ));
-            Arsc::assume_init(inner)
-        })
-        .map_err(sv_call::Error::from)
-        .map(Self::from)
-    }
-
-    pub fn len(&self) -> usize {
-        self.len
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.len == 0
-    }
-
-    pub fn create_sub(&self, offset: usize, len: usize, copy: bool) -> Result<Self> {
-        if offset.contains_bit(PAGE_SHIFT) || len.contains_bit(PAGE_SHIFT) {
-            return Err(sv_call::EALIGN);
-        }
-
-        let new_offset = self.offset.wrapping_add(offset);
-        let end = new_offset.wrapping_add(len);
-        if self.offset <= new_offset && new_offset < end && end <= self.offset + self.len {
-            if copy {
-                let child = Self::allocate(len, true)?;
-                let dst = child.raw_ptr();
-                unsafe {
-                    let src = self.raw_ptr().add(offset);
-                    dst.copy_from_nonoverlapping(src, len);
-                }
-                Ok(child)
-            } else {
-                Ok(Phys {
-                    offset: new_offset,
-                    len,
-                    inner: Arsc::clone(&self.inner),
-                })
+    pub fn allocate(size: usize, options: PhysOptions, contiguous: bool) -> Result<Self> {
+        let resizable = options.contains(PhysOptions::RESIZABLE);
+        Ok(if contiguous {
+            if resizable {
+                return Err(EPERM);
             }
+            Phys::Contiguous(Cont::allocate(size, options.contains(PhysOptions::ZEROED))?)
         } else {
-            Err(sv_call::ERANGE)
+            let zeroed = options.contains(PhysOptions::ZEROED);
+            if resizable {
+                Phys::Dynamic(Dynamic::allocate(size, zeroed)?)
+            } else {
+                Phys::Static(Static::allocate(size, zeroed)?)
+            }
+        })
+    }
+
+    pub fn event(&self) -> Weak<dyn Event> {
+        match self {
+            Phys::Dynamic(d) => d.event(),
+            _ => Weak::<BasicEvent>::new() as _,
         }
     }
 
-    pub fn base(&self) -> PAddr {
-        PAddr::new(*self.inner.base + self.offset)
+    #[inline]
+    #[allow(clippy::len_without_is_empty)]
+    pub fn len(&self) -> usize {
+        match self {
+            Phys::Contiguous(cont) => cont.len(),
+            Phys::Static(s) => s.len(),
+            Phys::Dynamic(d) => d.len(),
+        }
     }
 
-    pub fn raw_ptr(&self) -> *mut u8 {
-        unsafe { self.inner.base.to_laddr(minfo::ID_OFFSET).add(self.offset) }
+    #[inline]
+    pub fn pin(this: Self) -> Result<PinnedPhys> {
+        match this {
+            Phys::Contiguous(cont) => Ok(PinnedPhys::Contiguous(Cont::pin(cont))),
+            Phys::Static(ext) => Ok(PinnedPhys::Static(Static::pin(ext))),
+            Phys::Dynamic(ext) => Ok(PinnedPhys::Dynamic(Dynamic::pin(ext)?)),
+        }
+    }
+
+    #[inline]
+    pub fn create_sub(&self, offset: usize, len: usize, copy: bool) -> Result<Self> {
+        match self {
+            Phys::Contiguous(cont) => cont.create_sub(offset, len, copy).map(Phys::Contiguous),
+            Phys::Static(ext) => ext.create_sub(offset, len, copy).map(Phys::Static),
+            Phys::Dynamic(_) => Err(EPERM),
+        }
+    }
+
+    #[inline]
+    pub fn base(&self) -> PAddr {
+        match self {
+            Phys::Contiguous(cont) => cont.base(),
+            _ => unimplemented!("Extensible phys have multiple bases"),
+        }
+    }
+
+    #[inline]
+    pub fn resize(&self, new_len: usize, zeroed: bool) -> Result {
+        match self {
+            Phys::Dynamic(d) => d.resize(new_len, zeroed),
+            _ => Err(EPERM),
+        }
+    }
+
+    #[inline]
+    pub fn read(&self, offset: usize, len: usize, buffer: UserPtr<Out>) -> Result<usize> {
+        match self {
+            Phys::Contiguous(cont) => cont.read(offset, len, buffer),
+            Phys::Static(s) => s.read(offset, len, buffer),
+            Phys::Dynamic(d) => d.read(offset, len, buffer),
+        }
+    }
+
+    #[inline]
+    pub fn write(&self, offset: usize, len: usize, buffer: UserPtr<In>) -> Result<usize> {
+        match self {
+            Phys::Contiguous(cont) => cont.write(offset, len, buffer),
+            Phys::Static(s) => s.write(offset, len, buffer),
+            Phys::Dynamic(d) => d.write(offset, len, buffer),
+        }
+    }
+
+    #[inline]
+    pub fn read_vectored(&self, offset: usize, bufs: &[(UserPtr<Out>, usize)]) -> Result<usize> {
+        match self {
+            Phys::Contiguous(cont) => cont.read_vectored(offset, bufs),
+            Phys::Static(s) => s.read_vectored(offset, bufs),
+            Phys::Dynamic(d) => d.read_vectored(offset, bufs),
+        }
+    }
+
+    #[inline]
+    pub fn write_vectored(&self, offset: usize, bufs: &[(UserPtr<In>, usize)]) -> Result<usize> {
+        match self {
+            Phys::Contiguous(cont) => cont.write_vectored(offset, bufs),
+            Phys::Static(s) => s.write_vectored(offset, bufs),
+            Phys::Dynamic(d) => d.write_vectored(offset, bufs),
+        }
     }
 }
 
-impl PartialEq for Phys {
-    fn eq(&self, other: &Self) -> bool {
-        self.offset == other.offset
-            && self.len == other.len
-            && Arsc::ptr_eq(&self.inner, &other.inner)
+impl PinnedPhys {
+    #[inline]
+    pub fn map_iter(&self, offset: usize, len: usize) -> impl Iterator<Item = (PAddr, usize)> + '_ {
+        enum OneOf<A, B, C> {
+            A(A),
+            B(B),
+            C(C),
+        }
+        impl<A, B, C, T> Iterator for OneOf<A, B, C>
+        where
+            A: Iterator<Item = T>,
+            B: Iterator<Item = T>,
+            C: Iterator<Item = T>,
+        {
+            type Item = T;
+            fn next(&mut self) -> Option<Self::Item> {
+                match self {
+                    OneOf::A(a) => a.next(),
+                    OneOf::B(b) => b.next(),
+                    OneOf::C(c) => c.next(),
+                }
+            }
+        }
+
+        match self {
+            PinnedPhys::Contiguous(cont) => OneOf::A(cont.map_iter(offset, len)),
+            PinnedPhys::Static(s) => OneOf::B(s.map_iter(offset, len)),
+            PinnedPhys::Dynamic(d) => OneOf::C(d.map_iter(offset, len)),
+        }
     }
 }
 
 unsafe impl DefaultFeature for Phys {
     fn default_features() -> Feature {
-        Feature::SEND | Feature::SYNC | Feature::READ | Feature::WRITE | Feature::EXECUTE
+        Feature::SEND
+            | Feature::SYNC
+            | Feature::READ
+            | Feature::WRITE
+            | Feature::EXECUTE
+            | Feature::WAIT
     }
 }

@@ -6,6 +6,7 @@ use core::{
     marker::{PhantomData, Unsize},
     mem::{self, ManuallyDrop, MaybeUninit},
     ops::{CoerceUnsized, Deref, Receiver},
+    pin::Pin,
     ptr::{self, NonNull},
     sync::atomic::{self, AtomicUsize, Ordering::*},
 };
@@ -77,8 +78,37 @@ impl<T> Arsc<T, Global> {
     }
 
     #[inline]
+    pub fn new(data: T) -> Self {
+        Self::try_new(data).expect("Failed to create an Arsc")
+    }
+
+    #[inline]
+    pub fn pin(data: T) -> Pin<Self> {
+        unsafe { Pin::new_unchecked(Self::new(data)) }
+    }
+
+    #[inline]
     pub fn try_new_uninit() -> Result<Arsc<MaybeUninit<T>, Global>, AllocError> {
         Self::try_new_uninit_in(Global)
+    }
+
+    pub fn try_unwrap(this: Self) -> Result<T, Self> {
+        let ref_count = unsafe { &this.inner.as_ref().ref_count };
+        if ref_count.compare_exchange(1, 0, Acquire, Relaxed).is_err() {
+            return Err(this);
+        }
+
+        atomic::fence(Acquire);
+
+        unsafe {
+            ref_count.store(1, Relaxed);
+
+            let data = ptr::read(&this.inner.as_ref().data);
+            let ptr = Self::into_raw(this) as *const MaybeUninit<T>;
+            let _ = Arsc::from_raw(ptr);
+
+            Ok(data)
+        }
     }
 }
 
@@ -133,6 +163,33 @@ impl<T: ?Sized, A: Allocator> Arsc<T, A> {
     }
 }
 
+impl<T> Arsc<T, Global> {
+    #[must_use]
+    pub fn into_raw(this: Self) -> *const T {
+        let ptr = Self::as_ptr(&this);
+        mem::forget(this);
+        ptr
+    }
+
+    /// # Safety
+    ///
+    /// The raw pointer must have been previously returned by a call to
+    /// [`Arsc<U>::into_raw`][into_raw] where `U` must have the same size and
+    /// alignment as `T`. This is trivially true if `U` is `T`.
+    /// Note that if `U` is not `T` but has the same size and alignment, this is
+    /// basically like transmuting references of different types. See
+    /// [`mem::transmute`][transmute] for more information on what
+    /// restrictions apply in this case.
+    ///
+    /// [into_raw]: Arsc::into_raw
+    /// [transmute]: core::mem::transmute
+    pub unsafe fn from_raw(ptr: *const T) -> Self {
+        let offset = memoffset::offset_of!(ArscInner<T, Global>, data);
+        let inner = unsafe { ptr.byte_sub(offset) as *mut ArscInner<T, Global> };
+        unsafe { Self::from_inner(NonNull::new_unchecked(inner)) }
+    }
+}
+
 impl<T, A: Allocator> Arsc<T, A> {
     pub fn try_make_mut_with<F, E>(this: &mut Self, clone: F) -> Result<&mut T, E>
     where
@@ -160,6 +217,11 @@ impl<T, A: Allocator> Arsc<T, A> {
         // SAFETY: Allowed immutable reference.
         let alloc = unsafe { &this.inner.as_ref().alloc };
         Self::try_make_mut_with(this, |t| Ok((T::clone(t), A::clone(alloc))))
+    }
+
+    #[inline]
+    pub fn count(this: &Self) -> usize {
+        unsafe { this.inner.as_ref().ref_count.load(Acquire) }
     }
 }
 

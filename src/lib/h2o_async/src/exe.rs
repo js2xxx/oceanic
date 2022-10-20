@@ -14,13 +14,31 @@ use futures::{
     task::{FutureObj, Spawn, SpawnError},
     Future,
 };
-use solvent::prelude::EPIPE;
-use solvent_std::{
+#[cfg(feature = "runtime")]
+use solvent_core::{sync::Lazy, thread::available_parallelism, thread_local};
+use solvent_core::{
     sync::{Arsc, Injector, Stealer, Worker},
     thread::{self, Backoff},
 };
 
-use crate::disp::{DispReceiver, DispSender};
+use crate::disp::{DispError, DispReceiver, DispSender};
+
+struct Blocking<G>(Option<G>);
+
+impl<G> Unpin for Blocking<G> {}
+
+impl<G, U> Future for Blocking<G>
+where
+    G: FnOnce() -> U + Send + 'static,
+{
+    type Output = U;
+
+    #[inline]
+    fn poll(mut self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Self::Output> {
+        let func = self.0.take().expect("Cannot run a task twice");
+        Poll::Ready(func())
+    }
+}
 
 #[derive(Debug)]
 pub struct ThreadPool {
@@ -77,23 +95,6 @@ impl ThreadPool {
         F: FnOnce() -> T + Send + 'static,
         T: Send + 'static,
     {
-        struct Blocking<G>(Option<G>);
-
-        impl<G> Unpin for Blocking<G> {}
-
-        impl<G, U> Future for Blocking<G>
-        where
-            G: FnOnce() -> U + Send + 'static,
-        {
-            type Output = U;
-
-            #[inline]
-            fn poll(mut self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Self::Output> {
-                let func = self.0.take().expect("Cannot run a task twice");
-                Poll::Ready(func())
-            }
-        }
-
         self.spawn(Blocking(Some(func)))
     }
 
@@ -181,7 +182,7 @@ fn io_thread(rx: DispReceiver, pool: Arsc<Inner>) {
         match rx.poll_receive() {
             Poll::Ready(res) => match res {
                 Ok(()) => backoff.reset(),
-                Err(EPIPE) => break,
+                Err(DispError::Disconnected) => break,
                 Err(err) => log::warn!("Error while polling for dispatcher: {:?}", err),
             },
             Poll::Pending => {
@@ -194,3 +195,57 @@ fn io_thread(rx: DispReceiver, pool: Arsc<Inner>) {
         }
     }
 }
+
+cfg_if::cfg_if! { if #[cfg(feature = "runtime")] {
+
+static POOL: Lazy<ThreadPool> = Lazy::new(|| ThreadPool::new(available_parallelism().into()));
+thread_local! {
+    static DISP: DispSender = POOL.dispatch(4096);
+}
+
+#[inline]
+pub fn spawn<F, T>(fut: F) -> Task<T>
+where
+    F: Future<Output = T> + Send + 'static,
+    T: Send + 'static,
+{
+    POOL.spawn(fut)
+}
+
+#[inline]
+pub fn spawn_blocking<F, T>(func: F) -> Task<T>
+where
+    F: FnOnce() -> T + Send + 'static,
+    T: Send + 'static,
+{
+    POOL.spawn_blocking(func)
+}
+
+#[inline]
+pub fn dispatch() -> DispSender {
+    DISP.with(|tx| tx.clone())
+}
+
+#[inline]
+pub fn block_on<F, T>(fut: F) -> T
+where
+    F: Future<Output = T> + Send + 'static,
+{
+    POOL.block_on(|_| fut)
+}
+
+#[macro_export]
+macro_rules! entry {
+    ($func:ident, $std:path) => {
+        mod __h2o_async_inner {
+            fn main() {
+                $crate::block_on(async { (super::$func)().await })
+            }
+
+            use $std as std;
+            std::entry!(main);
+        }
+    };
+}
+
+} }

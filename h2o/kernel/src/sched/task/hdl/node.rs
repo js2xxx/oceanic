@@ -62,10 +62,10 @@ impl<T: ?Sized> Ref<T> {
         feat: Feature,
         event: Option<Weak<dyn Event>>,
     ) -> sv_call::Result<Self> {
-        let event = event.unwrap_or(Weak::<crate::sched::BasicEvent>::new() as _);
-        if event.strong_count() == 0 && feat.contains(Feature::WAIT) {
+        if event.is_none() && feat.contains(Feature::WAIT) {
             return Err(sv_call::EPERM);
         }
+        let event = event.unwrap_or(Weak::<crate::sched::BasicEvent>::new() as _);
         Ok(Ref {
             _marker: PhantomPinned,
             next: None,
@@ -122,6 +122,20 @@ impl<T: ?Sized> Ref<T> {
         } else {
             Err(sv_call::EPERM)
         }
+    }
+
+    pub fn try_unwrap(this: Self) -> core::result::Result<T, Self>
+    where
+        T: Sized,
+    {
+        Arc::try_unwrap(this.obj).map_err(|obj| Ref {
+            _marker: PhantomPinned,
+            next: this.next,
+            prev: this.prev,
+            event: this.event,
+            feat: this.feat,
+            obj,
+        })
     }
 }
 

@@ -1,102 +1,49 @@
-[
-    {
-        "name": "sv_chan_new",
-        "returns": "()",
-        "args": [
-            {
-                "name": "p1",
-                "ty": "*mut Handle"
-            },
-            {
-                "name": "p2",
-                "ty": "*mut Handle"
-            }
-        ]
-    },
-    {
-        "name": "sv_chan_send",
-        "returns": "()",
-        "args": [
-            {
-                "name": "hdl",
-                "ty": "Handle"
-            },
-            {
-                "name": "packet",
-                "ty": "*const RawPacket"
-            }
-        ]
-    },
-    {
-        "name": "sv_chan_recv",
-        "returns": "()",
-        "args": [
-            {
-                "name": "hdl",
-                "ty": "Handle"
-            },
-            {
-                "name": "packet",
-                "ty": "*mut RawPacket"
-            }
-        ]
-    },
-    {
-        "name": "sv_chan_csend",
-        "returns": "usize",
-        "args": [
-            {
-                "name": "hdl",
-                "ty": "Handle"
-            },
-            {
-                "name": "packet",
-                "ty": "*const RawPacket"
-            }
-        ]
-    },
-    {
-        "name": "sv_chan_crecv",
-        "returns": "()",
-        "args": [
-            {
-                "name": "hdl",
-                "ty": "Handle"
-            },
-            {
-                "name": "id",
-                "ty": "usize"
-            },
-            {
-                "name": "packet",
-                "ty": "*mut RawPacket"
-            },
-            {
-                "name": "timeout_us",
-                "ty": "u64"
-            }
-        ]
-    },
-    {
-        "name": "sv_chan_acrecv",
-        "returns": "usize",
-        "args": [
-            {
-                "name": "hdl",
-                "ty": "Handle"
-            },
-            {
-                "name": "id",
-                "ty": "usize"
-            },
-            {
-                "name": "disp",
-                "ty": "Handle"
-            },
-            {
-                "name": "syscall",
-                "ty": "*const Syscall"
-            }
-        ]
-    }
-]
+{
+    "types": [
+        "Channel"
+    ],
+    "funcs": [
+        {
+            "name": "sv_chan_new",
+            "returns": "()",
+            "args": [
+                {
+                    "name": "p1",
+                    "ty": "*mut Handle"
+                },
+                {
+                    "name": "p2",
+                    "ty": "*mut Handle"
+                }
+            ]
+        },
+        {
+            "name": "sv_chan_send",
+            "returns": "()",
+            "args": [
+                {
+                    "name": "hdl",
+                    "ty": "Handle"
+                },
+                {
+                    "name": "packet",
+                    "ty": "*const RawPacket"
+                }
+            ]
+        },
+        {
+            "name": "sv_chan_recv",
+            "returns": "()",
+            "args": [
+                {
+                    "name": "hdl",
+                    "ty": "Handle"
+                },
+                {
+                    "name": "packet",
+                    "ty": "*mut RawPacket"
+                }
+            ]
+        }
+    ]
+}

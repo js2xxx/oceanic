@@ -105,7 +105,7 @@ impl Callback {
             Callback::Task(task) => SCHED.unblock(task, true),
             Callback::Event(event) => {
                 if let Some(event) = event.upgrade() {
-                    event.notify(0, SIG_TIMER)
+                    event.notify(0, SIG_TIMER);
                 }
             }
         }

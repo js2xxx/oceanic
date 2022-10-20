@@ -6,26 +6,26 @@ pub use self::types::*;
 use crate::{mem::space::PageFaultErrCode, sched::SCHED};
 
 #[derive(Copy, Clone)]
-pub struct UserPtr<T: Type, D> {
+pub struct UserPtr<T: PtrType, D = u8> {
     data: *mut D,
     _marker: PhantomData<T>,
 }
 
-impl<T: Type, D> PartialEq for UserPtr<T, D> {
+impl<T: PtrType, D> PartialEq for UserPtr<T, D> {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
         self.data == other.data
     }
 }
 
-impl<T: Type, D> Hash for UserPtr<T, D> {
+impl<T: PtrType, D> Hash for UserPtr<T, D> {
     #[inline]
     fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
         self.data.hash(state);
     }
 }
 
-impl<T: Type, D> UserPtr<T, D> {
+impl<T: PtrType, D> UserPtr<T, D> {
     pub fn new(data: *mut D) -> Self {
         UserPtr {
             data,
@@ -66,7 +66,7 @@ impl<T: Type, D> UserPtr<T, D> {
     }
 }
 
-impl<D> UserPtr<In, D> {
+impl<T: InPtrType, D> UserPtr<T, D> {
     /// # Errors
     ///
     /// Returns error if the pointer is invalid for reads or if the pointer is
@@ -115,9 +115,17 @@ impl<D> UserPtr<In, D> {
         )
         .into_result()
     }
+
+    #[inline]
+    pub fn r#in(&self) -> UserPtr<In, D> {
+        UserPtr {
+            data: self.data,
+            _marker: PhantomData,
+        }
+    }
 }
 
-impl<D> UserPtr<Out, D> {
+impl<T: OutPtrType, D> UserPtr<T, D> {
     /// # Errors
     ///
     /// Returns error if the pointer is invalid for writes or if the pointer is
@@ -157,16 +165,6 @@ impl<D> UserPtr<Out, D> {
             .into_result()
         }
     }
-}
-
-impl<D> UserPtr<InOut, D> {
-    #[inline]
-    pub fn r#in(&self) -> UserPtr<In, D> {
-        UserPtr {
-            data: self.data,
-            _marker: PhantomData,
-        }
-    }
 
     #[inline]
     pub fn out(&self) -> UserPtr<Out, D> {
@@ -177,13 +175,13 @@ impl<D> UserPtr<InOut, D> {
     }
 }
 
-impl<T: Type, D> fmt::Debug for UserPtr<T, D> {
+impl<T: PtrType, D> fmt::Debug for UserPtr<T, D> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_tuple("UserPtr").field(&self.data).finish()
     }
 }
 
-impl<T: Type, D> SerdeReg for UserPtr<T, D> {
+impl<T: PtrType, D> SerdeReg for UserPtr<T, D> {
     #[inline]
     fn encode(self) -> usize {
         self.data as usize
@@ -220,10 +218,18 @@ mod types {
     #[derive(Copy, Clone)]
     pub enum InOut {}
 
-    pub trait Type {}
-    impl Type for In {}
-    impl Type for Out {}
-    impl Type for InOut {}
+    pub trait PtrType {}
+    impl PtrType for In {}
+    impl PtrType for Out {}
+    impl PtrType for InOut {}
+
+    pub trait InPtrType: PtrType {}
+    impl InPtrType for In {}
+    impl InPtrType for InOut {}
+
+    pub trait OutPtrType: PtrType {}
+    impl OutPtrType for Out {}
+    impl OutPtrType for InOut {}
 }
 
 #[repr(C)]

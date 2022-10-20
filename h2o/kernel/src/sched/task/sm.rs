@@ -9,7 +9,12 @@ use bitvec::prelude::BitVec;
 use derive_builder::Builder;
 use spin::Mutex;
 
-use super::{ctx, idle, sig::Signal, tid, Space, Tid, Type};
+use super::{
+    ctx, idle,
+    sig::Signal,
+    tid::{self, WeakTid},
+    Space, Tid, Type,
+};
 use crate::{
     cpu::{time::Instant, CpuMask},
     sched::{ipc::Channel, Arsc, BasicEvent, Event, PREEMPT, SIG_READ},
@@ -18,7 +23,7 @@ use crate::{
 #[derive(Debug, Builder)]
 #[builder(no_std, pattern = "owned")]
 pub struct TaskInfo {
-    from: Option<Tid>,
+    from: WeakTid,
     #[builder(setter(skip))]
     ret_cell: Mutex<Option<usize>>,
     #[builder(setter(skip))]
@@ -41,7 +46,7 @@ impl TaskInfo {
     }
 
     #[inline]
-    pub fn from(&self) -> Option<Tid> {
+    pub fn from(&self) -> WeakTid {
         self.from.clone()
     }
 

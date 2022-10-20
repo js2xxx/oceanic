@@ -25,6 +25,7 @@ fn set_status(res: dso::Error) {
         dso::Error::ElfLoad(_) => "Elf loading error",
         dso::Error::DepGet(err) => err.desc(),
         dso::Error::Memory(..) => "Memory exhausted",
+        dso::Error::Serde(..) => "Serde error",
     };
     STATUS.store(val.as_ptr() as *mut c_char, SeqCst)
 }
@@ -122,6 +123,11 @@ pub extern "C" fn dlclose(handle: *const c_void) -> Status {
 #[no_mangle]
 pub extern "C" fn dlerror() -> *const c_char {
     STATUS.swap(ptr::null_mut(), SeqCst)
+}
+
+#[no_mangle]
+pub extern "C" fn dldisconn() {
+    crate::dso::disconnect_ldrpc()
 }
 
 #[repr(C)]

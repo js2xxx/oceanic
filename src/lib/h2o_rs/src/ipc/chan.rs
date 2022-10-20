@@ -1,17 +1,18 @@
 #[cfg(feature = "alloc")]
 use alloc::{boxed::Box, vec::Vec};
-use core::{mem::MaybeUninit, ptr, time::Duration};
+use core::{mem::MaybeUninit, num::NonZeroUsize};
 
-use sv_call::{c_ty::Status, ipc::RawPacket, Syscall};
+use sv_call::{c_ty::Status, ipc::RawPacket, Syscall, SV_CHANNEL};
 
 #[cfg(feature = "alloc")]
-use super::{Packet, PacketTyped};
-use crate::{error::*, obj::Object, prelude::Dispatcher};
+use super::Packet;
+use crate::{error::*, obj::Object};
 
 #[repr(transparent)]
+#[derive(Debug)]
 pub struct Channel(sv_call::Handle);
 
-crate::impl_obj!(Channel);
+crate::impl_obj!(Channel, SV_CHANNEL);
 crate::impl_obj!(@DROP, Channel);
 
 impl Channel {
@@ -29,12 +30,12 @@ impl Channel {
 
     pub fn send_raw(
         &self,
-        id: Option<usize>,
+        id: Option<NonZeroUsize>,
         buffer: &[u8],
         handles: &[sv_call::Handle],
     ) -> Result {
         let packet = RawPacket {
-            id: id.unwrap_or_default(),
+            id: id.map_or(0, |id| id.get()),
             handles: handles.as_ptr() as *mut _,
             handle_count: handles.len(),
             handle_cap: handles.len(),
@@ -47,14 +48,9 @@ impl Channel {
     }
 
     #[cfg(feature = "alloc")]
-    pub fn send_packet(&self, packet: &mut Packet) -> Result {
+    pub fn send(&self, packet: &mut Packet) -> Result {
         self.send_raw(packet.id, &packet.buffer, &packet.handles)
             .map(|_| *packet = Default::default())
-    }
-
-    #[cfg(feature = "alloc")]
-    pub fn send<T: PacketTyped>(&self, packet: T) -> Result {
-        self.send_packet(&mut packet.into_packet())
     }
 
     pub fn receive_raw(
@@ -112,148 +108,10 @@ impl Channel {
     }
 
     #[cfg(feature = "alloc")]
-    pub fn receive_packet(&self, packet: &mut Packet) -> Result {
+    pub fn receive(&self, packet: &mut Packet) -> Result {
         let id = self.receive_into(&mut packet.buffer, &mut packet.handles)?;
-        packet.id = Some(id);
+        packet.id = NonZeroUsize::new(id);
         Ok(())
-    }
-
-    #[cfg(feature = "alloc")]
-    pub fn try_receive<T: PacketTyped>(
-        &self,
-    ) -> Result<core::result::Result<T, (T::TryFromError, Packet)>> {
-        let mut packet = Default::default();
-        self.receive_packet(&mut packet)?;
-        match T::try_from_packet(&mut packet) {
-            Ok(packet) => Ok(Ok(packet)),
-            Err(err) => Ok(Err((err, packet))),
-        }
-    }
-
-    /// Warning: If the type of the received packet is not the requested type,
-    /// then the packet will be discarded!
-    #[cfg(feature = "alloc")]
-    pub fn receive<T: PacketTyped>(&self) -> Result<T> {
-        let mut packet = Default::default();
-        self.receive_packet(&mut packet)?;
-        T::try_from_packet(&mut packet).map_err(Into::into)
-    }
-
-    pub fn call_send_raw(&self, buffer: &[u8], handles: &[sv_call::Handle]) -> Result<usize> {
-        let packet = RawPacket {
-            id: 0,
-            handles: handles.as_ptr() as *mut _,
-            handle_count: handles.len(),
-            handle_cap: handles.len(),
-            buffer: buffer.as_ptr() as *mut _,
-            buffer_size: buffer.len(),
-            buffer_cap: buffer.len(),
-        };
-
-        unsafe {
-            // SAFETY: We don't move the ownership of the handle.
-            sv_call::sv_chan_csend(unsafe { self.raw() }, &packet)
-                .into_res()
-                .map(|value| value as usize)
-        }
-    }
-
-    #[cfg(feature = "alloc")]
-    pub fn call_send(&self, packet: &Packet) -> Result<usize> {
-        self.call_send_raw(&packet.buffer, &packet.handles)
-    }
-
-    pub fn call_receive_raw(
-        &self,
-        id: usize,
-        buffer: &mut [u8],
-        handles: &mut [MaybeUninit<sv_call::Handle>],
-        timeout: Duration,
-    ) -> (Result, usize, usize) {
-        let mut packet = RawPacket {
-            id: 0,
-            handles: handles.as_mut_ptr().cast(),
-            handle_count: handles.len(),
-            handle_cap: handles.len(),
-            buffer: buffer.as_mut_ptr(),
-            buffer_size: buffer.len(),
-            buffer_cap: buffer.len(),
-        };
-        let timeout_us = match crate::time::try_into_us(timeout) {
-            Ok(us) => us,
-            Err(err) => return (Err(err), 0, 0),
-        };
-        // SAFETY: We don't move the ownership of the handle.
-        let res = unsafe {
-            sv_call::sv_chan_crecv(unsafe { self.raw() }, id, &mut packet, timeout_us).into_res()
-        };
-        (res, packet.buffer_size, packet.handle_count)
-    }
-
-    #[cfg(feature = "alloc")]
-    pub fn pack_call_receive(&self, id: usize, mut packet: Packet) -> PackRecv {
-        let buffer = &mut packet.buffer;
-        let handles = packet.handles.spare_capacity_mut();
-        let mut raw_packet = Box::new(RawPacket {
-            id: 0,
-            handles: handles.as_mut_ptr().cast(),
-            handle_count: handles.len(),
-            handle_cap: handles.len(),
-            buffer: buffer.as_mut_ptr(),
-            buffer_size: buffer.len(),
-            buffer_cap: buffer.len(),
-        });
-        let syscall =
-            unsafe { sv_call::sv_pack_chan_crecv(unsafe { self.raw() }, id, &mut *raw_packet, 0) };
-        PackRecv {
-            packet,
-            raw_packet,
-            syscall,
-        }
-    }
-
-    #[cfg(feature = "alloc")]
-    pub fn call_receive_into(
-        &self,
-        id: usize,
-        buffer: &mut Vec<u8>,
-        handles: &mut Vec<sv_call::Handle>,
-        timeout: Duration,
-    ) -> Result {
-        receive_into_impl(
-            |buf, hdl| self.call_receive_raw(id, buf, hdl, timeout),
-            buffer,
-            handles,
-        )
-    }
-
-    #[cfg(feature = "alloc")]
-    pub fn call_receive(&self, id: usize, packet: &mut Packet, timeout: Duration) -> Result {
-        self.call_receive_into(id, &mut packet.buffer, &mut packet.handles, timeout)
-    }
-
-    pub fn call_receive_async(
-        &self,
-        id: usize,
-        disp: &Dispatcher,
-        syscall: Option<&Syscall>,
-    ) -> Result<usize> {
-        let key = unsafe {
-            sv_call::sv_chan_acrecv(
-                unsafe { self.raw() },
-                id,
-                unsafe { disp.raw() },
-                syscall.map_or(ptr::null(), |syscall| syscall as _),
-            )
-            .into_res()
-        }?;
-        Ok(key as usize)
-    }
-
-    #[cfg(feature = "alloc")]
-    pub fn call(&self, packet: &mut Packet, timeout: Duration) -> Result {
-        let id = self.call_send(packet)?;
-        self.call_receive(id, packet, timeout)
     }
 
     #[cfg(feature = "alloc")]
@@ -262,11 +120,11 @@ impl Channel {
         F: FnOnce(&mut Packet) -> Result<R>,
     {
         let mut packet = Packet::default();
-        self.receive_packet(&mut packet)?;
+        self.receive(&mut packet)?;
         let id = packet.id;
         let ret = handler(&mut packet)?;
         packet.id = id;
-        self.send_packet(&mut packet)?;
+        self.send(&mut packet)?;
         Ok(ret)
     }
 }

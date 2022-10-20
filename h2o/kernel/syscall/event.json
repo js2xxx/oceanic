@@ -1,0 +1,45 @@
+{
+    "types": [
+        "event"
+    ],
+    "funcs": [
+        {
+            "name": "sv_event_new",
+            "returns": "Handle",
+            "args": [
+                {
+                    "name": "init_signal",
+                    "ty": "usize"
+                }
+            ]
+        },
+        {
+            "name": "sv_event_notify",
+            "returns": "usize",
+            "args": [
+                {
+                    "name": "hdl",
+                    "ty": "Handle"
+                },
+                {
+                    "name": "clear",
+                    "ty": "usize"
+                },
+                {
+                    "name": "set",
+                    "ty": "usize"
+                }
+            ]
+        },
+        {
+            "name": "sv_event_cancel",
+            "returns": "()",
+            "args": [
+                {
+                    "name": "hdl",
+                    "ty": "Handle"
+                }
+            ]
+        }
+    ]
+}

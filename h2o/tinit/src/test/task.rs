@@ -36,7 +36,7 @@ unsafe extern "C" fn func(_: Handle, arg: u32) {
         },
         _ => {}
     }
-    sv_task_exit(12345)
+    sv_task_exit(12345, false)
         .into_res()
         .expect("Failed to exit the task");
 }
@@ -45,7 +45,7 @@ unsafe fn join(normal: Handle, fault: Handle) {
     log::trace!("join: normal = {:?}, fault = {:?}", normal, fault);
     let mut ret = Default::default();
 
-    sv_obj_wait(normal, u64::MAX, false, SIG_READ)
+    sv_obj_wait(normal, u64::MAX, true, false, SIG_READ)
         .into_res()
         .expect("Failed to wait for the task");
     sv_task_join(normal, &mut ret)
@@ -53,7 +53,7 @@ unsafe fn join(normal: Handle, fault: Handle) {
         .expect("Failed to join the task");
     assert_eq!(ret, 12345);
 
-    sv_obj_wait(fault, u64::MAX, false, SIG_READ)
+    sv_obj_wait(fault, u64::MAX, true, false, SIG_READ)
         .into_res()
         .expect("Failed to wait for the task");
     sv_task_join(fault, &mut ret)
@@ -162,7 +162,7 @@ unsafe fn debug_excep(task: Handle, st: Handle) {
         buffer_size: size_of::<Exception>(),
         buffer_cap: size_of::<Exception>(),
     };
-    sv_obj_wait(chan, u64::MAX, false, SIG_READ)
+    sv_obj_wait(chan, u64::MAX, true, false, SIG_READ)
         .into_res()
         .expect("Failed to wait for the channel");
     sv_chan_recv(chan, &mut packet)
@@ -179,7 +179,7 @@ unsafe fn debug_excep(task: Handle, st: Handle) {
         .into_res()
         .expect("Failed to send exception result");
 
-    sv_obj_wait(task, u64::MAX, false, SIG_READ)
+    sv_obj_wait(task, u64::MAX, true, false, SIG_READ)
         .into_res()
         .expect("Failed to wait for the task");
     let mut ret = Default::default();
@@ -215,7 +215,7 @@ unsafe fn kill(task: Handle) {
         .into_res()
         .expect("Failed to kill a task");
 
-    sv_obj_wait(task, u64::MAX, false, SIG_READ)
+    sv_obj_wait(task, u64::MAX, true, false, SIG_READ)
         .into_res()
         .expect("Failed to wait for the task");
     let mut ret = Default::default();
@@ -238,7 +238,7 @@ pub unsafe fn test(virt: &Virt) -> (*mut u8, *mut u8, Handle) {
     assert_eq!(ret.into_res(), Err(EPERM));
 
     let flags = Flags::READABLE | Flags::WRITABLE | Flags::USER_ACCESS;
-    let stack_phys = sv_phys_alloc(DEFAULT_STACK_SIZE, false)
+    let stack_phys = sv_phys_alloc(DEFAULT_STACK_SIZE, Default::default())
         .into_res()
         .expect("Failed to allocate memory");
     let stack_phys2 = sv_obj_clone(stack_phys)
@@ -278,7 +278,7 @@ pub unsafe fn test(virt: &Virt) -> (*mut u8, *mut u8, Handle) {
 
     let mut st = Handle::NULL;
     let task = {
-        let t = sv_task_new(null_mut(), 0, Handle::NULL, &mut st)
+        let t = sv_task_new(null_mut(), 0, Handle::NULL, Handle::NULL, &mut st)
             .into_res()
             .expect("Failed to create task");
         let frame = Gpr {

@@ -13,9 +13,11 @@ fn cur_cpu() -> usize {
 
 static LOGGER: Logger = Logger;
 
-static BUFFER: Mutex<Buffer> = Mutex::new(Buffer([0; 128], 0));
+const BUFFER_SIZE: usize = 256;
 
-struct Buffer([u8; 128], usize);
+static BUFFER: Mutex<Buffer> = Mutex::new(Buffer([0; BUFFER_SIZE], 0));
+
+struct Buffer([u8; BUFFER_SIZE], usize);
 
 struct Logger;
 
@@ -65,7 +67,7 @@ impl log::Log for Logger {
         }
         .expect("Failed to write str");
         let _ = unsafe { sv_call::sv_log(buffer.0.as_ptr(), buffer.1) };
-        *buffer = Buffer([0; 128], 0);
+        *buffer = Buffer([0; BUFFER_SIZE], 0);
         drop(buffer);
     }
 

@@ -1,6 +1,9 @@
 pub mod c_ty;
 
-use core::{fmt::Debug, ops::Range};
+use core::{
+    fmt::{Debug, Display},
+    ops::Range,
+};
 
 use crate::SerdeReg;
 
@@ -30,6 +33,8 @@ pub struct Error {
     raw: i32,
 }
 
+impl core::error::Error for Error {}
+
 impl Error {
     fn try_decode(val: usize) -> Option<Self> {
         let err = -(val as i32);
@@ -46,6 +51,15 @@ impl Error {
             ERRC_DESC[index as usize]
         } else {
             CUSTOM_DESC[(index - CUSTOM_OFFSET) as usize]
+        }
+    }
+
+    pub fn name(&self) -> &'static str {
+        let index = -self.raw;
+        if ERRC_RANGE.contains(&index) {
+            ERRC_NAME[index as usize]
+        } else {
+            CUSTOM_NAME[(index - CUSTOM_OFFSET) as usize]
         }
     }
 
@@ -73,7 +87,13 @@ impl Error {
 
 impl Debug for Error {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(f, "Error: {}", self.desc())
+        write!(f, "{}", self.name())
+    }
+}
+
+impl Display for Error {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{}", self.desc())
     }
 }
 
@@ -105,100 +125,68 @@ impl From<core::str::Utf8Error> for Error {
     }
 }
 
-macro_rules! declare_error {
-    ($e:ident, $v:literal, $desc:literal) => {
-        #[doc = $desc]
-        pub const $e: Error = Error { raw: -$v };
+macro_rules! declare_errors {
+    (($descs:ident, $names:ident, $num:expr) => {
+        $(const $e:ident = Error { $v:literal, $desc:literal };)*
+    }) => {
+        $(
+            #[doc = $desc]
+            pub const $e: Error = Error { raw: -$v };
+        )*
+
+        const $descs: [&str; $num] = [$($desc),*];
+        const $names: [&str; $num] = [$(stringify!($e)),*];
     };
 }
 
-declare_error!(OK, 0, "Success");
-declare_error!(EPERM, 1, "Operation not permitted");
-declare_error!(ENOENT, 2, "No such file or directory");
-declare_error!(ESRCH, 3, "No such process");
-declare_error!(EINTR, 4, "Interrupted system call");
-declare_error!(EIO, 5, "I/O error");
-declare_error!(ENXIO, 6, "No such device or address");
-declare_error!(E2BIG, 7, "Argument list too long");
-declare_error!(ENOEXEC, 8, "Executable format error");
-declare_error!(EBADF, 9, "Bad file number");
-declare_error!(ECHILD, 10, "No child processes");
-declare_error!(EAGAIN, 11, "Try again");
-declare_error!(ENOMEM, 12, "Out of memory");
-declare_error!(EACCES, 13, "Permission denied");
-declare_error!(EFAULT, 14, "Bad address");
-declare_error!(ENOTBLK, 15, "Block device required");
-declare_error!(EBUSY, 16, "Device or resource busy");
-declare_error!(EEXIST, 17, "File exists");
-declare_error!(EXDEV, 18, "Cross-device link");
-declare_error!(ENODEV, 19, "No such device");
-declare_error!(ENOTDIR, 20, "Not a directory");
-declare_error!(EISDIR, 21, "Is a directory");
-declare_error!(EINVAL, 22, "Invalid argument");
-declare_error!(ENFILE, 23, "File table overflow");
-declare_error!(EMFILE, 24, "Too many open files");
-declare_error!(ENOTTY, 25, "Not a typewriter");
-declare_error!(ETXTBSY, 26, "Text file busy");
-declare_error!(EFBIG, 27, "File too large");
-declare_error!(ENOSPC, 28, "No space left on device");
-declare_error!(ESPIPE, 29, "Illegal seek");
-declare_error!(EROFS, 30, "Read-only file system");
-declare_error!(EMLINK, 31, "Too many links");
-declare_error!(EPIPE, 32, "Broken pipe");
-declare_error!(EDOM, 33, "Math argument out of domain of func");
-declare_error!(ERANGE, 34, "Range not available");
+declare_errors! {
+    (ERRC_DESC, ERRC_NAME, (ERRC_RANGE.end - ERRC_RANGE.start + 1) as usize) => {
+        const OK       = Error { 0, "Success" };
+        const EPERM    = Error { 1, "Operation not permitted" };
+        const ENOENT   = Error { 2, "No such file or directory" };
+        const ESRCH    = Error { 3, "No such process" };
+        const EINTR    = Error { 4, "Interrupted system call" };
+        const EIO      = Error { 5, "I/O error" };
+        const ENXIO    = Error { 6, "No such device or address" };
+        const E2BIG    = Error { 7, "Argument list too long" };
+        const ENOEXEC  = Error { 8, "Executable format error" };
+        const EBADF    = Error { 9, "Bad file number" };
+        const ECHILD   = Error { 10, "No child processes" };
+        const EAGAIN   = Error { 11, "Try again" };
+        const ENOMEM   = Error { 12, "Out of memory" };
+        const EACCES   = Error { 13, "Permission denied" };
+        const EFAULT   = Error { 14, "Bad address" };
+        const ENOTBLK  = Error { 15, "Block device required" };
+        const EBUSY    = Error { 16, "Device or resource busy" };
+        const EEXIST   = Error { 17, "File exists" };
+        const EXDEV    = Error { 18, "Cross-device link" };
+        const ENODEV   = Error { 19, "No such device" };
+        const ENOTDIR  = Error { 20, "Not a directory" };
+        const EISDIR   = Error { 21, "Is a directory" };
+        const EINVAL   = Error { 22, "Invalid argument" };
+        const ENFILE   = Error { 23, "File table overflow" };
+        const EMFILE   = Error { 24, "Too many open files" };
+        const ENOTTY   = Error { 25, "Not a typewriter" };
+        const ETXTBSY  = Error { 26, "Text file busy" };
+        const EFBIG    = Error { 27, "File too large" };
+        const ENOSPC   = Error { 28, "No space left on device" };
+        const ESPIPE   = Error { 29, "Illegal seek" };
+        const EROFS    = Error { 30, "Read-only file system" };
+        const EMLINK   = Error { 31, "Too many links" };
+        const EPIPE    = Error { 32, "Broken pipe" };
+        const EDOM     = Error { 33, "Math argument out of domain of func" };
+        const ERANGE   = Error { 34, "Range not available" };
+    }
+}
 
 const CUSTOM_OFFSET: i32 = CUSTOM_RANGE.start;
-declare_error!(EKILLED, 1001, "Object already killed");
-declare_error!(EBUFFER, 1002, "Buffer range exceeded");
-declare_error!(ETIME, 1003, "Timed out");
-declare_error!(EALIGN, 1004, "Pointer unaligned");
-declare_error!(ETYPE, 1005, "Object type mismatch");
-declare_error!(ESPRT, 1006, "Function not supported");
-
-const ERRC_DESC: &[&str] = &[
-    "OK",
-    "Operation not permitted",
-    "No such file or directory",
-    "No such process",
-    "Interrupted system call",
-    "I/O error",
-    "No such device or address",
-    "Argument list too long",
-    "Executable format error",
-    "Bad file number",
-    "No child processes",
-    "Try again",
-    "Out of memory",
-    "Permission denied",
-    "Bad address",
-    "Block device required",
-    "Device or resource busy",
-    "File exists",
-    "Cross-device link",
-    "No such device",
-    "Not a directory",
-    "Is a directory",
-    "Invalid argument",
-    "File table overflow",
-    "Too many open files",
-    "Not a typewriter",
-    "Text file busy",
-    "File too large",
-    "No space left on device",
-    "Illegal seek",
-    "Read-only file system",
-    "Too many links",
-    "Broken pipe",
-    "Math argument out of domain of func",
-    "Range not available",
-];
-
-const CUSTOM_DESC: &[&str] = &[
-    "Task already killed",
-    "Buffer range exceeded",
-    "Timed out",
-    "Pointer unaligned",
-    "Object type mismatch",
-    "Function not supported",
-];
+declare_errors! {
+    (CUSTOM_DESC, CUSTOM_NAME, (CUSTOM_RANGE.end - CUSTOM_RANGE.start) as usize) => {
+        const EKILLED = Error { 1001, "Object already killed" };
+        const EBUFFER = Error { 1002, "Buffer range exceeded" };
+        const ETIME   = Error { 1003, "Timed out" };
+        const EALIGN  = Error { 1004, "Pointer unaligned" };
+        const ETYPE   = Error { 1005, "Object type mismatch" };
+        const ESPRT   = Error { 1006, "Function not supported" };
+    }
+}

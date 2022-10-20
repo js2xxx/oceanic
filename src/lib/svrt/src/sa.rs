@@ -1,29 +1,76 @@
 use alloc::{collections::BTreeMap, vec::Vec};
-use core::mem;
 
-use solvent::prelude::{Error, Handle, Object, Packet, PacketTyped, Phys, Virt, EBUFFER, ETYPE};
-
-use crate::{
-    HandleInfo, HandleType, StartupArgsHeader, PACKET_SIG_STARTUP_ARGS, STARTUP_ARGS_HEADER_SIZE,
+use modular_bitfield::{bitfield, BitfieldSpecifier};
+use solvent::prelude::{Channel, Handle, Object, Packet, Phys, Virt, ETYPE};
+use solvent_rpc::{
+    packet::{Deserializer, SerdePacket, Serializer},
+    Error, SerdePacket,
 };
+use solvent_rpc_core as solvent_rpc;
 
-#[derive(Debug)]
-pub enum TryFromError {
-    SignatureMismatch([u8; 4]),
-    BufferTooShort(usize),
-    Other(Error),
+#[derive(Debug, Copy, Clone, BitfieldSpecifier, PartialEq, Eq, PartialOrd, Ord)]
+#[repr(u16)]
+#[bits = 16]
+pub enum HandleType {
+    None = 0,
+    RootVirt,
+    VdsoPhys,
+    ProgramPhys,
+    LoadRpc,
+    BootfsPhys,
+    LocalFs,
 }
 
-impl From<TryFromError> for Error {
-    fn from(val: TryFromError) -> Self {
-        match val {
-            TryFromError::SignatureMismatch(_) => ETYPE,
-            TryFromError::BufferTooShort(_) => EBUFFER,
-            TryFromError::Other(err) => err,
-        }
+#[derive(Copy, Clone)]
+#[bitfield]
+#[repr(C)]
+pub struct HandleInfo {
+    pub handle_type: HandleType,
+    pub additional: u16,
+}
+
+impl SerdePacket for HandleInfo {
+    #[inline]
+    fn serialize(self, ser: &mut Serializer) -> Result<(), Error> {
+        self.bytes.serialize(ser)
+    }
+
+    #[inline]
+    fn deserialize(de: &mut Deserializer) -> Result<Self, Error> {
+        SerdePacket::deserialize(de).map(Self::from_bytes)
     }
 }
 
+impl From<HandleType> for HandleInfo {
+    #[inline]
+    fn from(ty: HandleType) -> Self {
+        Self::new().with_handle_type(ty)
+    }
+}
+
+impl PartialEq for HandleInfo {
+    fn eq(&self, other: &Self) -> bool {
+        self.bytes == other.bytes
+    }
+}
+
+impl Eq for HandleInfo {}
+
+impl PartialOrd for HandleInfo {
+    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
+        self.bytes.partial_cmp(&other.bytes)
+    }
+}
+
+impl Ord for HandleInfo {
+    fn cmp(&self, other: &Self) -> core::cmp::Ordering {
+        self.bytes.cmp(&other.bytes)
+    }
+}
+
+pub(crate) const STARTUP_ARGS: usize = 0x1873ddab8;
+
+#[derive(SerdePacket, Default)]
 pub struct StartupArgs {
     pub handles: BTreeMap<HandleInfo, Handle>,
     pub args: Vec<u8>,
@@ -40,95 +87,9 @@ impl StartupArgs {
         let handle = self.handles.remove(&HandleType::VdsoPhys.into())?;
         Some(unsafe { Phys::from_raw(handle) })
     }
-}
 
-impl PacketTyped for StartupArgs {
-    type TryFromError = TryFromError;
-
-    fn into_packet(self) -> Packet {
-        let (mut hinfos, handles) = self.handles.into_iter().fold(
-            (Vec::new(), Vec::new()),
-            |(mut acci, mut acch), (info, hdl)| {
-                acci.extend_from_slice(&info.into_bytes());
-                acch.push(hdl);
-                (acci, acch)
-            },
-        );
-
-        let mut args = self.args;
-
-        let mut env = self.env;
-
-        let handle_info_offset = STARTUP_ARGS_HEADER_SIZE;
-        let args_offset = handle_info_offset + handles.len() * mem::size_of::<HandleInfo>();
-        let env_offset = args_offset + args.len();
-
-        let header = StartupArgsHeader {
-            signature: PACKET_SIG_STARTUP_ARGS,
-            handle_info_offset,
-            handle_count: handles.len(),
-            args_offset,
-            args_len: args.len(),
-            env_offset,
-            env_len: env.len(),
-        };
-
-        let mut buffer = Vec::from(header.as_bytes());
-        buffer.append(&mut hinfos);
-        buffer.append(&mut args);
-        buffer.append(&mut env);
-
-        Packet {
-            buffer,
-            handles,
-            ..Default::default()
-        }
-    }
-
-    fn try_from_packet(packet: &mut Packet) -> Result<Self, TryFromError> {
-        let header = { packet.buffer.get(..STARTUP_ARGS_HEADER_SIZE) }
-            .and_then(StartupArgsHeader::from_bytes)
-            .ok_or(TryFromError::BufferTooShort(STARTUP_ARGS_HEADER_SIZE))?;
-        if header.signature != PACKET_SIG_STARTUP_ARGS {
-            return Err(TryFromError::SignatureMismatch(header.signature));
-        }
-
-        let handles = packet
-            .buffer
-            .get(header.handle_info_offset..)
-            .and_then(|data| data.get(..header.handle_count * mem::size_of::<HandleInfo>()))
-            .ok_or(TryFromError::BufferTooShort(
-                header.handle_info_offset + header.handle_count * mem::size_of::<HandleInfo>(),
-            ))?
-            .chunks(mem::size_of::<HandleInfo>())
-            .map(|slice| slice.try_into().map(HandleInfo::from_bytes))
-            .zip(packet.handles.iter())
-            .map(|(info, &handle)| info.map(|info| (info, handle)))
-            .try_collect::<BTreeMap<_, _>>()
-            .map_err(|_| TryFromError::BufferTooShort(0))?;
-
-        let args = Vec::from(
-            packet
-                .buffer
-                .get(header.args_offset..)
-                .and_then(|data| data.get(..header.args_len))
-                .ok_or(TryFromError::BufferTooShort(
-                    header.args_offset + header.args_len,
-                ))?,
-        );
-
-        let env = Vec::from(
-            packet
-                .buffer
-                .get(header.env_offset..)
-                .and_then(|data| data.get(..header.env_len))
-                .ok_or(TryFromError::BufferTooShort(
-                    header.env_offset + header.env_len,
-                ))?,
-        );
-
-        *packet = Default::default();
-
-        Ok(StartupArgs { handles, args, env })
+    pub fn send(self, channel: &Channel, storage: &mut Packet) -> solvent::error::Result {
+        solvent_rpc::packet::serialize(STARTUP_ARGS, self, storage).map_err(|_| ETYPE)?;
+        channel.send(storage)
     }
 }

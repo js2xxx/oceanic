@@ -1,9 +1,11 @@
 #![no_std]
 #![warn(clippy::missing_panics_doc)]
 #![feature(allocator_api)]
+#![feature(error_in_core)]
 #![feature(asm_const)]
 #![feature(lang_items)]
 #![feature(linkage)]
+#![feature(macro_metavar_expr)]
 
 pub mod call;
 pub mod error;

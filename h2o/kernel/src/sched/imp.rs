@@ -6,7 +6,7 @@ use alloc::vec::Vec;
 use core::{
     assert_matches::assert_matches,
     cell::UnsafeCell,
-    hint, mem,
+    hint,
     sync::atomic::{AtomicU64, Ordering::*},
     time::Duration,
 };
@@ -83,7 +83,7 @@ impl Scheduler {
     fn enqueue(&self, task: task::Ready, pree: PreemptStateGuard, preempt: bool) {
         SCHED_INFO[self.cpu]
             .expected_runtime
-            .fetch_add(task.time_slice.as_millis() as u64, Release);
+            .fetch_add(task.time_slice.as_micros() as u64, Release);
         // SAFETY: We have `pree`, which means preemption is disabled.
         match unsafe { &*self.current.get() } {
             Some(ref cur) if preempt && Self::should_preempt(cur, &task) => {
@@ -166,7 +166,7 @@ impl Scheduler {
     /// # Panics
     ///
     /// Panics if the scheduler unexpectedly returns.
-    pub fn exit_current(&self, retval: usize) -> ! {
+    pub fn exit_current(&self, retval: usize, kill_all: bool) -> ! {
         self.canary.assert();
         let pree = PREEMPT.lock();
 
@@ -181,6 +181,10 @@ impl Scheduler {
             SCHED_INFO[self.cpu]
                 .expected_runtime
                 .fetch_sub(current.time_slice.as_micros() as u64, Release);
+
+            if kill_all {
+                current.space().try_stop(&current.tid);
+            }
         }
 
         let _ = self.schedule_impl(Instant::now(), pree, None, |task| {
@@ -221,6 +225,25 @@ impl Scheduler {
             None => return Some(pree),
         };
         log::trace!("Checking task {:?}'s pending signal", cur.tid.raw());
+
+        if cur.space().has_to_stop() {
+            log::trace!(
+                "Killing task {:?}, P{} due to main task stopped",
+                cur.tid.raw(),
+                PREEMPT.raw()
+            );
+
+            SCHED_INFO[self.cpu]
+                .expected_runtime
+                .fetch_sub(cur.time_slice.as_micros() as u64, Release);
+
+            let _ = self.schedule_impl(cur_time, pree, None, |task| {
+                task::Ready::exit(task, sv_call::EKILLED.into_retval());
+                Ok(())
+            });
+            unreachable!("Dead task");
+        }
+
         let ti = &*cur.tid;
 
         if ti.ty() == task::Type::Kernel {
@@ -234,6 +257,7 @@ impl Scheduler {
                 SCHED_INFO[self.cpu]
                     .expected_runtime
                     .fetch_sub(cur.time_slice.as_micros() as u64, Release);
+                cur.space().try_stop(&cur.tid);
 
                 let _ = self.schedule_impl(cur_time, pree, None, |task| {
                     task::Ready::exit(task, sv_call::EKILLED.into_retval());
@@ -272,7 +296,7 @@ impl Scheduler {
 
         match cur.running_state.start_time() {
             Some(start_time) => {
-                // FIXME: Some platform like QEMU doesn't support invariant TSC, so the assert
+                // FIXME: Some platforms like QEMU don't support invariant TSC, so the assert
                 // below can really fail. By far, comment it out to avoid kernel panic.
                 //
                 // debug_assert!(cur_time > start_time);
@@ -346,9 +370,7 @@ impl Scheduler {
         }
         .unzip();
 
-        // We will enable preemption in `switch_ctx`.
-        mem::forget(pree);
-        unsafe { task::ctx::switch_ctx(old, new) };
+        unsafe { task::ctx::switch_ctx(old, new, pree) };
         ret.transpose().and_then(|res| res.ok_or(sv_call::ESRCH))
     }
 }
@@ -360,8 +382,9 @@ fn select_cpu(
 ) -> Option<usize> {
     let mut iter = affinity.iter_ones();
     let mut ret = iter.next()?;
+    let mut rret = SCHED_INFO[ret].expected_runtime();
 
-    if ret == cur_cpu && SCHED_INFO[ret].expected_runtime() == 0 {
+    if ret == cur_cpu && rret == 0 {
         return Some(ret);
     }
 
@@ -373,12 +396,14 @@ fn select_cpu(
 
         let a = ret;
 
+        // Attempt to pin a task to its last CPU.
         let wlast_cpu = match last_cpu {
             Some(last_cpu) if a == last_cpu && b != last_cpu => 1,
             Some(last_cpu) if a != last_cpu && b == last_cpu => -1,
             _ => 0,
         };
 
+        // Attempt to reduce the times of raising `TASK_MIGRATE` interrupt.
         let wcur_cpu = if a == cur_cpu && b != cur_cpu {
             1
         } else if a != cur_cpu && b == cur_cpu {
@@ -387,8 +412,9 @@ fn select_cpu(
             0
         };
 
+        // Attempt to balance the load of each CPU.
         let wruntime = {
-            let ra = SCHED_INFO[a].expected_runtime();
+            let ra = rret;
             let diff = ra.abs_diff(rb);
             if diff <= 1 {
                 0
@@ -397,9 +423,11 @@ fn select_cpu(
             }
         };
 
-        let weight = wlast_cpu * 10 + wcur_cpu * 2 + wruntime * 20;
+        let weight = wlast_cpu * 15 + wcur_cpu + wruntime * 40;
 
-        ret = if weight > 0 { a } else { b };
+        if weight < 0 {
+            (ret, rret) = (b, rb);
+        }
     }
 
     Some(ret)

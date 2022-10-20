@@ -1,22 +1,25 @@
-[
-    {
-        "name": "sv_int_new",
-        "returns": "Handle",
-        "args": [
-            {
-                "name": "value",
-                "ty": "u64"
-            }
-        ]
-    },
-    {
-        "name": "sv_int_get",
-        "returns": "u64",
-        "args": [
-            {
-                "name": "hdl",
-                "ty": "Handle"
-            }
-        ]
-    }
-]
+{
+    "types": [],
+    "funcs": [
+        {
+            "name": "sv_int_new",
+            "returns": "Handle",
+            "args": [
+                {
+                    "name": "value",
+                    "ty": "u64"
+                }
+            ]
+        },
+        {
+            "name": "sv_int_get",
+            "returns": "u64",
+            "args": [
+                {
+                    "name": "hdl",
+                    "ty": "Handle"
+                }
+            ]
+        }
+    ]
+}

@@ -18,11 +18,7 @@ pub static TSC_CLOCK: Azy<TscClock> = Azy::new(|| {
     let initial = rdtsc();
     let (mul, sft) = factor_from_freq(khz);
     log::info!("CPU Timestamp frequency: {} KHz", khz);
-    TscClock {
-        initial,
-        mul: mul as u128,
-        sft: sft as u128,
-    }
+    TscClock { initial, mul, sft }
 });
 
 pub struct TscClock {

@@ -7,8 +7,7 @@ use sv_call::{
 
 use super::*;
 use crate::{
-    cpu::{arch::apic::TriggerMode, time},
-    sched::{Dispatcher, WaiterData, SIG_READ},
+    sched::SIG_READ,
     syscall::{In, InOut, Out, UserPtr},
 };
 
@@ -41,7 +40,7 @@ where
         return Err(ENOMEM);
     }
     UserPtr::<In, Handle>::new(packet.handles).check_slice(packet.handle_count)?;
-    UserPtr::<In, u8>::new(packet.buffer).check_slice(packet.buffer_size)?;
+    UserPtr::<In>::new(packet.buffer).check_slice(packet.buffer_size)?;
 
     let handles = unsafe { slice::from_raw_parts(packet.handles, packet.handle_count) };
     if handles.contains(&hdl) {
@@ -65,7 +64,7 @@ where
 fn read_raw(packet_ptr: UserPtr<In, RawPacket>) -> Result<RawPacket> {
     let raw = unsafe { packet_ptr.read()? };
     UserPtr::<Out, Handle>::new(raw.handles).check_slice(raw.handle_cap)?;
-    UserPtr::<Out, u8>::new(raw.buffer).check_slice(raw.buffer_cap)?;
+    UserPtr::<Out>::new(raw.buffer).check_slice(raw.buffer_cap)?;
 
     Ok(raw)
 }
@@ -129,97 +128,4 @@ fn chan_recv(hdl: Handle, packet_ptr: UserPtr<InOut, RawPacket>) -> Result {
     });
 
     write_raw_with_rest_of_packet(packet_ptr.out(), raw, res)
-}
-
-#[syscall]
-fn chan_csend(hdl: Handle, packet: UserPtr<In, RawPacket>) -> Result<usize> {
-    chan_send_impl(hdl, packet, |channel, packet| channel.call_send(packet))
-}
-
-#[syscall]
-fn chan_crecv(
-    hdl: Handle,
-    id: usize,
-    packet_ptr: UserPtr<InOut, RawPacket>,
-    timeout_us: u64,
-) -> Result {
-    hdl.check_null()?;
-
-    let mut raw = read_raw(packet_ptr.r#in())?;
-
-    let call_event = SCHED.with_current(|cur| {
-        let channel = cur.space().handles().get::<Channel>(hdl)?;
-        if !{ channel.features() }.contains(Feature::WAIT | Feature::READ) {
-            return Err(EPERM);
-        }
-        Ok(channel.call_event(id)? as _)
-    })?;
-    let blocker = if timeout_us == 0 {
-        None
-    } else {
-        let pree = PREEMPT.lock();
-        let blocker = crate::sched::Blocker::new(&call_event, true, SIG_READ);
-        blocker.wait(Some(pree), time::from_us(timeout_us))?;
-        Some(blocker)
-    };
-
-    let res = SCHED.with_current(|cur| {
-        let map = cur.space().handles();
-
-        let channel = map.get::<Channel>(hdl)?;
-        if !channel.features().contains(Feature::READ) {
-            return Err(EPERM);
-        }
-
-        raw.buffer_size = raw.buffer_cap;
-        raw.handle_count = raw.handle_cap;
-        let res = channel.call_receive(id, &mut raw.buffer_size, &mut raw.handle_count);
-        receive_handles(res, map, &mut raw, &call_event)
-    });
-
-    if let Some(blocker) = blocker {
-        if !blocker.detach().0 {
-            return Err(ETIME);
-        }
-    }
-
-    write_raw_with_rest_of_packet(packet_ptr.out(), raw, res)
-}
-
-#[syscall]
-fn chan_acrecv(
-    hdl: Handle,
-    id: usize,
-    disp: Handle,
-    syscall: UserPtr<In, Syscall>,
-) -> Result<usize> {
-    hdl.check_null()?;
-    disp.check_null()?;
-    let syscall = (!syscall.as_ptr().is_null())
-        .then(|| {
-            let syscall = unsafe { syscall.read() }?;
-            if matches!(
-                syscall.num as usize,
-                SV_DISP_NEW | SV_DISP_PUSH | SV_DISP_POP
-            ) {
-                return Err(EPERM);
-            }
-            Ok(syscall)
-        })
-        .transpose()?;
-
-    SCHED.with_current(|cur| {
-        let chan = cur.space().handles().get::<Channel>(hdl)?;
-        let disp = cur.space().handles().get::<Dispatcher>(disp)?;
-        if !chan.features().contains(Feature::WAIT) {
-            return Err(EPERM);
-        }
-        if !disp.features().contains(Feature::WRITE) {
-            return Err(EPERM);
-        }
-        let event = chan.call_event(id)? as _;
-
-        let waiter_data = WaiterData::new(TriggerMode::Level, SIG_READ);
-        disp.push(&event, waiter_data, syscall)
-    })
 }

@@ -1,7 +1,7 @@
 use core::task::{Context, Poll, Waker};
 
 use futures::{pin_mut, Future};
-use solvent_std::{sync::Parker, thread_local};
+use solvent_core::{sync::Parker, thread_local};
 use waker_fn::waker_fn;
 
 thread_local! {

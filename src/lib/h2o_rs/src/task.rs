@@ -7,21 +7,23 @@ use core::{
     time::Duration,
 };
 
-use sv_call::{
-    ipc::SIG_READ,
-    task::{ctx::Gpr, *},
-    Error, Handle,
-};
+pub use sv_call::task::{ctx::Gpr, *};
+use sv_call::{ipc::SIG_READ, Error, Handle, SV_SUSPENDTOKEN, SV_TASK};
 
 use crate::{error::Result, ipc::Channel, mem::Space, obj::Object};
 
 #[repr(transparent)]
+#[derive(Debug)]
 pub struct Task(sv_call::Handle);
-crate::impl_obj!(Task);
+crate::impl_obj!(Task, SV_TASK);
 crate::impl_obj!(@DROP, Task);
 
 impl Task {
-    pub fn try_new(name: Option<&str>, space: Option<Space>) -> Result<(Self, SuspendToken)> {
+    pub fn try_new(
+        name: Option<&str>,
+        space: Option<Space>,
+        init_chan: Option<Channel>,
+    ) -> Result<(Self, SuspendToken)> {
         let name = name.map(|name| name.as_bytes());
         let mut st = Handle::NULL;
         let handle = unsafe {
@@ -29,6 +31,7 @@ impl Task {
                 name.map_or(null(), |name| name.as_ptr()),
                 name.map_or(0, |name| name.len()),
                 space.map_or(Handle::NULL, Space::into_raw),
+                init_chan.map_or(Handle::NULL, Channel::into_raw),
                 &mut st,
             )
             .into_res()?
@@ -37,8 +40,12 @@ impl Task {
         Ok(unsafe { (Self::from_raw(handle), SuspendToken::from_raw(st)) })
     }
 
-    pub fn new(name: Option<&str>, space: Option<Space>) -> (Self, SuspendToken) {
-        Self::try_new(name, space).expect("Failed to create a task")
+    pub fn new(
+        name: Option<&str>,
+        space: Option<Space>,
+        init_chan: Option<Channel>,
+    ) -> (Self, SuspendToken) {
+        Self::try_new(name, space, init_chan).expect("Failed to create a task")
     }
 
     pub fn exec(
@@ -79,7 +86,7 @@ impl Task {
     }
 
     pub fn join(self) -> Result<usize> {
-        self.try_wait(Duration::MAX, false, SIG_READ)?;
+        self.try_wait(Duration::MAX, true, false, SIG_READ)?;
         self.try_join().map_err(|(err, _)| err)
     }
 
@@ -102,8 +109,9 @@ impl Task {
 }
 
 #[repr(transparent)]
+#[derive(Debug)]
 pub struct SuspendToken(sv_call::Handle);
-crate::impl_obj!(SuspendToken);
+crate::impl_obj!(SuspendToken, SV_SUSPENDTOKEN);
 crate::impl_obj!(@DROP, SuspendToken);
 
 impl SuspendToken {
@@ -180,8 +188,8 @@ impl SuspendToken {
 ///
 /// This function doesn't clean up the current self-maintained context, and the
 /// caller must ensure it is destroyed before calling this function.
-pub unsafe fn exit(retval: usize) -> ! {
-    let _ = sv_call::sv_task_exit(retval);
+pub unsafe fn exit(retval: usize, kill_all: bool) -> ! {
+    let _ = sv_call::sv_task_exit(retval, kill_all);
     unreachable!("The task failed to exit");
 }
 

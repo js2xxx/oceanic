@@ -5,11 +5,11 @@ use alloc::{
 use core::{alloc::Layout, mem, ops::Range};
 
 use bitop_ex::BitOpEx;
-use paging::{LAddr, PAddr, PAGE_SHIFT, PAGE_SIZE};
+use paging::{LAddr, PAGE_SHIFT, PAGE_SIZE};
 use spin::Mutex;
 use sv_call::{error::*, mem::Flags, Feature, Result};
 
-use super::{paging_error, ty_to_range, Phys, Space};
+use super::{paging_error, ty_to_range, Phys, PinnedPhys, Space};
 use crate::sched::{
     task,
     task::{hdl::DefaultFeature, VDSO},
@@ -19,7 +19,7 @@ use crate::sched::{
 #[derive(Debug)]
 pub(super) enum Child {
     Virt(Arc<Virt>),
-    Phys(Phys, Flags, usize),
+    Phys(PinnedPhys, Flags, usize),
 }
 
 impl Child {
@@ -140,6 +140,8 @@ impl Virt {
             return Err(ERANGE);
         }
 
+        let phys = Phys::pin(phys)?;
+
         let _pree = PREEMPT.lock();
         let mut children = self.children.lock();
         let space = self.space.upgrade().ok_or(EKILLED)?;
@@ -155,13 +157,24 @@ impl Virt {
         let virt = find_range(&children, &self.range, offset, layout)?;
         let base = virt.start;
 
-        let phys_base = PAddr::new(*phys.base() + phys_offset);
-        let _ = children.insert(base, Child::Phys(phys, flags, layout.size()));
+        {
+            let mut end = base;
+            let phys = phys.map_iter(phys_offset, virt.end.val() - base.val());
+            for (phys_base, len) in phys {
+                let next = LAddr::from(end.val() + len);
+                let virt = end..next;
+                if let Err(err) = space.arch.maps(virt, phys_base, flags) {
+                    if base < end {
+                        let _ = space.arch.unmaps(base..end);
+                    }
+                    return Err(paging_error(err));
+                }
+                end = next;
+            }
+            assert!(end == virt.end);
+        }
 
-        space.arch.maps(virt, phys_base, flags).map_err(|err| {
-            let _ = children.remove(&base);
-            paging_error(err)
-        })?;
+        let _ = children.insert(base, Child::Phys(phys, flags, layout.size()));
 
         if set_vdso {
             *space.vdso.lock() = Some(base);

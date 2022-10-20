@@ -48,8 +48,8 @@ unsafe impl DefaultFeature for SuspendToken {
 }
 
 #[syscall]
-fn task_exit(retval: usize) -> Result {
-    SCHED.exit_current(retval);
+fn task_exit(retval: usize, kill_all: bool) -> Result {
+    SCHED.exit_current(retval, kill_all);
     #[allow(unreachable_code)]
     Err(EKILLED)
 }
@@ -71,7 +71,7 @@ fn task_sleep(ms: u32) -> Result {
     }
 }
 
-fn get_name(ptr: UserPtr<In, u8>, len: usize) -> Result<Option<String>> {
+fn get_name(ptr: UserPtr<In>, len: usize) -> Result<Option<String>> {
     if !ptr.as_ptr().is_null() {
         let mut buf = Vec::<u8>::with_capacity(len);
         unsafe {
@@ -127,26 +127,36 @@ fn task_exec(ci: UserPtr<In, task::ExecInfo>) -> Result<Handle> {
 
 #[syscall]
 fn task_new(
-    name: UserPtr<In, u8>,
+    name: UserPtr<In>,
     name_len: usize,
     space: Handle,
+    init_chan: Handle,
     st: UserPtr<Out, Handle>,
 ) -> Result<Handle> {
     let name = get_name(name, name_len)?;
 
-    let new_space = if space == Handle::NULL {
-        SCHED.with_current(|cur| Ok(Arc::clone(cur.space())))?
-    } else {
-        SCHED.with_current(|cur| {
-            cur.space()
-                .handles()
-                .remove::<Space>(space)
-                .map(Ref::into_raw)
-        })?
+    let (init_chan, space) = SCHED.with_current(|cur| {
+        let handles = cur.space().handles();
+        let init_chan = if init_chan == Handle::NULL {
+            None
+        } else {
+            Some(handles.remove::<crate::sched::ipc::Channel>(init_chan)?)
+        };
+        if space == Handle::NULL {
+            Ok((init_chan, Arc::clone(cur.space())))
+        } else {
+            let space = handles.remove::<Space>(space)?;
+            Ok((init_chan, Ref::into_raw(space)))
+        }
+    })?;
+    let init_chan = match init_chan {
+        Some(obj) => PREEMPT.scope(|| space.handles().insert_ref(obj))?,
+        None => Handle::NULL,
     };
+
     let mut sus_slot = Arsc::try_new_uninit()?;
 
-    let (task, hdl) = super::create(name, Arc::clone(&new_space))?;
+    let (task, hdl) = super::create(name, space, init_chan)?;
 
     let task = super::Ready::block(
         super::IntoReady::into_ready(task, unsafe { crate::cpu::id() }, MIN_TIME_GRAN),
@@ -197,7 +207,7 @@ fn task_ctl(hdl: Handle, op: u32, data: UserPtr<InOut, Handle>) -> Result {
             Ok(())
         }
         task::TASK_CTL_SUSPEND => {
-            data.out().check()?;
+            data.check()?;
 
             let child = cur.child(hdl, Feature::EXECUTE)?;
 
@@ -216,7 +226,7 @@ fn task_ctl(hdl: Handle, op: u32, data: UserPtr<InOut, Handle>) -> Result {
             })?;
 
             let out = super::PREEMPT.scope(|| cur.handles().insert(st, None))?;
-            unsafe { data.out().write(out)? };
+            unsafe { data.write(out)? };
 
             Ok(())
         }
@@ -228,7 +238,7 @@ fn read_regs(
     task: &Blocked,
     feat: Feature,
     addr: usize,
-    data: UserPtr<Out, u8>,
+    data: UserPtr<Out>,
     len: usize,
 ) -> Result<()> {
     if !feat.contains(Feature::READ) {
@@ -258,7 +268,7 @@ fn write_regs(
     task: &mut Blocked,
     feat: Feature,
     addr: usize,
-    data: UserPtr<In, u8>,
+    data: UserPtr<In>,
     len: usize,
 ) -> Result<()> {
     if !feat.contains(Feature::WRITE) {
@@ -330,7 +340,7 @@ fn task_debug(hdl: Handle, op: u32, addr: usize, data: UserPtr<InOut, u8>, len: 
                     return Err(EPERM);
                 }
                 let slice = slice::from_raw_parts(addr as *mut u8, len);
-                data.out().write_slice(slice)
+                data.write_slice(slice)
             })
         },
         task::TASK_DBG_WRITE_MEM => unsafe {
@@ -338,7 +348,7 @@ fn task_debug(hdl: Handle, op: u32, addr: usize, data: UserPtr<InOut, u8>, len: 
                 if !feat.contains(Feature::WRITE) {
                     return Err(EPERM);
                 }
-                data.r#in().read_slice(addr as *mut u8, len)
+                data.read_slice(addr as *mut u8, len)
             })
         },
         task::TASK_DBG_EXCEP_HDL => {
@@ -352,7 +362,7 @@ fn task_debug(hdl: Handle, op: u32, addr: usize, data: UserPtr<InOut, u8>, len: 
                     })
                 })?;
 
-                unsafe { data.out().cast::<Handle>().write(hdl) }
+                unsafe { data.cast::<Handle>().write(hdl) }
             }
         }
         _ => Err(EINVAL),

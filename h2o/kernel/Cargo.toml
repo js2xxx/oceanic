@@ -40,6 +40,6 @@ log = "0.4"
 modular-bitfield = "0.11"
 paste = "1.0"
 raw-cpuid = "10"
-scopeguard = {version = "1.1", default-features = false}
 spin = {version = "0.9", features = ["use_ticket_mutex"]}
 static_assertions = "1.1"
+memoffset = "0.6"

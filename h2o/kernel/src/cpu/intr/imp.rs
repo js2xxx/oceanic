@@ -30,15 +30,16 @@ impl Event for Interrupt {
         self.wait_impl(waiter);
     }
 
-    fn notify(&self, clear: usize, set: usize) {
+    fn notify(&self, clear: usize, set: usize) -> usize {
         PREEMPT.scope(|| *self.last_time.lock() = Some(Instant::now()));
 
-        self.notify_impl(clear, set);
+        let signal = self.notify_impl(clear, set);
 
         if self.level_triggered {
             MANAGER.mask(self.gsi, true).unwrap();
         }
         MANAGER.eoi(self.gsi).unwrap();
+        signal
     }
 }
 
@@ -141,7 +142,12 @@ mod syscall {
         }
 
         if timeout_us > 0 {
-            let blocker = crate::sched::Blocker::new(&(Arc::clone(&intr) as _), false, SIG_GENERIC);
+            let blocker = crate::sched::Blocker::new(
+                &(Arc::clone(&intr) as _),
+                intr.level_triggered,
+                false,
+                SIG_GENERIC,
+            );
             blocker.wait(Some(pree), time::from_us(timeout_us))?;
             if !blocker.detach().0 {
                 return Err(ETIME);

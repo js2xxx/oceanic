@@ -11,17 +11,18 @@ use core::{
     fmt,
     marker::PhantomData,
     mem::{self, MaybeUninit},
+    num::NonZeroUsize,
     ptr::{self, NonNull},
     slice,
-    sync::atomic::{self, AtomicU32, Ordering::*},
+    sync::atomic::{self, AtomicU32, AtomicUsize, Ordering::*},
     time::Duration,
 };
 
 use canary::Canary;
 use elfload::LoadedElf;
-use rpc::load::{GetObject, GetObjectResponse as Response};
-use solvent::prelude::{Channel, Object, Phys};
-use spin::{Lazy, Mutex, Once};
+use solvent::prelude::{Channel, Object, Phys, SIG_READ};
+use solvent_rpc::{loader::GET_OBJECT, packet};
+use spin::{Lazy, Mutex, Once, RwLock};
 use svrt::HandleType;
 
 use crate::{
@@ -33,9 +34,9 @@ use crate::{
 
 static mut LDSO: MaybeUninit<Dso> = MaybeUninit::uninit();
 static mut VDSO: MaybeUninit<Dso> = MaybeUninit::uninit();
-static LDRPC: Lazy<Option<Channel>> = Lazy::new(|| {
-    let handle = svrt::try_take_startup_handle(HandleType::LoadRpc.into()).ok()?;
-    Some(unsafe { Channel::from_raw(handle) })
+static LDRPC: Lazy<RwLock<Option<Channel>>> = Lazy::new(|| {
+    let handle = svrt::try_take_startup_handle(HandleType::LoadRpc.into()).ok();
+    RwLock::new(handle.map(|handle| unsafe { Channel::from_raw(handle) }))
 });
 
 static mut DSO_LIST: MaybeUninit<Mutex<DsoList>> = MaybeUninit::uninit();
@@ -52,6 +53,7 @@ pub enum Error {
     ElfLoad(elfload::Error),
     DepGet(solvent::error::Error),
     Memory(usize, usize),
+    Serde(solvent_rpc::Error),
 }
 
 #[derive(Copy, Clone)]
@@ -768,17 +770,37 @@ pub fn init() -> Result<(), Error> {
 }
 
 pub fn get_object(path: Vec<CString>) -> Result<Vec<Phys>, Error> {
-    let ldrpc = LDRPC
-        .as_ref()
-        .ok_or(Error::DepGet(solvent::error::ENOENT))?;
-    let resp = rpc::call::<GetObject>(ldrpc, path.into(), Duration::MAX).map_err(Error::DepGet)?;
+    static ID: AtomicUsize = AtomicUsize::new(1);
+
+    let lock = LDRPC.read();
+    let ldrpc = lock.as_ref().ok_or(Error::DepGet(solvent::error::ENOENT))?;
+    let resp: Result<_, usize> = {
+        let mut packet = Default::default();
+        packet::serialize(GET_OBJECT, path, &mut packet).map_err(Error::Serde)?;
+        let id = ID.fetch_add(1, SeqCst);
+        packet.id = NonZeroUsize::new(id);
+
+        ldrpc.send(&mut packet).map_err(Error::DepGet)?;
+        ldrpc
+            .try_wait(Duration::MAX, true, false, SIG_READ)
+            .map_err(Error::DepGet)?;
+        ldrpc.receive(&mut packet).map_err(Error::DepGet)?;
+        assert_eq!(packet.id, NonZeroUsize::new(id));
+
+        packet::deserialize(GET_OBJECT, &packet, None).map_err(Error::Serde)?
+    };
     match resp {
-        Response::Success(objs) => Ok(objs),
-        Response::Error { not_found_index } => {
+        Ok(objs) => Ok(objs),
+        Err(not_found_index) => {
             log::error!("DT_NEEDED Library at index {} not found", not_found_index);
             Err(Error::DepGet(solvent::error::ENOENT))
         }
     }
+}
+
+#[inline]
+pub(crate) fn disconnect_ldrpc() {
+    *LDRPC.write() = None;
 }
 
 fn check_type(st_type: u8) -> bool {

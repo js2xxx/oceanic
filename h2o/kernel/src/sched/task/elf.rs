@@ -4,6 +4,7 @@ use core::ops::Range;
 use bitop_ex::BitOpEx;
 use goblin::elf::*;
 use paging::{LAddr, PAddr};
+use sv_call::mem::PhysOptions;
 
 use super::*;
 use crate::{
@@ -29,7 +30,7 @@ fn map_addr(
         .ok_or(sv_call::ERANGE)?;
     let phys = match phys {
         Some(phys) => phys,
-        None => Phys::allocate(len, true)?,
+        None => Phys::allocate(len, PhysOptions::ZEROED, false)?,
     };
     virt.map(Some(offset), phys, 0, space::page_aligned(len), flags)?;
     Ok(())
@@ -64,24 +65,39 @@ fn load_prog(
         fsize,
         msize
     );
+    let fend = fsize.round_down_bit(paging::PAGE_SHIFT);
+    let cstart = fend;
+    let cend = fsize;
+    let mstart = fend;
+    let mend = msize;
 
     let flags = flags_to_pg_attr(flags);
-    let (vstart, vend) = (virt.val(), virt.val() + fsize);
+    let (vstart, vend) = (virt.val(), virt.val() + fend);
 
-    if fsize > 0 {
+    if fend > 0 {
         let virt = LAddr::from(vstart)..LAddr::from(vend);
         log::trace!("Mapping {:?}", virt);
-        let cnt = fsize.div_ceil_bit(paging::PAGE_SHIFT);
-        let phys = Phys::new(phys, paging::PAGE_SIZE * cnt)?;
+        let phys = Phys::new(phys, fend)?;
         map_addr(space, virt, Some(phys), flags)?;
     }
 
-    if msize > fsize {
-        let extra = msize - fsize;
+    if mend > mstart {
+        let extra = mend - mstart;
 
         let virt = LAddr::from(vend)..LAddr::from(vend + extra);
         log::trace!("Allocating {:?}", virt);
-        map_addr(space, virt, None, flags)?;
+        map_addr(space, virt.clone(), None, flags)?;
+
+        if cend > cstart {
+            unsafe {
+                let dst = virt.start;
+                let src = phys.to_laddr(minfo::ID_OFFSET).add(cstart);
+                let csize = cend - cstart;
+                log::trace!("Copying {:?}", dst..LAddr::from(dst.val() + csize));
+
+                dst.copy_from_nonoverlapping(src, csize);
+            }
+        }
     }
 
     Ok(())

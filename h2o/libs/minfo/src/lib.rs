@@ -4,7 +4,9 @@ use core::alloc::Layout;
 
 // Physical addresses
 
-pub const KARGS_BASE: usize = 0;
+// The rust compiler panics on debug mode runtime when using the 0 address. Use
+// another free address for passing arguments.
+pub const KARGS_BASE: usize = 0x1000;
 
 pub const TRAMPOLINE_RANGE: core::ops::Range<usize> = 0..0x100000;
 

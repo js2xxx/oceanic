@@ -244,6 +244,8 @@ switch_kframe:
       push  r14
       push  r15
       pushfq
+      push  qword [rdx]
+      push  qword [rcx]
       xor   rax, rax
       mov   ax, cs
       push  rax
@@ -259,6 +261,8 @@ switch_kframe:
       push  .pop_regs
       retfq
 .pop_regs:
+      pop   qword [rcx]
+      pop   qword [rdx]
       popfq
       pop   r15
       pop   r14
@@ -272,6 +276,8 @@ global task_fresh:function
 extern switch_finishing
 ; The entry into the interrupt context of a new task.
 task_fresh:
+      xor   rdi, rdi
+      xor   rsi, rsi
       align_call switch_finishing, r12
       cli
       jmp   intr_exit
@@ -425,6 +431,9 @@ rout_syscall:
       ; See https://xenproject.org/2012/06/13/the-intel-sysret-privilege-escalation/
       test  dword [rsp + 4], 0xFFFF8000 ; test if the return address is on the higher half
       jnz   .fault_iret
+
+      cmp   qword [rsp + 8], 0x8 ; test if the return segment is kernel.
+      je    .fault_iret
 
       pop   rcx                                       ; rip
       add   rsp, 8                                    ; cs

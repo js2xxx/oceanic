@@ -1,7 +1,7 @@
 use core::{alloc::Layout, ptr::NonNull};
 
 use bootfs::parse::Directory;
-use solvent::prelude::{Error as SError, Flags, Phys, Virt, PAGE_LAYOUT, PAGE_SIZE};
+use solvent::prelude::{Error as SError, Flags, Phys, PhysOptions, Virt, PAGE_LAYOUT, PAGE_SIZE};
 use sv_call::{task::DEFAULT_STACK_SIZE, ENOENT};
 
 const STACK_PROTECTOR_SIZE: usize = PAGE_SIZE;
@@ -76,7 +76,7 @@ pub fn load_elf(
             .map_err(SError::from)?;
 
         let virt = root.allocate(None, alloc_layout)?;
-        let stack_phys = Phys::allocate(stack_size, true)?;
+        let stack_phys = Phys::allocate(stack_size, PhysOptions::ZEROED)?;
         let stack_ptr = virt.map(
             Some(STACK_PROTECTOR_SIZE),
             stack_phys,

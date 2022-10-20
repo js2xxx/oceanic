@@ -44,7 +44,7 @@ impl DlAlloc {
             }
 
             let size = (next_end - end).next_multiple_of(PAGE_SIZE);
-            let res = Phys::allocate(size, false).and_then(|phys| {
+            let res = Phys::allocate(size, Default::default()).and_then(|phys| {
                 let base = root_virt.base().as_ptr() as usize;
                 root_virt.map_phys(Some(end - base), phys, flags)
             });

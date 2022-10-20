@@ -72,7 +72,7 @@ fn exec_inner(
 ) -> sv_call::Result<Init> {
     let ty = Type::pass(ty, cur.ty())?;
     let ti = TaskInfo::builder()
-        .from(Some(cur.clone()))
+        .from(cur.downgrade())
         .excep_chan(Arsc::try_new(Default::default())?)
         .name(name.unwrap_or(format!("{}.func{}", cur.name(), archop::rand::get())))
         .ty(ty)
@@ -81,6 +81,7 @@ fn exec_inner(
         .unwrap();
 
     let tid = tid::allocate(ti).map_err(|_| sv_call::EBUSY)?;
+    space.set_main(&tid);
 
     let entry = ctx::Entry {
         entry: s.entry,
@@ -114,12 +115,12 @@ fn exec(
     })
 }
 
-fn create(name: Option<String>, space: Arc<Space>) -> sv_call::Result<(Init, sv_call::Handle)> {
+fn create(name: Option<String>, space: Arc<Space>, init_chan: sv_call::Handle) -> sv_call::Result<(Init, sv_call::Handle)> {
     let cur = super::SCHED.with_current(|cur| Ok(cur.tid.clone()))?;
 
     let ty = cur.ty();
     let ti = TaskInfo::builder()
-        .from(Some(cur.clone()))
+        .from(cur.downgrade())
         .excep_chan(Arsc::try_new(Default::default())?)
         .name(name.unwrap_or(format!("{}.func{}", cur.name(), archop::rand::get())))
         .ty(ty)
@@ -128,8 +129,10 @@ fn create(name: Option<String>, space: Arc<Space>) -> sv_call::Result<(Init, sv_
         .unwrap();
 
     let tid = tid::allocate(ti).map_err(|_| sv_call::EBUSY)?;
+    space.set_main(&tid);
 
-    let kstack = ctx::Kstack::new(None, ty);
+    let mut kstack = ctx::Kstack::new(None, ty);
+    kstack.task_frame_mut().set_args(init_chan.raw() as _, 0);
     let ext_frame = ctx::ExtFrame::zeroed();
 
     let init = Init::new(tid, space, kstack, ext_frame);

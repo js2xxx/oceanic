@@ -113,7 +113,7 @@ mod syscall {
     ) -> Result {
         let _ = unsafe { ptr.read() }?;
         let _ = unsafe { other.read() }?;
-        let (wake, requeue) = unsafe { (wake_num.r#in().read()?, requeue_num.r#in().read()?) };
+        let (wake, requeue) = unsafe { (wake_num.read()?, requeue_num.read()?) };
 
         let pree = PREEMPT.lock();
         let futex = unsafe { (*SCHED.current()).as_ref().unwrap().space.futex(ptr) };
@@ -124,8 +124,8 @@ mod syscall {
         drop(pree);
 
         unsafe {
-            wake_num.out().write(wake)?;
-            requeue_num.out().write(requeue)?;
+            wake_num.write(wake)?;
+            requeue_num.write(requeue)?;
         }
 
         Ok(())

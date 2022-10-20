@@ -14,6 +14,7 @@ use core::{
     ptr::{self, NonNull},
 };
 
+use archop::PreemptStateGuard;
 use paging::{LAddr, PAGE_SIZE};
 
 use crate::{
@@ -196,7 +197,8 @@ impl DerefMut for ExtFrame {
     }
 }
 
-pub unsafe fn switch_ctx(old: Option<*mut *mut u8>, new: *mut u8) {
-    arch::switch_kframe(old.unwrap_or(ptr::null_mut()), new);
-    arch::switch_finishing();
+pub unsafe fn switch_ctx(old: Option<*mut *mut u8>, new: *mut u8, pree: PreemptStateGuard) {
+    let (mut pv, mut pf) = pree.into_raw();
+    arch::switch_kframe(old.unwrap_or(ptr::null_mut()), new, &mut pv, &mut pf);
+    arch::switch_finishing(pv, pf);
 }

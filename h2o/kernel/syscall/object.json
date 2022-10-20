@@ -1,58 +1,65 @@
-[
-    {
-        "name": "sv_obj_clone",
-        "returns": "Handle",
-        "args": [
-            {
-                "name": "hdl",
-                "ty": "Handle"
-            }
-        ]
-    },
-    {
-        "name": "sv_obj_feat",
-        "returns": "()",
-        "args": [
-            {
-                "name": "hdl",
-                "ty": "*mut Handle"
-            },
-            {
-                "name": "feat",
-                "ty": "Feature"
-            }
-        ]
-    },
-    {
-        "name": "sv_obj_drop",
-        "returns": "()",
-        "args": [
-            {
-                "name": "hdl",
-                "ty": "Handle"
-            }
-        ]
-    },
-    {
-        "name": "sv_obj_wait",
-        "returns": "usize",
-        "args": [
-            {
-                "name": "hdl",
-                "ty": "Handle"
-            },
-            {
-                "name": "timeout_us",
-                "ty": "u64"
-            },
-            {
-                "name": "wake_all",
-                "ty": "bool"
-            },
-            {
-                "name": "signal",
-                "ty": "usize"
-            }
-        ]
-    }
-]
+{
+    "types": [],
+    "funcs": [
+        {
+            "name": "sv_obj_clone",
+            "returns": "Handle",
+            "args": [
+                {
+                    "name": "hdl",
+                    "ty": "Handle"
+                }
+            ]
+        },
+        {
+            "name": "sv_obj_feat",
+            "returns": "()",
+            "args": [
+                {
+                    "name": "hdl",
+                    "ty": "*mut Handle"
+                },
+                {
+                    "name": "feat",
+                    "ty": "Feature"
+                }
+            ]
+        },
+        {
+            "name": "sv_obj_drop",
+            "returns": "()",
+            "args": [
+                {
+                    "name": "hdl",
+                    "ty": "Handle"
+                }
+            ]
+        },
+        {
+            "name": "sv_obj_wait",
+            "returns": "usize",
+            "args": [
+                {
+                    "name": "hdl",
+                    "ty": "Handle"
+                },
+                {
+                    "name": "timeout_us",
+                    "ty": "u64"
+                },
+                {
+                    "name": "level_triggered",
+                    "ty": "bool"
+                },
+                {
+                    "name": "wake_all",
+                    "ty": "bool"
+                },
+                {
+                    "name": "signal",
+                    "ty": "usize"
+                }
+            ]
+        }
+    ]
+}
