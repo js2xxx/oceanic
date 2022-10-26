@@ -95,7 +95,6 @@ impl HandleMap {
 
     #[inline]
     pub fn insert_ref(&self, value: Ref) -> Result<sv_call::Handle> {
-        // SAFETY: The safety condition is guaranteed by the caller.
         let link = PREEMPT.scope(|| self.list.lock().insert(value))?;
         self.encode(link)
     }
@@ -121,6 +120,21 @@ impl HandleMap {
     ) -> Result<sv_call::Handle> {
         // SAFETY: The safety condition is guaranteed by the caller.
         let value = unsafe { Ref::try_new_unchecked(data, feat, event) }?;
+        self.insert_ref(value)
+    }
+
+    /// # Safety
+    ///
+    /// The caller must ensure that `T` is [`Send`] if `send` and [`Sync`] if
+    /// `sync`.
+    pub unsafe fn insert_raw_unchecked<T: Send + Sync + 'static>(
+        &self,
+        data: Arc<T>,
+        feat: Feature,
+        event: Option<Weak<dyn Event>>,
+    ) -> Result<sv_call::Handle> {
+        // SAFETY: The safety condition is guaranteed by the caller.
+        let value = unsafe { Ref::from_raw_unchecked(data, feat, event) }?;
         self.insert_ref(value)
     }
 

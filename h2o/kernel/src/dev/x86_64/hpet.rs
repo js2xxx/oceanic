@@ -1,3 +1,4 @@
+use alloc::sync::Arc;
 use core::{mem, ptr::addr_of};
 
 use archop::Azy;
@@ -10,7 +11,7 @@ use crate::{
         chip::{factor_from_freq, CalibrationClock, ClockChip},
         Instant,
     },
-    mem::space::{self, Flags, Phys},
+    mem::space::{self, Flags, PhysTrait},
     sched::Arsc,
 };
 
@@ -59,12 +60,12 @@ unsafe impl Sync for Hpet {}
 
 impl Hpet {
     unsafe fn new(data: acpi::HpetInfo) -> Result<Self, &'static str> {
-        let phys = Phys::new(PAddr::new(data.base_address), PAGE_SIZE)
+        let phys = space::new_phys(PAddr::new(data.base_address), PAGE_SIZE)
             .map_err(|_| "Failed to acquire memory for HPET")?;
         let addr = space::KRL
             .map(
                 None,
-                Phys::clone(&phys),
+                Arc::clone(&phys),
                 0,
                 space::page_aligned(phys.len()),
                 Flags::READABLE | Flags::WRITABLE | Flags::UNCACHED,

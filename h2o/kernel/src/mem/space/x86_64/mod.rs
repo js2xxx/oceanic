@@ -199,12 +199,7 @@ bitflags::bitflags! {
 }
 
 impl ErrCode {
-    const FMT: &'static str = "P WR US RSVD ID PK SS - - - - - - - - SGX";
-
-    #[inline]
-    pub fn display(errc: u64) -> crate::log::flags::Flags {
-        crate::log::flags::Flags::new(errc, Self::FMT)
-    }
+    pub const FMT: &'static str = "P WR US RSVD ID PK SS - - - - - - - - SGX";
 }
 
 pub unsafe fn page_fault(frame: &mut Frame, errc: u64) -> bool {

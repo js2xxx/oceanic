@@ -15,7 +15,7 @@ use crate::{
 fn map_addr(
     virt: &Arc<Virt>,
     addr: Range<LAddr>,
-    phys: Option<Phys>,
+    phys: Option<Arc<Phys>>,
     flags: Flags,
 ) -> sv_call::Result {
     let offset = addr
@@ -30,7 +30,7 @@ fn map_addr(
         .ok_or(sv_call::ERANGE)?;
     let phys = match phys {
         Some(phys) => phys,
-        None => Phys::allocate(len, PhysOptions::ZEROED, false)?,
+        None => space::allocate_phys(len, PhysOptions::ZEROED, false)?,
     };
     virt.map(Some(offset), phys, 0, space::page_aligned(len), flags)?;
     Ok(())
@@ -77,7 +77,7 @@ fn load_prog(
     if fend > 0 {
         let virt = LAddr::from(vstart)..LAddr::from(vend);
         log::trace!("Mapping {:?}", virt);
-        let phys = Phys::new(phys, fend)?;
+        let phys = space::new_phys(phys, fend)?;
         map_addr(space, virt, Some(phys), flags)?;
     }
 

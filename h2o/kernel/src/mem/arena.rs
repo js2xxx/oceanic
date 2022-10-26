@@ -32,6 +32,7 @@ pub struct Arena<T> {
 unsafe impl<T: Send> Send for Arena<T> {}
 unsafe impl<T: Send> Sync for Arena<T> {}
 
+#[allow(dead_code)]
 impl<T> Arena<T> {
     pub fn new(max_count: usize) -> Self {
         let (layout, off) = Layout::new::<T>()

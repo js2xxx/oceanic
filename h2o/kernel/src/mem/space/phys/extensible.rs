@@ -2,10 +2,11 @@ use alloc::{
     alloc::Global,
     collections::BTreeMap,
     sync::{Arc, Weak},
+    vec::Vec,
 };
 use core::{
     alloc::{AllocError, Allocator, Layout},
-    mem, slice,
+    slice,
 };
 
 use bitop_ex::BitOpEx;
@@ -13,12 +14,13 @@ use paging::{LAddr, PAddr, PAGE_SHIFT, PAGE_SIZE};
 use spin::RwLock;
 use sv_call::{
     ipc::{SIG_READ, SIG_WRITE},
-    EAGAIN,
+    EAGAIN, EPERM,
 };
 
+use super::PhysTrait;
 use crate::{
     sched::{Arsc, BasicEvent, Event, PREEMPT},
-    syscall::{In, InPtrType, Out, OutPtrType, UserPtr},
+    syscall::{In, Out, UserPtr},
 };
 
 #[derive(Debug)]
@@ -173,23 +175,34 @@ impl Static {
             })
         })
     }
+}
 
-    #[inline]
-    pub fn len(&self) -> usize {
+impl PartialEq for Static {
+    fn eq(&self, other: &Self) -> bool {
+        self.offset == other.offset
+            && self.len == other.len
+            && Arsc::ptr_eq(&self.inner, &other.inner)
+    }
+}
+
+impl PhysTrait for Static {
+    fn event(&self) -> Weak<dyn Event> {
+        Weak::<BasicEvent>::new()
+    }
+    fn len(&self) -> usize {
         self.len
     }
 
-    #[inline]
-    pub fn is_empty(&self) -> bool {
-        self.len == 0
+    fn pin(&self, offset: usize, len: usize, _: bool) -> sv_call::Result<Vec<(PAddr, usize)>> {
+        Ok(self.inner.range(self.offset + offset, len).collect())
     }
 
-    #[inline]
-    pub fn pin(this: Self) -> PinnedStatic {
-        PinnedStatic(this)
-    }
-
-    pub fn create_sub(&self, offset: usize, len: usize, copy: bool) -> sv_call::Result<Self> {
+    fn create_sub(
+        &self,
+        offset: usize,
+        len: usize,
+        copy: bool,
+    ) -> sv_call::Result<Arc<super::Phys>> {
         if offset.contains_bit(PAGE_SHIFT) || len.contains_bit(PAGE_SHIFT) {
             return Err(sv_call::EALIGN);
         }
@@ -197,8 +210,9 @@ impl Static {
 
         let new_offset = self.offset.wrapping_add(offset);
         let end = new_offset.wrapping_add(len);
-        if self.offset <= new_offset && new_offset < end && end <= self.offset + self.len() {
-            if copy {
+        if self.offset <= new_offset && new_offset < end && end <= self.offset + self.len {
+            let mut ret = Arc::try_new_uninit()?;
+            let phys = if copy {
                 let child = Self::allocate(len, false)?;
 
                 let (dst, _) = child.inner.iter().next().expect("Inconsistent map");
@@ -212,21 +226,30 @@ impl Static {
                     }
                 }
 
-                Ok(child)
+                child
             } else {
-                Ok(Static {
+                Static {
                     offset: new_offset,
                     len,
                     inner: cloned,
-                })
-            }
+                }
+            };
+            Arc::get_mut(&mut ret).unwrap().write(phys.into());
+            Ok(unsafe { ret.assume_init() })
         } else {
             Err(sv_call::ERANGE)
         }
     }
 
-    pub fn read(&self, offset: usize, len: usize, buffer: UserPtr<Out>) -> sv_call::Result<usize> {
-        let mut buffer = buffer;
+    fn base(&self) -> PAddr {
+        unimplemented!("Extensible phys have multiple bases")
+    }
+
+    fn resize(&self, _: usize, _: bool) -> sv_call::Result {
+        Err(EPERM)
+    }
+
+    fn read(&self, offset: usize, len: usize, mut buffer: UserPtr<Out>) -> sv_call::Result<usize> {
         let offset = self.len.min(offset);
         let len = self.len.saturating_sub(offset).min(len);
 
@@ -241,8 +264,7 @@ impl Static {
         Ok(len)
     }
 
-    pub fn write(&self, offset: usize, len: usize, buffer: UserPtr<In>) -> sv_call::Result<usize> {
-        let mut buffer = buffer;
+    fn write(&self, offset: usize, len: usize, mut buffer: UserPtr<In>) -> sv_call::Result<usize> {
         let offset = self.len.min(offset);
         let len = self.len.saturating_sub(offset).min(len);
 
@@ -256,10 +278,10 @@ impl Static {
         Ok(len)
     }
 
-    pub fn read_vectored<T: OutPtrType>(
+    fn read_vectored(
         &self,
         mut offset: usize,
-        bufs: &[(UserPtr<T>, usize)],
+        bufs: &[(UserPtr<Out>, usize)],
     ) -> sv_call::Result<usize> {
         let mut read_len = 0;
 
@@ -286,10 +308,10 @@ impl Static {
         Ok(read_len)
     }
 
-    pub fn write_vectored<T: InPtrType>(
+    fn write_vectored(
         &self,
         mut offset: usize,
-        bufs: &[(UserPtr<T>, usize)],
+        bufs: &[(UserPtr<In>, usize)],
     ) -> sv_call::Result<usize> {
         let mut written_len = 0;
 
@@ -316,24 +338,6 @@ impl Static {
     }
 }
 
-impl PartialEq for Static {
-    fn eq(&self, other: &Self) -> bool {
-        self.offset == other.offset
-            && self.len == other.len
-            && Arsc::ptr_eq(&self.inner, &other.inner)
-    }
-}
-
-#[derive(Debug)]
-pub struct PinnedStatic(Static);
-
-impl PinnedStatic {
-    #[inline]
-    pub fn map_iter(&self, offset: usize, len: usize) -> impl Iterator<Item = (PAddr, usize)> + '_ {
-        self.0.inner.range(self.0.offset + offset, len)
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct Dynamic {
     inner: Arsc<RwLock<PhysInner>>,
@@ -350,22 +354,6 @@ impl Dynamic {
         })
     }
 
-    pub fn event(&self) -> Weak<dyn Event> {
-        Arc::downgrade(&self.event) as _
-    }
-
-    #[inline]
-    pub fn len(&self) -> usize {
-        // FIXME: For now, just let this slip.
-        unsafe { (*self.inner.as_mut_ptr()).len }
-    }
-
-    #[inline]
-    pub fn pin(this: Self) -> sv_call::Result<PinnedDynamic> {
-        mem::forget(this.inner.try_read().ok_or(EAGAIN)?);
-        Ok(PinnedDynamic(this))
-    }
-
     fn notify_read(&self) {
         if self.inner.reader_count() > 0 {
             self.event.notify(0, SIG_READ);
@@ -377,8 +365,39 @@ impl Dynamic {
     fn notify_write(&self) {
         self.event.notify(0, SIG_READ | SIG_WRITE);
     }
+}
 
-    pub fn resize(&self, new_len: usize, zeroed: bool) -> sv_call::Result {
+impl PartialEq for Dynamic {
+    #[inline]
+    fn eq(&self, other: &Self) -> bool {
+        Arsc::ptr_eq(&self.inner, &other.inner)
+    }
+}
+
+impl PhysTrait for Dynamic {
+    fn event(&self) -> Weak<dyn Event> {
+        Arc::downgrade(&self.event) as _
+    }
+
+    fn len(&self) -> usize {
+        // FIXME: For now, just let this slip.
+        unsafe { (*self.inner.as_mut_ptr()).len }
+    }
+
+    fn pin(&self, offset: usize, len: usize, _: bool) -> sv_call::Result<Vec<(PAddr, usize)>> {
+        let list = self.inner.read();
+        Ok(list.range(offset, len).collect())
+    }
+
+    fn create_sub(&self, _: usize, _: usize, _: bool) -> sv_call::Result<Arc<super::Phys>> {
+        Err(EPERM)
+    }
+
+    fn base(&self) -> PAddr {
+        unimplemented!("Extensible phys have multiple bases")
+    }
+
+    fn resize(&self, new_len: usize, zeroed: bool) -> sv_call::Result {
         PREEMPT.scope(|| {
             let mut this = self.inner.try_write().ok_or(EAGAIN)?;
             this.resize(new_len, zeroed)?;
@@ -388,8 +407,7 @@ impl Dynamic {
         Ok(())
     }
 
-    pub fn read(&self, offset: usize, len: usize, buffer: UserPtr<Out>) -> sv_call::Result<usize> {
-        let mut buffer = buffer;
+    fn read(&self, offset: usize, len: usize, mut buffer: UserPtr<Out>) -> sv_call::Result<usize> {
         let len = PREEMPT.scope(|| {
             let this = self.inner.try_read().ok_or(EAGAIN)?;
 
@@ -410,8 +428,7 @@ impl Dynamic {
         Ok(len)
     }
 
-    pub fn write(&self, offset: usize, len: usize, buffer: UserPtr<In>) -> sv_call::Result<usize> {
-        let mut buffer = buffer;
+    fn write(&self, offset: usize, len: usize, mut buffer: UserPtr<In>) -> sv_call::Result<usize> {
         let len = PREEMPT.scope(|| {
             let this = self.inner.try_write().ok_or(EAGAIN)?;
 
@@ -431,10 +448,10 @@ impl Dynamic {
         Ok(len)
     }
 
-    pub fn read_vectored<T: OutPtrType>(
+    fn read_vectored(
         &self,
         mut offset: usize,
-        bufs: &[(UserPtr<T>, usize)],
+        bufs: &[(UserPtr<Out>, usize)],
     ) -> sv_call::Result<usize> {
         let mut read_len = 0;
         PREEMPT.scope(|| {
@@ -465,10 +482,10 @@ impl Dynamic {
         Ok(read_len)
     }
 
-    pub fn write_vectored<T: InPtrType>(
+    fn write_vectored(
         &self,
         mut offset: usize,
-        bufs: &[(UserPtr<T>, usize)],
+        bufs: &[(UserPtr<In>, usize)],
     ) -> sv_call::Result<usize> {
         let mut written_len = 0;
         PREEMPT.scope(|| {
@@ -496,33 +513,5 @@ impl Dynamic {
         })?;
         self.notify_write();
         Ok(written_len)
-    }
-}
-
-impl PartialEq for Dynamic {
-    #[inline]
-    fn eq(&self, other: &Self) -> bool {
-        Arsc::ptr_eq(&self.inner, &other.inner)
-    }
-}
-
-#[derive(Debug)]
-pub struct PinnedDynamic(Dynamic);
-
-impl PinnedDynamic {
-    pub fn map_iter(&self, offset: usize, len: usize) -> impl Iterator<Item = (PAddr, usize)> + '_ {
-        assert!(self.0.inner.writer_count() == 0 && self.0.inner.reader_count() > 0);
-
-        unsafe {
-            let ptr = self.0.inner.as_mut_ptr();
-            (*ptr).range(offset, len)
-        }
-    }
-}
-
-impl Drop for PinnedDynamic {
-    fn drop(&mut self) {
-        assert!(self.0.inner.reader_count() > 0);
-        unsafe { self.0.inner.force_read_decrement() }
     }
 }

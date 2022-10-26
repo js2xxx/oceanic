@@ -3,7 +3,6 @@
 #![feature(alloc_error_handler)]
 #![feature(alloc_layout_extra)]
 #![feature(allocator_api)]
-#![feature(asm_sym)]
 #![feature(int_roundings)]
 #![feature(naked_functions)]
 #![feature(nonnull_slice_from_raw_parts)]

@@ -36,7 +36,7 @@
 pub mod cpu;
 pub mod dev;
 mod log;
-pub mod mem;
+mod mem;
 mod rxx;
 pub mod sched;
 mod syscall;
