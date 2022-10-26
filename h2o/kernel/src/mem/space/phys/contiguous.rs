@@ -128,6 +128,8 @@ impl PhysTrait for Phys {
         Ok((len > 0).then_some((base, len)).into_iter().collect())
     }
 
+    fn unpin(&self, _: usize, _: usize) {}
+
     fn create_sub(&self, offset: usize, len: usize, copy: bool) -> Result<Arc<super::Phys>> {
         if offset.contains_bit(PAGE_SHIFT) || len.contains_bit(PAGE_SHIFT) {
             return Err(sv_call::EALIGN);

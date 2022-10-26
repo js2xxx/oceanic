@@ -1,5 +1,6 @@
 #[cfg(feature = "alloc")]
 use alloc::{boxed::Box, vec::Vec};
+use core::num::NonZeroUsize;
 #[cfg(feature = "alloc")]
 use core::slice;
 
@@ -32,13 +33,13 @@ impl Phys {
         Ok(unsafe { Self::from_raw(handle) })
     }
 
-    pub fn acquire(res: &MemRes, addr: usize, size: usize) -> Result<Self> {
+    pub fn acquire(res: &MemRes, addr: Option<NonZeroUsize>, size: usize) -> Result<Self> {
         let len = size.next_multiple_of(PAGE_SIZE);
         let handle = unsafe {
             sv_call::sv_phys_acq(
                 // SAFETY: We don't move the ownership of the memory resource handle.
                 unsafe { res.raw() },
-                addr,
+                addr.map_or(0, |addr| addr.get()),
                 len,
             )
             .into_res()?

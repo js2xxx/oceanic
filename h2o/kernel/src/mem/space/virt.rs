@@ -22,14 +22,14 @@ use crate::{
 #[derive(Debug)]
 pub(super) enum Child {
     Virt(Arc<Virt>),
-    Phys(Arc<Phys>, Flags, usize),
+    Phys(Arc<Phys>, Flags, usize, usize),
 }
 
 impl Child {
     fn len(&self) -> usize {
         match self {
             Child::Virt(virt) => virt.len(),
-            Child::Phys(_, _, len) => *len,
+            Child::Phys(.., len) => *len,
         }
     }
 
@@ -139,7 +139,7 @@ impl Virt {
             return Err(EALIGN);
         }
         let phys_end = phys_offset.wrapping_add(layout.size());
-        if !(phys_offset < phys_end && phys_end <= phys.len()) {
+        if !(phys_offset < phys_end && phys_end <= phys.len().round_up_bit(PAGE_SHIFT)) {
             return Err(ERANGE);
         }
 
@@ -160,11 +160,7 @@ impl Virt {
 
         {
             let mut end = base;
-            let phys = phys.pin(
-                phys_offset,
-                virt.end.val() - base.val(),
-                flags.contains(Flags::WRITABLE),
-            )?;
+            let phys = phys.pin(phys_offset, layout.size(), flags.contains(Flags::WRITABLE))?;
             for (phys_base, len) in phys {
                 let next = LAddr::from(end.val() + len);
                 let virt = end..next;
@@ -179,7 +175,7 @@ impl Virt {
             assert!(end == virt.end);
         }
 
-        let _ = children.insert(base, Child::Phys(phys, flags, layout.size()));
+        let _ = children.insert(base, Child::Phys(phys, flags, phys_offset, layout.size()));
 
         if set_vdso {
             *space.vdso.lock() = Some(base);
@@ -213,7 +209,7 @@ impl Virt {
             }
             match child {
                 Child::Virt(_) => return Err(EINVAL),
-                Child::Phys(_, f, _) if flags.intersects(!*f) => {
+                Child::Phys(_, f, ..) if flags.intersects(!*f) => {
                     return Err(EPERM);
                 }
                 _ => {}
@@ -267,7 +263,8 @@ impl Virt {
         let mut ret = Ok(None);
         for (base, child) in mid {
             let end = child.end(base);
-            if let Child::Phys(..) = child {
+            if let Child::Phys(phys, _, offset, len) = child {
+                phys.unpin(offset, len);
                 let r = space.arch.unmaps(base..end);
                 ret = ret.and(r.map_err(paging_error));
             }

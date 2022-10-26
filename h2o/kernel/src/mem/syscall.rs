@@ -332,14 +332,19 @@ fn phys_acq(res: Handle, addr: usize, size: usize) -> Result<Handle> {
 
     SCHED.with_current(|cur| {
         let res = cur.space().handles().get::<Resource<usize>>(res)?;
-        if res.magic_eq(super::mem_resource())
-            && res.range().start <= addr
-            && addr + size <= res.range().end
-        {
-            let phys = space::new_phys(paging::PAddr::new(addr), size)?;
-            unsafe { cur.space().handles().insert_raw(phys, None) }
-        } else {
-            Err(EPERM)
+        if !res.magic_eq(super::mem_resource()) {
+            return Err(EPERM);
         }
+
+        if addr == 0 {
+            let phys = space::allocate_phys(size, PhysOptions::ZEROED, true)?;
+            return unsafe { cur.space().handles().insert_raw(phys, None) };
+        }
+
+        if !(res.range().start <= addr && addr + size <= res.range().end) {
+            return Err(EPERM);
+        }
+        let phys = space::new_phys(paging::PAddr::new(addr), size)?;
+        unsafe { cur.space().handles().insert_raw(phys, None) }
     })
 }

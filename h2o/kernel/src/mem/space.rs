@@ -22,7 +22,8 @@ use core::{
 };
 
 use archop::Azy;
-use paging::LAddr;
+use bitop_ex::BitOpEx;
+use paging::{LAddr, PAGE_SHIFT};
 use spin::Mutex;
 pub use sv_call::mem::Flags;
 use sv_call::mem::PhysOptions;
@@ -106,7 +107,7 @@ impl Deref for Space {
 
 pub(crate) fn allocate(size: usize, flags: Flags, zeroed: bool) -> sv_call::Result<NonNull<[u8]>> {
     let phys = allocate_phys(
-        size,
+        size.round_up_bit(PAGE_SHIFT),
         if zeroed {
             PhysOptions::ZEROED
         } else {

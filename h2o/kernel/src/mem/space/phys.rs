@@ -17,7 +17,7 @@ use crate::{
 
 type Cont = self::contiguous::Phys;
 
-use self::extensible::*;
+type Ext = self::extensible::Phys;
 
 /// # Note
 ///
@@ -28,8 +28,7 @@ use self::extensible::*;
 #[derive(Debug, PartialEq)]
 pub enum Phys {
     Cont,
-    Static,
-    Dynamic,
+    Ext,
 }
 
 #[allow(clippy::len_without_is_empty)]
@@ -41,6 +40,8 @@ pub trait PhysTrait {
 
     fn pin(&self, offset: usize, len: usize, write: bool) -> Result<Vec<(PAddr, usize)>>;
 
+    fn unpin(&self, offset: usize, len: usize);
+
     fn create_sub(&self, offset: usize, len: usize, copy: bool) -> Result<Arc<Phys>>;
 
     fn base(&self) -> PAddr;
@@ -51,9 +52,35 @@ pub trait PhysTrait {
 
     fn write(&self, offset: usize, len: usize, buffer: UserPtr<In>) -> Result<usize>;
 
-    fn read_vectored(&self, offset: usize, bufs: &[(UserPtr<Out>, usize)]) -> Result<usize>;
+    fn read_vectored(
+        &self,
+        mut offset: usize,
+        bufs: &[(UserPtr<Out>, usize)],
+    ) -> sv_call::Result<usize> {
+        let mut read_len = 0;
+        for (buffer, len) in bufs.iter().copied() {
+            let actual = self.read(offset, len, buffer)?;
+            read_len += actual;
+            offset += actual;
+            if actual < len {
+                break;
+            }
+        }
+        Ok(read_len)
+    }
 
-    fn write_vectored(&self, offset: usize, bufs: &[(UserPtr<In>, usize)]) -> Result<usize>;
+    fn write_vectored(&self, mut offset: usize, bufs: &[(UserPtr<In>, usize)]) -> Result<usize> {
+        let mut written_len = 0;
+        for (buffer, len) in bufs.iter().copied() {
+            let actual = self.write(offset, len, buffer)?;
+            written_len += actual;
+            offset += actual;
+            if actual < len {
+                break;
+            }
+        }
+        Ok(written_len)
+    }
 }
 
 unsafe impl DefaultFeature for Phys {
@@ -83,11 +110,6 @@ pub fn allocate_phys(size: usize, options: PhysOptions, contiguous: bool) -> Res
         }
         Phys::from(Cont::allocate(size, options.contains(PhysOptions::ZEROED))?)
     } else {
-        let zeroed = options.contains(PhysOptions::ZEROED);
-        if resizable {
-            Phys::Dynamic(Dynamic::allocate(size, zeroed)?)
-        } else {
-            Phys::Static(Static::allocate(size, zeroed)?)
-        }
+        Phys::from(Ext::new(size))
     })?)
 }
