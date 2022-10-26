@@ -9,14 +9,14 @@ use targs::Targs;
 use super::{hdl::DefaultFeature, *};
 use crate::{
     cpu::arch::tsc::TSC_CLOCK,
-    mem::space::{Flags, Phys, Virt},
+    mem::space::{self, Flags, Phys, PhysTrait, Virt},
     sched::SCHED,
 };
 
 static VDSO_DATA: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/target/vdso"));
-pub static VDSO: Azy<(Flags, Phys)> = Azy::new(|| {
+pub static VDSO: Azy<(Flags, Arc<Phys>)> = Azy::new(|| {
     let flags = Flags::READABLE | Flags::EXECUTABLE | Flags::USER_ACCESS;
-    let vdso_mem = Phys::allocate(
+    let vdso_mem = space::allocate_phys(
         VDSO_DATA.len().round_up_bit(paging::PAGE_SHIFT),
         Default::default(),
         true,
@@ -28,10 +28,10 @@ pub static VDSO: Azy<(Flags, Phys)> = Azy::new(|| {
     }
     (flags, vdso_mem)
 });
-pub static BOOTFS: Azy<(Flags, Phys)> = Azy::new(|| {
+pub static BOOTFS: Azy<(Flags, Arc<Phys>)> = Azy::new(|| {
     (
         Flags::READABLE | Flags::EXECUTABLE | Flags::USER_ACCESS,
-        Phys::new(
+        space::new_phys(
             crate::kargs().bootfs_phys,
             crate::kargs().bootfs_len.round_up_bit(paging::PAGE_SHIFT),
         )
@@ -98,13 +98,13 @@ pub fn setup() {
     }
     unsafe {
         let res = objects.insert(
-            hdl::Ref::try_new_unchecked(Phys::clone(&VDSO.1), flags_to_feat(VDSO.0), None)
+            hdl::Ref::from_raw_unchecked(Arc::clone(&VDSO.1), flags_to_feat(VDSO.0), None)
                 .expect("Failed to create VDSO reference"),
         );
         res.expect("Failed to insert VDSO");
 
         let res = objects.insert(
-            hdl::Ref::try_new_unchecked(Phys::clone(&BOOTFS.1), flags_to_feat(BOOTFS.0), None)
+            hdl::Ref::from_raw_unchecked(Arc::clone(&BOOTFS.1), flags_to_feat(BOOTFS.0), None)
                 .expect("Failed to create boot FS reference"),
         );
         res.expect("Failed to insert boot FS");

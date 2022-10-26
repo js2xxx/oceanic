@@ -120,7 +120,9 @@ pub unsafe fn test(virt: &Virt, stack: (*mut u8, *mut u8, Handle)) {
                 .expect("Failed to send the response");
 
             ::log::trace!("Finished");
-            sv_task_exit(0, false).into_res().expect("Failed to exit the task");
+            sv_task_exit(0, false)
+                .into_res()
+                .expect("Failed to exit the task");
         }
 
         let other = {

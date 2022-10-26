@@ -1,179 +1,59 @@
 mod contiguous;
 mod extensible;
 
-use alloc::sync::Weak;
+use alloc::{
+    sync::{Arc, Weak},
+    vec::Vec,
+};
 
+use enum_dispatch::enum_dispatch;
 use paging::PAddr;
 use sv_call::{mem::PhysOptions, Feature, Result, EPERM};
 
 use crate::{
-    sched::{task::hdl::DefaultFeature, BasicEvent, Event},
+    sched::{task::hdl::DefaultFeature, Event},
     syscall::{In, Out, UserPtr},
 };
 
 type Cont = self::contiguous::Phys;
-type PinnedCont = self::contiguous::PinnedPhys;
 
 use self::extensible::*;
 
-#[derive(Debug, Clone, PartialEq)]
+/// # Note
+///
+/// The task handle map doesn't support dynamic sized objects, and the vtable of
+/// `PhysTrait` is very large (containing lots of function pointers), so we use
+/// enum dispatch instead.
+#[enum_dispatch(PhysTrait)]
+#[derive(Debug, PartialEq)]
 pub enum Phys {
-    Contiguous(Cont),
-    Static(Static),
-    Dynamic(Dynamic),
+    Cont,
+    Static,
+    Dynamic,
 }
 
-#[derive(Debug)]
-pub enum PinnedPhys {
-    Contiguous(PinnedCont),
-    Static(PinnedStatic),
-    Dynamic(PinnedDynamic),
-}
+#[allow(clippy::len_without_is_empty)]
+#[enum_dispatch]
+pub trait PhysTrait {
+    fn event(&self) -> Weak<dyn Event>;
 
-impl Phys {
-    #[inline]
-    pub fn new(base: PAddr, size: usize) -> Result<Self> {
-        Ok(Phys::Contiguous(Cont::new(base, size)?))
-    }
+    fn len(&self) -> usize;
 
-    /// # Errors
-    ///
-    /// Returns error if the heap memory is exhausted or the size is zero.
-    pub fn allocate(size: usize, options: PhysOptions, contiguous: bool) -> Result<Self> {
-        let resizable = options.contains(PhysOptions::RESIZABLE);
-        Ok(if contiguous {
-            if resizable {
-                return Err(EPERM);
-            }
-            Phys::Contiguous(Cont::allocate(size, options.contains(PhysOptions::ZEROED))?)
-        } else {
-            let zeroed = options.contains(PhysOptions::ZEROED);
-            if resizable {
-                Phys::Dynamic(Dynamic::allocate(size, zeroed)?)
-            } else {
-                Phys::Static(Static::allocate(size, zeroed)?)
-            }
-        })
-    }
+    fn pin(&self, offset: usize, len: usize, write: bool) -> Result<Vec<(PAddr, usize)>>;
 
-    pub fn event(&self) -> Weak<dyn Event> {
-        match self {
-            Phys::Dynamic(d) => d.event(),
-            _ => Weak::<BasicEvent>::new() as _,
-        }
-    }
+    fn create_sub(&self, offset: usize, len: usize, copy: bool) -> Result<Arc<Phys>>;
 
-    #[inline]
-    #[allow(clippy::len_without_is_empty)]
-    pub fn len(&self) -> usize {
-        match self {
-            Phys::Contiguous(cont) => cont.len(),
-            Phys::Static(s) => s.len(),
-            Phys::Dynamic(d) => d.len(),
-        }
-    }
+    fn base(&self) -> PAddr;
 
-    #[inline]
-    pub fn pin(this: Self) -> Result<PinnedPhys> {
-        match this {
-            Phys::Contiguous(cont) => Ok(PinnedPhys::Contiguous(Cont::pin(cont))),
-            Phys::Static(ext) => Ok(PinnedPhys::Static(Static::pin(ext))),
-            Phys::Dynamic(ext) => Ok(PinnedPhys::Dynamic(Dynamic::pin(ext)?)),
-        }
-    }
+    fn resize(&self, new_len: usize, zeroed: bool) -> Result;
 
-    #[inline]
-    pub fn create_sub(&self, offset: usize, len: usize, copy: bool) -> Result<Self> {
-        match self {
-            Phys::Contiguous(cont) => cont.create_sub(offset, len, copy).map(Phys::Contiguous),
-            Phys::Static(ext) => ext.create_sub(offset, len, copy).map(Phys::Static),
-            Phys::Dynamic(_) => Err(EPERM),
-        }
-    }
+    fn read(&self, offset: usize, len: usize, buffer: UserPtr<Out>) -> Result<usize>;
 
-    #[inline]
-    pub fn base(&self) -> PAddr {
-        match self {
-            Phys::Contiguous(cont) => cont.base(),
-            _ => unimplemented!("Extensible phys have multiple bases"),
-        }
-    }
+    fn write(&self, offset: usize, len: usize, buffer: UserPtr<In>) -> Result<usize>;
 
-    #[inline]
-    pub fn resize(&self, new_len: usize, zeroed: bool) -> Result {
-        match self {
-            Phys::Dynamic(d) => d.resize(new_len, zeroed),
-            _ => Err(EPERM),
-        }
-    }
+    fn read_vectored(&self, offset: usize, bufs: &[(UserPtr<Out>, usize)]) -> Result<usize>;
 
-    #[inline]
-    pub fn read(&self, offset: usize, len: usize, buffer: UserPtr<Out>) -> Result<usize> {
-        match self {
-            Phys::Contiguous(cont) => cont.read(offset, len, buffer),
-            Phys::Static(s) => s.read(offset, len, buffer),
-            Phys::Dynamic(d) => d.read(offset, len, buffer),
-        }
-    }
-
-    #[inline]
-    pub fn write(&self, offset: usize, len: usize, buffer: UserPtr<In>) -> Result<usize> {
-        match self {
-            Phys::Contiguous(cont) => cont.write(offset, len, buffer),
-            Phys::Static(s) => s.write(offset, len, buffer),
-            Phys::Dynamic(d) => d.write(offset, len, buffer),
-        }
-    }
-
-    #[inline]
-    pub fn read_vectored(&self, offset: usize, bufs: &[(UserPtr<Out>, usize)]) -> Result<usize> {
-        match self {
-            Phys::Contiguous(cont) => cont.read_vectored(offset, bufs),
-            Phys::Static(s) => s.read_vectored(offset, bufs),
-            Phys::Dynamic(d) => d.read_vectored(offset, bufs),
-        }
-    }
-
-    #[inline]
-    pub fn write_vectored(&self, offset: usize, bufs: &[(UserPtr<In>, usize)]) -> Result<usize> {
-        match self {
-            Phys::Contiguous(cont) => cont.write_vectored(offset, bufs),
-            Phys::Static(s) => s.write_vectored(offset, bufs),
-            Phys::Dynamic(d) => d.write_vectored(offset, bufs),
-        }
-    }
-}
-
-impl PinnedPhys {
-    #[inline]
-    pub fn map_iter(&self, offset: usize, len: usize) -> impl Iterator<Item = (PAddr, usize)> + '_ {
-        enum OneOf<A, B, C> {
-            A(A),
-            B(B),
-            C(C),
-        }
-        impl<A, B, C, T> Iterator for OneOf<A, B, C>
-        where
-            A: Iterator<Item = T>,
-            B: Iterator<Item = T>,
-            C: Iterator<Item = T>,
-        {
-            type Item = T;
-            fn next(&mut self) -> Option<Self::Item> {
-                match self {
-                    OneOf::A(a) => a.next(),
-                    OneOf::B(b) => b.next(),
-                    OneOf::C(c) => c.next(),
-                }
-            }
-        }
-
-        match self {
-            PinnedPhys::Contiguous(cont) => OneOf::A(cont.map_iter(offset, len)),
-            PinnedPhys::Static(s) => OneOf::B(s.map_iter(offset, len)),
-            PinnedPhys::Dynamic(d) => OneOf::C(d.map_iter(offset, len)),
-        }
-    }
+    fn write_vectored(&self, offset: usize, bufs: &[(UserPtr<In>, usize)]) -> Result<usize>;
 }
 
 unsafe impl DefaultFeature for Phys {
@@ -185,4 +65,29 @@ unsafe impl DefaultFeature for Phys {
             | Feature::EXECUTE
             | Feature::WAIT
     }
+}
+
+#[inline]
+pub fn new_phys(base: PAddr, size: usize) -> Result<Arc<Phys>> {
+    Ok(Arc::try_new(Phys::from(Cont::new(base, size)?))?)
+}
+
+/// # Errors
+///
+/// Returns error if the heap memory is exhausted or the size is zero.
+pub fn allocate_phys(size: usize, options: PhysOptions, contiguous: bool) -> Result<Arc<Phys>> {
+    let resizable = options.contains(PhysOptions::RESIZABLE);
+    Ok(Arc::try_new(if contiguous {
+        if resizable {
+            return Err(EPERM);
+        }
+        Phys::from(Cont::allocate(size, options.contains(PhysOptions::ZEROED))?)
+    } else {
+        let zeroed = options.contains(PhysOptions::ZEROED);
+        if resizable {
+            Phys::Dynamic(Dynamic::allocate(size, zeroed)?)
+        } else {
+            Phys::Static(Static::allocate(size, zeroed)?)
+        }
+    })?)
 }

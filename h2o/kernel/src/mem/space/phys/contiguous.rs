@@ -1,4 +1,8 @@
-use alloc::alloc::Global;
+use alloc::{
+    alloc::Global,
+    sync::{Arc, Weak},
+    vec::Vec,
+};
 use core::{
     alloc::{Allocator, Layout},
     slice,
@@ -6,11 +10,12 @@ use core::{
 
 use bitop_ex::BitOpEx;
 use paging::{LAddr, PAddr, PAGE_SHIFT, PAGE_SIZE};
-use sv_call::Result;
+use sv_call::{Result, EPERM};
 
+use super::PhysTrait;
 use crate::{
-    sched::Arsc,
-    syscall::{In, InPtrType, Out, OutPtrType, UserPtr},
+    sched::{Arsc, BasicEvent, Event},
+    syscall::{In, Out, UserPtr},
 };
 
 #[derive(Debug)]
@@ -47,8 +52,6 @@ pub struct Phys {
     len: usize,
     inner: Arsc<PhysInner>,
 }
-
-pub type PinnedPhys = Phys;
 
 impl From<Arsc<PhysInner>> for Phys {
     fn from(inner: Arsc<PhysInner>) -> Self {
@@ -97,22 +100,35 @@ impl Phys {
         .map(Self::from)
     }
 
-    #[inline]
-    pub fn len(&self) -> usize {
+    fn raw(&self) -> *mut u8 {
+        unsafe { self.inner.base.to_laddr(minfo::ID_OFFSET).add(self.offset) }
+    }
+}
+
+impl PartialEq for Phys {
+    fn eq(&self, other: &Self) -> bool {
+        self.offset == other.offset
+            && self.len == other.len
+            && Arsc::ptr_eq(&self.inner, &other.inner)
+    }
+}
+
+impl PhysTrait for Phys {
+    fn event(&self) -> Weak<dyn Event> {
+        Weak::<BasicEvent>::new()
+    }
+
+    fn len(&self) -> usize {
         self.len
     }
 
-    #[inline]
-    pub fn is_empty(&self) -> bool {
-        self.len == 0
+    fn pin(&self, offset: usize, len: usize, _: bool) -> Result<Vec<(PAddr, usize)>> {
+        let base = PAddr::new(*self.inner.base + self.offset + offset);
+        let len = self.len.saturating_sub(offset).min(len);
+        Ok((len > 0).then_some((base, len)).into_iter().collect())
     }
 
-    #[inline]
-    pub fn pin(this: Self) -> PinnedPhys {
-        this
-    }
-
-    pub fn create_sub(&self, offset: usize, len: usize, copy: bool) -> Result<Self> {
+    fn create_sub(&self, offset: usize, len: usize, copy: bool) -> Result<Arc<super::Phys>> {
         if offset.contains_bit(PAGE_SHIFT) || len.contains_bit(PAGE_SHIFT) {
             return Err(sv_call::EALIGN);
         }
@@ -120,42 +136,38 @@ impl Phys {
         let new_offset = self.offset.wrapping_add(offset);
         let end = new_offset.wrapping_add(len);
         if self.offset <= new_offset && new_offset < end && end <= self.offset + self.len {
-            if copy {
+            let mut ret = Arc::try_new_uninit()?;
+            let phys = if copy {
                 let child = Self::allocate(len, true)?;
                 let dst = child.raw();
                 unsafe {
                     let src = self.raw().add(offset);
                     dst.copy_from_nonoverlapping(src, len);
                 }
-                Ok(child)
+                child
             } else {
-                Ok(Phys {
+                Phys {
                     offset: new_offset,
                     len,
                     inner: Arsc::clone(&self.inner),
-                })
-            }
+                }
+            };
+            Arc::get_mut(&mut ret).unwrap().write(phys.into());
+            Ok(unsafe { ret.assume_init() })
         } else {
             Err(sv_call::ERANGE)
         }
     }
 
-    pub fn base(&self) -> PAddr {
+    fn base(&self) -> PAddr {
         PAddr::new(*self.inner.base + self.offset)
     }
 
-    #[inline]
-    pub fn map_iter(&self, offset: usize, len: usize) -> impl Iterator<Item = (PAddr, usize)> {
-        let base = PAddr::new(*self.inner.base + self.offset + offset);
-        let len = self.len.saturating_sub(offset).min(len);
-        (len > 0).then_some((base, len)).into_iter()
+    fn resize(&self, _: usize, _: bool) -> Result {
+        Err(EPERM)
     }
 
-    fn raw(&self) -> *mut u8 {
-        unsafe { self.inner.base.to_laddr(minfo::ID_OFFSET).add(self.offset) }
-    }
-
-    pub fn read(&self, offset: usize, len: usize, buffer: UserPtr<Out>) -> Result<usize> {
+    fn read(&self, offset: usize, len: usize, buffer: UserPtr<Out>) -> Result<usize> {
         let offset = self.len.min(offset);
         let len = self.len.saturating_sub(offset).min(len);
         unsafe {
@@ -166,7 +178,7 @@ impl Phys {
         Ok(len)
     }
 
-    pub fn write(&self, offset: usize, len: usize, buffer: UserPtr<In>) -> Result<usize> {
+    fn write(&self, offset: usize, len: usize, buffer: UserPtr<In>) -> Result<usize> {
         let offset = self.len.min(offset);
         let len = self.len.saturating_sub(offset).min(len);
         unsafe {
@@ -176,11 +188,7 @@ impl Phys {
         Ok(len)
     }
 
-    pub fn read_vectored<T: OutPtrType>(
-        &self,
-        mut offset: usize,
-        bufs: &[(UserPtr<T>, usize)],
-    ) -> sv_call::Result<usize> {
+    fn read_vectored(&self, mut offset: usize, bufs: &[(UserPtr<Out>, usize)]) -> Result<usize> {
         let mut read_len = 0;
         for buf in bufs {
             let actual_offset = self.len.min(offset);
@@ -201,11 +209,7 @@ impl Phys {
         Ok(read_len)
     }
 
-    pub fn write_vectored<T: InPtrType>(
-        &self,
-        mut offset: usize,
-        bufs: &[(UserPtr<T>, usize)],
-    ) -> sv_call::Result<usize> {
+    fn write_vectored(&self, mut offset: usize, bufs: &[(UserPtr<In>, usize)]) -> Result<usize> {
         let mut written_len = 0;
         for buf in bufs {
             let actual_offset = self.len.min(offset);
@@ -223,13 +227,5 @@ impl Phys {
             }
         }
         Ok(written_len)
-    }
-}
-
-impl PartialEq for Phys {
-    fn eq(&self, other: &Self) -> bool {
-        self.offset == other.offset
-            && self.len == other.len
-            && Arsc::ptr_eq(&self.inner, &other.inner)
     }
 }

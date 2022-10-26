@@ -9,17 +9,20 @@ use paging::{LAddr, PAGE_SHIFT, PAGE_SIZE};
 use spin::Mutex;
 use sv_call::{error::*, mem::Flags, Feature, Result};
 
-use super::{paging_error, ty_to_range, Phys, PinnedPhys, Space};
-use crate::sched::{
-    task,
-    task::{hdl::DefaultFeature, VDSO},
-    PREEMPT,
+use super::{paging_error, ty_to_range, Phys, Space};
+use crate::{
+    mem::space::PhysTrait,
+    sched::{
+        task,
+        task::{hdl::DefaultFeature, VDSO},
+        PREEMPT,
+    },
 };
 
 #[derive(Debug)]
 pub(super) enum Child {
     Virt(Arc<Virt>),
-    Phys(PinnedPhys, Flags, usize),
+    Phys(Arc<Phys>, Flags, usize),
 }
 
 impl Child {
@@ -115,7 +118,7 @@ impl Virt {
     pub fn map(
         &self,
         offset: Option<usize>,
-        phys: Phys,
+        phys: Arc<Phys>,
         phys_offset: usize,
         layout: Layout,
         flags: Flags,
@@ -140,8 +143,6 @@ impl Virt {
             return Err(ERANGE);
         }
 
-        let phys = Phys::pin(phys)?;
-
         let _pree = PREEMPT.lock();
         let mut children = self.children.lock();
         let space = self.space.upgrade().ok_or(EKILLED)?;
@@ -159,7 +160,11 @@ impl Virt {
 
         {
             let mut end = base;
-            let phys = phys.map_iter(phys_offset, virt.end.val() - base.val());
+            let phys = phys.pin(
+                phys_offset,
+                virt.end.val() - base.val(),
+                flags.contains(Flags::WRITABLE),
+            )?;
             for (phys_base, len) in phys {
                 let next = LAddr::from(end.val() + len);
                 let virt = end..next;

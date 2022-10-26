@@ -1,7 +1,7 @@
 pub mod ipi;
 pub mod timer;
 
-use alloc::collections::BTreeMap;
+use alloc::{collections::BTreeMap, sync::Arc};
 use core::{
     arch::asm,
     ops::{BitOr, BitOrAssign},
@@ -14,15 +14,16 @@ use raw_cpuid::CpuId;
 use spin::RwLock;
 
 use super::intr::def::ApicVec;
-use crate::mem::space::{self, Flags, Phys};
+use crate::mem::space::{self, Flags, PhysTrait};
 
 pub static LAPIC_ID: RwLock<BTreeMap<usize, u32>> = RwLock::new(BTreeMap::new());
 static LAPIC_BASE: Azy<usize> = Azy::new(|| {
-    let phys = Phys::new(PAddr::new(0xFEE00000), PAGE_SIZE).expect("Failed to acquire LAPIC base");
+    let phys =
+        space::new_phys(PAddr::new(0xFEE00000), PAGE_SIZE).expect("Failed to acquire LAPIC base");
     space::KRL
         .map(
             None,
-            Phys::clone(&phys),
+            Arc::clone(&phys),
             0,
             space::page_aligned(phys.len()),
             Flags::READABLE | Flags::WRITABLE | Flags::UNCACHED,

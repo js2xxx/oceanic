@@ -105,7 +105,7 @@ impl Deref for Space {
 }
 
 pub(crate) fn allocate(size: usize, flags: Flags, zeroed: bool) -> sv_call::Result<NonNull<[u8]>> {
-    let phys = Phys::allocate(
+    let phys = allocate_phys(
         size,
         if zeroed {
             PhysOptions::ZEROED
@@ -145,7 +145,7 @@ pub fn init_stack(virt: &Arc<Virt>, size: usize) -> sv_call::Result<LAddr> {
     let virt = virt.allocate(None, unsafe {
         Layout::from_size_align_unchecked(paging::PAGE_SIZE * 2 + size, paging::PAGE_SIZE)
     })?;
-    let phys = Phys::allocate(size, Default::default(), false)?;
+    let phys = allocate_phys(size, Default::default(), false)?;
     let ret = virt.upgrade().unwrap().map(
         Some(paging::PAGE_SIZE),
         phys,

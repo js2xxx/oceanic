@@ -1,4 +1,4 @@
-use alloc::vec::Vec;
+use alloc::{sync::Arc, vec::Vec};
 use core::ops::Range;
 
 use acpi::platform::interrupt::{
@@ -13,7 +13,7 @@ use spin::Mutex;
 
 use crate::{
     cpu::arch::apic::{lapic, DelivMode, Polarity, TriggerMode},
-    mem::space::{self, Flags, Phys},
+    mem::space::{self, Flags, PhysTrait},
 };
 
 const LEGACY_IRQ: Range<u32> = 0..16;
@@ -173,12 +173,12 @@ impl Ioapic {
             address: paddr,
             global_system_interrupt_base: gsi_base,
         } = node;
-        let phys = Phys::new(PAddr::new(*paddr as usize), PAGE_SIZE)
+        let phys = space::new_phys(PAddr::new(*paddr as usize), PAGE_SIZE)
             .expect("Failed to acquire memory for I/O APIC");
         let addr = space::KRL
             .map(
                 None,
-                Phys::clone(&phys),
+                Arc::clone(&phys),
                 0,
                 space::page_aligned(phys.len()),
                 Flags::READABLE | Flags::WRITABLE | Flags::UNCACHED,

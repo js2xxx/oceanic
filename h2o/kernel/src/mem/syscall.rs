@@ -14,8 +14,12 @@ use sv_call::{
 use super::space;
 use crate::{
     dev::Resource,
+    mem::space::PhysTrait,
     sched::{
-        task::{hdl::DefaultFeature, Space as TaskSpace, VDSO},
+        task::{
+            hdl::{DefaultFeature, Ref},
+            Space as TaskSpace, VDSO,
+        },
         PREEMPT, SCHED,
     },
     syscall::{In, InOut, Out, PtrType, UserPtr},
@@ -44,10 +48,10 @@ fn features_to_flags(feat: Feature) -> Flags {
 
 #[syscall]
 fn phys_alloc(size: usize, options: PhysOptions) -> Result<Handle> {
-    let phys = PREEMPT.scope(|| space::Phys::allocate(size, options, false))?;
+    let phys = PREEMPT.scope(|| space::allocate_phys(size, options, false))?;
     SCHED.with_current(|cur| {
         let event = phys.event();
-        cur.space().handles().insert(phys, Some(event))
+        cur.space().handles().insert_raw(phys, Some(event))
     })
 }
 
@@ -62,7 +66,7 @@ fn phys_size(hdl: Handle) -> Result<usize> {
     })
 }
 
-fn phys_check(hdl: Handle, offset: usize, len: usize) -> Result<(Feature, space::Phys)> {
+fn phys_check(hdl: Handle, offset: usize, len: usize) -> Result<(Feature, Arc<space::Phys>)> {
     hdl.check_null()?;
     let offset_end = offset.wrapping_add(len);
     if offset_end < offset {
@@ -72,7 +76,7 @@ fn phys_check(hdl: Handle, offset: usize, len: usize) -> Result<(Feature, space:
         cur.space()
             .handles()
             .get::<space::Phys>(hdl)
-            .map(|obj| (obj.features(), space::Phys::clone(&obj)))
+            .map(|obj| (obj.features(), Arc::clone(&obj)))
     })?;
     if phys == VDSO.1 {
         return Err(EACCES);
@@ -119,14 +123,14 @@ fn check_physv<T: PtrType>(
     hdl: Handle,
     bufs: UserPtr<In, IoVec>,
     count: usize,
-) -> Result<(Feature, space::Phys, Vec<(UserPtr<T>, usize)>)> {
+) -> Result<(Feature, Arc<space::Phys>, Vec<(UserPtr<T>, usize)>)> {
     hdl.check_null()?;
     bufs.check_slice(count)?;
     let (feat, phys) = SCHED.with_current(|cur| {
         cur.space()
             .handles()
             .get::<space::Phys>(hdl)
-            .map(|obj| (obj.features(), space::Phys::clone(&obj)))
+            .map(|obj| (obj.features(), Arc::clone(&obj)))
     })?;
     let bufs = {
         let mut vec = Vec::<(UserPtr<T>, usize)>::with_capacity(count);
@@ -175,9 +179,9 @@ fn phys_sub(hdl: Handle, offset: usize, len: usize, copy: bool) -> Result<Handle
         let handles = cur.space().handles();
         let event = sub.event();
         if copy {
-            handles.insert(sub, Some(event))
+            handles.insert_raw(sub, Some(event))
         } else {
-            unsafe { handles.insert_unchecked(sub, feat, Some(event)) }
+            unsafe { handles.insert_raw_unchecked(sub, feat, Some(event)) }
         }
     })
 }
@@ -191,7 +195,7 @@ fn phys_resize(hdl: Handle, new_len: usize, zeroed: bool) -> Result {
         cur.space()
             .handles()
             .get::<space::Phys>(hdl)
-            .map(|obj| (obj.features(), space::Phys::clone(&obj)))
+            .map(|obj| (obj.features(), Arc::clone(&obj)))
     })?;
     if phys == VDSO.1 {
         return Err(EACCES);
@@ -275,13 +279,7 @@ fn virt_map(hdl: Handle, mi_ptr: UserPtr<InOut, VirtMapInfo>) -> Result<*mut u8>
 
         let size = if mi.len == 0 { phys.len() } else { mi.len };
         let layout = Layout::from_size_align(size, mi.align)?;
-        let addr = virt.map(
-            offset,
-            space::Phys::clone(&phys),
-            mi.phys_offset,
-            layout,
-            flags,
-        )?;
+        let addr = virt.map(offset, Ref::into_raw(phys), mi.phys_offset, layout, flags)?;
         unsafe {
             let len = UserPtr::<Out, _>::new(ptr::addr_of_mut!((*mi_ptr.as_ptr()).len));
             len.write(size)?;
@@ -338,8 +336,8 @@ fn phys_acq(res: Handle, addr: usize, size: usize) -> Result<Handle> {
             && res.range().start <= addr
             && addr + size <= res.range().end
         {
-            let phys = space::Phys::new(paging::PAddr::new(addr), size)?;
-            unsafe { cur.space().handles().insert(phys, None) }
+            let phys = space::new_phys(paging::PAddr::new(addr), size)?;
+            unsafe { cur.space().handles().insert_raw(phys, None) }
         } else {
             Err(EPERM)
         }

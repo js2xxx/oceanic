@@ -16,6 +16,7 @@ use crate::{
             KERNEL_GS,
         },
     },
+    mem::space::PageFaultErrCode,
     sched::{task, PREEMPT},
 };
 
@@ -209,7 +210,6 @@ impl Frame {
         "CF - PF - AF - ZF SF TF IF DF OF IOPLL IOPLH NT - RF VM AC VIF VIP ID";
 
     pub const ERRC: &'static str = "EXT IDT TI";
-    pub const ERRC_PF: &'static str = "P WR US RSVD ID PK SS - - - - - - - - SGX";
 
     pub fn dump(&self, errc_format: &'static str) {
         use log::info;
@@ -220,7 +220,7 @@ impl Frame {
 
         if self.errc_vec != 0u64.wrapping_sub(1) && !errc_format.is_empty() {
             info!("> Error Code = {}", Flags::new(self.errc_vec, errc_format));
-            if errc_format == Self::ERRC_PF {
+            if errc_format == PageFaultErrCode::FMT {
                 info!("> cr2 (PF addr) = {:#018x}", unsafe {
                     archop::reg::cr2::read()
                 });
