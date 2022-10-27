@@ -114,7 +114,7 @@ pub fn allocate(ti: TaskInfo) -> sv_call::Result<Tid> {
     }
 }
 
-pub fn deallocate(tid: &Tid) -> bool {
+pub fn deallocate(tid: Tid) -> bool {
     let _flags = PREEMPT.lock();
     TI_MAP.remove(&tid.raw.get()).map_or(false, |_| {
         TID_ALLOC.lock().deallocate(u64::from(tid.raw.get()));

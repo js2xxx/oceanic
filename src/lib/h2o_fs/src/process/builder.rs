@@ -1,6 +1,6 @@
 use alloc::{
     collections::{btree_map::Entry as MapEntry, BTreeMap},
-    ffi::{CString, NulError},
+    ffi::{CString, FromVecWithNulError},
     string::{String, ToString},
     vec,
     vec::Vec,
@@ -21,10 +21,11 @@ use super::{InitProcess, Process};
 
 const INTERP: &str = "lib/ld-oceanic.so";
 
+#[derive(Debug)]
 pub enum Error {
     LoadPhys(elfload::Error),
     FieldMissing(&'static str),
-    InvalidCStr(NulError),
+    InvalidCStr(FromVecWithNulError),
     DepNotFound(CString),
     Rpc(solvent_rpc::Error),
     VdsoMap(solvent::error::Error),
@@ -83,7 +84,7 @@ impl Builder {
             return Err(executable);
         }
         let executable = executable
-            .reduce_features(Feature::READ | Feature::EXECUTE)
+            .reduce_features(Feature::SEND | Feature::READ | Feature::EXECUTE)
             .expect("Failed to adjust features for executable");
         self.executable = Some((executable, name.clone()));
         self.args.insert(0, name);
@@ -209,8 +210,8 @@ impl Builder {
         let vdso = vdso.unwrap_or_else(self::vdso);
 
         let interp_path = match elfload::get_interp(&executable)? {
-            Some(bytes) => CString::new(bytes),
-            None => CString::new(INTERP),
+            Some(bytes) => CString::from_vec_with_nul(bytes),
+            None => Ok(CString::new(INTERP).unwrap()),
         }
         .map_err(Error::InvalidCStr)?;
 
@@ -255,8 +256,8 @@ impl Builder {
         let vdso = vdso.unwrap_or_else(self::vdso);
 
         let interp_path = match elfload::get_interp(&executable)? {
-            Some(bytes) => CString::new(bytes),
-            None => CString::new(INTERP),
+            Some(bytes) => CString::from_vec_with_nul(bytes),
+            None => Ok(CString::new(INTERP).unwrap()),
         }
         .map_err(Error::InvalidCStr)?;
 
@@ -308,8 +309,8 @@ impl Builder {
         let vdso = vdso.unwrap_or_else(self::vdso);
 
         let interp_path = match elfload::get_interp(&executable)? {
-            Some(bytes) => CString::new(bytes),
-            None => CString::new(INTERP),
+            Some(bytes) => CString::from_vec_with_nul(bytes),
+            None => Ok(CString::new(INTERP).unwrap()),
         }
         .map_err(Error::InvalidCStr)?;
 
@@ -369,8 +370,8 @@ impl Builder {
         let vdso = vdso.unwrap_or_else(self::vdso);
 
         let interp_path = match elfload::get_interp(&executable)? {
-            Some(bytes) => CString::new(bytes),
-            None => CString::new(INTERP),
+            Some(bytes) => CString::from_vec_with_nul(bytes),
+            None => Ok(CString::new(INTERP).unwrap()),
         }
         .map_err(Error::InvalidCStr)?;
 

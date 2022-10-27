@@ -7,6 +7,7 @@ use solvent_rpc::SerdePacket;
 
 pub use self::builder::{Builder, Error as BuildError};
 
+#[derive(Debug)]
 pub enum Error {
     Exited(usize),
     Started,

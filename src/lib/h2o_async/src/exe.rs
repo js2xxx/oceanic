@@ -5,7 +5,7 @@ use alloc::vec::Vec;
 use core::{
     iter,
     pin::Pin,
-    sync::atomic::{AtomicUsize, Ordering::*},
+    sync::atomic::{AtomicBool, AtomicUsize, Ordering::*},
     task::{Context, Poll},
 };
 
@@ -14,8 +14,11 @@ use futures::{
     task::{FutureObj, Spawn, SpawnError},
     Future,
 };
+use solvent::prelude::EPIPE;
 #[cfg(feature = "runtime")]
-use solvent_core::{sync::Lazy, thread::available_parallelism, thread_local};
+use solvent_core::thread_local;
+#[cfg(all(feature = "runtime", not(feature = "local")))]
+use solvent_core::{sync::Lazy, thread::available_parallelism};
 use solvent_core::{
     sync::{Arsc, Injector, Stealer, Worker},
     thread::{self, Backoff},
@@ -183,6 +186,7 @@ fn io_thread(rx: DispReceiver, pool: Arsc<Inner>) {
             Poll::Ready(res) => match res {
                 Ok(()) => backoff.reset(),
                 Err(DispError::Disconnected) => break,
+                Err(DispError::Unpack(EPIPE)) => {}
                 Err(err) => log::warn!("Error while polling for dispatcher: {:?}", err),
             },
             Poll::Pending => {
@@ -196,7 +200,129 @@ fn io_thread(rx: DispReceiver, pool: Arsc<Inner>) {
     }
 }
 
-cfg_if::cfg_if! { if #[cfg(feature = "runtime")] {
+#[derive(Debug, Clone)]
+pub struct LocalPool {
+    inner: Arsc<LocalInner>,
+}
+
+#[derive(Debug)]
+struct LocalInner {
+    injector: Injector<Runnable>,
+    stop: AtomicBool,
+}
+
+impl LocalPool {
+    pub fn new() -> Self {
+        let inner = Arsc::new(LocalInner {
+            injector: Injector::new(),
+            stop: AtomicBool::new(false),
+        });
+        let i2 = inner.clone();
+        thread::spawn(move || local_worker(i2));
+        LocalPool { inner }
+    }
+
+    pub fn spawn<F, T>(&self, fut: F) -> Task<T>
+    where
+        F: Future<Output = T> + 'static,
+        T: 'static,
+    {
+        let inner = self.inner.clone();
+        // SAFETY: Only one worker thread, so no `Send` required.
+        let (runnable, task) =
+            unsafe { async_task::spawn_unchecked(fut, move |t| inner.injector.push(t)) };
+        runnable.schedule();
+        task
+    }
+
+    pub fn spawn_blocking<F, T>(&self, func: F) -> Task<T>
+    where
+        F: FnOnce() -> T + Send + 'static,
+        T: Send + 'static,
+    {
+        self.spawn(Blocking(Some(func)))
+    }
+
+    pub fn dispatch(&self, capacity: usize) -> DispSender {
+        let (tx, rx) = crate::disp::dispatch(capacity);
+        let inner = self.inner.clone();
+        log::trace!("solvent-async::exe: Dispatch I/O operations");
+        thread::spawn(move || local_io(rx, inner));
+        tx
+    }
+
+    #[inline]
+    pub fn block_on<F, G, T>(&self, gen: G) -> T
+    where
+        F: Future<Output = T> + 'static,
+        G: FnOnce(LocalPool) -> F,
+    {
+        let fut = gen(self.clone());
+        enter::enter().block_on(fut)
+    }
+}
+
+impl Default for LocalPool {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+fn local_worker(inner: Arsc<LocalInner>) {
+    log::trace!(
+        "solvent-async::exe: local worker thread #{}",
+        thread::current().id()
+    );
+    #[inline]
+    fn next_task<T>(local: &Worker<T>, global: &Injector<T>) -> Option<T> {
+        local.pop().or_else(|| {
+            iter::repeat_with(|| global.steal_batch_and_pop(local))
+                .find(|s| !s.is_retry())
+                .and_then(|s| s.success())
+        })
+    }
+    let worker = Worker::new_fifo();
+    let backoff = Backoff::new();
+    loop {
+        match next_task(&worker, &inner.injector) {
+            Some(runnable) => {
+                runnable.run();
+                backoff.reset();
+            }
+            None => {
+                if inner.stop.load(Acquire) {
+                    break;
+                }
+                log::trace!("W#{}: Waiting for next task...", thread::current().id());
+                backoff.snooze()
+            }
+        }
+    }
+}
+
+fn local_io(rx: DispReceiver, pool: Arsc<LocalInner>) {
+    log::trace!("solvent-async::exe: io thread #{}", thread::current().id());
+    let backoff = Backoff::new();
+    loop {
+        match rx.poll_receive() {
+            Poll::Ready(res) => match res {
+                Ok(()) => backoff.reset(),
+                Err(DispError::Disconnected) => break,
+                Err(DispError::Unpack(EPIPE)) => {}
+                Err(err) => log::warn!("Error while polling for dispatcher: {:?}", err),
+            },
+            Poll::Pending => {
+                if pool.stop.load(Acquire) {
+                    break;
+                }
+                log::trace!("IO#{}: Waiting for next task...", thread::current().id());
+                backoff.snooze()
+            }
+        }
+    }
+}
+
+cfg_if::cfg_if! { if #[cfg(all(feature = "runtime", not(feature = "local")))] {
 
 static POOL: Lazy<ThreadPool> = Lazy::new(|| ThreadPool::new(available_parallelism().into()));
 thread_local! {
@@ -232,6 +358,58 @@ where
     F: Future<Output = T> + Send + 'static,
 {
     POOL.block_on(|_| fut)
+}
+
+#[macro_export]
+macro_rules! entry {
+    ($func:ident, $std:path) => {
+        mod __h2o_async_inner {
+            fn main() {
+                $crate::block_on(async { (super::$func)().await })
+            }
+
+            use $std as std;
+            std::entry!(main);
+        }
+    };
+}
+
+} else if #[cfg(feature = "local")] {
+
+thread_local! {
+    static POOL: LocalPool = LocalPool::new();
+    static DISP: DispSender = POOL.with(|local| local.dispatch(4096));
+}
+
+#[inline]
+pub fn spawn<F, T>(fut: F) -> Task<T>
+where
+    F: Future<Output = T> + 'static,
+    T: 'static,
+{
+    POOL.with(|pool| pool.spawn(fut))
+}
+
+#[inline]
+pub fn spawn_blocking<F, T>(func: F) -> Task<T>
+where
+    F: FnOnce() -> T + Send + 'static,
+    T: Send + 'static,
+{
+    POOL.with(|pool| pool.spawn_blocking(func))
+}
+
+#[inline]
+pub fn dispatch() -> DispSender {
+    DISP.with(|tx| tx.clone())
+}
+
+#[inline]
+pub fn block_on<F, T>(fut: F) -> T
+where
+    F: Future<Output = T> + 'static,
+{
+    POOL.with(|pool| pool.block_on(|_| fut))
 }
 
 #[macro_export]

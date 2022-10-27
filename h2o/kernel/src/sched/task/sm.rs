@@ -1,6 +1,7 @@
 use alloc::{boxed::Box, string::String, sync::Arc};
 use core::{
     fmt,
+    mem::ManuallyDrop,
     ops::{Deref, DerefMut},
     time::Duration,
 };
@@ -86,7 +87,7 @@ impl TaskInfo {
 
 #[derive(Debug)]
 pub struct Context {
-    pub(in crate::sched) tid: Tid,
+    pub(in crate::sched) tid: ManuallyDrop<Tid>,
 
     pub(in crate::sched) space: Arc<Space>,
     pub(in crate::sched) kstack: ctx::Kstack,
@@ -210,7 +211,7 @@ impl Init {
     pub fn new(tid: Tid, space: Arc<Space>, kstack: ctx::Kstack, ext_frame: ctx::ExtFrame) -> Self {
         Init {
             ctx: Box::new(Context {
-                tid,
+                tid: ManuallyDrop::new(tid),
                 space,
                 kstack,
                 ext_frame,
@@ -252,8 +253,9 @@ impl Ready {
         }
     }
 
-    pub fn exit(this: Self, retval: usize) {
-        tid::deallocate(&this.ctx.tid);
+    pub fn exit(mut this: Self, retval: usize) {
+        // SAFETY: The context won't be dropped twice.
+        tid::deallocate(unsafe { ManuallyDrop::take(&mut this.ctx.tid) });
         *this.ctx.tid.ret_cell.lock() = Some(retval);
         this.ctx.tid.event.notify(0, SIG_READ);
         idle::CTX_DROPPER.push(this.ctx);

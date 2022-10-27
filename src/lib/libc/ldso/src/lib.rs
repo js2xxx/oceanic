@@ -36,7 +36,7 @@ fn dl_main(init_chan: Channel) -> rxx::DlReturn {
 
     let (elf, _) = dso::Dso::load(&prog, cstr!("<PROGRAM>"), true).expect("Failed to load program");
 
-    log::debug!("Reaching end of the dynamic linker");
+    log::trace!("Reaching end of the dynamic linker");
 
     rxx::DlReturn {
         entry: elf.entry,
