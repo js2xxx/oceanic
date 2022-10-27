@@ -170,6 +170,9 @@ pub unsafe fn test(virt: &Virt, stack: (*mut u8, *mut u8, Handle)) {
             .expect("Failed to drop the event in master");
 
         let mut retval = Default::default();
+        sv_obj_wait(other, u64::MAX, true, false, SIG_READ)
+            .into_res()
+            .expect("Failed to wait for the task");
         sv_task_join(other, &mut retval)
             .into_res()
             .expect("Failed to join the task");

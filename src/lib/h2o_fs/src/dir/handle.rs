@@ -109,8 +109,8 @@ async fn handle_request<D: Directory>(
         } => responder.send({
             dir.clone()
                 .open(tokens.clone(), &path, options, conn)
-                .map(|res| {
-                    if res {
+                .map(|create| {
+                    if create {
                         let _ = event.send(EventFlags::ADD);
                     }
                 })

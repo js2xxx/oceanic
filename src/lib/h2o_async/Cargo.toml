@@ -6,6 +6,7 @@ version = "0.1.0"
 [features]
 default = ["runtime"]
 runtime = []
+local = ["runtime"]
 
 [dependencies]
 # Local crates

@@ -103,7 +103,7 @@ fn exec(
     init_chan: sv_call::Handle,
     starter: &Starter,
 ) -> sv_call::Result<(Init, sv_call::Handle)> {
-    let cur = super::SCHED.with_current(|cur| Ok(cur.tid.clone()))?;
+    let cur = super::SCHED.with_current(|cur| Ok(cur.tid().clone()))?;
     let init = exec_inner(cur, name, None, None, space, init_chan, starter)?;
     super::SCHED.with_current(|cur| {
         let event = Arc::downgrade(&init.tid().event) as _;
@@ -120,7 +120,7 @@ fn create(
     space: Arc<Space>,
     init_chan: sv_call::Handle,
 ) -> sv_call::Result<(Init, sv_call::Handle)> {
-    let cur = super::SCHED.with_current(|cur| Ok(cur.tid.clone()))?;
+    let cur = super::SCHED.with_current(|cur| Ok(cur.tid().clone()))?;
 
     let ty = cur.ty();
     let ti = TaskInfo::builder()

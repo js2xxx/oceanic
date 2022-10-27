@@ -11,10 +11,7 @@ use core::{
 
 use crossbeam::queue::SegQueue;
 use futures::{pin_mut, ready, stream::FusedStream, Stream};
-use solvent::{
-    error::{ENOENT, EPIPE},
-    ipc::Packet,
-};
+use solvent::{error::EPIPE, ipc::Packet};
 use solvent_async::ipc::Channel;
 use solvent_core::sync::{Arsc, Mutex};
 use solvent_rpc_core::packet::{self, SerdePacket};
@@ -68,7 +65,7 @@ impl ClientImpl {
         packet.id = NonZeroUsize::new(id);
 
         match self.inner.channel.send(&mut packet) {
-            Err(EPIPE) => self.inner.receive_to_end().await?,
+            Err(EPIPE) => self.inner.receive().await?,
             res => res.map_err(Error::ClientSend)?,
         };
 
@@ -361,20 +358,6 @@ impl Inner {
         Ok(())
     }
 
-    async fn receive_to_end(&self) -> Result<(), Error> {
-        loop {
-            if self.stop.load(Acquire) {
-                break Err(Error::Disconnected);
-            }
-
-            match self.receive().await {
-                Ok(()) => {}
-                Err(Error::ClientReceive(ENOENT)) => break Ok(()),
-                Err(err) => break Err(err),
-            }
-        }
-    }
-
     async fn receive_for_caller(&self, id: usize, waker: &Waker) -> Poll<Result<Packet, Error>> {
         {
             let mut wakers = self.wakers.lock();
@@ -382,7 +365,7 @@ impl Inner {
             entry.register(waker);
         }
 
-        let stop = match self.receive_to_end().await {
+        let stop = match self.receive().await {
             Err(Error::Disconnected) => true,
             res => {
                 res?;
@@ -408,7 +391,7 @@ impl Inner {
             *entry = EventEntry::Waiting(waker.clone());
         }
 
-        let stop = match self.receive_to_end().await {
+        let stop = match self.receive().await {
             Err(Error::Disconnected) => true,
             res => {
                 res?;

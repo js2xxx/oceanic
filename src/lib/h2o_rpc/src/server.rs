@@ -2,6 +2,7 @@ use core::{
     fmt,
     future::Future,
     mem::ManuallyDrop,
+    num::NonZeroUsize,
     pin::Pin,
     sync::atomic::{AtomicBool, Ordering::*},
     task::{ready, Context, Poll},
@@ -122,10 +123,13 @@ impl Stream for PacketStream {
         Poll::Ready(match res {
             Err(Error::Disconnected) => None,
             res => Some(res.map(|packet| Request {
+                responder: Responder {
+                    sender: EventSenderImpl {
+                        inner: self.inner.clone(),
+                    },
+                    id: packet.id,
+                },
                 packet,
-                responder: Responder(EventSenderImpl {
-                    inner: self.inner.clone(),
-                }),
             })),
         })
     }
@@ -165,22 +169,25 @@ impl EventSenderImpl {
     }
 }
 
-#[repr(transparent)]
-pub struct Responder(EventSenderImpl);
+pub struct Responder {
+    sender: EventSenderImpl,
+    id: Option<NonZeroUsize>,
+}
 
 impl Responder {
     #[inline]
-    pub fn send(self, packet: Packet, close: bool) -> Result<(), Error> {
-        let ret = self.0.send(packet);
+    pub fn send(self, mut packet: Packet, close: bool) -> Result<(), Error> {
+        packet.id = self.id;
+        let ret = self.sender.send(packet);
         if close {
-            self.0.close();
+            self.sender.close();
         }
         ret
     }
 
     #[inline]
     pub fn close(self) {
-        self.0.close()
+        self.sender.close()
     }
 }
 

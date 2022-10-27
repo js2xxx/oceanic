@@ -167,7 +167,7 @@ pub fn from_elf(
         arg: 0,
     };
 
-    let tid = crate::sched::SCHED.with_current(|cur| Ok(cur.tid.clone()))?;
+    let tid = crate::sched::SCHED.with_current(|cur| Ok(cur.tid().clone()))?;
 
     let ret = super::exec_inner(
         tid,
