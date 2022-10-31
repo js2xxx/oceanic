@@ -339,7 +339,6 @@ impl List {
     {
         let mut ret = List::new();
 
-        let mut cnt = 0;
         for ptr in iter {
             let link = match ptr {
                 Err(err) => {
@@ -357,11 +356,10 @@ impl List {
             unsafe {
                 self.splice_nodes(link, link);
                 ret.insert_node(link);
+                ret.len += 1;
             }
-            cnt += 1;
         }
-        ret.len = cnt;
-        self.len -= cnt;
+        self.len -= ret.len;
 
         Ok(ret)
     }

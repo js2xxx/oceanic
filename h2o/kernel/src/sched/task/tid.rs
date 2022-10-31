@@ -1,8 +1,13 @@
 use alloc::sync::{Arc, Weak};
-use core::{hash::BuildHasherDefault, num::NonZeroU32, ops::Deref};
+use core::{
+    hash::BuildHasherDefault,
+    num::NonZeroU64,
+    ops::Deref,
+    sync::atomic::{AtomicU64, AtomicUsize, Ordering::*},
+};
 
 use archop::Azy;
-use collection_ex::{CHashMap, FnvHasher, IdAllocator};
+use collection_ex::{CHashMap, FnvHasher};
 use sv_call::Feature;
 
 use super::{hdl::DefaultFeature, TaskInfo};
@@ -11,19 +16,18 @@ use crate::sched::PREEMPT;
 pub const NR_TASKS: usize = 65536;
 
 type BH = BuildHasherDefault<FnvHasher>;
-static TI_MAP: Azy<CHashMap<u32, Arc<TaskInfo>, BH>> = Azy::new(Default::default);
-static TID_ALLOC: Azy<spin::Mutex<IdAllocator>> =
-    Azy::new(|| spin::Mutex::new(IdAllocator::new(0..=(NR_TASKS as u64 - 1))));
+static TI_MAP: Azy<CHashMap<u64, Arc<TaskInfo>, BH>> = Azy::new(Default::default);
+static TASK_COUNT: AtomicUsize = AtomicUsize::new(0);
 
 #[derive(Debug, Clone)]
 pub struct Tid {
-    raw: NonZeroU32,
+    raw: NonZeroU64,
     ti: Arc<TaskInfo>,
 }
 
 #[derive(Debug, Clone)]
 pub struct WeakTid {
-    raw: Option<NonZeroU32>,
+    raw: Option<NonZeroU64>,
     ti: Weak<TaskInfo>,
 }
 
@@ -38,7 +42,7 @@ impl Deref for Tid {
 
 impl Tid {
     #[inline]
-    pub fn raw(&self) -> u32 {
+    pub fn raw(&self) -> u64 {
         self.raw.get()
     }
 
@@ -60,7 +64,7 @@ impl WeakTid {
         }
     }
 
-    pub fn raw(&self) -> Option<u32> {
+    pub fn raw(&self) -> Option<u64> {
         self.raw.map(|raw| raw.get())
     }
 
@@ -91,11 +95,18 @@ unsafe impl DefaultFeature for Tid {
     }
 }
 
-fn next() -> Option<NonZeroU32> {
-    let mut alloc = TID_ALLOC.lock();
-    alloc
-        .allocate()
-        .and_then(|id| NonZeroU32::new((id + 1) as u32))
+fn next() -> Option<NonZeroU64> {
+    static GEN: AtomicU64 = AtomicU64::new(1);
+    let mut old = TASK_COUNT.load(Acquire);
+    loop {
+        if old >= NR_TASKS {
+            return None;
+        }
+        match TASK_COUNT.compare_exchange(old, old + 1, SeqCst, SeqCst) {
+            Ok(_) => return NonZeroU64::new(GEN.fetch_add(1, Relaxed)),
+            Err(m) => old = m,
+        }
+    }
 }
 
 /// # Errors
@@ -116,14 +127,15 @@ pub fn allocate(ti: TaskInfo) -> sv_call::Result<Tid> {
 
 pub fn deallocate(tid: Tid) -> bool {
     let _flags = PREEMPT.lock();
-    TI_MAP.remove(&tid.raw.get()).map_or(false, |_| {
-        TID_ALLOC.lock().deallocate(u64::from(tid.raw.get()));
-        true
-    })
+    TI_MAP
+        .remove(&tid.raw.get())
+        .inspect(|_| {
+            TASK_COUNT.fetch_sub(1, SeqCst);
+        })
+        .is_some()
 }
 
 #[inline]
 pub fn init() {
     Azy::force(&TI_MAP);
-    Azy::force(&TID_ALLOC);
 }

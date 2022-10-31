@@ -24,14 +24,11 @@ struct Logger;
 impl Write for Buffer {
     fn write_str(&mut self, s: &str) -> fmt::Result {
         let bytes = s.as_bytes();
-        self.0
-            .get_mut(self.1..)
-            .and_then(|buf| buf.get_mut(..bytes.len()))
-            .map_or(Err(fmt::Error), |buf| {
-                buf.copy_from_slice(bytes);
-                self.1 += bytes.len();
-                Ok(())
-            })
+        let start = self.1;
+        let end = (start + bytes.len()).min(BUFFER_SIZE);
+        self.0[start..end].copy_from_slice(&bytes[..(end - start)]);
+        self.1 = end;
+        Ok(())
     }
 }
 
