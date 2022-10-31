@@ -27,6 +27,7 @@ pub enum DispError {
 }
 
 struct Dispatcher {
+    id: usize,
     inner: Inner,
     stop: AtomicBool,
     num_recv: AtomicUsize,
@@ -41,7 +42,9 @@ unsafe impl Sync for Dispatcher {}
 impl Dispatcher {
     #[inline]
     fn new(capacity: usize) -> Self {
+        static ID: AtomicUsize = AtomicUsize::new(1);
         Dispatcher {
+            id: ID.fetch_add(1, SeqCst),
             inner: Inner::new(capacity),
             stop: AtomicBool::new(false),
             num_recv: AtomicUsize::new(1),
@@ -175,6 +178,11 @@ impl DispReceiver {
     #[inline]
     pub fn poll_receive(&self) -> Poll<Result<(), DispError>> {
         self.disp.poll_receive()
+    }
+
+    #[inline]
+    pub fn id(&self) -> usize {
+        self.disp.id
     }
 }
 

@@ -7,6 +7,7 @@ use core::{
     pin::Pin,
     sync::atomic::{AtomicBool, AtomicUsize, Ordering::*},
     task::{Context, Poll},
+    time::Duration,
 };
 
 use async_task::{Runnable, Task};
@@ -14,6 +15,7 @@ use futures::{
     task::{FutureObj, Spawn, SpawnError},
     Future,
 };
+use solvent::time::Instant;
 use solvent::prelude::EPIPE;
 #[cfg(feature = "runtime")]
 use solvent_core::thread_local;
@@ -179,8 +181,9 @@ fn worker_thread(local: Worker<Runnable>, pool: Arsc<Inner>) {
 }
 
 fn io_thread(rx: DispReceiver, pool: Arsc<Inner>) {
-    log::trace!("solvent-async::exe: io thread #{}", thread::current().id());
+    log::trace!("solvent-async::exe: io thread #{}", rx.id());
     let backoff = Backoff::new();
+    let mut time = Instant::now();
     loop {
         match rx.poll_receive() {
             Poll::Ready(res) => match res {
@@ -193,7 +196,11 @@ fn io_thread(rx: DispReceiver, pool: Arsc<Inner>) {
                 if pool.count.load(Acquire) == 0 {
                     break;
                 }
-                log::trace!("IO#{}: Waiting for next task...", thread::current().id());
+                let elapsed = time.elapsed();
+                if elapsed >= Duration::from_secs(2) {
+                    log::trace!("IO#{}: Waiting for next task...", rx.id());
+                    time += elapsed;
+                }
                 backoff.snooze()
             }
         }
@@ -301,8 +308,9 @@ fn local_worker(inner: Arsc<LocalInner>) {
 }
 
 fn local_io(rx: DispReceiver, pool: Arsc<LocalInner>) {
-    log::trace!("solvent-async::exe: io thread #{}", thread::current().id());
+    log::debug!("solvent-async::exe: local io thread #{}", rx.id());
     let backoff = Backoff::new();
+    let mut time = Instant::now();
     loop {
         match rx.poll_receive() {
             Poll::Ready(res) => match res {
@@ -315,7 +323,11 @@ fn local_io(rx: DispReceiver, pool: Arsc<LocalInner>) {
                 if pool.stop.load(Acquire) {
                     break;
                 }
-                log::trace!("IO#{}: Waiting for next task...", thread::current().id());
+                let elapsed = time.elapsed();
+                if elapsed >= Duration::from_secs(2) {
+                    log::trace!("IO#{}: Waiting for next task...", rx.id());
+                    time += elapsed;
+                }
                 backoff.snooze()
             }
         }

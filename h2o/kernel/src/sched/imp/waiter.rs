@@ -191,9 +191,6 @@ impl Dispatcher {
             signal,
             request,
         } = self.ready.pop()?;
-        if let Some(event) = request.event.upgrade() {
-            event.unwait(&(Arc::clone(self) as _));
-        }
         let res = if !canceled { request.syscall } else { None };
         self.event.notify(0, SIG_WRITE);
         *key = request.key;
@@ -218,7 +215,7 @@ impl Waiter for Dispatcher {
             });
             iter.for_each(|request| {
                 self.ready.push(Ready {
-                    canceled: false,
+                    canceled: true,
                     signal,
                     request,
                 });

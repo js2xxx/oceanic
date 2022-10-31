@@ -1,5 +1,5 @@
 use alloc::sync::Arc;
-use core::sync::atomic::{AtomicU32, Ordering::*};
+use core::sync::atomic::{AtomicU64, Ordering::*};
 
 use sv_call::Feature;
 
@@ -17,7 +17,7 @@ pub struct Space {
     mem: Arc<mem::space::Space>,
     handles: HandleMap,
     futexes: Futexes,
-    main: AtomicU32,
+    main: AtomicU64,
 }
 
 unsafe impl Send for Space {}
@@ -30,7 +30,7 @@ impl Space {
             mem,
             handles: HandleMap::new(),
             futexes: Default::default(),
-            main: AtomicU32::new(0),
+            main: AtomicU64::new(0),
         })?)
     }
 
@@ -39,7 +39,7 @@ impl Space {
             mem: mem::space::with_current(Arc::clone),
             handles: HandleMap::new(),
             futexes: Default::default(),
-            main: AtomicU32::new(0),
+            main: AtomicU64::new(0),
         })
     }
 

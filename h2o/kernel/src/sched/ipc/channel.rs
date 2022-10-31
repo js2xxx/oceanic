@@ -125,27 +125,6 @@ impl Channel {
         }
     }
 
-    /// # Safety
-    ///
-    /// `head` must contains a valid packet.
-    unsafe fn get_packet(
-        head: &mut Option<Packet>,
-        buffer_cap: &mut usize,
-        handle_cap: &mut usize,
-    ) -> sv_call::Result<Packet> {
-        let packet = unsafe { head.as_mut().unwrap_unchecked() };
-        let buffer_size = packet.buffer().len();
-        let handle_count = packet.object_count();
-        let ret = if buffer_size > *buffer_cap || handle_count > *handle_cap {
-            Err(sv_call::EBUFFER)
-        } else {
-            Ok(unsafe { head.take().unwrap_unchecked() })
-        };
-        *buffer_cap = buffer_size;
-        *handle_cap = handle_count;
-        ret
-    }
-
     /// # Errors
     ///
     /// Returns error if the peer is closed.
@@ -156,15 +135,30 @@ impl Channel {
     ) -> sv_call::Result<Packet> {
         let _pree = PREEMPT.lock();
         let mut head = self.head.lock();
-        if head.is_none() {
-            let err = if self.peer.strong_count() > 0 {
-                sv_call::ENOENT
-            } else {
-                sv_call::EPIPE
-            };
-            *head = Some(self.me.msgs.pop().ok_or(err)?);
-        }
-        unsafe { Self::get_packet(&mut head, buffer_cap, handle_cap) }
+
+        let packet = match head.take() {
+            Some(packet) => packet,
+            None => {
+                let err = if self.peer.strong_count() > 0 {
+                    sv_call::ENOENT
+                } else {
+                    sv_call::EPIPE
+                };
+                self.me.msgs.pop().ok_or(err)?
+            }
+        };
+
+        let buffer_size = packet.buffer().len();
+        let handle_count = packet.object_count();
+        let ret = if buffer_size > *buffer_cap || handle_count > *handle_cap {
+            *head = Some(packet);
+            Err(sv_call::EBUFFER)
+        } else {
+            Ok(packet)
+        };
+        *buffer_cap = buffer_size;
+        *handle_cap = handle_count;
+        ret
     }
 }
 
