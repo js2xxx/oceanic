@@ -95,6 +95,7 @@ mod syscall {
                 return Err(EPERM);
             }
             let sub = res.allocate(base..(base + size)).ok_or(ENOMEM)?;
+            drop(res);
             cur.space().handles().insert_raw(sub, None)
         })
     }

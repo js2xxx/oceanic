@@ -9,7 +9,7 @@ use archop::reg::cr2;
 use bytes::Buf;
 use sv_call::task::excep::{Exception, ExceptionResult, EXRES_CODE_RECOVERED};
 
-use super::{ctx::x86_64::Frame, hdl};
+use super::ctx::x86_64::Frame;
 use crate::{
     cpu::intr::arch::ExVec,
     sched::{ipc::Packet, PREEMPT, SCHED, SIG_READ},
@@ -37,7 +37,7 @@ pub fn dispatch_exception(frame: &mut Frame, vec: ExVec) -> bool {
         })
     };
 
-    let mut excep = Packet::new(0, hdl::List::default(), &data);
+    let mut excep = Packet::new(0, Default::default(), &data);
     if excep_chan.send(&mut excep).is_err() {
         PREEMPT.scope(|| *slot.lock() = Some(excep_chan));
         return false;

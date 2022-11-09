@@ -1,6 +1,9 @@
 mod syscall;
 
-use alloc::sync::{Arc, Weak};
+use alloc::{
+    sync::{Arc, Weak},
+    vec::Vec,
+};
 use core::{
     mem,
     sync::atomic::{AtomicU64, Ordering::SeqCst},
@@ -22,7 +25,7 @@ const MAX_QUEUE_SIZE: usize = 2048;
 #[derive(Debug, Default)]
 pub struct Packet {
     id: usize,
-    objects: hdl::List,
+    objects: Vec<hdl::Ref>,
     buffer: Bytes,
 }
 
@@ -30,7 +33,7 @@ unsafe impl Send for Packet {}
 unsafe impl Sync for Packet {}
 
 impl Packet {
-    pub fn new(id: usize, objects: hdl::List, data: &[u8]) -> Self {
+    pub fn new(id: usize, objects: Vec<hdl::Ref>, data: &[u8]) -> Self {
         let buffer = Bytes::copy_from_slice(data);
         Packet {
             id,

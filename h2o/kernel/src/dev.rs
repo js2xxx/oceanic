@@ -56,6 +56,7 @@ mod syscall {
                 && res.range().start <= base
                 && base + size <= res.range().end
             {
+                drop(res);
                 let io_bitmap = cur.io_bitmap_mut().get_or_insert_with(|| bitvec![1; 65536]);
                 for item in io_bitmap.iter_mut().skip(base as usize).take(size as usize) {
                     item.set(false);
@@ -76,6 +77,7 @@ mod syscall {
                 && res.range().start <= base
                 && base + size <= res.range().end
             {
+                drop(res);
                 if let Some(io_bitmap) = cur.io_bitmap_mut() {
                     for item in io_bitmap.iter_mut().skip(base as usize).take(size as usize) {
                         item.set(true);

@@ -185,8 +185,10 @@ fn task_join(hdl: Handle, retval: UserPtr<Out, usize>) -> Result {
 
     SCHED.with_current(|cur| {
         let handles = cur.space().handles();
-        let val =
-            { handles.get::<Tid>(hdl) }.and_then(|tid| tid.ret_cell().lock().ok_or(ENOENT))?;
+        let val = match handles.get::<Tid>(hdl) {
+            Ok(tid) => tid.ret_cell().lock().ok_or(ENOENT)?,
+            Err(e) => return Err(e),
+        };
 
         drop(handles.remove::<Tid>(hdl));
         unsafe { retval.write(val) }

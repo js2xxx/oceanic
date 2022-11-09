@@ -173,27 +173,36 @@ impl<K, V, S: BuildHasher + Default> CHashMap<K, V, S> {
         })
     }
 
-    pub fn insert(&self, key: K, value: V) -> Option<(K, V)>
+    pub fn insert(&self, mut key: K, mut value: V) -> Option<(K, V)>
     where
         K: Hash + PartialEq,
     {
         loop {
             let buckets = self.inner.read();
-            let old = match buckets.entry(&key) {
-                Some(mut entry) => mem::replace(&mut *entry, inner::Entry::Data((key, value))),
-                None => {
-                    hint::spin_loop();
-                    continue;
-                }
+
+            let res = match buckets.entry(&key) {
+                Some(mut entry) => Ok(mem::replace(&mut *entry, inner::Entry::Data((key, value)))),
+                None => Err((key, value)),
             };
-            if old.is_free() {
-                let len = self.len.fetch_add(1, SeqCst) + 1;
-                if len * LOAD_FACTOR_D >= buckets.len() * LOAD_FACTOR_N {
+
+            match res {
+                Ok(old) => {
+                    if old.is_free() {
+                        let len = self.len.fetch_add(1, SeqCst) + 1;
+                        if len * LOAD_FACTOR_D >= buckets.len() * LOAD_FACTOR_N {
+                            drop(buckets);
+                            self.grow(len);
+                        }
+                    }
+                    break old.into();
+                }
+                Err(new) => {
+                    let len = self.len.load(SeqCst);
                     drop(buckets);
-                    self.grow(len);
+                    self.grow(len * GROW_FACTOR);
+                    (key, value) = new;
                 }
             }
-            break old.into();
         }
     }
 
@@ -269,6 +278,33 @@ impl<K, V, S: BuildHasher + Default> CHashMap<K, V, S> {
         ret.into()
     }
 
+    pub fn try_remove_entry<Q, F, E>(&self, key: &Q, predicate: F) -> Result<(K, V), Option<E>>
+    where
+        Q: Hash + PartialEq,
+        K: Borrow<Q> + Hash,
+        F: FnOnce(&V) -> Result<(), E>,
+    {
+        let buckets = self.inner.read();
+        let ret = match buckets.entry(key) {
+            Some(mut entry) => match entry.get() {
+                Some((_, v)) => match predicate(v) {
+                    Ok(()) => mem::replace(&mut *entry, inner::Entry::Removed),
+                    Err(err) => return Err(Some(err)),
+                },
+                None => return Err(None),
+            },
+            None => return Err(None),
+        };
+        if !ret.is_free() {
+            let len = self.len.fetch_sub(1, SeqCst) - 1;
+            if len * GROW_FACTOR * LOAD_FACTOR_D < buckets.len() * LOAD_FACTOR_N {
+                drop(buckets);
+                self.shrink(len);
+            }
+        }
+        Option::from(ret).ok_or(None)
+    }
+
     #[inline]
     pub fn remove_entry<Q>(&self, key: &Q) -> Option<(K, V)>
     where
@@ -295,6 +331,17 @@ impl<K, V, S: BuildHasher + Default> CHashMap<K, V, S> {
         K: Borrow<Q> + Hash,
     {
         self.remove_entry(key).map(|ret| ret.1)
+    }
+
+    #[inline]
+    pub fn try_remove<Q, F, E>(&self, key: &Q, predicate: F) -> Result<V, Option<E>>
+    where
+        Q: Hash + PartialEq,
+        K: Borrow<Q> + Hash,
+        F: FnOnce(&V) -> Result<(), E>,
+    {
+        self.try_remove_entry(key, predicate)
+            .map(|(_, value)| value)
     }
 
     pub fn retain_mut<F>(&self, predicate: F)
