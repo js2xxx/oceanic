@@ -50,11 +50,14 @@ where
 
     SCHED.with_current(|cur| {
         let map = cur.space().handles();
-        let channel = map.get::<Channel>(hdl)?;
-        if !channel.features().contains(Feature::WRITE) {
+        let obj = map.get::<Channel>(hdl)?;
+        if !obj.features().contains(Feature::WRITE) {
             return Err(EPERM);
         }
-        let objects = unsafe { map.send(handles, &channel) }?;
+        let channel = Arc::clone(&obj);
+        drop(obj);
+
+        let objects = map.send(handles, &channel)?;
         let mut packet = Packet::new(packet.id, objects, buffer);
         send(&channel, &mut packet)
     })
@@ -74,7 +77,7 @@ fn receive_handles<E: ?Sized + Event>(
     res: Result<Packet>,
     map: &crate::sched::task::hdl::HandleMap,
     raw: &mut RawPacket,
-    event: &Arc<E>,
+    event: Arc<E>,
 ) -> Result<Packet> {
     match res {
         Ok(mut packet) => {
@@ -124,7 +127,9 @@ fn chan_recv(hdl: Handle, packet_ptr: UserPtr<InOut, RawPacket>) -> Result {
         raw.buffer_size = raw.buffer_cap;
         raw.handle_count = raw.handle_cap;
         let res = channel.receive(&mut raw.buffer_size, &mut raw.handle_count);
-        receive_handles(res, map, &mut raw, (**channel).event())
+        let event = (**channel).event().clone();
+        drop(channel);
+        receive_handles(res, map, &mut raw, event)
     });
 
     write_raw_with_rest_of_packet(packet_ptr.out(), raw, res)

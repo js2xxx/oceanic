@@ -1,4 +1,4 @@
-use alloc::sync::Weak;
+use alloc::{sync::Weak, vec::Vec};
 use core::mem;
 
 use archop::Azy;
@@ -74,44 +74,36 @@ pub fn setup() {
         ptr.write(constants);
     }
 
-    let mut objects = hdl::List::new();
+    let mut objects = Vec::<hdl::Ref>::new();
 
     // The sequence of kernel objects must match the one defined in
     // `targs::HandleIndex`.
     {
         let mem_res = Arc::clone(crate::dev::mem_resource());
-        let res = objects
-            .insert(hdl::Ref::try_new(mem_res, None).expect("Failed to create memory resource"));
-        res.expect("Failed to insert memory resource");
+        objects.push(hdl::Ref::try_new(mem_res, None).expect("Failed to create memory resource"));
     }
     {
         let pio_res = Arc::clone(crate::dev::pio_resource());
-        let res = objects
-            .insert(hdl::Ref::try_new(pio_res, None).expect("Failed to create port I/O resource"));
-        res.expect("Failed to insert port I/O resource");
+        objects.push(hdl::Ref::try_new(pio_res, None).expect("Failed to create port I/O resource"));
     }
     {
         let gsi_res = Arc::clone(crate::dev::gsi_resource());
-        let res = objects
-            .insert(hdl::Ref::try_new(gsi_res, None).expect("Failed to create GSI resource"));
-        res.expect("Failed to insert GSI resource");
+        objects.push(hdl::Ref::try_new(gsi_res, None).expect("Failed to create GSI resource"));
     }
     unsafe {
-        let res = objects.insert(
+        objects.push(
             hdl::Ref::from_raw_unchecked(Arc::clone(&VDSO.1), flags_to_feat(VDSO.0), None)
                 .expect("Failed to create VDSO reference"),
         );
-        res.expect("Failed to insert VDSO");
 
-        let res = objects.insert(
+        objects.push(
             hdl::Ref::from_raw_unchecked(Arc::clone(&BOOTFS.1), flags_to_feat(BOOTFS.0), None)
                 .expect("Failed to create boot FS reference"),
         );
-        res.expect("Failed to insert boot FS");
     }
     let space = super::Space::new(Type::User).expect("Failed to create space");
     unsafe {
-        let res = objects.insert(
+        objects.push(
             hdl::Ref::try_new_unchecked(
                 Arc::downgrade(space.mem().root()),
                 Weak::<Virt>::default_features() | Feature::SEND,
@@ -119,7 +111,6 @@ pub fn setup() {
             )
             .expect("Failed to create root virt"),
         );
-        res.expect("Failed to insert root virt");
     }
 
     let buf = {

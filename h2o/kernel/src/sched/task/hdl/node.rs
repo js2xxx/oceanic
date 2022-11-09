@@ -1,37 +1,24 @@
 use alloc::sync::{Arc, Weak};
 use core::{
     any::Any,
-    fmt,
-    iter::FusedIterator,
-    marker::{PhantomData, PhantomPinned, Unsize},
-    mem,
+    marker::{PhantomPinned, Unsize},
     ops::{CoerceUnsized, Deref},
-    ptr::NonNull,
 };
 
-use archop::Azy;
 use sv_call::{Feature, Result};
 
 use super::DefaultFeature;
-use crate::{
-    mem::Arena,
-    sched::{Event, PREEMPT},
-};
+use crate::sched::Event;
 
 pub const MAX_HANDLE_COUNT: usize = 1 << 16;
-
-pub(super) static HR_ARENA: Azy<Arena<Ref>> = Azy::new(|| Arena::new(MAX_HANDLE_COUNT));
 
 #[derive(Debug)]
 pub struct Ref<T: ?Sized = dyn Any + Send + Sync> {
     _marker: PhantomPinned,
-    next: Option<Ptr>,
-    prev: Option<Ptr>,
     event: Weak<dyn Event>,
     feat: Feature,
     obj: Arc<T>,
 }
-pub type Ptr = NonNull<Ref>;
 
 unsafe impl<T: ?Sized> Send for Ref<T> {}
 
@@ -68,8 +55,6 @@ impl<T: ?Sized> Ref<T> {
         let event = event.unwrap_or(Weak::<crate::sched::BasicEvent>::new() as _);
         Ok(Ref {
             _marker: PhantomPinned,
-            next: None,
-            prev: None,
             event,
             feat,
             obj,
@@ -130,8 +115,6 @@ impl<T: ?Sized> Ref<T> {
     {
         Arc::try_unwrap(this.obj).map_err(|obj| Ref {
             _marker: PhantomPinned,
-            next: this.next,
-            prev: this.prev,
             event: this.event,
             feat: this.feat,
             obj,
@@ -167,16 +150,12 @@ impl Ref {
         match self.obj.downcast() {
             Ok(obj) => Ok(Ref {
                 _marker: PhantomPinned,
-                next: None,
-                prev: None,
                 event: self.event,
                 feat: self.feat,
                 obj,
             }),
             Err(obj) => Err(Ref {
                 _marker: PhantomPinned,
-                next: None,
-                prev: None,
                 event: self.event,
                 feat: self.feat,
                 obj,
@@ -193,8 +172,6 @@ impl Ref {
     unsafe fn clone_unchecked(&self) -> Ref {
         Ref {
             _marker: PhantomPinned,
-            next: None,
-            prev: None,
             event: Weak::clone(&self.event),
             feat: self.feat,
             obj: Arc::clone(&self.obj),
@@ -210,269 +187,4 @@ impl Ref {
             Err(sv_call::EPERM)
         }
     }
-}
-
-pub struct List {
-    head: Option<Ptr>,
-    tail: Option<Ptr>,
-    len: usize,
-    _marker: PhantomData<Ref>,
-}
-
-unsafe impl Send for List {}
-
-impl List {
-    #[inline]
-    pub fn new() -> Self {
-        List {
-            head: None,
-            tail: None,
-            len: 0,
-            _marker: PhantomData,
-        }
-    }
-
-    #[inline]
-    pub fn len(&self) -> usize {
-        self.len
-    }
-
-    #[inline]
-    pub fn is_empty(&self) -> bool {
-        self.len == 0
-    }
-}
-
-impl Default for List {
-    #[inline]
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl List {
-    /// # Safety
-    ///
-    /// The caller must ensure that the pointers belongs to the list and `start`
-    /// is some predecessor of `end` or equals `end`.
-    unsafe fn splice_nodes(&mut self, mut start: Ptr, mut end: Ptr) {
-        // These two are ours now, and we can create &mut s.
-        let (start, end) = unsafe { (start.as_mut(), end.as_mut()) };
-
-        // Not creating new mutable (unique!) references overlapping `element`.
-        match start.prev {
-            Some(mut prev) => unsafe { prev.as_mut().next = end.next },
-            // These nodes start with the head.
-            None => self.head = end.next,
-        }
-
-        match end.next {
-            Some(mut next) => unsafe { next.as_mut().prev = start.prev },
-            // These nodes end with the tail.
-            None => self.tail = start.prev,
-        }
-
-        start.prev = None;
-        end.next = None;
-    }
-
-    /// # Safety
-    ///
-    /// The caller must ensure that `link` doesn't belong to another list.
-    unsafe fn insert_node(&mut self, mut link: Ptr) {
-        // This one is ours now, and we can create a &mut.
-        let value = unsafe { link.as_mut() };
-        value.next = None;
-        value.prev = self.tail;
-
-        match self.tail {
-            // SAFETY: If tail is not null, then tail is allocated from the arena.
-            Some(mut tail) => unsafe { tail.as_mut().next = Some(link) },
-            None => self.head = Some(link),
-        }
-
-        self.tail = Some(link);
-    }
-}
-
-impl List {
-    pub fn insert(&mut self, value: Ref) -> Result<Ptr> {
-        let link = HR_ARENA.allocate()?;
-        // SAFETY: The pointer is allocated from the arena.
-        unsafe { link.as_ptr().write(value) };
-
-        // SAFETY: The node is freshly allocated.
-        unsafe { self.insert_node(link) };
-        self.len += 1;
-
-        Ok(link)
-    }
-
-    pub fn remove(&mut self, link: Ptr) -> Result<Ref> {
-        let mut cur = self.head;
-        loop {
-            cur = match cur {
-                Some(cur) if cur == link => {
-                    // SAFETY: The pointer is ours.
-                    unsafe { self.splice_nodes(cur, cur) };
-                    self.len -= 1;
-
-                    // SAFETY: The pointer will be no longer read again and the ownership is moved
-                    // to `value`.
-                    let value = unsafe { cur.as_ptr().read() };
-                    // SAFETY: The pointer is ours.
-                    let _ = unsafe { HR_ARENA.deallocate(cur) };
-
-                    break Ok(value);
-                }
-                // SAFETY: The pointer is allocated from the arena.
-                Some(cur) => unsafe { cur.as_ref().next },
-                None => break Err(sv_call::ENOENT),
-            }
-        }
-    }
-
-    pub(super) fn split<I, F>(&mut self, iter: I, check: F) -> Result<List>
-    where
-        I: Iterator<Item = Result<Ptr>>,
-        F: Fn(&Ref) -> Result,
-    {
-        let mut ret = List::new();
-
-        for ptr in iter {
-            let link = match ptr {
-                Err(err) => {
-                    self.merge(&mut ret);
-                    return Err(err);
-                }
-                Ok(link) => match check(unsafe { link.as_ref() }) {
-                    Ok(()) => link,
-                    Err(err) => {
-                        self.merge(&mut ret);
-                        return Err(err);
-                    }
-                },
-            };
-            unsafe {
-                self.splice_nodes(link, link);
-                ret.insert_node(link);
-                ret.len += 1;
-            }
-        }
-        self.len -= ret.len;
-
-        Ok(ret)
-    }
-
-    pub(super) fn merge(&mut self, other: &mut List) -> Iter {
-        let mut start = match other.head {
-            Some(head) => head,
-            None => return Iter::empty(),
-        };
-        let mut end = match other.tail {
-            Some(tail) => tail,
-            None => return Iter::empty(),
-        };
-        let list = mem::take(other);
-        let len = list.len;
-        mem::forget(list);
-
-        let (start, end) = unsafe {
-            start.as_mut().prev = self.tail;
-            end.as_mut().next = None;
-            (Some(start), Some(end))
-        };
-
-        match self.tail {
-            // SAFETY: If tail is not null, then tail is allocated from the arena.
-            Some(mut tail) => unsafe { tail.as_mut().next = start },
-            None => self.head = start,
-        }
-
-        self.tail = end;
-        self.len += len;
-
-        Iter {
-            head: start,
-            len,
-            _marker: PhantomData,
-        }
-    }
-
-    pub fn iter(&self) -> Iter {
-        Iter {
-            head: self.head,
-            len: self.len,
-            _marker: PhantomData,
-        }
-    }
-}
-
-impl fmt::Debug for List {
-    #[inline]
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_list().entries(self.iter()).finish()
-    }
-}
-
-impl Drop for List {
-    fn drop(&mut self) {
-        while let Some(head) = self.head {
-            let _ = self.remove(head);
-        }
-    }
-}
-
-pub struct Iter<'a> {
-    head: Option<Ptr>,
-    len: usize,
-    _marker: PhantomData<&'a Ref>,
-}
-
-impl<'a> Iter<'a> {
-    #[inline]
-    pub fn empty() -> Self {
-        Iter {
-            head: None,
-            len: 0,
-            _marker: PhantomData,
-        }
-    }
-}
-
-impl<'a> Iterator for Iter<'a> {
-    type Item = &'a Ref;
-
-    #[inline]
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.len == 0 {
-            None
-        } else {
-            self.head.map(|head| unsafe {
-                let ret = head.as_ref();
-                self.head = ret.next;
-                self.len -= 1;
-                ret
-            })
-        }
-    }
-
-    #[inline]
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        (self.len, Some(self.len))
-    }
-}
-
-impl<'a> ExactSizeIterator for Iter<'a> {}
-
-impl<'a> FusedIterator for Iter<'a> {}
-
-#[inline]
-pub fn decode(index: usize) -> Result<Ptr> {
-    PREEMPT.scope(|| HR_ARENA.get_ptr(index))
-}
-
-#[inline]
-pub fn encode(value: Ptr) -> Result<usize> {
-    PREEMPT.scope(|| HR_ARENA.get_index(value))
 }

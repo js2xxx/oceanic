@@ -226,6 +226,7 @@ mod syscall {
             return Err(EPERM);
         }
         let event = obj.event().upgrade().ok_or(EPIPE)?;
+        drop(obj);
 
         let blocker = Blocker::new(&event, level_triggered, wake_all, signal);
         blocker.wait(Some(pree), time::from_us(timeout_us))?;
@@ -274,6 +275,7 @@ mod syscall {
                 return Err(EPERM);
             }
             let event = obj.event().upgrade().ok_or(EPIPE)?;
+            drop(obj);
 
             let waiter_data = WaiterData::new(
                 if level_triggered {

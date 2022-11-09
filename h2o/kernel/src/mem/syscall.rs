@@ -229,8 +229,9 @@ fn space_new(root_virt: UserPtr<Out, Handle>) -> Result<Handle> {
 fn virt_alloc(hdl: Handle, offset: usize, size: usize, align: usize) -> Result<Handle> {
     hdl.check_null()?;
     SCHED.with_current(|cur| {
-        let virt = cur.space().handles().get::<Weak<space::Virt>>(hdl)?;
-        let virt = virt.upgrade().ok_or(EKILLED)?;
+        let virt_obj = cur.space().handles().get::<Weak<space::Virt>>(hdl)?;
+        let virt = virt_obj.upgrade().ok_or(EKILLED)?;
+        drop(virt_obj);
         let sub = virt.allocate(
             (offset != usize::MAX).then_some(offset),
             Layout::from_size_align(size, align)?,
@@ -269,8 +270,9 @@ fn virt_map(hdl: Handle, mi_ptr: UserPtr<InOut, VirtMapInfo>) -> Result<*mut u8>
     let mi = unsafe { mi_ptr.read() }?;
     let flags = check_flags(mi.flags)?;
     SCHED.with_current(|cur| {
-        let virt = cur.space().handles().get::<Weak<space::Virt>>(hdl)?;
-        let virt = virt.upgrade().ok_or(EKILLED)?;
+        let virt_obj = cur.space().handles().get::<Weak<space::Virt>>(hdl)?;
+        let virt = virt_obj.upgrade().ok_or(EKILLED)?;
+        drop(virt_obj);
         let phys = cur.space().handles().remove::<space::Phys>(mi.phys)?;
         let offset = (mi.offset != usize::MAX).then_some(mi.offset);
         if flags.intersects(!features_to_flags(phys.features())) {
@@ -337,6 +339,7 @@ fn phys_acq(res: Handle, addr: usize, size: usize) -> Result<Handle> {
         }
 
         if addr == 0 {
+            drop(res);
             let phys = space::allocate_phys(size, PhysOptions::ZEROED, true)?;
             return unsafe { cur.space().handles().insert_raw(phys, None) };
         }
@@ -344,6 +347,7 @@ fn phys_acq(res: Handle, addr: usize, size: usize) -> Result<Handle> {
         if !(res.range().start <= addr && addr + size <= res.range().end) {
             return Err(EPERM);
         }
+        drop(res);
         let phys = space::new_phys(paging::PAddr::new(addr), size)?;
         unsafe { cur.space().handles().insert_raw(phys, None) }
     })

@@ -133,13 +133,15 @@ mod syscall {
         last_time.check()?;
 
         let pree = PREEMPT.lock();
-        let intr = unsafe { (*SCHED.current()).as_ref().ok_or(ESRCH)? }
+        let intr_obj = unsafe { (*SCHED.current()).as_ref().ok_or(ESRCH)? }
             .space()
             .handles()
             .get::<Interrupt>(hdl)?;
-        if !intr.features().contains(Feature::WAIT) {
+        if !intr_obj.features().contains(Feature::WAIT) {
             return Err(EPERM);
         }
+        let intr = Arc::clone(&intr_obj);
+        drop(intr_obj);
 
         if timeout_us > 0 {
             let blocker = crate::sched::Blocker::new(

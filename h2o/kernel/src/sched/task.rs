@@ -50,7 +50,6 @@ pub(super) fn init() {
 
 #[inline]
 pub fn init_early() {
-    hdl::init();
     tid::init();
 }
 
