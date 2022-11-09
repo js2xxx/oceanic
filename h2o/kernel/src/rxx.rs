@@ -1,7 +1,7 @@
 #[panic_handler]
 fn panic_handler(info: &core::panic::PanicInfo) -> ! {
     log::error!("CPU #{} {}", unsafe { crate::cpu::id() }, info);
-    unsafe { archop::halt_loop(Some(false)) }
+    unsafe { archop::halt_loop(Some(true)) }
 }
 
 /// The function indicating memory runs out.

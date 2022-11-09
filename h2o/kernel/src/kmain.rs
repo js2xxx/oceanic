@@ -30,7 +30,6 @@
 #![feature(thread_local)]
 #![feature(trace_macros)]
 #![feature(unsize)]
-#![feature(unzip_option)]
 #![feature(vec_into_raw_parts)]
 
 pub mod cpu;

@@ -126,6 +126,7 @@ pub fn test(a: &impl core::alloc::GlobalAlloc, start_seed: usize) {
                 let layout = core::alloc::Layout::from_size_align(seed, seed.next_power_of_two())
                     .expect("Invalid layout");
                 *u = (allocator.alloc(layout), layout);
+                assert!(!u.0.is_null(), "allocation failed");
                 seed = random(seed);
             }
 
@@ -137,6 +138,7 @@ pub fn test(a: &impl core::alloc::GlobalAlloc, start_seed: usize) {
                 let layout = core::alloc::Layout::from_size_align(seed, seed.next_power_of_two())
                     .expect("Invalid layout");
                 *w = (allocator.alloc(layout), layout);
+                assert!(!w.0.is_null(), "allocation failed");
                 seed = random(seed);
             }
 
