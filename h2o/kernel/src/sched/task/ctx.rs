@@ -5,9 +5,8 @@ cfg_if::cfg_if! {
     }
 }
 
-use alloc::boxed::Box;
+use alloc::{boxed::Box, sync::Arc};
 use core::{
-    alloc::Layout,
     fmt::Debug,
     num::NonZeroU64,
     ops::{Deref, DerefMut},
@@ -20,6 +19,7 @@ use paging::{LAddr, PAGE_SIZE};
 use crate::{
     cpu::arch::seg::ndt::INTR_CODE,
     mem::space::{self, Flags},
+    sched::PREEMPT,
 };
 
 pub const KSTACK_SIZE: usize = paging::PAGE_SIZE * 18;
@@ -56,6 +56,7 @@ impl KstackData {
 
 pub struct Kstack {
     ptr: NonNull<KstackData>,
+    virt: Arc<space::Virt>,
     kframe_ptr: *mut u8,
     pf_resume: Option<NonZeroU64>,
 }
@@ -64,18 +65,29 @@ unsafe impl Send for Kstack {}
 
 impl Kstack {
     pub fn new(entry: Option<Entry>, ty: super::Type) -> Self {
-        let ptr = space::allocate(
-            Layout::new::<KstackData>().size(),
-            Flags::READABLE | Flags::WRITABLE,
-            false,
-        )
-        .expect("Failed to allocate kernel stack");
-        unsafe {
-            let pad = NonNull::slice_from_raw_parts(ptr.as_non_null_ptr(), PAGE_SIZE);
-            space::reprotect_unchecked(pad, Flags::READABLE).expect("Failed to set padding");
-        }
+        let (virt, addr) = PREEMPT.scope(|| {
+            let virt = space::KRL
+                .allocate(None, space::page_aligned(KSTACK_SIZE + PAGE_SIZE))
+                .expect("Failed to allocate space for task's kernel stack")
+                .upgrade()
+                .expect("Kernel root virt unexpectedly dropped it!");
 
-        let mut kstack = ptr.cast::<KstackData>();
+            let phys = space::allocate_phys(KSTACK_SIZE, Default::default(), false)
+                .expect("Failed to allocate memory for kernel stack");
+
+            let addr = virt
+                .map(
+                    Some(PAGE_SIZE),
+                    phys,
+                    0,
+                    space::page_aligned(KSTACK_SIZE),
+                    Flags::READABLE | Flags::WRITABLE,
+                )
+                .expect("Failed to map kernel stack");
+            (virt, addr)
+        });
+        let mut kstack = unsafe { addr.as_non_null_unchecked().cast::<KstackData>() };
+
         let kframe_ptr = unsafe {
             let this = kstack.as_mut();
             let frame = this.task_frame_mut();
@@ -92,6 +104,7 @@ impl Kstack {
         };
         Kstack {
             ptr: kstack,
+            virt,
             kframe_ptr,
             pf_resume: None,
         }
@@ -142,7 +155,7 @@ impl Deref for Kstack {
 impl Drop for Kstack {
     #[inline]
     fn drop(&mut self) {
-        let _ = unsafe { space::unmap(self.ptr.cast()) };
+        let _ = self.virt.destroy();
     }
 }
 

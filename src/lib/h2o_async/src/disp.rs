@@ -1,7 +1,8 @@
 use alloc::boxed::Box;
 use core::{
+    hint,
     num::NonZeroUsize,
-    sync::atomic::{AtomicBool, AtomicUsize, Ordering::*},
+    sync::atomic::{AtomicUsize, Ordering::*},
     task::{Poll, Waker},
 };
 
@@ -29,7 +30,6 @@ pub enum DispError {
 struct Dispatcher {
     id: usize,
     inner: Inner,
-    stop: AtomicBool,
     num_recv: AtomicUsize,
     tasks: CHashMap<usize, Task>,
 }
@@ -46,7 +46,6 @@ impl Dispatcher {
         Dispatcher {
             id: ID.fetch_add(1, SeqCst),
             inner: Inner::new(capacity),
-            stop: AtomicBool::new(false),
             num_recv: AtomicUsize::new(1),
             tasks: CHashMap::new(),
         }
@@ -54,13 +53,18 @@ impl Dispatcher {
 
     #[inline]
     fn disconnected(self: &Arsc<Self>) -> bool {
-        self.stop.load(Acquire) || Arsc::count(self) <= 1
+        self.num_recv.load(SeqCst) == 0 || Arsc::count(self) <= 1
     }
 
     fn poll_receive(self: &Arsc<Self>) -> Poll<Result<(), DispError>> {
         match self.inner.pop_raw() {
             Ok(res) => {
-                let Task { waker, mut pack } = self.tasks.remove(&res.key).ok_or(TimeOut)?;
+                let Task { waker, mut pack } = loop {
+                    match self.tasks.remove(&res.key) {
+                        Some(task) => break task,
+                        None => hint::spin_loop(),
+                    }
+                };
                 // We need to inform the task where an internal error occurred.
                 let res = pack.unpack(res.result, NonZeroUsize::new(res.signal));
                 waker.wake();
@@ -108,7 +112,8 @@ impl Dispatcher {
             waker: AtomicWaker::new(),
         };
         task.waker.register(waker);
-        self.tasks.insert(key, task);
+        let old = self.tasks.insert(key, task);
+        assert!(old.is_none());
         Ok(Ok(key))
     }
 
@@ -196,8 +201,7 @@ impl Clone for DispReceiver {
 
 impl Drop for DispReceiver {
     fn drop(&mut self) {
-        self.disp.stop.store(true, SeqCst);
-        if self.disp.num_recv.fetch_sub(1, SeqCst) == 0 {
+        if self.disp.num_recv.fetch_sub(1, SeqCst) == 1 {
             let tasks = self.disp.tasks.take();
             for (_, task) in tasks {
                 let Task { mut pack, waker } = task;

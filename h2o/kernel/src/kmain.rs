@@ -14,7 +14,6 @@
 #![feature(core_intrinsics)]
 #![feature(downcast_unchecked)]
 #![feature(drain_filter)]
-#![feature(int_log)]
 #![feature(layout_for_ptr)]
 #![feature(linked_list_cursors)]
 #![feature(map_try_insert)]

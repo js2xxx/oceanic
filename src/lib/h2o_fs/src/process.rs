@@ -134,14 +134,8 @@ impl Process {
 
 #[cfg(feature = "runtime")]
 mod runtime {
-    use core::{
-        future::Future,
-        mem,
-        pin::Pin,
-        task::{Context, Poll},
-    };
+    use core::mem;
 
-    use futures::pin_mut;
     use solvent::prelude::SIG_READ;
     use solvent_async::ipc::AsyncObject;
 
@@ -149,25 +143,26 @@ mod runtime {
     use crate::process::ProcessState;
 
     // TODO: Replace with proactor API.
-    impl Future for Process {
-        type Output = Result<usize, Error>;
-
-        fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-            let fut = async move {
-                let status = match mem::replace(&mut self.0, ProcessState::Exited(0)) {
-                    ProcessState::Started(task) => {
-                        task.try_wait_with(&solvent_async::dispatch(), true, SIG_READ)
-                            .await
-                            .map_err(Error::Wait)?;
-                        task.join().map_err(Error::Join)?
+    impl Process {
+        pub async fn ajoin(&mut self) -> Result<usize, Error> {
+            // log::debug!("Polling");
+            let status = match &self.0 {
+                ProcessState::Started(task) => {
+                    task.try_wait_with(&solvent_async::dispatch(), true, SIG_READ)
+                        .await
+                        .map_err(Error::Wait)?;
+                    match mem::replace(&mut self.0, ProcessState::Exited(0)) {
+                        ProcessState::Started(task) => task.join().map_err(Error::Join)?,
+                        ProcessState::Exited(_) => {
+                            unreachable!("Inner handle secretly stealed")
+                        }
                     }
-                    ProcessState::Exited(status) => status,
-                };
-                self.0 = ProcessState::Exited(status);
-                Ok(status)
+                }
+                ProcessState::Exited(status) => *status,
             };
-            pin_mut!(fut);
-            fut.poll(cx)
+            // log::debug!("Poll end");
+            self.0 = ProcessState::Exited(status);
+            Ok(status)
         }
     }
 }

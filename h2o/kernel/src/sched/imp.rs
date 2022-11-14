@@ -233,15 +233,7 @@ impl Scheduler {
                 PREEMPT.raw()
             );
 
-            SCHED_INFO[self.cpu]
-                .expected_runtime
-                .fetch_sub(cur.time_slice.as_micros() as u64, Release);
-
-            let _ = self.schedule_impl(cur_time, pree, None, |task| {
-                task::Ready::exit(task, sv_call::EKILLED.into_retval());
-                Ok(())
-            });
-            unreachable!("Dead task");
+            self.kill(cur, cur_time, pree);
         }
 
         let ti = &*cur.tid;
@@ -254,16 +246,7 @@ impl Scheduler {
             Some(task::Signal::Kill) => {
                 log::trace!("Killing task {:?}, P{}", cur.tid.raw(), PREEMPT.raw());
 
-                SCHED_INFO[self.cpu]
-                    .expected_runtime
-                    .fetch_sub(cur.time_slice.as_micros() as u64, Release);
-                cur.space().try_stop(&cur.tid);
-
-                let _ = self.schedule_impl(cur_time, pree, None, |task| {
-                    task::Ready::exit(task, sv_call::EKILLED.into_retval());
-                    Ok(())
-                });
-                unreachable!("Dead task");
+                self.kill(cur, cur_time, pree)
             }
             Some(task::Signal::Suspend(slot)) => {
                 log::trace!("Suspending task {:?}, P{}", cur.tid.raw(), PREEMPT.raw());
@@ -282,6 +265,17 @@ impl Scheduler {
             }
             None => Some(pree),
         }
+    }
+
+    fn kill(&self, cur: &task::Ready, cur_time: Instant, pree: PreemptStateGuard) -> ! {
+        SCHED_INFO[self.cpu]
+            .expected_runtime
+            .fetch_sub(cur.time_slice.as_micros() as u64, Release);
+        let _ = self.schedule_impl(cur_time, pree, None, |task| {
+            task::Ready::exit(task, sv_call::EKILLED.into_retval());
+            Ok(())
+        });
+        unreachable!("Dead task");
     }
 
     unsafe fn update(&self, cur_time: Instant) -> bool {
