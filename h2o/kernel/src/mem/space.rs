@@ -125,19 +125,15 @@ pub(crate) fn allocate(size: usize, flags: Flags, zeroed: bool) -> sv_call::Resu
         })
 }
 
-pub(crate) unsafe fn reprotect_unchecked(ptr: NonNull<[u8]>, flags: Flags) -> sv_call::Result {
-    let base = LAddr::from(ptr);
-    let end = LAddr::from(base.val() + ptr.len());
-    KRL.arch.reprotect(base..end, flags).map_err(paging_error)
-}
-
 pub(crate) unsafe fn unmap(ptr: NonNull<u8>) -> sv_call::Result {
     let base = LAddr::from(ptr);
-    let ret = PREEMPT.scope(|| KRL.root.children.lock().remove(&base));
-    ret.map_or(Err(sv_call::ENOENT), |child| {
-        let end = child.end(base);
-        let _ = PREEMPT.scope(|| KRL.arch.unmaps(base..end));
-        Ok(())
+    PREEMPT.scope(|| {
+        let ret = KRL.root.children.lock().remove(&base);
+        ret.map_or(Err(sv_call::ENOENT), |child| {
+            let end = child.end(base);
+            let _ = KRL.arch.unmaps(base..end);
+            Ok(())
+        })
     })
 }
 

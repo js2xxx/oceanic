@@ -15,8 +15,7 @@ use futures::{
     task::{FutureObj, Spawn, SpawnError},
     Future,
 };
-use solvent::time::Instant;
-use solvent::prelude::EPIPE;
+use solvent::{prelude::EPIPE, time::Instant};
 #[cfg(feature = "runtime")]
 use solvent_core::thread_local;
 #[cfg(all(feature = "runtime", not(feature = "local")))]
