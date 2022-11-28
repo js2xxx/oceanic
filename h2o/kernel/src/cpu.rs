@@ -16,7 +16,7 @@ cfg_if::cfg_if! {
 
 pub fn all_mask() -> CpuMask {
     let mut arr = bitarr![0; MAX_CPU];
-    arr[0..count()].set_all(true);
+    arr[0..count()].fill(true);
     arr
 }
 

@@ -90,7 +90,7 @@ impl IdAllocator {
             None => return,
         };
 
-        let r = match bvec.get_mut(sec) {
+        let mut r = match bvec.get_mut(sec) {
             Some(r) => r,
             None => return,
         };

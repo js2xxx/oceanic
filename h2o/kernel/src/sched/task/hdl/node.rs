@@ -1,7 +1,7 @@
 use alloc::sync::{Arc, Weak};
 use core::{
     any::Any,
-    marker::{PhantomPinned, Unsize},
+    marker::Unsize,
     ops::{CoerceUnsized, Deref},
 };
 
@@ -13,8 +13,8 @@ use crate::sched::Event;
 pub const MAX_HANDLE_COUNT: usize = 1 << 16;
 
 #[derive(Debug)]
+#[repr(C)]
 pub struct Ref<T: ?Sized = dyn Any + Send + Sync> {
-    _marker: PhantomPinned,
     event: Weak<dyn Event>,
     feat: Feature,
     obj: Arc<T>,
@@ -53,12 +53,7 @@ impl<T: ?Sized> Ref<T> {
             return Err(sv_call::EPERM);
         }
         let event = event.unwrap_or(Weak::<crate::sched::BasicEvent>::new() as _);
-        Ok(Ref {
-            _marker: PhantomPinned,
-            event,
-            feat,
-            obj,
-        })
+        Ok(Ref { event, feat, obj })
     }
 
     #[inline]
@@ -114,7 +109,6 @@ impl<T: ?Sized> Ref<T> {
         T: Sized,
     {
         Arc::try_unwrap(this.obj).map_err(|obj| Ref {
-            _marker: PhantomPinned,
             event: this.event,
             feat: this.feat,
             obj,
@@ -149,13 +143,11 @@ impl Ref {
     pub fn downcast<T: Any + Send + Sync>(self) -> core::result::Result<Ref<T>, Self> {
         match self.obj.downcast() {
             Ok(obj) => Ok(Ref {
-                _marker: PhantomPinned,
                 event: self.event,
                 feat: self.feat,
                 obj,
             }),
             Err(obj) => Err(Ref {
-                _marker: PhantomPinned,
                 event: self.event,
                 feat: self.feat,
                 obj,
@@ -171,7 +163,6 @@ impl Ref {
     #[must_use = "Don't make useless clonings"]
     unsafe fn clone_unchecked(&self) -> Ref {
         Ref {
-            _marker: PhantomPinned,
             event: Weak::clone(&self.event),
             feat: self.feat,
             obj: Arc::clone(&self.obj),

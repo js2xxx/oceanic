@@ -106,7 +106,7 @@ pub unsafe extern "C" fn dlsym(handle: *const c_void, name: *const c_char) -> *m
 /// The caller must ensure that `handle` is a valid pointer returned from
 /// `dlopen`.
 #[no_mangle]
-pub extern "C" fn dlclose(handle: *const c_void) -> Status {
+pub unsafe extern "C" fn dlclose(handle: *const c_void) -> Status {
     let ptr = handle as *const Dso;
     let canary = unsafe { ptr::read(ptr::addr_of!((*ptr).canary)) };
     ok!(

@@ -58,9 +58,7 @@ mod syscall {
             {
                 drop(res);
                 let io_bitmap = cur.io_bitmap_mut().get_or_insert_with(|| bitvec![1; 65536]);
-                for item in io_bitmap.iter_mut().skip(base as usize).take(size as usize) {
-                    item.set(false);
-                }
+                io_bitmap[(base as usize)..(size as usize)].fill(false);
                 unsafe { KERNEL_GS.update_tss_io_bitmap(cur.io_bitmap_mut().as_deref()) };
                 Ok(())
             } else {
@@ -79,10 +77,8 @@ mod syscall {
             {
                 drop(res);
                 if let Some(io_bitmap) = cur.io_bitmap_mut() {
-                    for item in io_bitmap.iter_mut().skip(base as usize).take(size as usize) {
-                        item.set(true);
-                    }
-                };
+                    io_bitmap[(base as usize)..(size as usize)].fill(true);
+                }
                 unsafe { KERNEL_GS.update_tss_io_bitmap(cur.io_bitmap_mut().as_deref()) };
                 Ok(())
             } else {

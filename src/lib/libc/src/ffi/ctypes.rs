@@ -14,32 +14,32 @@ pub extern "C" fn isalpha(x: c_int) -> c_int {
 
 #[no_mangle]
 pub extern "C" fn islower(x: c_int) -> c_int {
-    c_int::from(matches!(x as u8, b'a'..=b'z'))
+    c_int::from((x as u8).is_ascii_lowercase())
 }
 
 #[no_mangle]
 pub extern "C" fn isupper(x: c_int) -> c_int {
-    c_int::from(matches!(x as u8, b'A'..=b'Z'))
+    c_int::from((x as u8).is_ascii_uppercase())
 }
 
 #[no_mangle]
 pub extern "C" fn isdigit(x: c_int) -> c_int {
-    c_int::from(matches!(x as u8, b'0'..=b'9'))
+    c_int::from((x as u8).is_ascii_digit())
 }
 
 #[no_mangle]
 pub extern "C" fn isxdigit(x: c_int) -> c_int {
-    c_int::from(matches!(x as u8, b'0'..=b'9' | b'a'..=b'f' | b'A'..=b'F'))
+    c_int::from((x as u8).is_ascii_hexdigit())
 }
 
 #[no_mangle]
 pub extern "C" fn iscntrl(x: c_int) -> c_int {
-    c_int::from(matches!(x, 0x00..=0x1f | 0x7f))
+    c_int::from((x as u8).is_ascii_control())
 }
 
 #[no_mangle]
 pub extern "C" fn isgraph(x: c_int) -> c_int {
-    c_int::from(matches!(x, 0x21..=0x7e))
+    c_int::from((x as u8).is_ascii_graphic())
 }
 
 #[no_mangle]

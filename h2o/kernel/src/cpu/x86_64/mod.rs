@@ -120,7 +120,7 @@ impl KernelGs {
         if let Some(bitmap) = bitmap {
             (*ptr).copy_from_bitslice(bitmap);
         } else {
-            let ptr = (*ptr).as_mut_raw_slice();
+            let ptr = (*ptr).as_raw_mut_slice();
             ptr.fill(usize::MAX);
         }
     }

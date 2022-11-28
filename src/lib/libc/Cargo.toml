@@ -13,7 +13,7 @@ solvent = {path = "../h2o_rs"}
 solvent-rpc = {path = "../h2o_rpc", default_features = false, features = ["core"]}
 svrt = {path = "../svrt"}
 # External crates
-bitvec = {version = "0.22", default-features = false, features = ["atomic"]}
+bitvec = {version = "1.0", default-features = false, features = ["atomic"]}
 log = "0.4"
 memchr = {version = "2.4", default-features = false}
 

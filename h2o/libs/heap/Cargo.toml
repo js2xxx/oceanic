@@ -17,7 +17,7 @@ paging = {path = "../paging"}
 pmm = {path = "../pmm"}
 # External crates
 array-macro = "2.1"
-bitvec = {version = "0.22", default-features = false, features = ["atomic"]}
+bitvec = {version = "1.0", default-features = false, features = ["atomic"]}
 cfg-if = "1.0"
 intrusive-collections = {version = "0.9", default-features = false, features = ["nightly"]}
 log = "0.4"
