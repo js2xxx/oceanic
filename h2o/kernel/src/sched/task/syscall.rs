@@ -203,7 +203,7 @@ fn task_ctl(hdl: Handle, op: u32, data: UserPtr<InOut, Handle>) -> Result {
 
     match op {
         task::TASK_CTL_KILL => {
-            let child = cur.child(hdl, Feature::EXECUTE)?;
+            let child = cur.child(hdl)?;
             child.with_signal(|sig| *sig = Some(Signal::Kill));
 
             Ok(())
@@ -211,7 +211,7 @@ fn task_ctl(hdl: Handle, op: u32, data: UserPtr<InOut, Handle>) -> Result {
         task::TASK_CTL_SUSPEND => {
             data.check()?;
 
-            let child = cur.child(hdl, Feature::EXECUTE)?;
+            let child = cur.child(hdl)?;
 
             let st = SuspendToken {
                 slot: Arsc::try_new(Mutex::new(None))?,

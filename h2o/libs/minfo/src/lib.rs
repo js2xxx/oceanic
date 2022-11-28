@@ -22,8 +22,11 @@ pub const USER_END: usize = 0x7FFF_0000_0000;
 
 pub const KERNEL_SPACE_START: usize = 0xFFFF_8000_0000_0000;
 
+/// WARN: The range must contains only 1 page sized 512G (a.k.a. the largest
+/// size). If the kernel memory space may be exhausted, be sure to make
+/// corresponding modifications to `KERNEL_ROOT` in the kernel crate!
 pub const KERNEL_ALLOCABLE_RANGE: core::ops::Range<usize> =
-    0xFFFF_A000_0000_0000..0xFFFF_F000_0000_0000;
+    0xFFFF_A000_0000_0000..0xFFFF_A080_0000_0000;
 
 pub const ID_OFFSET: usize = KERNEL_SPACE_START;
 

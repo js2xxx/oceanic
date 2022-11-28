@@ -127,16 +127,16 @@ impl From<u64> for LAddr {
     }
 }
 
-impl From<*const u8> for LAddr {
+impl<T> From<*const T> for LAddr {
     #[inline]
-    fn from(val: *const u8) -> Self {
+    fn from(val: *const T) -> Self {
         LAddr(val as _)
     }
 }
 
-impl From<*mut u8> for LAddr {
+impl<T> From<*mut T> for LAddr {
     #[inline]
-    fn from(val: *mut u8) -> Self {
+    fn from(val: *mut T) -> Self {
         LAddr(val as _)
     }
 }
