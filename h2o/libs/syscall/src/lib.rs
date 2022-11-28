@@ -19,12 +19,10 @@ pub mod task;
 
 pub use sv_gen::*;
 
-#[cfg(all(not(feature = "stub"), feature = "call"))]
-pub use self::call::*;
 #[cfg(feature = "stub")]
 pub use self::stub::*;
 pub use self::{
-    call::{hdl::Handle, reg::*, Syscall},
+    call::{hdl::Handle, reg::*, Syscall, *},
     error::*,
     feat::*,
 };

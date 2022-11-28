@@ -19,7 +19,6 @@ use paging::{LAddr, PAGE_SIZE};
 use crate::{
     cpu::arch::seg::ndt::INTR_CODE,
     mem::space::{self, Flags},
-    sched::PREEMPT,
 };
 
 pub const KSTACK_SIZE: usize = paging::PAGE_SIZE * 18;
@@ -65,27 +64,25 @@ unsafe impl Send for Kstack {}
 
 impl Kstack {
     pub fn new(entry: Option<Entry>, ty: super::Type) -> Self {
-        let (virt, addr) = PREEMPT.scope(|| {
-            let virt = space::KRL
-                .allocate(None, space::page_aligned(KSTACK_SIZE + PAGE_SIZE))
-                .expect("Failed to allocate space for task's kernel stack")
-                .upgrade()
-                .expect("Kernel root virt unexpectedly dropped it!");
+        let virt = space::KRL
+            .allocate(None, space::page_aligned(KSTACK_SIZE + PAGE_SIZE))
+            .expect("Failed to allocate space for task's kernel stack")
+            .upgrade()
+            .expect("Kernel root virt unexpectedly dropped it!");
 
-            let phys = space::allocate_phys(KSTACK_SIZE, Default::default(), false)
-                .expect("Failed to allocate memory for kernel stack");
+        let phys = space::allocate_phys(KSTACK_SIZE, Default::default(), false)
+            .expect("Failed to allocate memory for kernel stack");
 
-            let addr = virt
-                .map(
-                    Some(PAGE_SIZE),
-                    phys,
-                    0,
-                    space::page_aligned(KSTACK_SIZE),
-                    Flags::READABLE | Flags::WRITABLE,
-                )
-                .expect("Failed to map kernel stack");
-            (virt, addr)
-        });
+        let addr = virt
+            .map(
+                Some(PAGE_SIZE),
+                phys,
+                0,
+                space::page_aligned(KSTACK_SIZE),
+                Flags::READABLE | Flags::WRITABLE,
+            )
+            .expect("Failed to map kernel stack");
+
         let mut kstack = unsafe { addr.as_non_null_unchecked().cast::<KstackData>() };
 
         let kframe_ptr = unsafe {

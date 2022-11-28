@@ -8,7 +8,8 @@ use core::{alloc::Allocator, ops::Range};
 
 use archop::Azy;
 use canary::Canary;
-use paging::{LAddr, PAddr, Table};
+use minfo::KERNEL_ALLOCABLE_RANGE;
+use paging::{Attr, LAddr, Level, PAddr, Table};
 use spin::Mutex;
 
 use super::Flags;
@@ -22,6 +23,29 @@ static KERNEL_ROOT: Azy<(Box<Table>, u64)> = Azy::new(|| {
     let cr3_laddr = PAddr::new(cr3 as usize).to_laddr(minfo::ID_OFFSET);
     let init_table = unsafe { core::slice::from_raw_parts(cr3_laddr.cast(), paging::NR_ENTRIES) };
     table.copy_from_slice(init_table);
+
+    // Allocate the top-level table for `KERNEL_ALLOCABLE_RANGE`.
+    //
+    // The `KERNEL_ROOT` is initialized before the creation of the first memory
+    // space (a.k.a. `KRL`), so before it handles any allocation for `Virt`s,
+    // `KERNEL_ROOT` doesn't have any page tables of the range for allocation.
+    // Hence, if we don't pre-allocate the stub, every creation of a new memory
+    // space will not inherit (or share) the page tables of that range, leading to
+    // memory inconsistency.
+    //
+    // As long as the static kernel objects are not deallocated, this chunk of
+    // memory will not be recycled, and the condition will never be met since
+    // they're static.
+    //
+    // See `KRL` and `self::Space::new` for more information.
+    {
+        let allocable_page = Box::leak(Box::new(Table::zeroed()));
+        let addr = LAddr::from(allocable_page as *mut _).to_paddr(minfo::ID_OFFSET);
+        let ent = paging::Entry::new(addr, Attr::KERNEL_RW, Level::Pt);
+
+        let index = Level::P4.addr_idx(KERNEL_ALLOCABLE_RANGE.start.into(), false);
+        table[index] = ent;
+    }
 
     (table, cr3)
 });

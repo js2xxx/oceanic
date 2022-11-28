@@ -100,17 +100,8 @@ impl Virt {
     }
 
     pub fn destroy(&self) -> Result {
-        if let Some(space) = self.space.upgrade() {
-            let _pree = PREEMPT.lock();
-            let vdso = *space.vdso.lock();
-            let children = self.children.lock();
-
-            if { children.iter() }.any(|(&base, child)| !check_vdso(vdso, base, child.end(base))) {
-                return Err(EACCES);
-            }
-        }
         if let Some(parent) = self.parent.upgrade() {
-            let _ = PREEMPT.scope(|| parent.children.lock().remove(&self.range.start));
+            let _ = parent.unmap(self.range.start, self.len(), true);
         }
         Ok(())
     }

@@ -78,18 +78,16 @@ pub fn setup() {
 
     // The sequence of kernel objects must match the one defined in
     // `targs::HandleIndex`.
-    {
-        let mem_res = Arc::clone(crate::dev::mem_resource());
-        objects.push(hdl::Ref::try_new(mem_res, None).expect("Failed to create memory resource"));
-    }
-    {
-        let pio_res = Arc::clone(crate::dev::pio_resource());
-        objects.push(hdl::Ref::try_new(pio_res, None).expect("Failed to create port I/O resource"));
-    }
-    {
-        let gsi_res = Arc::clone(crate::dev::gsi_resource());
-        objects.push(hdl::Ref::try_new(gsi_res, None).expect("Failed to create GSI resource"));
-    }
+
+    let mem_res = Arc::clone(crate::dev::mem_resource());
+    objects.push(hdl::Ref::from_raw(mem_res, None).expect("Failed to create memory resource"));
+
+    let pio_res = Arc::clone(crate::dev::pio_resource());
+    objects.push(hdl::Ref::from_raw(pio_res, None).expect("Failed to create port I/O resource"));
+
+    let gsi_res = Arc::clone(crate::dev::gsi_resource());
+    objects.push(hdl::Ref::from_raw(gsi_res, None).expect("Failed to create GSI resource"));
+
     unsafe {
         objects.push(
             hdl::Ref::from_raw_unchecked(Arc::clone(&VDSO.1), flags_to_feat(VDSO.0), None)
@@ -101,7 +99,7 @@ pub fn setup() {
                 .expect("Failed to create boot FS reference"),
         );
     }
-    let space = super::Space::new(Type::User).expect("Failed to create space");
+    let space = super::Space::new().expect("Failed to create space");
     unsafe {
         objects.push(
             hdl::Ref::try_new_unchecked(

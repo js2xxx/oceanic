@@ -210,7 +210,7 @@ fn phys_resize(hdl: Handle, new_len: usize, zeroed: bool) -> Result {
 fn space_new(root_virt: UserPtr<Out, Handle>) -> Result<Handle> {
     root_virt.check()?;
     SCHED.with_current(|cur| {
-        let space = TaskSpace::new(cur.tid().ty())?;
+        let space = TaskSpace::new()?;
         let virt = Arc::downgrade(space.mem().root());
         let ret = cur.space().handles().insert_raw(space, None)?;
         unsafe {

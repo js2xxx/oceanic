@@ -95,6 +95,17 @@ impl Space {
     pub fn root(&self) -> &Arc<Virt> {
         &self.root
     }
+
+    pub fn assert_mapped(&self, base: LAddr, len: usize) {
+        PREEMPT.scope(|| {
+            for offset in (0..len).step_by(paging::PAGE_SIZE) {
+                let addr = LAddr::from(base.val() + offset);
+                if let Err(err) = self.arch.query(addr) {
+                    panic!("Assert failed: address {addr:?} mapping error: {err:?}");
+                }
+            }
+        })
+    }
 }
 
 impl Deref for Space {
@@ -128,7 +139,9 @@ pub(crate) fn allocate(size: usize, flags: Flags, zeroed: bool) -> sv_call::Resu
 pub(crate) unsafe fn unmap(ptr: NonNull<u8>) -> sv_call::Result {
     let base = LAddr::from(ptr);
     PREEMPT.scope(|| {
-        let ret = KRL.root.children.lock().remove(&base);
+        let mut children = KRL.root.children.lock();
+        let ret = children.remove(&base);
+
         ret.map_or(Err(sv_call::ENOENT), |child| {
             let end = child.end(base);
             let _ = KRL.arch.unmaps(base..end);

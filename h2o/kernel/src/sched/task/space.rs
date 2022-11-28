@@ -24,8 +24,8 @@ unsafe impl Send for Space {}
 unsafe impl Sync for Space {}
 
 impl Space {
-    pub fn new(ty: super::Type) -> sv_call::Result<Arc<Self>> {
-        let mem = mem::space::Space::try_new(ty)?;
+    pub fn new() -> sv_call::Result<Arc<Self>> {
+        let mem = mem::space::Space::try_new(super::Type::User)?;
         Ok(Arc::try_new(Space {
             mem,
             handles: HandleMap::new(),
@@ -82,10 +82,10 @@ impl Space {
         let _ = self.futexes.remove_if(&key, |futex| futex.is_empty());
     }
 
-    pub fn child(&self, hdl: sv_call::Handle, need_feature: Feature) -> sv_call::Result<Tid> {
+    pub fn child(&self, hdl: sv_call::Handle) -> sv_call::Result<Tid> {
         super::PREEMPT.scope(|| {
             self.handles().get::<Tid>(hdl).and_then(|obj| {
-                if obj.features().contains(need_feature) {
+                if obj.features().contains(Feature::EXECUTE) {
                     Ok(Tid::clone(&obj))
                 } else {
                     Err(sv_call::EPERM)
