@@ -137,7 +137,7 @@ impl Page {
     pub fn init(&mut self, sz: usize) {
         self.link = RBTreeLink::new();
         self.objsize = sz;
-        self.used = BitArray::zeroed();
+        self.used.as_raw_mut_slice().fill(0);
         self.used_count = 0;
 
         let hdrcnt = self.header_count();
