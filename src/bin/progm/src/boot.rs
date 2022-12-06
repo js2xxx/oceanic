@@ -54,8 +54,7 @@ unsafe fn build_inner(
                 let offset = unsafe { data.as_ptr().offset_from(base.as_ptr()) as usize };
                 assert!(
                     offset & PAGE_MASK == 0,
-                    "offset is not aligned: {:#x}",
-                    offset
+                    "offset is not aligned: {offset:#x}"
                 );
                 let len = data.len();
                 let data = root_phys

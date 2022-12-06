@@ -17,7 +17,7 @@ struct OptionU32Display(Option<u32>);
 impl core::fmt::Display for OptionU32Display {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         if let Some(val) = self.0 {
-            write!(f, "{}", val)
+            write!(f, "{val}")
         } else {
             write!(f, "<NULL>")
         }
@@ -111,7 +111,7 @@ mod syscall {
             core::str::from_utf8(unsafe { core::slice::from_raw_parts(buffer.as_ptr(), len) })?;
         let _pree = PREEMPT.lock();
         let mut os = unsafe { LOGGER.assume_init_ref() }.output.lock();
-        writeln!(os, "{}", string).map_err(|_| EFAULT)?;
+        writeln!(os, "{string}").map_err(|_| EFAULT)?;
         Ok(())
     }
 }

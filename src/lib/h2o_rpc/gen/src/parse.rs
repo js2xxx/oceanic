@@ -77,7 +77,7 @@ fn parse_mod(
             ]);
             let path = match paths.find(|path| path.exists()) {
                 Some(path) => path,
-                None => panic!("Failed to find module file {} in {:?}", name, mod_path),
+                None => panic!("Failed to find module file {name} in {mod_path:?}"),
             };
             println!("cargo:rerun-if-changed={}", path.to_str().unwrap());
             let content = std::fs::read_to_string(&path).expect("Failed to read module file");
@@ -134,7 +134,7 @@ fn parse_mod_items(
                     },
                 })
             }
-            Item::Verbatim(verb) => panic!("Verbatim detected: {:?}", verb),
+            Item::Verbatim(verb) => panic!("Verbatim detected: {verb:?}"),
             item => ret.push(ProtoItem {
                 parent: mod_path.to_path_buf(),
                 ty: ProtoType::Item(item),

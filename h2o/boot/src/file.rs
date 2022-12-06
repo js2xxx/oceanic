@@ -87,9 +87,7 @@ pub fn load(syst: &SystemTable<Boot>, filename: &str) -> *mut [u8] {
                 .expect_success("Failed to read kernel file");
             assert!(
                 asize == ksize,
-                "Failed to read whole kernel file: read {:#x}, required {:#x}",
-                asize,
-                ksize
+                "Failed to read whole kernel file: read {asize:#x}, required {ksize:#x}"
             );
         }
         _ => panic!("Kernel file should be a regular file"),
