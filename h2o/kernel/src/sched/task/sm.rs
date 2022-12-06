@@ -167,7 +167,7 @@ impl RunningState {
 impl fmt::Debug for RunningState {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.start_time() {
-            Some(st) => write!(f, "Running({:?})", st),
+            Some(st) => write!(f, "Running({st:?})"),
             None => {
                 if self.needs_resched() {
                     f.write_str("NeedResched")

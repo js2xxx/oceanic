@@ -43,7 +43,7 @@ impl Display for Flags {
                 } else {
                     out.make_ascii_lowercase();
                 }
-                write!(f, "{} ", out)?;
+                write!(f, "{out} ")?;
             }
             Ok(())
         }

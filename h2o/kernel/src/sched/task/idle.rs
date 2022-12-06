@@ -22,7 +22,7 @@ pub(super) static IDLE: Lazy<Tid> = Lazy::new(|| {
     let ti = TaskInfo::builder()
         .from(Default::default())
         .excep_chan(Arsc::try_new(Default::default()).expect("Failed to create task info"))
-        .name(format!("IDLE{}", cpu))
+        .name(format!("IDLE{cpu}"))
         .ty(Type::Kernel)
         .affinity(crate::cpu::current_mask())
         .build()
