@@ -14,7 +14,7 @@ use futures::{pin_mut, ready, stream::FusedStream, Stream};
 use solvent::{error::EPIPE, ipc::Packet};
 use solvent_async::ipc::Channel;
 use solvent_core::sync::{Arsc, Mutex};
-use solvent_rpc_core::packet::{self, SerdePacket};
+
 
 use crate::Error;
 
@@ -107,20 +107,6 @@ impl TryFrom<ClientImpl> for Channel {
             }
             Err(inner) => Err(ClientImpl { inner }),
         }
-    }
-}
-
-impl SerdePacket for ClientImpl {
-    fn serialize(self, ser: &mut packet::Serializer) -> Result<(), Error> {
-        match Channel::try_from(self) {
-            Ok(channel) => Channel::into_inner(channel).serialize(ser),
-            Err(_) => Err(Error::EndpointInUse),
-        }
-    }
-
-    fn deserialize(de: &mut packet::Deserializer) -> Result<Self, Error> {
-        let channel = Channel::new(SerdePacket::deserialize(de)?);
-        Ok(Self::new(channel))
     }
 }
 
@@ -409,7 +395,7 @@ impl Inner {
     }
 }
 
-pub trait Client: SerdePacket + From<Channel> + AsRef<Channel> {
+pub trait Client: From<Channel> + AsRef<Channel> {
     type EventReceiver: EventReceiver;
     type Sync: crate::sync::Client;
 

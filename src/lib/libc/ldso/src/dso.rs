@@ -90,8 +90,8 @@ impl DsoBase {
 impl fmt::Debug for DsoBase {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            DsoBase::Dyn(b) => write!(f, "Dyn({:#x})", b),
-            DsoBase::Exec(b) => write!(f, "Exec({:#x})", b),
+            DsoBase::Dyn(b) => write!(f, "Dyn({b:#x})"),
+            DsoBase::Exec(b) => write!(f, "Exec({b:#x})"),
         }
     }
 }

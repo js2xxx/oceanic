@@ -41,7 +41,7 @@ fn gen_bindings(sysroot: &Path, ffi: &Path) -> Result<(), Box<dyn Error>> {
             .with_src(ent.path())
             .with_config(config)
             .generate()?;
-        binding.write_to_file(sysroot.join(format!("{}.h", name)));
+        binding.write_to_file(sysroot.join(format!("{name}.h")));
     }
     Ok(())
 }
@@ -50,7 +50,7 @@ fn build_crt0(root: &Path, sysroot: &Path) -> Result<(), Box<dyn Error>> {
     let target = sysroot.join("usr/lib/crt0.o");
 
     let src = root.join("crt/crt0.asm");
-    println!("cargo:rerun-if-changed={:?}", src);
+    println!("cargo:rerun-if-changed={src:?}");
 
     Command::new("nasm")
         .arg(src)

@@ -5,14 +5,14 @@
 
 extern crate alloc;
 
-#[cfg(feature = "runtime")]
+#[cfg(feature = "std")]
 mod client;
 mod ifx;
 #[path ="../target/imp/mod.rs"]
 #[rustfmt::skip]
 #[allow(unused, clippy::all)]
 mod imp;
-#[cfg(feature = "runtime")]
+#[cfg(feature = "std")]
 mod server;
 #[cfg(feature = "std")]
 pub mod sync;
