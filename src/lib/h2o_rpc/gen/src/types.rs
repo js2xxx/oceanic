@@ -483,7 +483,6 @@ impl Protocol {
                 use futures::{Stream, stream::FusedStream};
                 use solvent::ipc::Packet;
 
-                use solvent_rpc::SerdePacket;
                 use super::{*, #core_mod::{#(#use_constants,)*}};
 
                 #[allow(dead_code)]
@@ -503,7 +502,7 @@ impl Protocol {
 
 
                 #(#doc)*
-                #[derive(Debug, SerdePacket)]
+                #[derive(Debug)]
                 #[repr(transparent)]
                 #vis struct #server {
                     inner: solvent_rpc::ServerImpl,
@@ -639,7 +638,7 @@ impl Protocol {
                 #(#responders)*
 
                 #(#doc)*
-                #[derive(Debug, Clone, SerdePacket)]
+                #[derive(Debug, Clone)]
                 #[repr(transparent)]
                 #vis struct #client {
                     inner: solvent_rpc::ClientImpl,
@@ -729,12 +728,10 @@ impl Protocol {
             pub mod #sync_mod {
                 use ::core::{iter::FusedIterator, time::Duration};
 
-                use solvent_rpc::SerdePacket;
-
                 use super::{*, #core_mod::{#(#u2,)*}};
 
                 #(#doc)*
-                #[derive(Debug, Clone, SerdePacket)]
+                #[derive(Debug, Clone)]
                 #[repr(transparent)]
                 #vis struct #client {
                     inner: solvent_rpc::sync::ClientImpl,
