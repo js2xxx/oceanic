@@ -13,9 +13,9 @@ use solvent_core::{
     sync::{Arsc, Mutex, MutexGuard},
 };
 use solvent_rpc::io::{
-    dir::{directory_sync::DirectoryClient, DirEntry},
-    entry::entry_sync::EntryClient,
-    file::file_sync::FileClient,
+    dir::{DirEntry, DirectorySyncClient},
+    entry::EntrySyncClient,
+    file::FileSyncClient,
     Error, FileType, Metadata, OpenOptions, Permission,
 };
 
@@ -23,7 +23,7 @@ use crate::dir::sync::RemoteIter;
 
 enum Node {
     Dir(Mutex<BTreeMap<String, Arsc<Node>>>),
-    Remote(EntryClient),
+    Remote(EntrySyncClient),
 }
 
 impl Clone for Node {
@@ -56,7 +56,7 @@ impl Node {
     }
 
     #[inline]
-    fn leaf(remote: EntryClient) -> Arsc<Self> {
+    fn leaf(remote: EntrySyncClient) -> Arsc<Self> {
         Arsc::new(Node::Remote(remote))
     }
 
@@ -113,7 +113,7 @@ impl Node {
     }
 
     #[inline]
-    fn create(self: Arsc<Self>, path: &Path, remote: EntryClient) -> Result<(), Error> {
+    fn create(self: Arsc<Self>, path: &Path, remote: EntrySyncClient) -> Result<(), Error> {
         let _ = self.open_node(path, &mut Some(remote))?;
         Ok(())
     }
@@ -121,7 +121,7 @@ impl Node {
     fn open_node<'a>(
         self: Arsc<Self>,
         path: &'a Path,
-        create: &mut Option<EntryClient>,
+        create: &mut Option<EntrySyncClient>,
     ) -> Result<(Arsc<Node>, Peekable<Components<'a>>), Error> {
         let mut node = self;
         let mut comps = path.components().peekable();
@@ -158,7 +158,7 @@ impl Node {
 
     fn create_node(
         is_file: bool,
-        create: &mut Option<EntryClient>,
+        create: &mut Option<EntrySyncClient>,
         mut entries: MutexGuard<BTreeMap<String, Arsc<Node>>>,
         comp: &str,
     ) -> Arsc<Node> {
@@ -176,7 +176,7 @@ impl Node {
     fn export(
         self: Arsc<Self>,
         path: PathBuf,
-        output: &mut impl Extend<(PathBuf, EntryClient)>,
+        output: &mut impl Extend<(PathBuf, EntrySyncClient)>,
     ) -> Result<(), Error> {
         match *self {
             Node::Dir(ref dir) => {
@@ -189,7 +189,7 @@ impl Node {
             Node::Remote(ref remote) => {
                 let (t, conn) = Channel::new();
                 remote.clone_connection(conn)?;
-                let remote = EntryClient::from(t);
+                let remote = EntrySyncClient::from(t);
                 output.extend(Some((path, remote)));
             }
         }
@@ -218,11 +218,11 @@ impl Node {
         let (t, conn) = Channel::new();
         self.clone()
             .open(src_parent, OpenOptions::READ | OpenOptions::WRITE, conn)?;
-        let src_parent = DirectoryClient::from(t);
+        let src_parent = DirectorySyncClient::from(t);
 
         let (t, conn) = Channel::new();
         self.open(dst_parent, OpenOptions::READ | OpenOptions::WRITE, conn)?;
-        let dst_parent = DirectoryClient::from(t);
+        let dst_parent = DirectorySyncClient::from(t);
 
         {
             let (t, conn) = Channel::new();
@@ -231,7 +231,7 @@ impl Node {
                 OpenOptions::READ | OpenOptions::WRITE,
                 conn,
             )??;
-            let src_file = FileClient::from(t);
+            let src_file = FileSyncClient::from(t);
 
             let (t, conn) = Channel::new();
             dst_parent.open(
@@ -239,7 +239,7 @@ impl Node {
                 OpenOptions::CREATE_NEW | OpenOptions::READ | OpenOptions::WRITE,
                 conn,
             )??;
-            let dst_file = FileClient::from(t);
+            let dst_file = FileSyncClient::from(t);
 
             let src_metadata = src_file.metadata()??;
             if src_metadata.file_type != FileType::File {
@@ -323,7 +323,7 @@ impl LocalFs {
     }
 
     #[inline]
-    pub fn mount<P: AsRef<Path>>(&self, path: P, remote: EntryClient) -> Result<(), Error> {
+    pub fn mount<P: AsRef<Path>>(&self, path: P, remote: EntrySyncClient) -> Result<(), Error> {
         let path = self.canonicalize(path)?;
         self.root.clone().create(&path, remote)
     }
@@ -342,7 +342,7 @@ impl LocalFs {
             Node::Remote(ref remote) if comps.peek().is_some() => {
                 let path = PathBuf::from_iter(comps);
                 let (t, conn) = Channel::new();
-                let client = EntryClient::from(t);
+                let client = EntrySyncClient::from(t);
                 remote.open(path, OpenOptions::READ, conn)??;
                 client.metadata()?
             }
@@ -369,7 +369,7 @@ impl LocalFs {
                 let path = PathBuf::from_iter(comps);
                 let (t, conn) = Channel::new();
                 remote.open(path, OpenOptions::READ, conn)??;
-                Ok(DirIter::Remote(DirectoryClient::from(t).into()))
+                Ok(DirIter::Remote(DirectorySyncClient::from(t).into()))
             }
             Node::Remote(ref remote) => {
                 let metadata = remote.metadata()??;
@@ -378,12 +378,15 @@ impl LocalFs {
                 }
                 let (t, conn) = Channel::new();
                 remote.clone_connection(conn)?;
-                Ok(DirIter::Remote(DirectoryClient::from(t).into()))
+                Ok(DirIter::Remote(DirectorySyncClient::from(t).into()))
             }
         }
     }
 
-    pub fn export(&self, output: &mut impl Extend<(PathBuf, EntryClient)>) -> Result<(), Error> {
+    pub fn export(
+        &self,
+        output: &mut impl Extend<(PathBuf, EntrySyncClient)>,
+    ) -> Result<(), Error> {
         self.root.clone().export(PathBuf::new(), output)
     }
 
@@ -394,7 +397,7 @@ impl LocalFs {
             .ok_or_else(|| Error::PermissionDenied(Default::default()))?;
 
         let (t, conn) = Channel::new();
-        let dir = DirectoryClient::from(t);
+        let dir = DirectorySyncClient::from(t);
         self.open(parent, OpenOptions::READ | OpenOptions::WRITE, conn)?;
 
         let file_name = path
@@ -412,7 +415,7 @@ impl LocalFs {
         op_local: OpLocal,
     ) -> Result<(), Error>
     where
-        Op: FnOnce(DirectoryClient, String, Handle, String) -> Result<(), Error>,
+        Op: FnOnce(DirectorySyncClient, String, Handle, String) -> Result<(), Error>,
         OpLocal: FnOnce(Arsc<Node>, PathBuf, PathBuf, PathBuf) -> Result<(), Error>,
     {
         let cwd = self.cwd.lock();
@@ -466,12 +469,12 @@ impl LocalFs {
         let (t, conn) = Channel::new();
         self.clone()
             .open(src_parent, OpenOptions::READ | OpenOptions::WRITE, conn)?;
-        let src_parent = DirectoryClient::from(t);
+        let src_parent = DirectorySyncClient::from(t);
 
         let dst_parent = {
             let (t, conn) = Channel::new();
             self.open(dst_parent, OpenOptions::READ | OpenOptions::WRITE, conn)?;
-            let dst_parent = DirectoryClient::from(t);
+            let dst_parent = DirectorySyncClient::from(t);
             dst_parent.event_token()??
         };
 
@@ -564,7 +567,7 @@ pub unsafe fn init_rt(
 
     let local_fs = LocalFs::new();
     for ((_, handle), path) in iter.zip(paths) {
-        let remote = EntryClient::from(unsafe { Channel::from_raw(handle) });
+        let remote = EntrySyncClient::from(unsafe { Channel::from_raw(handle) });
         let res = local_fs.mount(path, remote);
         if let Err(err) = res {
             log::warn!("Error when mounting the local FS: {err}");

@@ -443,7 +443,6 @@ impl Protocol {
         let event_path = event.iter().map(|(path, _)| path);
         let core_mod = Ident::new(&ident_str.to_case(Case::Snake), ident.span());
         let std_mod = Ident::new(&(ident_str.to_case(Case::Snake) + "_std"), ident.span());
-        let sync_mod = Ident::new(&(ident_str.to_case(Case::Snake) + "_sync"), ident.span());
         let client = format_ident!("{ident}Client");
         let sync_client = format_ident!("{ident}SyncClient");
         let event_receiver = format_ident!("{ident}EventReceiver");
@@ -455,11 +454,10 @@ impl Protocol {
 
         let (event_ident, event_def) = Protocol::event_def(ident.clone(), &event);
         let cast_froms = Protocol::cast_from(&from, &client);
-        let cast_froms_sync = Protocol::cast_from_sync(&from, &client);
+        let cast_froms_sync = Protocol::cast_from_sync(&from, &sync_client);
 
         let constants = method.iter().map(|method| method.constant(&vis));
         let use_constants = method.iter().map(|method| &method.const_ident);
-        let u2 = use_constants.clone();
         let calls = method.iter().map(|method| method.call());
         let sync_calls = method.iter().map(|method| method.sync_call());
         let requests = method.iter().map(|method| method.request(&ident_str));
@@ -475,10 +473,11 @@ impl Protocol {
 
             #event_def
 
-            #[cfg(feature = "runtime")]
+            #[cfg(feature = "std")]
             mod #std_mod {
-                use core::task::*;
-                use core::pin::Pin;
+                use ::core::task::*;
+                use ::core::pin::Pin;
+                use ::core::{iter::FusedIterator, time::Duration};
 
                 use futures::{Stream, stream::FusedStream};
                 use solvent::ipc::Packet;
@@ -499,7 +498,6 @@ impl Protocol {
 
                     type SyncClient = #sync_client;
                 }
-
 
                 #(#doc)*
                 #[derive(Debug)]
@@ -721,25 +719,17 @@ impl Protocol {
                         self.inner.is_terminated()
                     }
                 }
-            }
-            #[cfg(feature = "runtime")]
-            pub use self::#std_mod::*;
-            #[cfg(feature = "std")]
-            pub mod #sync_mod {
-                use ::core::{iter::FusedIterator, time::Duration};
-
-                use super::{*, #core_mod::{#(#u2,)*}};
 
                 #(#doc)*
                 #[derive(Debug, Clone)]
                 #[repr(transparent)]
-                #vis struct #client {
+                #vis struct #sync_client {
                     inner: solvent_rpc::sync::ClientImpl,
                 }
 
-                impl #client {
+                impl #sync_client {
                     pub fn new(channel: solvent::ipc::Channel) -> Self {
-                        #client {
+                        #sync_client {
                             inner: solvent_rpc::sync::ClientImpl::new(channel),
                         }
                     }
@@ -747,14 +737,14 @@ impl Protocol {
                     #(#sync_calls)*
                 }
 
-                impl AsRef<solvent::ipc::Channel> for #client {
+                impl AsRef<solvent::ipc::Channel> for #sync_client {
                     #[inline]
                     fn as_ref(&self) -> &solvent::ipc::Channel {
                         self.inner.as_ref()
                     }
                 }
 
-                impl From<solvent::ipc::Channel> for #client {
+                impl From<solvent::ipc::Channel> for #sync_client {
                     #[inline]
                     fn from(channel: solvent::ipc::Channel) -> Self {
                         Self::new(channel)
@@ -763,14 +753,13 @@ impl Protocol {
 
                 #(#cast_froms_sync)*
 
-                impl solvent_rpc::sync::Client for #client {
-                    type EventReceiver = #event_receiver;
-                    #[cfg(feature = "runtime")]
+                impl solvent_rpc::sync::Client for #sync_client {
+                    type EventReceiver = #sync_event_receiver;
                     type Async = super::#client;
 
                     #[inline]
                     fn from_inner(inner: solvent_rpc::sync::ClientImpl) -> Self {
-                        #client { inner }
+                        #sync_client { inner }
                     }
 
                     #[inline]
@@ -779,29 +768,29 @@ impl Protocol {
                     }
 
                     #[inline]
-                    fn event_receiver(&self, timeout: Option<Duration>) -> Option<#event_receiver> {
+                    fn event_receiver(&self, timeout: Option<Duration>) -> Option<#sync_event_receiver> {
                         self.inner
                             .event_receiver(timeout)
-                            .map(|inner| #event_receiver { inner })
+                            .map(|inner| #sync_event_receiver { inner })
                     }
                 }
 
-                impl TryFrom<#client> for solvent::ipc::Channel {
-                    type Error = #client;
+                impl TryFrom<#sync_client> for solvent::ipc::Channel {
+                    type Error = #sync_client;
 
                     #[inline]
-                    fn try_from(client: #client) -> Result<Self, Self::Error> {
-                        solvent::ipc::Channel::try_from(client.inner)
-                            .map_err(|inner| #client { inner })
+                    fn try_from(sync_client: #sync_client) -> Result<Self, Self::Error> {
+                        solvent::ipc::Channel::try_from(sync_client.inner)
+                            .map_err(|inner| #sync_client { inner })
                     }
                 }
 
                 #[repr(transparent)]
-                #vis struct #event_receiver {
+                #vis struct #sync_event_receiver {
                     inner: solvent_rpc::sync::EventReceiverImpl,
                 }
 
-                impl Iterator for #event_receiver {
+                impl Iterator for #sync_event_receiver {
                     type Item = Result<#event_ident, solvent_rpc::Error>;
 
                     fn next(&mut self) -> Option<Self::Item> {
@@ -809,10 +798,10 @@ impl Protocol {
                     }
                 }
 
-                impl FusedIterator for #event_receiver {}
+                impl FusedIterator for #sync_event_receiver {}
             }
             #[cfg(feature = "std")]
-            pub use self::#sync_mod::{#client as #sync_client, #event_receiver as #sync_event_receiver};
+            pub use self::#std_mod::*;
         };
         Ok(token)
     }

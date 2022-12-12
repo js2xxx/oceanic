@@ -15,7 +15,6 @@ use solvent::{error::EPIPE, ipc::Packet};
 use solvent_async::ipc::Channel;
 use solvent_core::sync::{Arsc, Mutex};
 
-
 use crate::Error;
 
 #[derive(Debug, Clone)]

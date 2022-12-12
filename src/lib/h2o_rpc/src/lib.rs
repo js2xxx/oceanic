@@ -19,6 +19,6 @@ pub mod sync;
 
 pub use solvent_rpc_core::*;
 
-#[cfg(feature = "runtime")]
+#[cfg(feature = "std")]
 pub use self::{client::*, server::*};
 pub use self::{ifx::*, imp::*};
