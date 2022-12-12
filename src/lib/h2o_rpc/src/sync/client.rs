@@ -14,6 +14,7 @@ use solvent::{
     prelude::Object,
     time::Instant,
 };
+use solvent_async::disp::DispSender;
 use solvent_core::sync::{Arsc, Mutex};
 
 use crate::Error;
@@ -37,10 +38,9 @@ impl ClientImpl {
         }
     }
 
-    #[cfg(feature = "runtime")]
-    fn into_async(self) -> Result<crate::ClientImpl, Self> {
+    fn into_async_with_disp(self, disp: DispSender) -> Result<crate::ClientImpl, Self> {
         let channel = Channel::try_from(self)?;
-        let channel = solvent_async::ipc::Channel::new(channel);
+        let channel = solvent_async::ipc::Channel::with_disp(channel, disp);
         Ok(crate::ClientImpl::from(channel))
     }
 
@@ -270,12 +270,17 @@ pub trait Client: From<Channel> + AsRef<Channel> {
     fn into_inner(this: Self) -> ClientImpl;
 
     #[inline]
-    #[cfg(feature = "runtime")]
-    fn into_async(self) -> Result<Self::Async, Self> {
+    fn into_async_with_disp(self, disp: DispSender) -> Result<Self::Async, Self> {
         Self::into_inner(self)
-            .into_async()
+            .into_async_with_disp(disp)
             .map(<Self::Async as crate::Client>::from_inner)
             .map_err(Self::from_inner)
+    }
+
+    #[inline]
+    #[cfg(feature = "runtime")]
+    fn into_async(self) -> Result<Self::Async, Self> {
+        self.into_async_with_disp(solvent_async::dispatch())
     }
 
     fn event_receiver(&self, timeout: Option<Duration>) -> Option<Self::EventReceiver>;

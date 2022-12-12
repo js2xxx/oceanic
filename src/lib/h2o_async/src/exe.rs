@@ -76,9 +76,12 @@ impl ThreadPool {
             count: AtomicUsize::new(1),
         });
 
-        workers.into_iter().for_each(|worker| {
+        workers.into_iter().for_each(|local| {
             let inner = inner.clone();
-            thread::spawn(move || worker_thread(worker, inner));
+            thread::spawn(move || {
+                let stop = || inner.count.load(Acquire) == 0;
+                worker_thread(&local, &inner.global, &inner.stealers, stop)
+            });
         });
         ThreadPool { inner }
     }
@@ -106,7 +109,7 @@ impl ThreadPool {
         let (tx, rx) = crate::disp::dispatch(capacity);
         let inner = self.inner.clone();
         log::trace!("solvent-async::exe: Dispatch I/O operations");
-        thread::spawn(move || io_thread(rx, inner));
+        thread::spawn(move || io_thread(rx, || inner.count.load(Acquire) == 0));
         tx
     }
 
@@ -143,69 +146,6 @@ impl Drop for ThreadPool {
     }
 }
 
-fn worker_thread(local: Worker<Runnable>, pool: Arsc<Inner>) {
-    log::trace!(
-        "solvent-async::exe: worker thread #{}",
-        thread::current().id()
-    );
-    #[inline]
-    fn next_task<T>(local: &Worker<T>, global: &Injector<T>, stealers: &[Stealer<T>]) -> Option<T> {
-        local.pop().or_else(|| {
-            iter::repeat_with(|| {
-                global
-                    .steal_batch_and_pop(local)
-                    .or_else(|| stealers.iter().map(|s| s.steal()).collect())
-            })
-            .find(|s| !s.is_retry())
-            .and_then(|s| s.success())
-        })
-    }
-
-    let backoff = Backoff::new();
-    loop {
-        match next_task(&local, &pool.global, &pool.stealers) {
-            Some(runnable) => {
-                runnable.run();
-                backoff.reset();
-            }
-            None => {
-                if pool.count.load(Acquire) == 0 {
-                    break;
-                }
-                log::trace!("W#{}: Waiting for next task...", thread::current().id());
-                backoff.snooze()
-            }
-        }
-    }
-}
-
-fn io_thread(rx: DispReceiver, pool: Arsc<Inner>) {
-    log::trace!("solvent-async::exe: io thread #{}", rx.id());
-    let backoff = Backoff::new();
-    let mut time = Instant::now();
-    loop {
-        match rx.poll_receive() {
-            Poll::Ready(res) => match res {
-                Ok(()) => backoff.reset(),
-                Err(DispError::Disconnected) => break,
-                Err(DispError::Unpack(EPIPE)) => {}
-                Err(err) => log::warn!("Error while polling for dispatcher: {:?}", err),
-            },
-            Poll::Pending => {
-                if pool.count.load(Acquire) == 0 {
-                    break;
-                }
-                let elapsed = time.elapsed();
-                if elapsed >= Duration::from_secs(2) {
-                    log::trace!("IO#{}: Waiting for next task...", rx.id());
-                    time += elapsed;
-                }
-                backoff.snooze()
-            }
-        }
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct LocalPool {
     inner: Arsc<LocalInner>,
@@ -224,7 +164,10 @@ impl LocalPool {
             stop: AtomicBool::new(false),
         });
         let i2 = inner.clone();
-        thread::spawn(move || local_worker(i2));
+        thread::spawn(move || {
+            let stop = || i2.stop.load(Acquire);
+            worker_thread(&Worker::new_fifo(), &i2.injector, &[], stop)
+        });
         LocalPool { inner }
     }
 
@@ -253,7 +196,7 @@ impl LocalPool {
         let (tx, rx) = crate::disp::dispatch(capacity);
         let inner = self.inner.clone();
         log::trace!("solvent-async::exe: Dispatch I/O operations");
-        thread::spawn(move || local_io(rx, inner));
+        thread::spawn(move || io_thread(rx, || inner.stop.load(Acquire)));
         tx
     }
 
@@ -274,29 +217,40 @@ impl Default for LocalPool {
     }
 }
 
-fn local_worker(inner: Arsc<LocalInner>) {
+fn worker_thread<S>(
+    local: &Worker<Runnable>,
+    global: &Injector<Runnable>,
+    stealers: &[Stealer<Runnable>],
+    stop: S,
+) where
+    S: Fn() -> bool,
+{
     log::trace!(
-        "solvent-async::exe: local worker thread #{}",
+        "solvent-async::exe: worker thread #{}",
         thread::current().id()
     );
     #[inline]
-    fn next_task<T>(local: &Worker<T>, global: &Injector<T>) -> Option<T> {
+    fn next_task<T>(local: &Worker<T>, global: &Injector<T>, stealers: &[Stealer<T>]) -> Option<T> {
         local.pop().or_else(|| {
-            iter::repeat_with(|| global.steal_batch_and_pop(local))
-                .find(|s| !s.is_retry())
-                .and_then(|s| s.success())
+            iter::repeat_with(|| {
+                global
+                    .steal_batch_and_pop(local)
+                    .or_else(|| stealers.iter().map(|s| s.steal()).collect())
+            })
+            .find(|s| !s.is_retry())
+            .and_then(|s| s.success())
         })
     }
-    let worker = Worker::new_fifo();
+
     let backoff = Backoff::new();
     loop {
-        match next_task(&worker, &inner.injector) {
+        match next_task(local, global, stealers) {
             Some(runnable) => {
                 runnable.run();
                 backoff.reset();
             }
             None => {
-                if inner.stop.load(Acquire) {
+                if stop() {
                     break;
                 }
                 log::trace!("W#{}: Waiting for next task...", thread::current().id());
@@ -306,8 +260,11 @@ fn local_worker(inner: Arsc<LocalInner>) {
     }
 }
 
-fn local_io(rx: DispReceiver, pool: Arsc<LocalInner>) {
-    log::debug!("solvent-async::exe: local io thread #{}", rx.id());
+fn io_thread<S>(rx: DispReceiver, stop: S)
+where
+    S: Fn() -> bool,
+{
+    log::trace!("solvent-async::exe: io thread #{}", rx.id());
     let backoff = Backoff::new();
     let mut time = Instant::now();
     loop {
@@ -319,7 +276,7 @@ fn local_io(rx: DispReceiver, pool: Arsc<LocalInner>) {
                 Err(err) => log::warn!("Error while polling for dispatcher: {:?}", err),
             },
             Poll::Pending => {
-                if pool.stop.load(Acquire) {
+                if stop() {
                     break;
                 }
                 let elapsed = time.elapsed();
