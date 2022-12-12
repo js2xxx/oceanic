@@ -263,7 +263,6 @@ impl Inner {
 
 pub trait Client: From<Channel> + AsRef<Channel> {
     type EventReceiver: EventReceiver;
-    #[cfg(feature = "runtime")]
     type Async: crate::Client;
 
     fn from_inner(inner: ClientImpl) -> Self;

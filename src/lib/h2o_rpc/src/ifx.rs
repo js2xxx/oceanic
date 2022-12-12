@@ -1,7 +1,7 @@
 use solvent::prelude::Packet;
 use solvent_rpc_core::packet::{Deserializer, SerdePacket, Serializer};
 
-#[cfg(feature = "runtime")]
+#[cfg(feature = "std")]
 pub trait Protocol {
     type Client: crate::Client;
     type Server: crate::Server;
@@ -18,6 +18,7 @@ pub trait Protocol {
         (Self::Client::from(tx), Self::Server::from(rx))
     }
 
+    #[cfg(feature = "runtime")]
     #[inline]
     fn channel() -> (Self::Client, Self::Server) {
         Self::with_disp(solvent_async::dispatch())
@@ -31,13 +32,14 @@ pub trait Protocol {
         (Self::SyncClient::from(tx), Self::Server::from(rx))
     }
 
+    #[cfg(feature = "runtime")]
     #[inline]
     fn sync_channel() -> (Self::SyncClient, Self::Server) {
         Self::sync_client_with_disp(solvent_async::dispatch())
     }
 }
 
-#[cfg(feature = "runtime")]
+#[cfg(feature = "std")]
 pub fn with_disp<P: Protocol>(disp: solvent_async::disp::DispSender) -> (P::Client, P::Server) {
     P::with_disp(disp)
 }
@@ -47,7 +49,7 @@ pub fn channel<P: Protocol>() -> (P::Client, P::Server) {
     P::channel()
 }
 
-#[cfg(feature = "runtime")]
+#[cfg(feature = "std")]
 pub fn sync_client_with_disp<P: Protocol>(
     disp: solvent_async::disp::DispSender,
 ) -> (P::SyncClient, P::Server) {

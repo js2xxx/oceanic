@@ -41,19 +41,19 @@ pub mod sync {
     use alloc::string::String;
 
     use solvent_rpc::io::{
-        dir::{directory_sync, DirEntry},
+        dir::{DirEntry, DirectorySyncClient},
         Error,
     };
 
     #[derive(Clone)]
     pub struct RemoteIter {
-        inner: directory_sync::DirectoryClient,
+        inner: DirectorySyncClient,
         last: Option<String>,
         stop: bool,
     }
 
-    impl From<directory_sync::DirectoryClient> for RemoteIter {
-        fn from(dir: directory_sync::DirectoryClient) -> Self {
+    impl From<DirectorySyncClient> for RemoteIter {
+        fn from(dir: DirectorySyncClient) -> Self {
             RemoteIter {
                 inner: dir,
                 last: None,
