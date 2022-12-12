@@ -132,23 +132,28 @@ impl Process {
     }
 }
 
-#[cfg(feature = "runtime")]
 mod runtime {
     use core::mem;
 
     use solvent::prelude::SIG_READ;
-    use solvent_async::ipc::AsyncObject;
+    use solvent_async::{disp::DispSender, ipc::AsyncObject};
 
     use super::{Error, Process};
     use crate::process::ProcessState;
 
     // TODO: Replace with proactor API.
     impl Process {
+        #[inline]
+        #[cfg(feature = "runtime")]
         pub async fn ajoin(&mut self) -> Result<usize, Error> {
+            self.ajoin_with(&solvent_async::dispatch()).await
+        }
+
+        pub async fn ajoin_with(&mut self, disp: &DispSender) -> Result<usize, Error> {
             // log::debug!("Polling");
             let status = match &self.0 {
                 ProcessState::Started(task) => {
-                    task.try_wait_with(&solvent_async::dispatch(), true, SIG_READ)
+                    task.try_wait_with(disp, true, SIG_READ)
                         .await
                         .map_err(Error::Wait)?;
                     match mem::replace(&mut self.0, ProcessState::Exited(0)) {
@@ -166,5 +171,4 @@ mod runtime {
         }
     }
 }
-#[cfg(feature = "runtime")]
 pub use runtime::*;
