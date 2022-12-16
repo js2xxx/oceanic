@@ -3,6 +3,7 @@ mod park;
 
 use alloc::vec::Vec;
 use core::{
+    future::Future,
     iter,
     pin::Pin,
     sync::atomic::{AtomicBool, AtomicUsize, Ordering::*},
@@ -11,17 +12,14 @@ use core::{
 };
 
 use async_task::{Runnable, Task};
-use futures::{
-    task::{FutureObj, Spawn, SpawnError},
-    Future,
-};
+use futures_lite::{future::yield_now, FutureExt};
 use solvent::{prelude::EPIPE, time::Instant};
 #[cfg(feature = "runtime")]
 use solvent_core::thread_local;
 #[cfg(all(feature = "runtime", not(feature = "local")))]
 use solvent_core::{sync::Lazy, thread::available_parallelism};
 use solvent_core::{
-    sync::{Arsc, Injector, Stealer, Worker},
+    sync::{Arsc, Injector, Steal, Stealer, Worker},
     thread::{self, Backoff},
 };
 
@@ -124,14 +122,6 @@ impl ThreadPool {
     }
 }
 
-impl Spawn for ThreadPool {
-    #[inline]
-    fn spawn_obj(&self, future: FutureObj<'static, ()>) -> Result<(), SpawnError> {
-        self.spawn(future).detach();
-        Ok(())
-    }
-}
-
 impl Clone for ThreadPool {
     fn clone(&self) -> Self {
         let inner = self.inner.clone();
@@ -162,11 +152,6 @@ impl LocalPool {
         let inner = Arsc::new(LocalInner {
             injector: Injector::new(),
             stop: AtomicBool::new(false),
-        });
-        let i2 = inner.clone();
-        thread::spawn(move || {
-            let stop = || i2.stop.load(Acquire);
-            worker_thread(&Worker::new_fifo(), &i2.injector, &[], stop)
         });
         LocalPool { inner }
     }
@@ -207,7 +192,17 @@ impl LocalPool {
         G: FnOnce(LocalPool) -> F,
     {
         let fut = gen(self.clone());
-        enter::enter().block_on(fut)
+        let inner = self.inner.clone();
+        let worker = async move {
+            loop {
+                match inner.injector.steal() {
+                    Steal::Empty => yield_now().await,
+                    Steal::Retry => {}
+                    Steal::Success(task) => drop(task.run()),
+                }
+            }
+        };
+        enter::enter().block_on(fut.or(worker))
     }
 }
 

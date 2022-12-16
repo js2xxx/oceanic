@@ -15,6 +15,6 @@ solvent-core = {path = "../h2o_std/core"}
 # External crates
 async-task = {version = "4.3", default-features = false}
 cfg-if = "1.0"
-futures = {version = "0.3", default-features = false, features = ["alloc"]}
+futures-lite = {version = "1.12", default-features = false, features = ["alloc"]}
 log = "0.4"
 waker-fn = "1.1"
