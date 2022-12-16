@@ -4,7 +4,7 @@ use core::{
     time::Duration,
 };
 
-use futures::{pin_mut, Future, Stream};
+use futures_lite::{pin, Future, Stream};
 use solvent::{
     error::Result,
     prelude::SIG_TIMER,
@@ -98,7 +98,7 @@ impl Stream for Intervals<'_> {
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let fut = self.timer.wait_after(self.period);
-        pin_mut!(fut);
+        pin!(fut);
         fut.poll(cx).map(Some)
     }
 }

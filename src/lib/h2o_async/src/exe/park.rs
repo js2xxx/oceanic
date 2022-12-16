@@ -1,6 +1,9 @@
-use core::task::{Context, Poll, Waker};
+use core::{
+    future::Future,
+    task::{Context, Poll, Waker},
+};
 
-use futures::{pin_mut, Future};
+use futures_lite::pin;
 use solvent_core::{sync::Parker, thread_local};
 use waker_fn::waker_fn;
 
@@ -14,7 +17,7 @@ thread_local! {
 }
 
 pub(crate) fn block_on<F: Future>(fut: F) -> F::Output {
-    pin_mut!(fut);
+    pin!(fut);
 
     CURRENT.with(|(parker, waker)| {
         let mut cx = Context::from_waker(waker);

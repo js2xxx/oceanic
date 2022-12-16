@@ -1,6 +1,5 @@
-use core::{cell::Cell, marker::PhantomData};
+use core::{cell::Cell, future::Future, marker::PhantomData};
 
-use futures::Future;
 use solvent_core::thread_local;
 
 thread_local! {

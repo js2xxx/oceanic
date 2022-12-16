@@ -6,7 +6,6 @@ use core::{
     task::{Poll, Waker},
 };
 
-use futures::task::AtomicWaker;
 use solvent::prelude::{Dispatcher as Inner, Object, Syscall, ENOENT, ENOSPC};
 use solvent_core::sync::{Arsc, CHashMap};
 
@@ -14,7 +13,7 @@ use self::DispError::*;
 
 struct Task {
     pack: Box<dyn PackedSyscall>,
-    waker: AtomicWaker,
+    waker: Waker,
 }
 
 #[derive(Debug)]
@@ -109,9 +108,8 @@ impl Dispatcher {
         };
         let task = Task {
             pack: Box::new(pack),
-            waker: AtomicWaker::new(),
+            waker: waker.clone(),
         };
-        task.waker.register(waker);
         let old = self.tasks.insert(key, task);
         assert!(old.is_none());
         Ok(Ok(key))
@@ -122,8 +120,8 @@ impl Dispatcher {
             return Err(Disconnected);
         }
 
-        if let Some(task) = self.tasks.get_mut(&key) {
-            task.waker.register(waker);
+        if let Some(mut task) = self.tasks.get_mut(&key) {
+            task.waker = waker.clone();
             Ok(())
         } else {
             Err(DidntWait)

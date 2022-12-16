@@ -1,11 +1,11 @@
 use core::{
+    future::Future,
     num::NonZeroUsize,
     pin::Pin,
     task::{Context, Poll},
     time::Duration,
 };
 
-use futures::Future;
 use solvent::{
     prelude::{PackIntrWait, Result, SerdeReg, Syscall, EPIPE, SIG_GENERIC},
     time::Instant,

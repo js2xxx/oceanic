@@ -1,5 +1,6 @@
 use alloc::vec::Vec;
 use core::{
+    future::Future,
     mem,
     num::NonZeroUsize,
     ops::ControlFlow,
@@ -7,7 +8,6 @@ use core::{
     task::{Context, Poll},
 };
 
-use futures::Future;
 use solvent::prelude::{
     IoSlice, IoSliceMut, PackRead, PackResize, PackWrite, Result, SerdeReg, Syscall, EAGAIN,
     ENOENT, EPIPE, SIG_READ, SIG_WRITE,
