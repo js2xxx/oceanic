@@ -3,7 +3,7 @@ use alloc::vec;
 use futures::StreamExt;
 use rpc::FileRequest;
 use solvent_async::io::Stream;
-use solvent_core::{io::RawStream, path::Path, sync::Arsc};
+use solvent_core::{path::Path, sync::Arsc};
 use solvent_rpc::{
     io::{file as rpc, Error, OpenOptions, Permission},
     Server,
@@ -29,12 +29,12 @@ pub async fn handle<F: File>(
 pub async fn handle_mapped<F: File>(
     file: Arsc<F>,
     tokens: EventTokens,
-    cache: RawStream,
+    cache: Stream,
     server: rpc::FileServer,
     options: OpenOptions,
 ) {
     let (requests, event) = server.serve();
-    let stream = StreamFile::new(file, unsafe { Stream::new(cache) }, event);
+    let stream = StreamFile::new(file, cache, event);
     handle_impl(stream, tokens, requests, options).await
 }
 
