@@ -1,4 +1,3 @@
-#[cfg(feature = "runtime")]
 mod handle;
 mod stream;
 
@@ -10,9 +9,10 @@ use solvent_async::io::Stream;
 use solvent_core::io::RawStream;
 use solvent_rpc::io::{file::PhysOptions, Error};
 
-#[cfg(feature = "runtime")]
-pub use self::handle::{handle, handle_mapped};
-pub use self::stream::FileStream;
+pub use self::{
+    handle::{handle, handle_mapped},
+    stream::FileStream,
+};
 use crate::entry::Entry;
 
 #[async_trait]

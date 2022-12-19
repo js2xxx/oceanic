@@ -58,7 +58,13 @@ impl Entry for MemFile {
             seeker: 0,
         };
         let server = FileServer::new(conn.into());
-        let task = handle_mapped(self, tokens, stream, server, options);
+        let task = handle_mapped(
+            self,
+            tokens,
+            unsafe { Stream::new(stream) },
+            server,
+            options,
+        );
         solvent_async::spawn(task).detach();
         Ok(false)
     }

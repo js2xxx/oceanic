@@ -196,9 +196,9 @@ impl LocalPool {
         let worker = async move {
             loop {
                 match inner.injector.steal() {
-                    Steal::Empty => yield_now().await,
-                    Steal::Retry => {}
                     Steal::Success(task) => drop(task.run()),
+                    Steal::Retry => {}
+                    Steal::Empty => yield_now().await,
                 }
             }
         };

@@ -1,5 +1,5 @@
 mod event;
-#[cfg(feature = "runtime")]
+
 mod handle;
 
 use alloc::{boxed::Box, string::String};
@@ -8,9 +8,7 @@ use async_trait::async_trait;
 use solvent_core::sync::Arsc;
 use solvent_rpc::io::{dir::DirEntry, Error};
 
-pub use self::event::*;
-#[cfg(feature = "runtime")]
-pub use self::handle::*;
+pub use self::{event::*, handle::*};
 use crate::entry::Entry;
 
 #[async_trait]
