@@ -16,7 +16,7 @@ thread_local! {
     }
 }
 
-pub(crate) fn block_on<F: Future>(fut: F) -> F::Output {
+pub(super) fn block_on<F: Future>(fut: F) -> F::Output {
     pin!(fut);
 
     CURRENT.with(|(parker, waker)| {

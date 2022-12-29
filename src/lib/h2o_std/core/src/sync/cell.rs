@@ -290,6 +290,10 @@ impl<T, F> Lazy<T, F> {
             init: Cell::new(Some(f)),
         }
     }
+
+    pub fn is_initialized(this: &Self) -> bool {
+        this.cell.is_initialized()
+    }
 }
 
 impl<T, F: FnOnce() -> T> Lazy<T, F> {

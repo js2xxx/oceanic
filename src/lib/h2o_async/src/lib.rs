@@ -1,5 +1,6 @@
 #![no_std]
 #![feature(control_flow_enum)]
+#![feature(error_in_core)]
 
 pub mod dev;
 pub mod disp;
@@ -16,7 +17,7 @@ pub use solvent_core as reexport_std;
 extern crate alloc;
 
 #[cfg(feature = "runtime")]
-pub use self::exe::{block_on, dispatch, spawn, spawn_blocking};
+pub use self::exe::runtime::{block_on, dispatch, spawn, spawn_local};
 
 #[cfg(feature = "runtime")]
 pub mod test {

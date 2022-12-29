@@ -167,7 +167,7 @@ pub unsafe extern "C" fn __libc_register_tcb_dtor(data: *mut c_void, dtor: *mut 
 pub extern "C" fn __libc_deallocate_tcb() {
     unsafe {
         let tcb = Tcb::current();
-        mem::take(&mut tcb.dtors).into_iter().for_each(|dtor| {
+        mem::take(&mut tcb.dtors).into_iter().rev().for_each(|dtor| {
             type Dtor = unsafe extern "C" fn(*mut u8);
             mem::transmute::<_, Dtor>(dtor.1)(dtor.0)
         });

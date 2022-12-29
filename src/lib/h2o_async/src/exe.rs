@@ -1,392 +1,305 @@
+#![allow(clippy::duplicate_mod)]
+
+#[cfg(feature = "runtime")]
 mod enter;
+#[cfg(feature = "runtime")]
 mod park;
 
-use alloc::vec::Vec;
+use alloc::collections::BTreeMap;
 use core::{
-    future::Future,
     iter,
-    pin::Pin,
-    sync::atomic::{AtomicBool, AtomicUsize, Ordering::*},
-    task::{Context, Poll},
-    time::Duration,
+    marker::PhantomData,
+    sync::atomic::{AtomicUsize, Ordering::*},
 };
 
 use async_task::{Runnable, Task};
-use futures_lite::{future::yield_now, FutureExt};
-use solvent::{prelude::EPIPE, time::Instant};
-#[cfg(feature = "runtime")]
-use solvent_core::thread_local;
-#[cfg(all(feature = "runtime", not(feature = "local")))]
-use solvent_core::{sync::Lazy, thread::available_parallelism};
-use solvent_core::{
-    sync::{Arsc, Injector, Steal, Stealer, Worker},
-    thread::{self, Backoff},
-};
+use futures_lite::{future::yield_now, pin, stream, Future, FutureExt, StreamExt};
+use solvent_core::sync::{Arsc, Injector, Lazy, Steal, Stealer, Worker};
 
-use crate::disp::{DispError, DispReceiver, DispSender};
+use crate::sync::RwLock;
 
-struct Blocking<G>(Option<G>);
-
-impl<G> Unpin for Blocking<G> {}
-
-impl<G, U> Future for Blocking<G>
-where
-    G: FnOnce() -> U + Send + 'static,
-{
-    type Output = U;
-
-    #[inline]
-    fn poll(mut self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Self::Output> {
-        let func = self.0.take().expect("Cannot run a task twice");
-        Poll::Ready(func())
-    }
-}
-
-#[derive(Debug)]
-pub struct ThreadPool {
-    inner: Arsc<Inner>,
-}
-
-#[derive(Debug)]
 struct Inner {
     global: Injector<Runnable>,
-    stealers: Vec<Stealer<Runnable>>,
-    count: AtomicUsize,
+    stealers: RwLock<BTreeMap<usize, Stealer<Runnable>>>,
 }
 
-impl ThreadPool {
-    pub fn new(num: usize) -> Self {
-        log::trace!("solvent-async::exe: Create thread pool");
-        let injector = Injector::new();
-        let (workers, stealers) = (0..num).fold(
-            (Vec::with_capacity(num), Vec::with_capacity(num)),
-            |(mut workers, mut stealers), _| {
-                let worker = Worker::new_fifo();
-                let stealer = worker.stealer();
-                workers.push(worker);
-                stealers.push(stealer);
-                (workers, stealers)
-            },
-        );
-        let inner = Arsc::new(Inner {
-            global: injector,
-            stealers,
-            count: AtomicUsize::new(1),
-        });
+#[repr(transparent)]
+pub struct Executor {
+    inner: Lazy<Arsc<Inner>>,
+}
 
-        workers.into_iter().for_each(|local| {
-            let inner = inner.clone();
-            thread::spawn(move || {
-                let stop = || inner.count.load(Acquire) == 0;
-                worker_thread(&local, &inner.global, &inner.stealers, stop)
-            });
-        });
-        ThreadPool { inner }
+impl Executor {
+    pub const fn new() -> Self {
+        #[inline(never)]
+        fn lazy_new() -> Arsc<Inner> {
+            Arsc::new(Inner {
+                global: Injector::new(),
+                stealers: RwLock::new(BTreeMap::new()),
+            })
+        }
+        Executor {
+            inner: Lazy::new(lazy_new),
+        }
     }
 
-    pub fn spawn<F, T>(&self, fut: F) -> Task<T>
+    pub async fn run<T>(&self, fut: impl Future<Output = T> + 'static) -> T {
+        fut.or(poller(self.inner.clone())).await
+    }
+
+    pub async fn clear(&self) {
+        poller_cleared(self.inner.clone()).await
+    }
+
+    pub fn spawn<T>(&self, fut: impl Future<Output = T> + Send + 'static) -> Task<T>
     where
-        F: Future<Output = T> + Send + 'static,
         T: Send + 'static,
     {
         let inner = self.inner.clone();
-        let (runnable, task) = async_task::spawn(fut, move |t| inner.global.push(t));
+        let (runnable, task) = async_task::spawn(fut, move |task| inner.global.push(task));
         runnable.schedule();
         task
     }
-
-    pub fn spawn_blocking<F, T>(&self, func: F) -> Task<T>
-    where
-        F: FnOnce() -> T + Send + 'static,
-        T: Send + 'static,
-    {
-        self.spawn(Blocking(Some(func)))
-    }
-
-    pub fn dispatch(&self, capacity: usize) -> DispSender {
-        let (tx, rx) = crate::disp::dispatch(capacity);
-        let inner = self.inner.clone();
-        log::trace!("solvent-async::exe: Dispatch I/O operations");
-        thread::spawn(move || io_thread(rx, || inner.count.load(Acquire) == 0));
-        tx
-    }
-
-    #[inline]
-    pub fn block_on<F, G, T>(&self, gen: G) -> T
-    where
-        F: Future<Output = T> + Send + 'static,
-        G: FnOnce(ThreadPool) -> F,
-    {
-        let fut = gen(self.clone());
-        enter::enter().block_on(fut)
-    }
 }
 
-impl Clone for ThreadPool {
-    fn clone(&self) -> Self {
-        let inner = self.inner.clone();
-        inner.count.fetch_add(1, Release);
-        ThreadPool { inner }
-    }
-}
-
-impl Drop for ThreadPool {
-    fn drop(&mut self) {
-        self.inner.count.fetch_sub(1, Release);
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct LocalPool {
-    inner: Arsc<LocalInner>,
-}
-
-#[derive(Debug)]
-struct LocalInner {
-    injector: Injector<Runnable>,
-    stop: AtomicBool,
-}
-
-impl LocalPool {
-    pub fn new() -> Self {
-        let inner = Arsc::new(LocalInner {
-            injector: Injector::new(),
-            stop: AtomicBool::new(false),
-        });
-        LocalPool { inner }
-    }
-
-    pub fn spawn<F, T>(&self, fut: F) -> Task<T>
-    where
-        F: Future<Output = T> + 'static,
-        T: 'static,
-    {
-        let inner = self.inner.clone();
-        // SAFETY: Only one worker thread, so no `Send` required.
-        let (runnable, task) =
-            unsafe { async_task::spawn_unchecked(fut, move |t| inner.injector.push(t)) };
-        runnable.schedule();
-        task
-    }
-
-    pub fn spawn_blocking<F, T>(&self, func: F) -> Task<T>
-    where
-        F: FnOnce() -> T + Send + 'static,
-        T: Send + 'static,
-    {
-        self.spawn(Blocking(Some(func)))
-    }
-
-    pub fn dispatch(&self, capacity: usize) -> DispSender {
-        let (tx, rx) = crate::disp::dispatch(capacity);
-        let inner = self.inner.clone();
-        log::trace!("solvent-async::exe: Dispatch I/O operations");
-        thread::spawn(move || io_thread(rx, || inner.stop.load(Acquire)));
-        tx
-    }
-
-    #[inline]
-    pub fn block_on<F, G, T>(&self, gen: G) -> T
-    where
-        F: Future<Output = T> + 'static,
-        G: FnOnce(LocalPool) -> F,
-    {
-        let fut = gen(self.clone());
-        let inner = self.inner.clone();
-        let worker = async move {
-            loop {
-                match inner.injector.steal() {
-                    Steal::Success(task) => drop(task.run()),
-                    Steal::Retry => {}
-                    Steal::Empty => yield_now().await,
-                }
-            }
-        };
-        enter::enter().block_on(fut.or(worker))
-    }
-}
-
-impl Default for LocalPool {
+impl Default for Executor {
     fn default() -> Self {
         Self::new()
     }
 }
 
-fn worker_thread<S>(
-    local: &Worker<Runnable>,
-    global: &Injector<Runnable>,
-    stealers: &[Stealer<Runnable>],
-    stop: S,
-) where
-    S: Fn() -> bool,
-{
-    log::trace!(
-        "solvent-async::exe: worker thread #{}",
-        thread::current().id()
-    );
+impl Drop for Executor {
+    fn drop(&mut self) {
+        // log::debug!("Drop on EXE {:p}", self);
+        if Lazy::is_initialized(&self.inner) {
+            loop {
+                match self.inner.global.steal() {
+                    Steal::Empty => break,
+                    Steal::Success(task) => task.waker().wake(),
+                    Steal::Retry => {}
+                }
+            }
+        }
+    }
+}
+
+#[repr(transparent)]
+pub struct LocalExecutor {
+    exe: Executor,
+    _marker: PhantomData<*mut ()>,
+}
+
+impl LocalExecutor {
+    pub const fn new() -> Self {
+        LocalExecutor {
+            exe: Executor::new(),
+            _marker: PhantomData,
+        }
+    }
+
+    pub async fn run<T>(&self, fut: impl Future<Output = T> + 'static) -> T {
+        self.exe.run(fut).await
+    }
+
+    pub async fn clear(&self) {
+        self.exe.clear().await
+    }
+
+    pub fn spawn<T: 'static>(&self, fut: impl Future<Output = T> + 'static) -> Task<T> {
+        let inner = self.exe.inner.clone();
+        // SAFETY: The executor is not `Send`, so the future doesn't need to be `Send`.
+        let (runnable, task) =
+            unsafe { async_task::spawn_unchecked(fut, move |task| inner.global.push(task)) };
+        runnable.schedule();
+        task
+    }
+}
+
+impl Default for LocalExecutor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+async fn tick(inner: &Inner, local: &Worker<Runnable>) -> bool {
+    let stream = stream::iter(iter::repeat_with(|| {
+        inner.global.steal_batch_and_pop(local)
+    }))
+    .then(|steal| async {
+        let steal_from_others = async {
+            let stealers = inner.stealers.read().await;
+            stealers.values().map(Stealer::steal).collect()
+        };
+        match steal {
+            Steal::Empty => steal_from_others.await,
+            Steal::Success(_) => steal,
+            Steal::Retry => match steal_from_others.await {
+                Steal::Success(res) => Steal::Success(res),
+                _ => Steal::Retry,
+            },
+        }
+    });
+    pin!(stream);
+
+    let task = match local.pop() {
+        Some(task) => Some(task),
+        None => stream
+            .find(|steal| !steal.is_retry())
+            .await
+            .and_then(|steal| steal.success()),
+    };
+
+    match task {
+        Some(task) => {
+            task.run();
+            true
+        }
+        None => false,
+    }
+}
+
+static ID: AtomicUsize = AtomicUsize::new(1);
+
+async fn poller<T>(inner: Arsc<Inner>) -> T {
+    let local = Worker::new_fifo();
+
+    let mut stealers = inner.stealers.write().await;
+    let id = ID.fetch_add(1, SeqCst);
+    assert!(id != 0);
+    stealers.insert(id, local.stealer());
+    drop(stealers);
+
+    loop {
+        if !tick(&inner, &local).await {
+            yield_now().await
+        }
+    }
+}
+
+async fn poller_cleared(inner: Arsc<Inner>) {
+    let local = Worker::new_fifo();
+
+    let mut stealers = inner.stealers.write().await;
+    let id = ID.fetch_add(1, SeqCst);
+    assert!(id != 0);
+    stealers.insert(id, local.stealer());
+    drop(stealers);
+
+    loop {
+        if !tick(&inner, &local).await {
+            break;
+        }
+    }
+
+    let mut stealers = inner.stealers.write().await;
+    stealers.remove(&id);
+}
+
+#[cfg(feature = "runtime")]
+pub(crate) mod runtime {
+    use core::task::Poll;
+
+    use futures_lite::future::pending;
+    use solvent_core::{
+        thread::{self, available_parallelism},
+        thread_local,
+    };
+
+    use crate::{
+        disp::{DispReceiver, DispSender},
+        exe::*,
+        sync::channel,
+    };
+
+    static GLOBAL: Executor = Executor::new();
+
+    thread_local! {
+        static LOCAL: LocalExecutor = LocalExecutor::new();
+    }
+
     #[inline]
-    fn next_task<T>(local: &Worker<T>, global: &Injector<T>, stealers: &[Stealer<T>]) -> Option<T> {
-        local.pop().or_else(|| {
-            iter::repeat_with(|| {
-                global
-                    .steal_batch_and_pop(local)
-                    .or_else(|| stealers.iter().map(|s| s.steal()).collect())
+    pub fn spawn_local<T: 'static>(fut: impl Future<Output = T> + 'static) -> Task<T> {
+        LOCAL.with(|local| local.spawn(fut))
+    }
+
+    #[inline]
+    pub fn spawn<T: Send + 'static>(fut: impl Future<Output = T> + Send + 'static) -> Task<T> {
+        GLOBAL.spawn(fut)
+    }
+
+    pub fn block_on<T: 'static>(num: Option<usize>, fut: impl Future<Output = T> + 'static) -> T {
+        let num = num
+            .unwrap_or_else(|| available_parallelism().get())
+            .saturating_sub(1);
+
+        let tx = (num > 0).then(|| {
+            let (tx, rx) = channel::bounded(num);
+
+            for _ in 0..num {
+                let rx = rx.clone();
+                thread::spawn(move || {
+                    let stop = async move {
+                        let _ = rx.recv().await;
+                    };
+                    LOCAL.with(|local| {
+                        let local = local.run(stop);
+                        let global = GLOBAL.run(pending());
+                        let fut = local.or(global);
+
+                        enter::enter().block_on(fut);
+                    });
+                });
+            }
+            tx
+        });
+
+        LOCAL.with(|local| {
+            let local = local.run(fut);
+            let global = GLOBAL.run(pending());
+            let fut = local.or(global);
+
+            enter::enter().block_on(async {
+                let ret = fut.await;
+                if let Some(tx) = tx {
+                    for _ in 0..num {
+                        let _ = tx.send(()).await;
+                    }
+                }
+                ret
             })
-            .find(|s| !s.is_retry())
-            .and_then(|s| s.success())
         })
     }
 
-    let backoff = Backoff::new();
-    loop {
-        match next_task(local, global, stealers) {
-            Some(runnable) => {
-                runnable.run();
-                backoff.reset();
+    static DISP: Lazy<DispSender> = Lazy::new(|| {
+        let (tx, rx) = crate::disp::dispatch(4096);
+        spawn(io(rx)).detach();
+        tx
+    });
+
+    async fn io(rx: DispReceiver) {
+        loop {
+            if let Poll::Ready(Err(e)) = rx.poll_receive() {
+                log::trace!("IO task polled error: {e:?}");
             }
-            None => {
-                if stop() {
-                    break;
-                }
-                log::trace!("W#{}: Waiting for next task...", thread::current().id());
-                backoff.snooze()
-            }
+            yield_now().await
         }
     }
-}
 
-fn io_thread<S>(rx: DispReceiver, stop: S)
-where
-    S: Fn() -> bool,
-{
-    log::trace!("solvent-async::exe: io thread #{}", rx.id());
-    let backoff = Backoff::new();
-    let mut time = Instant::now();
-    loop {
-        match rx.poll_receive() {
-            Poll::Ready(res) => match res {
-                Ok(()) => backoff.reset(),
-                Err(DispError::Disconnected) => break,
-                Err(DispError::Unpack(EPIPE)) => {}
-                Err(err) => log::warn!("Error while polling for dispatcher: {:?}", err),
-            },
-            Poll::Pending => {
-                if stop() {
-                    break;
+    #[inline]
+    pub fn dispatch() -> DispSender {
+        DISP.clone()
+    }
+
+    #[macro_export]
+    macro_rules! entry {
+        ($func:ident, $std:path, $num:expr) => {
+            mod __h2o_async_inner {
+                fn main() {
+                    $crate::block_on($num, async { (super::$func)().await })
                 }
-                let elapsed = time.elapsed();
-                if elapsed >= Duration::from_secs(2) {
-                    log::trace!("IO#{}: Waiting for next task...", rx.id());
-                    time += elapsed;
-                }
-                backoff.snooze()
+
+                use $std as std;
+                std::entry!(main);
             }
-        }
+        };
     }
 }
-
-cfg_if::cfg_if! { if #[cfg(all(feature = "runtime", not(feature = "local")))] {
-
-static POOL: Lazy<ThreadPool> = Lazy::new(|| ThreadPool::new(available_parallelism().into()));
-thread_local! {
-    static DISP: DispSender = POOL.dispatch(4096);
-}
-
-#[inline]
-pub fn spawn<F, T>(fut: F) -> Task<T>
-where
-    F: Future<Output = T> + Send + 'static,
-    T: Send + 'static,
-{
-    POOL.spawn(fut)
-}
-
-#[inline]
-pub fn spawn_blocking<F, T>(func: F) -> Task<T>
-where
-    F: FnOnce() -> T + Send + 'static,
-    T: Send + 'static,
-{
-    POOL.spawn_blocking(func)
-}
-
-#[inline]
-pub fn dispatch() -> DispSender {
-    DISP.with(|tx| tx.clone())
-}
-
-#[inline]
-pub fn block_on<F, T>(fut: F) -> T
-where
-    F: Future<Output = T> + Send + 'static,
-{
-    POOL.block_on(|_| fut)
-}
-
-#[macro_export]
-macro_rules! entry {
-    ($func:ident, $std:path) => {
-        mod __h2o_async_inner {
-            fn main() {
-                $crate::block_on(async { (super::$func)().await })
-            }
-
-            use $std as std;
-            std::entry!(main);
-        }
-    };
-}
-
-} else if #[cfg(feature = "local")] {
-
-thread_local! {
-    static POOL: LocalPool = LocalPool::new();
-    static DISP: DispSender = POOL.with(|local| local.dispatch(4096));
-}
-
-#[inline]
-pub fn spawn<F, T>(fut: F) -> Task<T>
-where
-    F: Future<Output = T> + 'static,
-    T: 'static,
-{
-    POOL.with(|pool| pool.spawn(fut))
-}
-
-#[inline]
-pub fn spawn_blocking<F, T>(func: F) -> Task<T>
-where
-    F: FnOnce() -> T + Send + 'static,
-    T: Send + 'static,
-{
-    POOL.with(|pool| pool.spawn_blocking(func))
-}
-
-#[inline]
-pub fn dispatch() -> DispSender {
-    DISP.with(|tx| tx.clone())
-}
-
-#[inline]
-pub fn block_on<F, T>(fut: F) -> T
-where
-    F: Future<Output = T> + 'static,
-{
-    POOL.with(|pool| pool.block_on(|_| fut))
-}
-
-#[macro_export]
-macro_rules! entry {
-    ($func:ident, $std:path) => {
-        mod __h2o_async_inner {
-            fn main() {
-                $crate::block_on(async { (super::$func)().await })
-            }
-
-            use $std as std;
-            std::entry!(main);
-        }
-    };
-}
-
-} }

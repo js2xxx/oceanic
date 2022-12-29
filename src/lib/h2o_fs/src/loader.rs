@@ -3,6 +3,7 @@ use core::borrow::Borrow;
 
 use futures::StreamExt;
 use solvent::prelude::Phys;
+use solvent_async::disp::DispSender;
 use solvent_core::{ffi::OsStr, path::Path};
 use solvent_rpc::{
     io::{
@@ -15,10 +16,11 @@ use solvent_rpc::{
 };
 
 pub async fn get_object_from_dir<D: Borrow<DirectoryClient>, P: AsRef<Path>>(
+    disp: DispSender,
     dir: D,
     path: P,
 ) -> Result<Phys, Error> {
-    let (file, server) = File::channel();
+    let (file, server) = File::with_disp(disp);
     let dir = dir.borrow();
     dir.open(
         path.as_ref().into(),
@@ -30,12 +32,13 @@ pub async fn get_object_from_dir<D: Borrow<DirectoryClient>, P: AsRef<Path>>(
 }
 
 pub async fn get_object<D: Borrow<DirectoryClient>, P: AsRef<Path>>(
+    disp: &DispSender,
     dir: impl Iterator<Item = D>,
     path: P,
 ) -> Option<Phys> {
     let path = path.as_ref();
     for dir in dir {
-        match get_object_from_dir(dir, path).await {
+        match get_object_from_dir(disp.clone(), dir, path).await {
             Ok(phys) => return Some(phys),
             Err(err) => log::warn!("Failed to get object from {path:?}: {err}"),
         }
@@ -44,6 +47,7 @@ pub async fn get_object<D: Borrow<DirectoryClient>, P: AsRef<Path>>(
 }
 
 pub async fn serve<D: Borrow<DirectoryClient>>(
+    disp: DispSender,
     server: LoaderServer,
     dir: impl Iterator<Item = D> + Clone,
 ) {
@@ -59,10 +63,13 @@ pub async fn serve<D: Borrow<DirectoryClient>>(
         match request {
             LoaderRequest::GetObject { path, responder } => {
                 let dir = dir.clone();
+                let disp = disp.clone();
                 let fut = async move {
                     let mut ret = Vec::new();
                     for (index, path) in path.into_iter().enumerate() {
-                        match get_object(dir.clone(), OsStr::from_bytes(path.as_bytes())).await {
+                        match get_object(&disp, dir.clone(), OsStr::from_bytes(path.as_bytes()))
+                            .await
+                        {
                             Some(obj) => ret.push(obj),
                             None => return Err(index),
                         }
