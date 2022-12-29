@@ -631,8 +631,8 @@ impl DsoList {
 
     fn push_fini(fini: &mut Option<NonNull<Dso>>, dso: &Dso) {
         unsafe {
-            (*dso.link.get()).prev = None;
-            (*dso.link.get()).next = *fini;
+            (*dso.fini_link.get()).prev = None;
+            (*dso.fini_link.get()).next = *fini;
 
             *fini = Some(dso.into());
         }

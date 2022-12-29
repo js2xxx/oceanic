@@ -13,8 +13,12 @@ use solvent::{
 };
 use solvent_core::{path::PathBuf, sync::Lazy};
 #[cfg(feature = "runtime")]
-use solvent_rpc::{io::dir::DirectoryClient, loader::LoaderClient};
-use solvent_rpc::{io::entry::EntrySyncClient, loader::LoaderSyncClient};
+use solvent_rpc::io::dir::DirectoryClient;
+use solvent_rpc::{
+    io::entry::EntrySyncClient,
+    loader::{LoaderClient, LoaderSyncClient},
+    Client,
+};
 use svrt::{HandleInfo, HandleType, StartupArgs};
 
 use super::{InitProcess, Process};
@@ -99,9 +103,7 @@ impl Builder {
         Ok(self)
     }
 
-    #[cfg(feature = "runtime")]
     pub fn loader(&mut self, loader: LoaderClient) -> Result<&mut Self, LoaderClient> {
-        use solvent_rpc::Client;
         if self.loader.is_some() {
             return Err(loader);
         }
@@ -120,7 +122,7 @@ impl Builder {
             return Err(dirs);
         }
         let (client, server) = Loader::channel();
-        let task = crate::loader::serve(server, dirs.into_iter());
+        let task = crate::loader::serve(solvent_async::dispatch(), server, dirs.into_iter());
         solvent_async::spawn(task).detach();
 
         Ok(self.loader(client).unwrap())
