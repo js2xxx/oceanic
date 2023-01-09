@@ -10,13 +10,14 @@ use core::{
     iter,
     marker::PhantomData,
     sync::atomic::{AtomicUsize, Ordering::*},
+    task::Poll,
 };
 
 use async_task::{Runnable, Task};
 use futures_lite::{future::yield_now, pin, stream, Future, FutureExt, StreamExt};
 use solvent_core::sync::{Arsc, Injector, Lazy, Steal, Stealer, Worker};
 
-use crate::sync::RwLock;
+use crate::{disp::DispReceiver, sync::RwLock};
 
 struct Inner {
     global: Injector<Runnable>,
@@ -194,9 +195,17 @@ async fn poller_cleared(inner: Arsc<Inner>) {
     stealers.remove(&id);
 }
 
+pub async fn io_task(rx: DispReceiver) {
+    loop {
+        if let Poll::Ready(Err(e)) = rx.poll_receive() {
+            log::trace!("IO task polled error: {e:?}");
+        }
+        yield_now().await
+    }
+}
+
 #[cfg(feature = "runtime")]
 pub(crate) mod runtime {
-    use core::task::Poll;
 
     use futures_lite::future::pending;
     use solvent_core::{
@@ -204,11 +213,7 @@ pub(crate) mod runtime {
         thread_local,
     };
 
-    use crate::{
-        disp::{DispReceiver, DispSender},
-        exe::*,
-        sync::channel,
-    };
+    use crate::{disp::DispSender, exe::*, sync::channel};
 
     static GLOBAL: Executor = Executor::new();
 
@@ -271,18 +276,9 @@ pub(crate) mod runtime {
 
     static DISP: Lazy<DispSender> = Lazy::new(|| {
         let (tx, rx) = crate::disp::dispatch(4096);
-        spawn(io(rx)).detach();
+        spawn(io_task(rx)).detach();
         tx
     });
-
-    async fn io(rx: DispReceiver) {
-        loop {
-            if let Poll::Ready(Err(e)) = rx.poll_receive() {
-                log::trace!("IO task polled error: {e:?}");
-            }
-            yield_now().await
-        }
-    }
 
     #[inline]
     pub fn dispatch() -> DispSender {
