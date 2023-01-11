@@ -3,7 +3,7 @@ use core::sync::atomic::{AtomicBool, Ordering::*};
 
 use async_trait::async_trait;
 use solvent::prelude::{Channel, Phys};
-use solvent_async::io::Stream;
+use solvent_async::{disp::DispSender, io::Stream, ipc::Channel as AsyncChannel};
 use solvent_core::{io::RawStream, path::Path, sync::Arsc};
 use solvent_rpc::io::{
     file::{FileServer, PhysOptions},
@@ -14,6 +14,7 @@ use crate::{
     dir::EventTokens,
     entry::Entry,
     file::{handle_mapped, File},
+    spawn::Spawner,
 };
 
 pub struct MemFile {
@@ -36,6 +37,7 @@ impl MemFile {
 impl Entry for MemFile {
     fn open(
         self: Arsc<Self>,
+        spawner: Spawner,
         tokens: EventTokens,
         path: &Path,
         options: OpenOptions,
@@ -57,15 +59,16 @@ impl Entry for MemFile {
             phys: self.phys.clone(),
             seeker: 0,
         };
-        let server = FileServer::new(conn.into());
+        let server = FileServer::new(AsyncChannel::with_disp(conn, spawner.dispatch()));
         let task = handle_mapped(
             self,
+            spawner.clone(),
             tokens,
-            unsafe { Stream::new(stream) },
+            unsafe { Stream::with_disp(stream, spawner.dispatch()) },
             server,
             options,
         );
-        solvent_async::spawn(task).detach();
+        spawner.spawn(task);
         Ok(false)
     }
 
@@ -81,12 +84,12 @@ impl Entry for MemFile {
 
 #[async_trait]
 impl File for MemFile {
-    async fn lock(&self, stream: Option<RawStream>) -> Result<Option<Stream>, Error> {
+    async fn lock(&self, stream: Option<(RawStream, DispSender)>) -> Result<Option<Stream>, Error> {
         if self.locked.swap(true, AcqRel) {
             Err(Error::WouldBlock)
         } else {
             // SAFETY: The exclusiveness is ensured.
-            Ok(stream.map(|raw| unsafe { Stream::new(raw) }))
+            Ok(stream.map(|(raw, disp)| unsafe { Stream::with_disp(raw, disp) }))
         }
     }
 

@@ -4,11 +4,12 @@ use solvent::prelude::Channel;
 use solvent_core::{path::Path, sync::Arsc};
 use solvent_rpc::io::{Error, Metadata, OpenOptions};
 
-use crate::dir::EventTokens;
+use crate::{dir::EventTokens, spawn::Spawner};
 
 pub trait Entry: IntoAny + Send + Sync + 'static {
     fn open(
         self: Arsc<Self>,
+        spawner: Spawner,
         tokens: EventTokens,
         path: &Path,
         options: OpenOptions,

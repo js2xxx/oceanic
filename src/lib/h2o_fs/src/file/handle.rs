@@ -1,6 +1,6 @@
 use alloc::vec;
 
-use futures::StreamExt;
+use futures_lite::StreamExt;
 use rpc::FileRequest;
 use solvent_async::io::Stream;
 use solvent_core::{path::Path, sync::Arsc};
@@ -10,11 +10,12 @@ use solvent_rpc::{
 };
 
 use super::{stream::*, File};
-use crate::{dir::EventTokens, entry::Entry};
+use crate::{dir::EventTokens, entry::Entry, spawn::Spawner};
 
 #[inline]
 pub async fn handle<F: File>(
     file: Arsc<F>,
+    spawner: Spawner,
     tokens: EventTokens,
     seeker: usize,
     server: rpc::FileServer,
@@ -22,12 +23,13 @@ pub async fn handle<F: File>(
 ) {
     let (requests, _) = server.serve();
     let direct = DirectFile::new(file, seeker);
-    handle_impl(direct, tokens, requests, options).await
+    handle_impl(direct, spawner, tokens, requests, options).await
 }
 
 #[inline]
 pub async fn handle_mapped<F: File>(
     file: Arsc<F>,
+    spawner: Spawner,
     tokens: EventTokens,
     cache: Stream,
     server: rpc::FileServer,
@@ -35,11 +37,12 @@ pub async fn handle_mapped<F: File>(
 ) {
     let (requests, event) = server.serve();
     let stream = StreamFile::new(file, cache, event);
-    handle_impl(stream, tokens, requests, options).await
+    handle_impl(stream, spawner, tokens, requests, options).await
 }
 
 async fn handle_impl<S: StreamIo>(
     mut file: S,
+    spawner: Spawner,
     tokens: EventTokens,
     mut requests: rpc::FileStream,
     options: OpenOptions,
@@ -55,7 +58,13 @@ async fn handle_impl<S: StreamIo>(
         let res = match request {
             FileRequest::CloneConnection { conn, responder } => {
                 let file = Arsc::clone(file.as_file());
-                match file.open(tokens.clone(), Path::new(""), options, conn) {
+                match file.open(
+                    spawner.clone(),
+                    tokens.clone(),
+                    Path::new(""),
+                    options,
+                    conn,
+                ) {
                     Ok(_) => responder.send(()),
                     Err(_) => {
                         responder.close();
@@ -69,7 +78,7 @@ async fn handle_impl<S: StreamIo>(
             }
             FileRequest::Flush { responder } => responder.send(file.as_file().flush().await),
             FileRequest::Lock { responder } => responder.send({
-                let res = file.lock().await;
+                let res = file.lock(spawner.dispatch()).await;
                 res.map(|stream| stream.map(Stream::into_raw).ok_or(()))
             }),
             FileRequest::Metadata { responder } => responder.send(file.as_file().metadata()),
@@ -80,7 +89,10 @@ async fn handle_impl<S: StreamIo>(
                 responder,
             } => {
                 let file = Arsc::clone(file.as_file());
-                responder.send(file.open(tokens.clone(), &path, options, conn).map(drop))
+                responder.send(
+                    file.open(spawner.clone(), tokens.clone(), &path, options, conn)
+                        .map(drop),
+                )
             }
             FileRequest::Read { len, responder } => responder.send({
                 if !options.contains(OpenOptions::READ) {

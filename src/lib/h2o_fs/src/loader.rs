@@ -1,7 +1,7 @@
 use alloc::vec::Vec;
 use core::borrow::Borrow;
 
-use futures::StreamExt;
+use futures_lite::StreamExt;
 use solvent::prelude::Phys;
 use solvent_async::disp::DispSender;
 use solvent_core::{ffi::OsStr, path::Path};

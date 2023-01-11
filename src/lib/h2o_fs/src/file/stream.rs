@@ -3,7 +3,7 @@ use core::ops::Deref;
 
 use async_trait::async_trait;
 use solvent::prelude::{Channel, Phys};
-use solvent_async::io::Stream;
+use solvent_async::{disp::DispSender, io::Stream};
 use solvent_core::{io::SeekFrom, sync::Arsc};
 use solvent_rpc::{
     io::{
@@ -48,7 +48,7 @@ pub trait StreamIo {
 
     fn as_file(&self) -> &Arsc<Self::File>;
 
-    async fn lock(&mut self) -> Result<Option<Stream>, Error>;
+    async fn lock(&mut self, disp: DispSender) -> Result<Option<Stream>, Error>;
 
     async fn read(&mut self, buf: &mut [u8]) -> Result<usize, Error>;
 
@@ -89,7 +89,7 @@ impl<F: File> StreamIo for DirectFile<F> {
         &self.inner
     }
 
-    async fn lock(&mut self) -> Result<Option<Stream>, Error> {
+    async fn lock(&mut self, _: DispSender) -> Result<Option<Stream>, Error> {
         if self.locked {
             return Ok(None);
         }
@@ -192,13 +192,13 @@ impl<F: File> StreamIo for StreamFile<F> {
         &self.inner
     }
 
-    async fn lock(&mut self) -> Result<Option<Stream>, Error> {
+    async fn lock(&mut self, disp: DispSender) -> Result<Option<Stream>, Error> {
         if self.locked {
             return Ok(None);
         }
         let res = self
             .inner
-            .lock(self.raw.take().map(Stream::into_raw))
+            .lock(self.raw.take().map(|s| (Stream::into_raw(s), disp)))
             .await?;
         self.locked = true;
         Ok(res)

@@ -114,9 +114,8 @@ unsafe fn exception(frame_ptr: *mut Frame, vec: def::ExVec) {
     use def::ExVec::*;
 
     let frame = &mut *frame_ptr;
-    match vec {
-        PageFault if crate::mem::space::page_fault(&mut *frame_ptr, frame.errc_vec) => return,
-        _ => {}
+    if vec == PageFault && crate::mem::space::page_fault(&mut *frame_ptr, frame.errc_vec) {
+        return;
     }
 
     match SCHED.with_current(|cur| Ok(cur.tid().ty())) {

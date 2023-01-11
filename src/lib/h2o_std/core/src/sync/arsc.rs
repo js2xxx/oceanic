@@ -241,6 +241,12 @@ impl<A: Allocator> Arsc<dyn Any, A> {
     }
 }
 
+impl<T: Default> Default for Arsc<T, Global> {
+    fn default() -> Self {
+        Self::new(Default::default())
+    }
+}
+
 impl<T: ?Sized, A: Allocator> Deref for Arsc<T, A> {
     type Target = T;
 
