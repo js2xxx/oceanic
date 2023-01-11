@@ -21,13 +21,16 @@ pub mod entry;
 pub mod file;
 pub mod fs;
 pub mod loader;
-#[cfg(feature = "runtime")]
 pub mod mem;
 pub mod process;
-#[cfg(feature = "runtime")]
 pub mod rpc;
+mod spawn;
 
 extern crate alloc;
+
+#[cfg(feature = "runtime")]
+pub use spawn::spawner;
+pub use spawn::{Runner, Spawner};
 
 #[inline]
 pub fn canonicalize<P: AsRef<Path>>(path: P) -> Result<PathBuf, Error> {

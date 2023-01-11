@@ -16,7 +16,9 @@ solvent-core = {path = "../h2o_std/core"}
 solvent-rpc = {path = "../h2o_rpc", default-features = false, features = ["std"]}
 svrt = {path = "../svrt"}
 # External crates
+async-task = {version = "4.3", default-features = false}
 async-trait = "0.1"
-futures = {version = "0.3", default-features = false, features = ["alloc"]}
+crossbeam-queue = {version = "0.3", default-features = false, features = ["alloc"]}
+futures-lite = {version = "1.12", default-features = false, features = ["alloc"]}
 log = "0.4"
 ouroboros = {version = "0.15", default-features = false}

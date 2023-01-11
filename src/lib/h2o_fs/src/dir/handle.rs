@@ -1,4 +1,4 @@
-use futures::StreamExt;
+use futures_lite::StreamExt;
 use solvent::prelude::Handle;
 use solvent_core::{path::Path, sync::Arsc};
 use solvent_rpc::{
@@ -10,9 +10,11 @@ use solvent_rpc::{
 };
 
 use super::{Directory, DirectoryMut, EventTokens};
+use crate::spawn::Spawner;
 
 pub async fn handle<D: Directory>(
     dir: Arsc<D>,
+    spawner: Spawner,
     tokens: EventTokens,
     server: rpc::DirectoryServer,
     options: OpenOptions,
@@ -26,7 +28,7 @@ pub async fn handle<D: Directory>(
                 break;
             }
         };
-        match handle_request(&dir, &tokens, request, options, &event).await {
+        match handle_request(&dir, spawner.clone(), &tokens, request, options, &event).await {
             HandleRequest::Break => break,
             HandleRequest::Next(Err(err)) => log::warn!("dir RPC send error: {err}"),
             HandleRequest::Continue(_) => log::warn!("dir RPC received unknown request"),
@@ -37,6 +39,7 @@ pub async fn handle<D: Directory>(
 
 pub async fn handle_mut<D: DirectoryMut>(
     dir: Arsc<D>,
+    spawner: Spawner,
     tokens: EventTokens,
     server: rpc::DirectoryServer,
     options: OpenOptions,
@@ -51,7 +54,17 @@ pub async fn handle_mut<D: DirectoryMut>(
                 break;
             }
         };
-        match handle_request_mut(&dir, &tokens, request, options, &event, &mut handle).await {
+        match handle_request_mut(
+            &dir,
+            spawner.clone(),
+            &tokens,
+            request,
+            options,
+            &event,
+            &mut handle,
+        )
+        .await
+        {
             HandleRequest::Break => break,
             HandleRequest::Next(Err(err)) => log::warn!("dir RPC send error: {err}"),
             HandleRequest::Continue(_) => log::warn!("dir RPC received unknown request"),
@@ -71,6 +84,7 @@ enum HandleRequest {
 
 async fn handle_request<D: Directory>(
     dir: &Arsc<D>,
+    spawner: Spawner,
     tokens: &EventTokens,
     request: rpc::DirectoryRequest,
     options: OpenOptions,
@@ -80,7 +94,7 @@ async fn handle_request<D: Directory>(
         rpc::DirectoryRequest::CloneConnection { conn, responder } => {
             match dir
                 .clone()
-                .open(tokens.clone(), Path::new(""), options, conn)
+                .open(spawner, tokens.clone(), Path::new(""), options, conn)
             {
                 Ok(_) => responder.send(()),
                 Err(_) => {
@@ -108,7 +122,7 @@ async fn handle_request<D: Directory>(
             responder,
         } => responder.send({
             dir.clone()
-                .open(tokens.clone(), &path, options, conn)
+                .open(spawner, tokens.clone(), &path, options, conn)
                 .map(|create| {
                     if create {
                         let _ = event.send(EventFlags::ADD);
@@ -122,13 +136,14 @@ async fn handle_request<D: Directory>(
 
 async fn handle_request_mut<D: DirectoryMut>(
     dir: &Arsc<D>,
+    spawner: Spawner,
     tokens: &EventTokens,
     request: rpc::DirectoryRequest,
     options: OpenOptions,
     event: &rpc::DirectoryEventSender,
     handle: &mut Option<Handle>,
 ) -> HandleRequest {
-    let request = match handle_request(dir, tokens, request, options, event).await {
+    let request = match handle_request(dir, spawner, tokens, request, options, event).await {
         HandleRequest::Continue(res) => res,
         hr => return hr,
     };

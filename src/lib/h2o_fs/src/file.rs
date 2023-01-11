@@ -5,7 +5,7 @@ use alloc::boxed::Box;
 
 use async_trait::async_trait;
 use solvent::prelude::Phys;
-use solvent_async::io::Stream;
+use solvent_async::{disp::DispSender, io::Stream};
 use solvent_core::io::RawStream;
 use solvent_rpc::io::{file::PhysOptions, Error};
 
@@ -17,7 +17,7 @@ use crate::entry::Entry;
 
 #[async_trait]
 pub trait File: Entry {
-    async fn lock(&self, stream: Option<RawStream>) -> Result<Option<Stream>, Error>;
+    async fn lock(&self, stream: Option<(RawStream, DispSender)>) -> Result<Option<Stream>, Error>;
 
     /// # Errors
     ///

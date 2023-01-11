@@ -1,13 +1,14 @@
 use core::{future::Future, marker::PhantomData};
 
 use solvent::prelude::Channel;
+use solvent_async::ipc::Channel as AsyncChannel;
 use solvent_core::{path::Path, sync::Arsc};
 use solvent_rpc::{
     io::{Error, FileType, Metadata, OpenOptions, Permission},
     Server,
 };
 
-use crate::{dir::EventTokens, entry::Entry};
+use crate::{dir::EventTokens, entry::Entry, spawn::Spawner};
 
 pub struct RpcNode<S, G, F>
 where
@@ -41,6 +42,7 @@ where
 {
     fn open(
         self: Arsc<Self>,
+        spawner: Spawner,
         _: EventTokens,
         path: &Path,
         options: OpenOptions,
@@ -52,9 +54,9 @@ where
         if path != Path::new("") {
             return Err(Error::InvalidPath(path.into()));
         }
-        let server = S::from(conn.into());
+        let server = S::from(AsyncChannel::with_disp(conn, spawner.dispatch()));
         let task = (self.gen)(server);
-        solvent_async::spawn(task).detach();
+        spawner.spawn(task);
         Ok(false)
     }
 

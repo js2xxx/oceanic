@@ -47,7 +47,6 @@ pub mod test {
                 i2.receive(&mut packet)
                     .await
                     .expect("Failed to receive packet");
-                // log::debug!("\t\t\tGot #{index}");
                 assert_eq!(packet.buffer[0], index as u8);
             }
             log::debug!("\t\t\tReceive finished");

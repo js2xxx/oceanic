@@ -8,6 +8,7 @@ use alloc::{
 
 use async_trait::async_trait;
 use solvent::prelude::Channel;
+use solvent_async::ipc::Channel as AsyncChannel;
 use solvent_core::{
     path::{Component, Path, PathBuf},
     sync::{Arsc, Mutex},
@@ -21,6 +22,7 @@ pub use self::builder::*;
 use crate::{
     dir::{handle, handle_mut, Directory, DirectoryMut, EventTokens},
     entry::Entry,
+    spawn::Spawner,
 };
 
 const MAX_NAME: usize = u8::MAX as _;
@@ -45,6 +47,7 @@ impl MemDir {
 impl Entry for MemDir {
     fn open(
         self: Arsc<Self>,
+        spawner: Spawner,
         tokens: EventTokens,
         path: &Path,
         options: OpenOptions,
@@ -60,7 +63,7 @@ impl Entry for MemDir {
                     .ok_or_else(|| Error::InvalidPath(path.into()))?;
                 let path = path.strip_prefix(name).unwrap();
                 let entry = self.get(name)?;
-                entry.open(tokens, path, options, conn)
+                entry.open(spawner, tokens, path, options, conn)
             }
             Some(_) => Err(Error::InvalidPath(path.into())),
             None => {
@@ -71,9 +74,10 @@ impl Entry for MemDir {
                 if !self.perm.contains(require) {
                     return Err(Error::PermissionDenied(require - self.perm));
                 }
-                let server = DirectoryServer::new(conn.into());
-                let task = handle(self, tokens, server, options);
-                solvent_async::spawn(task).detach();
+                let server =
+                    DirectoryServer::new(AsyncChannel::with_disp(conn, spawner.dispatch()));
+                let task = handle(self, spawner.clone(), tokens, server, options);
+                spawner.spawn(task);
                 Ok(false)
             }
         }
@@ -202,6 +206,7 @@ impl MemDirMut {
 impl Entry for MemDirMut {
     fn open(
         self: Arsc<Self>,
+        spawner: Spawner,
         tokens: EventTokens,
         path: &Path,
         options: OpenOptions,
@@ -220,7 +225,7 @@ impl Entry for MemDirMut {
                         self.get_or_insert(name, options, path)?
                     };
                 entry
-                    .open(tokens, path, options, conn)
+                    .open(spawner, tokens, path, options, conn)
                     .map(|res| res | created)
             }
             Some(_) => Err(Error::InvalidPath(path.into())),
@@ -235,9 +240,10 @@ impl Entry for MemDirMut {
                 if !self.perm.contains(require) {
                     return Err(Error::PermissionDenied(require - self.perm));
                 }
-                let server = DirectoryServer::new(conn.into());
-                let task = handle_mut(self, tokens, server, options);
-                solvent_async::spawn(task).detach();
+                let server =
+                    DirectoryServer::new(AsyncChannel::with_disp(conn, spawner.dispatch()));
+                let task = handle_mut(self, spawner.clone(), tokens, server, options);
+                spawner.spawn(task);
                 Ok(false)
             }
         }

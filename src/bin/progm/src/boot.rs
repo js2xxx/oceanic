@@ -103,6 +103,7 @@ pub fn mount() {
         let (client, server) = Directory::sync_channel();
         bootfs
             .open(
+                solvent_fs::spawner(),
                 Default::default(),
                 Path::new(""),
                 OpenOptions::READ | OpenOptions::EXECUTE,
