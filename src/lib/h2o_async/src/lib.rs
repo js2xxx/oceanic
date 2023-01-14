@@ -12,12 +12,10 @@ pub mod sync;
 pub mod time;
 mod utils;
 
-pub use solvent_core as reexport_std;
-
 extern crate alloc;
 
 #[cfg(feature = "runtime")]
-pub use self::exe::runtime::{block_on, dispatch, spawn, spawn_local};
+pub use self::exe::runtime::*;
 
 #[cfg(feature = "runtime")]
 pub mod test {

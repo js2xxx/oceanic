@@ -206,7 +206,6 @@ pub async fn io_task(rx: DispReceiver) {
 
 #[cfg(feature = "runtime")]
 pub(crate) mod runtime {
-
     use futures_lite::future::pending;
     use solvent_core::{
         thread::{self, available_parallelism},
@@ -229,6 +228,16 @@ pub(crate) mod runtime {
     #[inline]
     pub fn spawn<T: Send + 'static>(fut: impl Future<Output = T> + Send + 'static) -> Task<T> {
         GLOBAL.spawn(fut)
+    }
+
+    #[inline]
+    pub fn global_executor() -> &'static Executor {
+        &GLOBAL
+    }
+
+    #[inline]
+    pub fn local_executor<T, F: FnOnce(&LocalExecutor) -> T>(f: F) -> T {
+        LOCAL.with(f)
     }
 
     pub fn block_on<T: 'static>(num: Option<usize>, fut: impl Future<Output = T> + 'static) -> T {

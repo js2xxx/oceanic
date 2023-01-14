@@ -1,7 +1,7 @@
-use core::hint;
+use crossbeam_queue::SegQueue;
 
 use super::*;
-use crate::{cpu::Lazy, mem::space, sched::deque};
+use crate::{cpu::Lazy, mem::space};
 
 /// Context dropper - used for dropping kernel stacks of threads.
 ///
@@ -12,8 +12,8 @@ use crate::{cpu::Lazy, mem::space, sched::deque};
 ///
 /// [`task_exit`]: crate::sched::task::syscall::task_exit
 #[thread_local]
-pub(super) static CTX_DROPPER: Lazy<deque::Injector<alloc::boxed::Box<Context>>> =
-    Lazy::new(deque::Injector::new);
+pub(super) static CTX_DROPPER: Lazy<SegQueue<alloc::boxed::Box<Context>>> =
+    Lazy::new(SegQueue::new);
 
 #[thread_local]
 pub(super) static IDLE: Lazy<Tid> = Lazy::new(|| {
@@ -57,16 +57,8 @@ fn idle(cpu: usize, fs_base: u64) -> ! {
         boot::setup();
     }
 
-    let worker = deque::Worker::new_fifo();
     loop {
-        match CTX_DROPPER.steal_batch(&worker) {
-            deque::Steal::Empty | deque::Steal::Retry => hint::spin_loop(),
-            deque::Steal::Success(_) => {
-                while let Some(obj) = worker.pop() {
-                    drop(obj);
-                }
-            }
-        }
+        drop(CTX_DROPPER.pop());
         let _ = crate::sched::SCHED.with_current(|cur| {
             cur.running_state = RunningState::NEED_RESCHED;
             Ok(())
