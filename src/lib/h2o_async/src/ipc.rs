@@ -92,18 +92,21 @@ impl<'a, T: Object> Future for TryWait<'a, T> {
     type Output = Result<usize>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        if let Some(rx) = self.result.take() {
+        if let Some(ref rx) = self.result {
             match rx.try_recv() {
                 Ok(result) => return Poll::Ready(result),
                 Err(TryRecvError::Empty) => {
-                    self.result = Some(rx);
-                    if let Err(err) = self
-                        .key
-                        .ok_or(ENOENT)
-                        .map(|key| self.disp.update(key, cx.waker()).expect("update"))
-                    {
-                        return Poll::Ready(Err(err));
+                    let Some(key) = self.key else {
+                        return Poll::Ready(Err(ENOENT))
+                    };
+                    if let Err(err) = self.disp.update(key, cx.waker()) {
+                        if let Ok(res) = rx.recv() {
+                            return Poll::Ready(res);
+                        }
+                        panic!("Update future error with key {key}: {err:?}");
                     }
+
+                    return Poll::Pending;
                 }
                 Err(TryRecvError::Disconnected) => {}
             }

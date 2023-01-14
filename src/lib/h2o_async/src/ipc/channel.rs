@@ -134,38 +134,45 @@ pub struct Receive<'a> {
 
 impl<'a> Receive<'a> {
     fn result_recv(&mut self, cx: &mut Context<'_>) -> ControlFlow<Poll<Result<Packet>>, Packet> {
-        let packet = match self.result.take() {
-            Some(rx) => match rx.try_recv() {
-                // Has a result
-                Ok(send_data) => match send_data.id {
+        macro_rules! has_a_result {
+            ($send_data:ident) => {
+                match $send_data.id {
                     // Packet transferring successful, return it
                     Ok(id) => {
-                        let mut packet = send_data.packet;
+                        let mut packet = $send_data.packet;
                         packet.id = NonZeroUsize::new(id);
                         return ControlFlow::Break(Poll::Ready(Ok(packet)));
                     }
 
                     // Packet buffer too small, reserve enough memory and restart polling
                     Err(EBUFFER) => {
-                        let mut packet = send_data.packet;
-                        packet.buffer.reserve(send_data.buffer_size);
-                        packet.handles.reserve(send_data.handle_count);
+                        let mut packet = $send_data.packet;
+                        packet.buffer.reserve($send_data.buffer_size);
+                        packet.handles.reserve($send_data.handle_count);
                         Some(packet)
                     }
 
                     // Actual error occurred, return it
                     Err(err) => return ControlFlow::Break(Poll::Ready(Err(err))),
-                },
+                }
+            };
+        }
+
+        let packet = match self.result {
+            Some(ref rx) => match rx.try_recv() {
+                // Has a result
+                Ok(send_data) => has_a_result!(send_data),
 
                 // Not yet, continue waiting
                 Err(TryRecvError::Empty) => {
-                    self.result = Some(rx);
-                    if let Err(err) = self
-                        .key
-                        .ok_or(ENOENT)
-                        .map(|key| self.channel.disp.update(key, cx.waker()).expect("update"))
-                    {
-                        return ControlFlow::Break(Poll::Ready(Err(err)));
+                    let Some(key) = self.key else {
+                        return ControlFlow::Break(Poll::Ready(Err(ENOENT)))
+                    };
+                    if let Err(err) = self.channel.disp.update(key, cx.waker()) {
+                        if let Ok(send_data) = rx.recv() {
+                            has_a_result!(send_data);
+                        }
+                        panic!("Update future error: {err:?}");
                     }
 
                     return ControlFlow::Break(Poll::Pending);
