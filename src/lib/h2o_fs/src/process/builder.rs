@@ -11,16 +11,19 @@ use solvent::{
     prelude::{drop_raw, Channel, Feature, Flags, Handle, Object, Phys, Space, Virt, PAGE_SIZE},
     task::{Task, DEFAULT_STACK_SIZE},
 };
+use solvent_async::disp::DispSender;
 use solvent_core::{path::PathBuf, sync::Lazy};
+#[cfg(feature = "runtime")]
+use solvent_rpc::{io::dir::DirectoryClient, loader::Loader, Protocol};
 use solvent_rpc::{
-    io::{dir::DirectoryClient, entry::EntrySyncClient},
-    loader::{Loader, LoaderClient, LoaderSyncClient},
-    Client, Protocol,
+    io::entry::EntrySyncClient,
+    loader::{LoaderClient, LoaderSyncClient},
+    sync::Client as SyncClient,
+    Client,
 };
 use svrt::{HandleInfo, HandleType, StartupArgs};
 
 use super::{InitProcess, Process};
-use crate::Spawner;
 
 const INTERP: &str = "lib/ld-oceanic.so";
 
@@ -108,21 +111,6 @@ impl Builder {
         }
         self.loader = Some(loader.into_sync().unwrap());
         Ok(self)
-    }
-
-    pub fn load_dirs_with_spawner(
-        &mut self,
-        spawner: &Spawner,
-        dirs: Vec<DirectoryClient>,
-    ) -> Result<&mut Self, Vec<DirectoryClient>> {
-        if self.loader.is_some() {
-            return Err(dirs);
-        }
-        let (client, server) = Loader::with_disp(spawner.dispatch());
-        let task = crate::loader::serve(spawner.dispatch(), server, dirs.into_iter());
-        spawner.spawn(task);
-
-        Ok(self.loader(client).unwrap())
     }
 
     #[cfg(feature = "runtime")]
@@ -241,6 +229,43 @@ impl Builder {
         )
     }
 
+    async fn build_args(&mut self, disp: DispSender) -> Result<BuildArgs, Error> {
+        let Builder {
+            local_fs,
+            handles,
+            executable,
+            loader,
+            vdso,
+            args,
+            environ,
+        } = mem::take(self);
+        let (executable, name) = executable.ok_or_else(|| Error::FieldMissing("executable"))?;
+        let loader = loader
+            .ok_or_else(|| Error::FieldMissing("loader"))?
+            .into_async_with_disp(disp)
+            .unwrap();
+        let vdso = vdso.unwrap_or_else(self::vdso);
+
+        let interp_path = match elfload::get_interp(&executable)? {
+            Some(bytes) => CString::from_vec_with_nul(bytes),
+            None => Ok(CString::new(INTERP).unwrap()),
+        }
+        .map_err(Error::InvalidCStr)?;
+
+        let interp = loader
+            .get_object(vec![interp_path.clone()])
+            .await
+            .map_err(Error::Rpc)?
+            .map_err(|_| Error::DepNotFound(interp_path))?
+            .pop()
+            .unwrap();
+
+        let loader = solvent_rpc::Client::into_sync(loader).unwrap();
+        build_end(
+            interp, executable, vdso, loader, handles, local_fs, args, environ, name,
+        )
+    }
+
     pub fn build_sync(&mut self) -> Result<Process, Error> {
         let build_args = self.build_args_sync()?;
 
@@ -278,51 +303,8 @@ impl Builder {
         Ok(proc)
     }
 
-    #[cfg(feature = "runtime")]
-    pub async fn build(&mut self) -> Result<Process, Error> {
-        use solvent_rpc::sync::Client;
-
-        let Builder {
-            local_fs,
-            handles,
-            executable,
-            loader,
-            vdso,
-            args,
-            environ,
-        } = mem::take(self);
-        let (executable, name) = executable.ok_or_else(|| Error::FieldMissing("executable"))?;
-        let loader = loader
-            .ok_or_else(|| Error::FieldMissing("loader"))?
-            .into_async()
-            .unwrap();
-        let vdso = vdso.unwrap_or_else(self::vdso);
-
-        let interp_path = match elfload::get_interp(&executable)? {
-            Some(bytes) => CString::from_vec_with_nul(bytes),
-            None => Ok(CString::new(INTERP).unwrap()),
-        }
-        .map_err(Error::InvalidCStr)?;
-
-        let interp = loader
-            .get_object(vec![interp_path.clone()])
-            .await
-            .map_err(Error::Rpc)?
-            .map_err(|_| Error::DepNotFound(interp_path))?
-            .pop()
-            .unwrap();
-
-        let build_args = build_end(
-            interp,
-            executable,
-            vdso,
-            solvent_rpc::Client::into_sync(loader).unwrap(),
-            handles,
-            local_fs,
-            args,
-            environ,
-            name,
-        )?;
+    pub async fn build_with_disp(&mut self, disp: DispSender) -> Result<Process, Error> {
+        let build_args = self.build_args(disp).await?;
 
         let proc = Process::new(
             Task::exec(
@@ -339,51 +321,11 @@ impl Builder {
         Ok(proc)
     }
 
-    #[cfg(feature = "runtime")]
-    pub async fn build_non_start(&mut self) -> Result<InitProcess, Error> {
-        use solvent_rpc::sync::Client;
-
-        let Builder {
-            local_fs,
-            handles,
-            executable,
-            loader,
-            vdso,
-            args,
-            environ,
-        } = mem::take(self);
-        let (executable, name) = executable.ok_or_else(|| Error::FieldMissing("executable"))?;
-        let loader = loader
-            .ok_or_else(|| Error::FieldMissing("loader"))?
-            .into_async()
-            .unwrap();
-        let vdso = vdso.unwrap_or_else(self::vdso);
-
-        let interp_path = match elfload::get_interp(&executable)? {
-            Some(bytes) => CString::from_vec_with_nul(bytes),
-            None => Ok(CString::new(INTERP).unwrap()),
-        }
-        .map_err(Error::InvalidCStr)?;
-
-        let interp = loader
-            .get_object(vec![interp_path.clone()])
-            .await
-            .map_err(Error::Rpc)?
-            .map_err(|_| Error::DepNotFound(interp_path))?
-            .pop()
-            .unwrap();
-
-        let build_args = build_end(
-            interp,
-            executable,
-            vdso,
-            solvent_rpc::Client::into_sync(loader).unwrap(),
-            handles,
-            local_fs,
-            args,
-            environ,
-            name,
-        )?;
+    pub async fn build_non_start_with_disp(
+        &mut self,
+        disp: DispSender,
+    ) -> Result<InitProcess, Error> {
+        let build_args = self.build_args(disp).await?;
 
         let (task, suspend_token) = Task::new(
             Some(&build_args.name),
@@ -399,6 +341,17 @@ impl Builder {
         };
 
         Ok(proc)
+    }
+
+    #[cfg(feature = "runtime")]
+    pub async fn build(&mut self) -> Result<Process, Error> {
+        self.build_with_disp(solvent_async::dispatch()).await
+    }
+
+    #[cfg(feature = "runtime")]
+    pub async fn build_non_start(&mut self) -> Result<InitProcess, Error> {
+        self.build_non_start_with_disp(solvent_async::dispatch())
+            .await
     }
 }
 
