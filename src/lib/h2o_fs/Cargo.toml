@@ -4,8 +4,9 @@ name = "solvent-fs"
 version = "0.1.0"
 
 [features]
-default = ["runtime"]
+default = ["runtime", "std-local"]
 runtime = ["solvent-async/runtime", "solvent-rpc/runtime"]
+std-local = []
 
 [dependencies]
 # Local crates

@@ -10,7 +10,7 @@ dbglog = {path = "../dbglog"}
 heap = {path = "../../../h2o/libs/heap", default-features = false}
 solvent = {path = "../h2o_rs"}
 solvent-core = {path = "core"}
-solvent-fs = {path = "../h2o_fs", default-features = false}
+solvent-fs = {path = "../h2o_fs", default-features = false, features = ["std-local"]}
 svrt = {path = "../svrt"}
 # External crates
 log = "0.4"

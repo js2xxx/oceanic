@@ -2,12 +2,9 @@ use alloc::{
     collections::{btree_map, BTreeMap},
     string::{String, ToString},
 };
-use core::{iter::Peekable, sync::atomic};
+use core::iter::Peekable;
 
-use solvent::{
-    ipc::Channel,
-    prelude::{Handle, Object},
-};
+use solvent::{ipc::Channel, prelude::Handle};
 use solvent_core::{
     path::{Component, Components, Path, PathBuf},
     sync::{Arsc, Mutex, MutexGuard},
@@ -552,54 +549,68 @@ impl Default for LocalFs {
     }
 }
 
-static mut LOCAL_FS: Option<LocalFs> = None;
+#[cfg(feature = "std-local")]
+mod std_local {
+    use alloc::collections::BTreeMap;
+    use core::sync::atomic;
 
-/// # Safety
-///
-/// The function must be called only during the initialization of the whole
-/// process.
-pub unsafe fn init_rt(
-    handles: &mut BTreeMap<svrt::HandleInfo, Handle>,
-    paths: impl Iterator<Item = impl AsRef<Path>>,
-    cwd: Option<impl AsRef<Path>>,
-) {
-    let iter = handles.drain_filter(|info, _| info.handle_type() == svrt::HandleType::LocalFs);
+    use solvent::prelude::{Channel, Handle, Object};
+    use solvent_core::path::Path;
+    use solvent_rpc::io::entry::EntrySyncClient;
 
-    let local_fs = LocalFs::new();
-    for ((_, handle), path) in iter.zip(paths) {
-        let remote = EntrySyncClient::from(unsafe { Channel::from_raw(handle) });
-        let res = local_fs.mount(path, remote);
-        if let Err(err) = res {
-            log::warn!("Error when mounting the local FS: {err}");
+    use super::LocalFs;
+
+    static mut LOCAL_FS: Option<LocalFs> = None;
+
+    /// # Safety
+    ///
+    /// The function must be called only during the initialization of the whole
+    /// process.
+    pub unsafe fn init_rt(
+        handles: &mut BTreeMap<svrt::HandleInfo, Handle>,
+        paths: impl Iterator<Item = impl AsRef<Path>>,
+        cwd: Option<impl AsRef<Path>>,
+    ) {
+        let iter = handles.drain_filter(|info, _| info.handle_type() == svrt::HandleType::LocalFs);
+
+        let local_fs = LocalFs::new();
+        for ((_, handle), path) in iter.zip(paths) {
+            let remote = EntrySyncClient::from(unsafe { Channel::from_raw(handle) });
+            let res = local_fs.mount(path, remote);
+            if let Err(err) = res {
+                log::warn!("Error when mounting the local FS: {err}");
+            }
         }
-    }
-    if let Some(cwd) = cwd {
-        let path = cwd.as_ref();
-        let res = local_fs.chdir(path);
-        if let Err(err) = res {
-            log::warn!("Error when cwding the local FS to {path:?}: {err}");
+        if let Some(cwd) = cwd {
+            let path = cwd.as_ref();
+            let res = local_fs.chdir(path);
+            if let Err(err) = res {
+                log::warn!("Error when cwding the local FS to {path:?}: {err}");
+            }
         }
+
+        let old = LOCAL_FS.replace(local_fs);
+        atomic::fence(atomic::Ordering::Release);
+
+        assert!(
+            old.is_none(),
+            "The local FS should only be initialized once"
+        );
     }
 
-    let old = LOCAL_FS.replace(local_fs);
-    atomic::fence(atomic::Ordering::Release);
+    /// # Safety
+    ///
+    /// The function must be called only during the finalization of the whole
+    /// process.
+    pub unsafe fn fini_rt() {
+        LOCAL_FS = None;
+    }
 
-    assert!(
-        old.is_none(),
-        "The local FS should only be initialized once"
-    );
+    #[inline]
+    pub fn local() -> &'static LocalFs {
+        // SAFETY: The local FS should be initialized before `main`.
+        unsafe { LOCAL_FS.as_ref().expect("The local FS is uninitialized") }
+    }
 }
-
-/// # Safety
-///
-/// The function must be called only during the finalization of the whole
-/// process.
-pub unsafe fn fini_rt() {
-    LOCAL_FS = None;
-}
-
-#[inline]
-pub fn local() -> &'static LocalFs {
-    // SAFETY: The local FS should be initialized before `main`.
-    unsafe { LOCAL_FS.as_ref().expect("The local FS is uninitialized") }
-}
+#[cfg(feature = "std-local")]
+pub use std_local::*;
