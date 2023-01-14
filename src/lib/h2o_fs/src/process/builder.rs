@@ -12,16 +12,15 @@ use solvent::{
     task::{Task, DEFAULT_STACK_SIZE},
 };
 use solvent_core::{path::PathBuf, sync::Lazy};
-#[cfg(feature = "runtime")]
-use solvent_rpc::io::dir::DirectoryClient;
 use solvent_rpc::{
-    io::entry::EntrySyncClient,
-    loader::{LoaderClient, LoaderSyncClient},
-    Client,
+    io::{dir::DirectoryClient, entry::EntrySyncClient},
+    loader::{Loader, LoaderClient, LoaderSyncClient},
+    Client, Protocol,
 };
 use svrt::{HandleInfo, HandleType, StartupArgs};
 
 use super::{InitProcess, Process};
+use crate::Spawner;
 
 const INTERP: &str = "lib/ld-oceanic.so";
 
@@ -111,13 +110,26 @@ impl Builder {
         Ok(self)
     }
 
+    pub fn load_dirs_with_spawner(
+        &mut self,
+        spawner: &Spawner,
+        dirs: Vec<DirectoryClient>,
+    ) -> Result<&mut Self, Vec<DirectoryClient>> {
+        if self.loader.is_some() {
+            return Err(dirs);
+        }
+        let (client, server) = Loader::with_disp(spawner.dispatch());
+        let task = crate::loader::serve(spawner.dispatch(), server, dirs.into_iter());
+        spawner.spawn(task);
+
+        Ok(self.loader(client).unwrap())
+    }
+
     #[cfg(feature = "runtime")]
     pub fn load_dirs(
         &mut self,
         dirs: Vec<DirectoryClient>,
     ) -> Result<&mut Self, Vec<DirectoryClient>> {
-        use solvent_rpc::{loader::Loader, Protocol};
-
         if self.loader.is_some() {
             return Err(dirs);
         }
@@ -197,7 +209,7 @@ impl Builder {
         self
     }
 
-    pub fn build_sync(&mut self) -> Result<Process, Error> {
+    fn build_args_sync(&mut self) -> Result<BuildArgs, Error> {
         let Builder {
             local_fs,
             handles,
@@ -224,9 +236,13 @@ impl Builder {
             .pop()
             .unwrap();
 
-        let build_args = build_end(
+        build_end(
             interp, executable, vdso, loader, handles, local_fs, args, environ, name,
-        )?;
+        )
+    }
+
+    pub fn build_sync(&mut self) -> Result<Process, Error> {
+        let build_args = self.build_args_sync()?;
 
         let proc = Process::new(
             Task::exec(
@@ -244,35 +260,7 @@ impl Builder {
     }
 
     pub fn build_non_start_sync(&mut self) -> Result<InitProcess, Error> {
-        let Builder {
-            local_fs,
-            handles,
-            executable,
-            loader,
-            vdso,
-            args,
-            environ,
-        } = mem::take(self);
-        let (executable, name) = executable.ok_or_else(|| Error::FieldMissing("executable"))?;
-        let loader = loader.ok_or_else(|| Error::FieldMissing("loader"))?;
-        let vdso = vdso.unwrap_or_else(self::vdso);
-
-        let interp_path = match elfload::get_interp(&executable)? {
-            Some(bytes) => CString::from_vec_with_nul(bytes),
-            None => Ok(CString::new(INTERP).unwrap()),
-        }
-        .map_err(Error::InvalidCStr)?;
-
-        let interp = loader
-            .get_object(vec![interp_path.clone()])
-            .map_err(Error::Rpc)?
-            .map_err(|_| Error::DepNotFound(interp_path))?
-            .pop()
-            .unwrap();
-
-        let build_args = build_end(
-            interp, executable, vdso, loader, handles, local_fs, args, environ, name,
-        )?;
+        let build_args = self.build_args_sync()?;
 
         let (task, suspend_token) = Task::new(
             Some(&build_args.name),

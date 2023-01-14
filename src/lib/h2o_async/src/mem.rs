@@ -163,11 +163,11 @@ struct FutInner<'a> {
 
 impl<'a> FutInner<'a> {
     fn result_recv<T>(
-        &mut self,
-        result: &mut Option<oneshot::Receiver<Result<T>>>,
+        &self,
+        result: &Option<oneshot::Receiver<Result<T>>>,
         cx: &mut Context,
     ) -> ControlFlow<Poll<Result<T>>> {
-        match result.take() {
+        match result {
             Some(rx) => match rx.try_recv() {
                 // Has a result
                 Ok(res) => match res {
@@ -178,18 +178,18 @@ impl<'a> FutInner<'a> {
 
                 // Not yet, continue waiting
                 Err(TryRecvError::Empty) => {
-                    *result = Some(rx);
-                    ControlFlow::Break(
-                        if let Err(err) = self
-                            .key
-                            .ok_or(ENOENT)
-                            .map(|key| self.phys.disp.update(key, cx.waker()).expect("update"))
-                        {
-                            Poll::Ready(Err(err))
-                        } else {
-                            Poll::Pending
-                        },
-                    )
+                    let Some(key) = self.key else {
+                        return ControlFlow::Break(Poll::Ready(Err(ENOENT)))
+                    };
+
+                    if let Err(err) = self.phys.disp.update(key, cx.waker()) {
+                        if let Ok(res) = rx.recv() {
+                            return ControlFlow::Break(Poll::Ready(res));
+                        }
+                        panic!("Update future error with key {key}: {err:?}");
+                    }
+
+                    ControlFlow::Break(Poll::Pending)
                 }
 
                 // Channel early disconnected, restart the default process
@@ -212,8 +212,7 @@ impl Future for Read<'_> {
     type Output = Result<Vec<u8>>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let mut result = mem::take(&mut self.result);
-        let mut buf = match self.f.result_recv(&mut result, cx) {
+        let mut buf = match self.f.result_recv(&self.result, cx) {
             ControlFlow::Continue(()) => mem::take(&mut self.buf),
             ControlFlow::Break(value) => return value,
         };
@@ -279,8 +278,7 @@ impl Future for Write<'_> {
     type Output = Result<(Vec<u8>, usize)>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let mut result = mem::take(&mut self.result);
-        let mut buf = match self.f.result_recv(&mut result, cx) {
+        let mut buf = match self.f.result_recv(&self.result, cx) {
             ControlFlow::Continue(()) => mem::take(&mut self.buf),
             ControlFlow::Break(value) => return value,
         };
@@ -336,8 +334,7 @@ impl Future for Resize<'_> {
     type Output = Result;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let mut result = mem::take(&mut self.result);
-        if let ControlFlow::Break(res) = self.f.result_recv(&mut result, cx) {
+        if let ControlFlow::Break(res) = self.f.result_recv(&self.result, cx) {
             return res;
         }
 

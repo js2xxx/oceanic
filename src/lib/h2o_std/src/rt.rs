@@ -106,11 +106,11 @@ macro_rules! entry {
     ($main:ident) => {
         #[no_mangle]
         extern "C" fn _start(init_chan: solvent::prelude::Handle) {
-            $crate::rt::lang_start(
+            let t = $crate::rt::lang_start(
                 unsafe { solvent::prelude::Object::from_raw(init_chan) },
                 $main,
             );
-            unsafe { solvent::task::exit(0, false) };
+            unsafe { solvent::task::exit($crate::rt::Termination::report(t), false) };
         }
     };
 }
