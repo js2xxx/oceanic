@@ -169,8 +169,16 @@ async fn poller<T>(inner: Arsc<Inner>) -> T {
     stealers.insert(id, local.stealer());
     drop(stealers);
 
+    let mut num = 0;
     loop {
-        if !tick(&inner, &local).await {
+        let add = tick(&inner, &local).await;
+        if !add {
+            num = 0;
+            yield_now().await;
+        }
+        num += 1;
+        if num > u8::MAX as u32 {
+            num = 0;
             yield_now().await
         }
     }

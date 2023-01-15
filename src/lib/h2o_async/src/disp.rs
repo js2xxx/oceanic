@@ -58,11 +58,17 @@ impl Dispatcher {
     fn poll_receive(self: &Arsc<Self>) -> Poll<Result<(), DispError>> {
         match self.inner.pop_raw() {
             Ok(res) => {
+                let s = solvent::time::Instant::now();
                 let Task { waker, mut pack } = loop {
                     match self.tasks.remove(&res.key) {
                         Some(task) => break task,
                         None => hint::spin_loop(),
                     }
+                    assert!(
+                        s.elapsed() < core::time::Duration::from_secs(1),
+                        "The kernel object owns a key that the user space doesn't: {}",
+                        res.key
+                    );
                 };
                 // We need to inform the task where an internal error occurred.
                 let res = pack.unpack(res.result, NonZeroUsize::new(res.signal));

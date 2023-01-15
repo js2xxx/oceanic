@@ -76,7 +76,7 @@ impl Node {
         options: OpenOptions,
         conn: Channel,
     ) -> Result<(), Error> {
-        let (node, comps) = self.open_node(path, &mut None)?;
+        let (node, comps) = self.open_node(path)?;
         match *node {
             Node::Dir(_) => Err(Error::LocalFs(path.to_path_buf())),
             Node::Remote(ref remote) => {
@@ -90,7 +90,7 @@ impl Node {
         let parent_path = path
             .parent()
             .ok_or_else(|| Error::PermissionDenied(Default::default()))?;
-        let (parent, _) = self.open_node(parent_path, &mut None)?;
+        let (parent, _) = self.open_node(parent_path)?;
         let rest = path.file_name().unwrap().to_str().unwrap();
         let mut entries = match *parent {
             Node::Dir(ref dir) => dir.lock(),
@@ -111,63 +111,72 @@ impl Node {
 
     #[inline]
     fn create(self: Arsc<Self>, path: &Path, remote: EntrySyncClient) -> Result<(), Error> {
-        let _ = self.open_node(path, &mut Some(remote))?;
-        Ok(())
+        self.create_node(path, &mut Some(remote))
     }
 
-    fn open_node<'a>(
+    fn create_node(
         self: Arsc<Self>,
-        path: &'a Path,
+        path: &Path,
         create: &mut Option<EntrySyncClient>,
-    ) -> Result<(Arsc<Node>, Peekable<Components<'a>>), Error> {
+    ) -> Result<(), Error> {
         let mut node = self;
         let mut comps = path.components().peekable();
         while let Some(comp) = comps.next() {
-            match comp {
-                Component::Normal(comp) => {
-                    let comp = comp.to_str().unwrap();
+            let Component::Normal(comp) = comp else {
+                unreachable!()
+            };
+            let comp = comp.to_str().unwrap();
 
-                    let child = if let Node::Dir(ref dir) = *node {
-                        let entries = dir.lock();
-                        match entries.get(comp) {
-                            Some(child) => Arsc::clone(child),
-                            None if create.is_some() => {
-                                Self::create_node(comps.peek().is_none(), create, entries, comp)
-                            }
-                            None => {
-                                drop(entries);
-                                return Ok((node, comps));
-                            }
-                        }
-                    } else {
-                        return Err(Error::LocalFs(path.into()));
-                    };
-                    node = child;
+            node = if let Node::Dir(ref dir) = *node {
+                let mut entries = dir.lock();
+                match entries.get(comp) {
+                    Some(child) => Arsc::clone(child),
+                    None if create.is_some() => {
+                        let new = if comps.peek().is_none() {
+                            Self::leaf(create.take().unwrap())
+                        } else {
+                            Self::empty()
+                        };
+                        entries.insert(comp.to_string(), Arsc::clone(&new));
+                        new
+                    }
+                    None => return Ok(()),
                 }
-                _ => unreachable!(),
-            }
+            } else {
+                return Err(Error::LocalFs(path.into()));
+            };
         }
         if create.is_some() {
             return Err(Error::Exists);
         }
-        Ok((node, comps))
+        Ok(())
     }
 
-    fn create_node(
-        is_file: bool,
-        create: &mut Option<EntrySyncClient>,
-        mut entries: MutexGuard<BTreeMap<String, Arsc<Node>>>,
-        comp: &str,
-    ) -> Arsc<Node> {
-        if is_file {
-            let new = Self::leaf(create.take().unwrap());
-            entries.insert(comp.to_string(), Arsc::clone(&new));
-            new
-        } else {
-            let new = Self::empty();
-            entries.insert(comp.to_string(), Arsc::clone(&new));
-            new
+    fn open_node(
+        self: Arsc<Self>,
+        path: &Path,
+    ) -> Result<(Arsc<Node>, Peekable<Components>), Error> {
+        let mut node = self;
+        let mut comps = path.components().peekable();
+        while let Some(comp) = comps.next() {
+            let Component::Normal(comp) = comp else {
+                unreachable!()
+            };
+            let comp = comp.to_str().unwrap();
+
+            node = if let Node::Dir(ref dir) = *node {
+                let entries = dir.lock();
+                if let Some(child) = entries.get(comp) {
+                    Arsc::clone(child)
+                } else {
+                    drop(entries);
+                    return Ok((node, comps));
+                }
+            } else {
+                return Err(Error::LocalFs(path.into()));
+            };
         }
+        Ok((node, comps))
     }
 
     fn export(
@@ -333,7 +342,7 @@ impl LocalFs {
 
     pub fn metadata<P: AsRef<Path>>(&self, path: P) -> Result<Metadata, Error> {
         let path = self.canonicalize(path)?;
-        let (node, mut comps) = self.root.clone().open_node(&path, &mut None)?;
+        let (node, mut comps) = self.root.clone().open_node(&path)?;
         match *node {
             Node::Dir(..) => Ok(node.metadata()?),
             Node::Remote(ref remote) if comps.peek().is_some() => {
@@ -349,7 +358,7 @@ impl LocalFs {
 
     pub fn read_dir<P: AsRef<Path>>(&self, path: P) -> Result<DirIter, Error> {
         let path = self.canonicalize(path)?;
-        let (node, mut comps) = self.root.clone().open_node(&path, &mut None)?;
+        let (node, mut comps) = self.root.clone().open_node(&path)?;
         match *node {
             Node::Dir(..) => {
                 let builder = LocalIterBuilder {
@@ -441,7 +450,7 @@ impl LocalFs {
                 return Err(Error::Exists);
             }
 
-            let (node, _) = self.root.clone().open_node(&lcp, &mut None)?;
+            let (node, _) = self.root.clone().open_node(&lcp)?;
             if let Node::Dir(..) = *node {
                 return op_local(node, lcp, src_inner.into(), dst_inner.into());
             }

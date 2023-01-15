@@ -4,29 +4,26 @@ use core::{
 };
 
 use futures_lite::pin;
-use solvent_core::{sync::Parker, thread_local};
+use solvent_core::{thread, thread_local};
 use waker_fn::waker_fn;
 
 thread_local! {
-    static CURRENT: (Parker, Waker) = {
-        let parker = Parker::new();
-        let unparker = parker.unparker().clone();
-        let waker = waker_fn(move || unparker.unpark());
-        (parker, waker)
+    static CURRENT: Waker = {
+        let thread = thread::current();
+        waker_fn(move || thread.unpark())
     }
 }
 
 pub(super) fn block_on<F: Future>(fut: F) -> F::Output {
     pin!(fut);
 
-    CURRENT.with(|(parker, waker)| {
+    CURRENT.with(|waker| {
         let mut cx = Context::from_waker(waker);
         loop {
-            if let Poll::Ready(v) = fut.as_mut().poll(&mut cx) {
-                break v;
+            match fut.as_mut().poll(&mut cx) {
+                Poll::Ready(v) => break v,
+                Poll::Pending => thread::park(),
             }
-
-            parker.park();
         }
     })
 }
