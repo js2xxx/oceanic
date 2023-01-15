@@ -19,6 +19,12 @@ use solvent_core::{
 pub use self::channel::*;
 use crate::disp::{DispSender, PackedSyscall};
 
+#[cfg(feature = "runtime")]
+pub fn channel() -> (Channel, Channel) {
+    let (a, b) = solvent::ipc::Channel::new();
+    (Channel::new(a), Channel::new(b))
+}
+
 pub trait AsyncObject: Object {
     type TryWait<'a>: Future<Output = Result<usize>> + 'a
     where

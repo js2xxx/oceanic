@@ -21,6 +21,7 @@ pub use self::exe::runtime::*;
 pub mod test {
     use core::future::Future;
 
+    use futures_lite::future::{yield_now, zip};
     use solvent::{
         ipc::Packet,
         prelude::{Handle, PhysOptions},
@@ -61,11 +62,11 @@ pub mod test {
                 packet
                     .buffer
                     .extend(core::iter::repeat_with(|| random() as u8).take(199));
-                async {
-                    // log::debug!("Send #{index}");
-                    i1.send(&mut packet).expect("Failed to send packet")
+                // log::debug!("Send #{index}");
+                i1.send(&mut packet).expect("Failed to send packet");
+                if index % 10 == 5 {
+                    yield_now().await
                 }
-                .await;
             }
             log::debug!("Send finished");
         };
@@ -73,9 +74,7 @@ pub mod test {
         (send, recv)
     }
 
-    pub async fn test_disp() {
-        log::debug!("Has {} cpus available", solvent::task::cpu_num());
-
+    async fn test_stream() {
         let phys = solvent::mem::Phys::allocate(5, PhysOptions::ZEROED | PhysOptions::RESIZABLE)
             .expect("Failed to allocate memory");
         let stream =
@@ -88,11 +87,16 @@ pub mod test {
         let mut buf = [0; 10];
         let len = stream.read(&mut buf).await.unwrap();
         assert_eq!(&buf[..len], [4, 5, 6, 7]);
+    }
+
+    pub async fn test_disp() {
+        log::debug!("Has {} cpus available", solvent::task::cpu_num());
+
+        test_stream().await;
 
         let (send, recv) = test_tx();
         let recv = crate::spawn(recv);
-        let send = crate::spawn(send);
-        recv.await;
-        send.await;
+        let send = crate::spawn_local(send);
+        zip(send, recv).await;
     }
 }

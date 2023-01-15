@@ -1,10 +1,6 @@
-use core::{
-    pin::Pin,
-    task::{Context, Poll},
-    time::Duration,
-};
+use core::time::Duration;
 
-use futures_lite::{pin, Future, Stream};
+use futures_lite::{stream, Stream};
 use solvent::{
     error::Result,
     prelude::SIG_TIMER,
@@ -80,25 +76,9 @@ impl Timer {
     }
 
     #[inline]
-    pub fn interval(&self, period: Duration) -> Intervals {
-        Intervals {
-            timer: self,
-            period,
-        }
-    }
-}
-
-pub struct Intervals<'a> {
-    timer: &'a Timer,
-    period: Duration,
-}
-
-impl Stream for Intervals<'_> {
-    type Item = Result;
-
-    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let fut = self.timer.wait_after(self.period);
-        pin!(fut);
-        fut.poll(cx).map(Some)
+    pub fn interval(&self, period: Duration) -> impl Stream<Item = Result> + '_ {
+        stream::unfold((), move |_| async move {
+            Some((self.wait_after(period).await, ()))
+        })
     }
 }
