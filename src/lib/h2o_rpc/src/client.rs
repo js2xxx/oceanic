@@ -215,19 +215,13 @@ impl Drop for EventEntry {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 enum WakerEntry {
+    #[default]
     Init,
     Waiting(Waker),
     Packet(Packet),
     Fini,
-}
-
-impl Default for WakerEntry {
-    #[inline]
-    fn default() -> Self {
-        WakerEntry::Init
-    }
 }
 
 impl WakerEntry {

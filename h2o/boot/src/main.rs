@@ -8,7 +8,6 @@
 
 #![no_std]
 #![no_main]
-#![feature(abi_efiapi)]
 #![feature(alloc_error_handler)]
 #![feature(box_syntax)]
 #![feature(nonnull_slice_from_raw_parts)]
