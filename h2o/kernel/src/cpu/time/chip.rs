@@ -7,7 +7,7 @@ use crate::{cpu::arch::tsc::TSC_CLOCK, dev::hpet::HPET_CLOCK};
 
 pub static CLOCK: Azy<&'static dyn ClockChip> = Azy::new(|| {
     let ret: &crate::cpu::arch::tsc::TscClock = &TSC_CLOCK;
-    crate::log::HAS_TIME.store(true, Release);
+    crate::logger::HAS_TIME.store(true, Release);
     ret as _
 });
 

@@ -33,15 +33,13 @@
 
 pub mod cpu;
 pub mod dev;
-mod log;
+mod logger;
 mod mem;
 mod rxx;
 pub mod sched;
 mod syscall;
 
 use core::mem::MaybeUninit;
-
-use ::log as l;
 
 extern crate alloc;
 
@@ -62,8 +60,8 @@ pub extern "C" fn kmain() {
     }
 
     // SAFETY: Everything is uninitialized.
-    unsafe { self::log::init(l::Level::Debug) };
-    l::info!("Starting the kernel");
+    unsafe { logger::init(log::Level::Debug) };
+    log::info!("Starting the kernel");
 
     mem::init();
     sched::task::init_early();
@@ -75,19 +73,19 @@ pub extern "C" fn kmain() {
     sched::init();
 
     // Test end
-    l::trace!("Reaching end of kernel");
+    log::trace!("Reaching end of kernel");
 }
 
 pub fn kmain_ap() {
     unsafe { cpu::set_id(false) };
     cpu::arch::seg::test_pls();
-    l::trace!("Starting the kernel");
+    log::trace!("Starting the kernel");
 
     unsafe { mem::space::init() };
     unsafe { cpu::arch::init_ap() };
 
     sched::init();
 
-    l::trace!("Finished");
+    log::trace!("Finished");
     unsafe { archop::halt_loop(Some(true)) };
 }

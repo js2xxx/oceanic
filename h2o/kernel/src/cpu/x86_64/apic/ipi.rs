@@ -127,7 +127,7 @@ impl TramHeader {
         elapsed < limit
     }
 
-    pub unsafe fn reset_subheader(&self) {
+    pub unsafe fn allocate_subheader(&self) {
         let stack = crate::mem::alloc_system_stack()
             .expect("System memory allocation failed")
             .as_ptr() as u64;
@@ -148,6 +148,7 @@ pub unsafe fn start_cpus(aps: &[acpi::platform::Processor]) -> usize {
     static TRAM_DATA: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/tram"));
 
     let base_phys = PAddr::new(minfo::TRAMPOLINE_RANGE.start);
+    let base_vec = (*base_phys >> 3) as u8;
     let base = base_phys.to_laddr(minfo::ID_OFFSET);
 
     let ptr = *base;
@@ -165,30 +166,21 @@ pub unsafe fn start_cpus(aps: &[acpi::platform::Processor]) -> usize {
 
     let mut cnt = aps.len();
 
-    for acpi::platform::Processor {
+    for &acpi::platform::Processor {
         local_apic_id: id, ..
     } in aps
     {
-        header.reset_subheader();
+        delay(Duration::from_millis(5));
+        header.allocate_subheader();
 
         lapic(|lapic| {
-            lapic.send_ipi(0, DelivMode::Init, ipi::Shorthand::None, *id);
+            lapic.send_ipi(0, DelivMode::Init, ipi::Shorthand::None, id);
             delay(Duration::from_millis(50));
 
-            lapic.send_ipi(
-                (*base_phys >> 3) as u8,
-                DelivMode::StartUp,
-                ipi::Shorthand::None,
-                *id,
-            );
+            lapic.send_ipi(base_vec, DelivMode::StartUp, ipi::Shorthand::None, id);
 
             if !header.test_booted() {
-                lapic.send_ipi(
-                    (*base_phys >> 3) as u8,
-                    DelivMode::StartUp,
-                    ipi::Shorthand::None,
-                    *id,
-                );
+                lapic.send_ipi(base_vec, DelivMode::StartUp, ipi::Shorthand::None, id);
 
                 if !header.test_booted() {
                     log::warn!("CPU with LAPIC ID {} failed to boot", id);
