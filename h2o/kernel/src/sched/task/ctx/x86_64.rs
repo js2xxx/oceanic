@@ -214,7 +214,7 @@ impl Frame {
     pub fn dump(&self, errc_format: &'static str) {
         use log::info;
 
-        use crate::log::flags::Flags;
+        use crate::logger::flags::Flags;
 
         info!("Frame dump on CPU #{}", unsafe { crate::cpu::id() });
 

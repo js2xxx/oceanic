@@ -45,18 +45,20 @@ impl Output {
 
     /// Output a character byte to the serial port for logging.
     unsafe fn out_char(&mut self, c: u8) {
-        while self.buf_full() {
+        self.flush();
+        self.0.write(c);
+    }
+
+    pub fn flush(&self) {
+        while unsafe { self.buf_full() } {
             hint::spin_loop();
         }
-        self.0.write(c);
     }
 }
 
 impl fmt::Write for Output {
     fn write_str(&mut self, s: &str) -> Result<(), fmt::Error> {
-        for b in s.bytes() {
-            unsafe { self.out_char(b) };
-        }
+        s.bytes().for_each(|b| unsafe { self.out_char(b) });
         Ok(())
     }
 }
