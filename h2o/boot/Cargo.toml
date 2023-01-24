@@ -16,5 +16,5 @@ goblin = {version = "0.5", default-features = false, features = ["elf32", "elf64
 log = "0.4"
 raw-cpuid = "9.0"
 static_assertions = "1.1"
-tinybmp = "0.3"
+tinybmp = "0.4"
 uefi = {version = "0.11", features = ["logger", "alloc"]}
