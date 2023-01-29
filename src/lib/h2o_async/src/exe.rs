@@ -214,6 +214,8 @@ pub async fn io_task(rx: DispReceiver) {
 
 #[cfg(feature = "runtime")]
 pub(crate) mod runtime {
+    use alloc::vec::Vec;
+
     use futures_lite::future::pending;
     use solvent_core::{
         thread::{self, available_parallelism},
@@ -248,15 +250,28 @@ pub(crate) mod runtime {
         LOCAL.with(f)
     }
 
+    /// Start a bunch of executors to run async tasks, with the main task `fut`
+    /// running on the local executor of the current thread.
+    ///
+    /// When the function exits, all the previous spawned worker threads are
+    /// joined except for the current thread, if there exist. Thus, the caller
+    /// can recycle any resources used by the async tasks.
+    ///
+    /// # Arguments
+    ///
+    /// - `num` - The expected worker threads number. Defaults to
+    ///   `std::thread::available_parallelism` if `None`.
+    /// - `fut` - The main async task to be run on the local executor of the
+    ///   current thread.
     pub fn block_on<T: 'static>(num: Option<usize>, fut: impl Future<Output = T> + 'static) -> T {
         let num = num
             .unwrap_or_else(|| available_parallelism().get())
             .saturating_sub(1);
 
-        let tx = (num > 0).then(|| {
+        let data = (num > 0).then(|| {
             let (tx, rx) = channel::bounded(num);
 
-            for _ in 0..num {
+            let threads = (0..num).map(|_| {
                 let rx = rx.clone();
                 thread::spawn(move || {
                     let stop = async move {
@@ -269,9 +284,9 @@ pub(crate) mod runtime {
 
                         enter::enter().block_on(fut);
                     });
-                });
-            }
-            tx
+                })
+            });
+            (tx, threads.collect::<Vec<_>>())
         });
 
         LOCAL.with(|local| {
@@ -281,10 +296,11 @@ pub(crate) mod runtime {
 
             enter::enter().block_on(async {
                 let ret = fut.await;
-                if let Some(tx) = tx {
+                if let Some((tx, threads)) = data {
                     for _ in 0..num {
                         let _ = tx.send(()).await;
                     }
+                    threads.into_iter().for_each(|t| t.join())
                 }
                 ret
             })
