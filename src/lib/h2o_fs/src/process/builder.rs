@@ -67,7 +67,7 @@ impl Builder {
     #[inline]
     pub fn local_fs<I>(&mut self, iter: I) -> &mut Self
     where
-        I: Iterator<Item = (PathBuf, EntrySyncClient)>,
+        I: IntoIterator<Item = (PathBuf, EntrySyncClient)>,
     {
         self.local_fs.extend(iter);
         self

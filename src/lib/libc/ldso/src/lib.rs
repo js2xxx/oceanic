@@ -21,6 +21,7 @@ mod imp_alloc;
 mod rxx;
 
 use solvent::prelude::{Channel, Object, Phys};
+use solvent_core::c_str;
 pub use svrt::*;
 
 pub use self::rxx::{dynamic, load_address, vdso_map};
@@ -34,7 +35,8 @@ fn dl_main(init_chan: Channel) -> rxx::DlReturn {
     let prog = take_startup_handle(HandleType::ProgramPhys.into());
     let prog = unsafe { Phys::from_raw(prog) };
 
-    let (elf, _) = dso::Dso::load(&prog, cstr!("<PROGRAM>"), true).expect("Failed to load program");
+    let (elf, _) =
+        dso::Dso::load(&prog, c_str!("<PROGRAM>"), true).expect("Failed to load program");
 
     log::trace!("Reaching end of the dynamic linker");
 
@@ -53,32 +55,4 @@ extern "C" fn __libc_start_init() {
 extern "C" fn __libc_exit_fini() {
     crate::ffi::__libc_deallocate_tcb();
     dso::dso_list().lock().do_fini();
-}
-
-#[inline]
-const fn bytes_are_valid(bytes: &[u8]) -> bool {
-    if bytes.is_empty() || bytes[bytes.len() - 1] != 0 {
-        return false;
-    }
-    let mut index = 0;
-    // No for loops yet in const functions
-    while index < bytes.len() - 1 {
-        if bytes[index] == 0 {
-            return false;
-        }
-        index += 1;
-    }
-    true
-}
-
-#[macro_export]
-macro_rules! cstr {
-    ($e:expr) => {{
-        const STR: &[u8] = concat!($e, "\0").as_bytes();
-        const STR_VALID: bool = $crate::bytes_are_valid(STR);
-        let _ = [(); 0 - (!(STR_VALID) as usize)];
-        unsafe {
-            core::ffi::CStr::from_bytes_with_nul_unchecked(STR)
-        }
-    }}
 }

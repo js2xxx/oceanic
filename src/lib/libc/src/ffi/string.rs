@@ -93,8 +93,8 @@ pub unsafe extern "C" fn strxfrm(dest: *mut c_char, src: *const c_char, n: usize
 /// Same as [`CStr::from_ptr`].
 #[no_mangle]
 pub unsafe extern "C" fn strlen(s: *const c_char) -> usize {
-    let cstr = CStr::from_ptr(s);
-    cstr.to_bytes().len()
+    let c_str = CStr::from_ptr(s);
+    c_str.to_bytes().len()
 }
 
 /// # Safety
