@@ -21,12 +21,12 @@ use core::{
 use canary::Canary;
 use elfload::LoadedElf;
 use solvent::prelude::{Channel, Object, Phys, SIG_READ};
+use solvent_core::c_str;
 use solvent_rpc::{loader::GET_OBJECT, packet};
 use spin::{Lazy, Mutex, Once, RwLock};
 use svrt::HandleType;
 
 use crate::{
-    cstr,
     elf::*,
     ffi::{TlsGetAddr, __tls_get_addr},
     load_address, vdso_map,
@@ -752,8 +752,8 @@ impl<'a> Iterator for DsoIter<'a> {
 
 pub fn init() -> Result<(), Error> {
     unsafe {
-        let ldso = LDSO.write(Dso::new_static(load_address(), cstr!("ld-oceanic.so"))?);
-        let vdso = VDSO.write(Dso::new_static(vdso_map(), cstr!("<VDSO>"))?);
+        let ldso = LDSO.write(Dso::new_static(load_address(), c_str!("ld-oceanic.so"))?);
+        let vdso = VDSO.write(Dso::new_static(vdso_map(), c_str!("<VDSO>"))?);
         DSO_LIST.write(Mutex::new(DsoList::new(ldso, vdso)))
     };
     atomic::fence(SeqCst);
@@ -762,7 +762,7 @@ pub fn init() -> Result<(), Error> {
         let dso_list = DSO_LIST.assume_init_mut().get_mut();
         dso_list
             .names
-            .extend([cstr!("libldso.so").into(), cstr!("libh2o.so").into()]);
+            .extend([c_str!("libldso.so").into(), c_str!("libh2o.so").into()]);
 
         dso_list.push_thread(false);
     }
