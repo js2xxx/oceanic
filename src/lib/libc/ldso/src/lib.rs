@@ -21,7 +21,6 @@ mod imp_alloc;
 mod rxx;
 
 use solvent::prelude::{Channel, Object, Phys};
-use solvent_core::c_str;
 pub use svrt::*;
 
 pub use self::rxx::{dynamic, load_address, vdso_map};
@@ -55,4 +54,35 @@ extern "C" fn __libc_start_init() {
 extern "C" fn __libc_exit_fini() {
     crate::ffi::__libc_deallocate_tcb();
     dso::dso_list().lock().do_fini();
+}
+
+// The LDSO can't depend on solvent-std, because the latter has already depended
+// on the former.
+
+#[doc(hidden)]
+pub const fn validate_c_str_constant(bytes: &[u8]) -> bool {
+    if bytes.is_empty() || bytes[bytes.len() - 1] != 0 {
+        return false;
+    }
+    let mut index = 0;
+    // No for loops yet in const functions
+    while index < bytes.len() - 1 {
+        if bytes[index] == 0 {
+            return false;
+        }
+        index += 1;
+    }
+    true
+}
+
+#[macro_export]
+macro_rules! c_str {
+    ($e:expr) => {{
+        const STR: &[u8] = concat!($e, "\0").as_bytes();
+        const STR_VALID: bool = $crate::validate_c_str_constant(STR);
+        let _ = [(); 0 - (!(STR_VALID) as usize)];
+        unsafe {
+            core::ffi::CStr::from_bytes_with_nul_unchecked(STR)
+        }
+    }}
 }
