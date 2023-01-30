@@ -21,12 +21,12 @@ use core::{
 use canary::Canary;
 use elfload::LoadedElf;
 use solvent::prelude::{Channel, Object, Phys, SIG_READ};
-use solvent_core::c_str;
 use solvent_rpc::{loader::GET_OBJECT, packet};
 use spin::{Lazy, Mutex, Once, RwLock};
 use svrt::HandleType;
 
 use crate::{
+    c_str,
     elf::*,
     ffi::{TlsGetAddr, __tls_get_addr},
     load_address, vdso_map,
@@ -426,7 +426,7 @@ impl DsoList {
             Some(sym) if check_type(st_type(sym.st_info)) => {
                 Some(dso.base.ptr::<u8>(sym.st_value as usize))
             }
-            _ => None, // TODO: Find the symbol is its dependencies.
+            _ => None, // TODO: Find the symbol in its dependencies.
         }
     }
 

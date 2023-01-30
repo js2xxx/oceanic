@@ -12,7 +12,6 @@ canary = {path = "../../../../h2o/libs/canary"}
 dbglog = {path = "../../dbglog"}
 elfload = {path = "../../elfload"}
 solvent = {path = "../../h2o_rs"}
-solvent-core = {path = "../../h2o_std/core", default-features = false}
 solvent-rpc = {path = "../../h2o_rpc", default-features = false, features = ["core"]}
 svrt = {path = "../../svrt"}
 # External crates

@@ -172,7 +172,7 @@ impl<'a> FutInner<'a> {
                 // Has a result
                 Ok(res) => match res {
                     // The lock is already taken, restart
-                    Err(EAGAIN) => ControlFlow::CONTINUE,
+                    Err(EAGAIN) => ControlFlow::Continue(()),
                     res => ControlFlow::Break(Poll::Ready(res)),
                 },
 
@@ -193,9 +193,9 @@ impl<'a> FutInner<'a> {
                 }
 
                 // Channel early disconnected, restart the default process
-                Err(TryRecvError::Disconnected) => ControlFlow::CONTINUE,
+                Err(TryRecvError::Disconnected) => ControlFlow::Continue(()),
             },
-            None => ControlFlow::CONTINUE,
+            None => ControlFlow::Continue(()),
         }
     }
 }
