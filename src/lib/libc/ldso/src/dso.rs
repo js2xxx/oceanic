@@ -105,6 +105,7 @@ struct DsoLink {
 #[derive(Debug)]
 pub struct Dso {
     pub(crate) canary: Canary<Dso>,
+    _phys: Option<Phys>,
 
     link: UnsafeCell<DsoLink>,
     fini_link: UnsafeCell<DsoLink>,
@@ -162,6 +163,7 @@ impl Dso {
 
         Ok(Dso {
             canary: Canary::new(),
+            _phys: None,
             link: Default::default(),
             fini_link: Default::default(),
             _id: Self::next_id(),
@@ -177,7 +179,7 @@ impl Dso {
     }
 
     pub fn load(
-        phys: &Phys,
+        phys: Phys,
         name: impl Into<CString>,
         prog: bool,
     ) -> Result<(LoadedElf, NonNull<Dso>), Error> {
@@ -188,12 +190,12 @@ impl Dso {
     }
 
     fn load_dso(
-        phys: &Phys,
+        phys: Phys,
         name: CString,
         prog: bool,
         dso_list: &mut DsoList,
     ) -> Result<(LoadedElf, NonNull<Dso>), Error> {
-        let elf = elfload::load(phys, true, &svrt::root_virt()).map_err(Error::ElfLoad)?;
+        let elf = elfload::load(&phys, true, &svrt::root_virt()).map_err(Error::ElfLoad)?;
 
         let base = DsoBase::new(elf.range.start, if elf.is_dyn { ET_DYN } else { ET_EXEC });
         log::debug!("{:?}", base);
@@ -221,6 +223,7 @@ impl Dso {
 
         let mut dso = Dso {
             canary: Canary::new(),
+            _phys: Some(phys),
             link: Default::default(),
             fini_link: Default::default(),
             _id: Self::next_id(),
@@ -256,7 +259,7 @@ impl Dso {
         log::debug!("Dependencies: {:?}", deps);
         let objs = get_object(deps.clone())?;
         for (phys, name) in objs.into_iter().zip(deps.into_iter()) {
-            Self::load_dso(&phys, name, false, dso_list)?;
+            Self::load_dso(phys, name, false, dso_list)?;
         }
         Ok(())
     }
