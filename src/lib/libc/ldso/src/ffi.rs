@@ -5,7 +5,10 @@ use core::{
     sync::atomic::{AtomicPtr, Ordering::SeqCst},
 };
 
-use solvent::{c_ty::Status, prelude::EINVAL};
+use solvent::{
+    c_ty::Status,
+    prelude::{Handle, Object, Phys, EINVAL},
+};
 
 use crate::{
     dso::{self, dso_list, get_object, Dso},
@@ -68,8 +71,21 @@ pub unsafe extern "C" fn dlopen(path: *const c_char, mode: c_int) -> *const c_vo
     let path = CString::from(CStr::from_ptr(path));
 
     let phys = ok!(get_object([path.clone()].into())).swap_remove(0);
-    let (_, dso) = ok!(Dso::load(&phys, path, false));
+    let (_, dso) = ok!(Dso::load(phys, path, false));
 
+    dso.as_ptr().cast()
+}
+
+/// # Safety
+///
+/// The caller must ensure that `phys` is a `Phys` object, and `name` is a valid
+/// c-string.
+#[no_mangle]
+pub unsafe extern "C" fn dlphys(phys: Handle, name: *const c_char) -> *const c_void {
+    let phys = Phys::from_raw(phys);
+    let name = CStr::from_ptr(name);
+
+    let (_, dso) = ok!(Dso::load(phys, name, false));
     dso.as_ptr().cast()
 }
 
