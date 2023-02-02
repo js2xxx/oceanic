@@ -6,7 +6,7 @@ use std::{
     process::Command,
 };
 
-use crate::{H2O_BOOT, H2O_KERNEL, H2O_TINIT, OC_BIN, OC_LIB};
+use crate::{H2O_BOOT, H2O_KERNEL, H2O_TINIT, OC_BIN, OC_LIB, OC_DRV};
 
 pub(crate) fn check() -> Result<(), Box<dyn Error>> {
     let cargo = env::var("CARGO").unwrap_or_else(|_| "cargo".to_string());
@@ -24,26 +24,24 @@ pub(crate) fn check() -> Result<(), Box<dyn Error>> {
             .map_err(Into::into)
     };
 
+    let check_all = |dir: PathBuf| -> Result<(), Box<dyn Error>> {
+        for ent in fs::read_dir(dir)?.flatten() {
+            let ty = ent.file_type()?;
+            let name = ent.file_name();
+            if ty.is_dir() && name != ".cargo" {
+                check(ent.path())?;
+            }
+        }
+        Ok(())
+    };
+
     check(src_root.join(H2O_BOOT))?;
-
     check(src_root.join(H2O_KERNEL))?;
-
     check(src_root.join(H2O_TINIT))?;
 
-    for ent in fs::read_dir(src_root.join(OC_BIN))?.flatten() {
-        let ty = ent.file_type()?;
-        let name = ent.file_name();
-        if ty.is_dir() && name != ".cargo" {
-            check(ent.path())?;
-        }
-    }
-    for ent in fs::read_dir(src_root.join(OC_LIB))?.flatten() {
-        let ty = ent.file_type()?;
-        let name = ent.file_name();
-        if ty.is_dir() && name != ".cargo" {
-            check(ent.path())?;
-        }
-    }
+    check_all(src_root.join(OC_BIN))?;
+    check_all(src_root.join(OC_DRV))?;
+    check_all(src_root.join(OC_LIB))?;
     check(src_root.join(OC_LIB).join("libc/ldso"))?;
 
     Ok(())

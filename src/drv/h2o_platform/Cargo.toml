@@ -1,0 +1,18 @@
+[package]
+edition = "2021"
+name = "h2o-platform"
+version = "0.1.0"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+# Local crates
+solvent = {path = "../../lib/h2o_rs", default-features = false}
+solvent-async = {path = "../../lib/h2o_async", default-features = false}
+solvent-core = {path = "../../lib/h2o_std/core"}
+solvent-ddk = {path = "../../lib/h2o_ddk"}
+solvent-fs = {path = "../../lib/h2o_fs", default-features = false}
+solvent-rpc = {path = "../../lib/h2o_rpc", default-features = false}
+# External crates
+log = "0.4"

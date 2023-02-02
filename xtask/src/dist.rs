@@ -10,7 +10,9 @@ use std::{
 
 use structopt::StructOpt;
 
-use crate::{BOOTFS, DEBUG_DIR, H2O_BOOT, H2O_KERNEL, H2O_SYSCALL, H2O_TINIT, OC_BIN, OC_LIB};
+use crate::{
+    BOOTFS, DEBUG_DIR, H2O_BOOT, H2O_KERNEL, H2O_SYSCALL, H2O_TINIT, OC_BIN, OC_DRV, OC_LIB,
+};
 
 #[derive(Debug, StructOpt)]
 pub enum Type {
@@ -41,6 +43,7 @@ impl Dist {
             .unwrap_or_else(|_| src_root.join("target").to_string_lossy().to_string());
 
         fs::create_dir_all(PathBuf::from(&target_root).join("bootfs/lib"))?;
+        fs::create_dir_all(PathBuf::from(&target_root).join("bootfs/drv"))?;
         fs::create_dir_all(PathBuf::from(&target_root).join("bootfs/bin"))?;
         fs::create_dir_all(PathBuf::from(&target_root).join("sysroot/usr/include"))?;
         fs::create_dir_all(PathBuf::from(&target_root).join("sysroot/usr/lib"))?;
@@ -216,9 +219,7 @@ impl Dist {
         src_root: impl AsRef<Path>,
         target_root: &str,
     ) -> Result<(), Box<dyn Error>> {
-        let src_root = src_root.as_ref().join(OC_BIN);
         let bin_dir = Path::new(target_root).join("x86_64-pc-oceanic");
-        let dst_root = Path::new(target_root).join("bootfs/bin");
         let dep_root = Path::new(target_root).join("bootfs/lib");
 
         let mut dep_lib = ["libldso.so", "libco2.so"]
@@ -226,23 +227,49 @@ impl Dist {
             .map(ToString::to_string)
             .collect::<HashSet<_>>();
 
-        for ent in fs::read_dir(src_root)?.flatten() {
-            let ty = ent.file_type()?;
-            let name = ent.file_name();
-            if ty.is_dir() && name != ".cargo" {
-                self.build_impl(cargo, &name, &name, ent.path(), &bin_dir, &dst_root)?;
-                for dep in fs::read_dir(bin_dir.join(self.profile()).join("deps"))?.flatten() {
-                    let name = dep.file_name();
-                    match name.to_str() {
-                        Some(name) if name.ends_with(".so") && dep_lib.insert(name.to_string()) => {
-                            fs::copy(dep.path(), dep_root.join(name))?;
-                            self.gen_debug(name, &dep_root, DEBUG_DIR)?;
+        let mut build = |src_root: PathBuf,
+                         dst_root: PathBuf,
+                         is_dylib: bool|
+         -> Result<(), Box<dyn Error>> {
+            for ent in fs::read_dir(src_root)?.flatten() {
+                let ty = ent.file_type()?;
+                let name = ent.file_name();
+                if ty.is_dir() && name != ".cargo" {
+                    let dst_name = if is_dylib {
+                        let name = name.to_string_lossy().replace('-', "_");
+                        let name = "lib".to_string() + &name + ".so";
+                        OsString::from(name)
+                    } else {
+                        name
+                    };
+                    self.build_impl(cargo, &dst_name, &dst_name, ent.path(), &bin_dir, &dst_root)?;
+                    for dep in fs::read_dir(bin_dir.join(self.profile()).join("deps"))?.flatten() {
+                        let name = dep.file_name();
+                        match name.to_str() {
+                            Some(name)
+                                if name.ends_with(".so") && dep_lib.insert(name.to_string()) =>
+                            {
+                                fs::copy(dep.path(), dep_root.join(name))?;
+                                self.gen_debug(name, &dep_root, DEBUG_DIR)?;
+                            }
+                            _ => {}
                         }
-                        _ => {}
                     }
                 }
             }
-        }
+            Ok(())
+        };
+
+        build(
+            src_root.as_ref().join(OC_BIN),
+            Path::new(target_root).join("bootfs/bin"),
+            false,
+        )?;
+        build(
+            src_root.as_ref().join(OC_DRV),
+            Path::new(target_root).join("bootfs/drv"),
+            true,
+        )?;
 
         Ok(())
     }
