@@ -1,6 +1,6 @@
-use crate as solvent_rpc;
-
 use solvent::ipc::Channel;
+
+use crate as solvent_rpc;
 
 #[protocol]
 pub trait Cloneable {

@@ -1,5 +1,5 @@
 use alloc::vec::Vec;
-use core::error::Error;
+use core::fmt::Debug;
 
 use solvent::prelude::Channel;
 use solvent_fs::fs;
@@ -33,22 +33,15 @@ impl Termination for ! {
     }
 }
 
-impl<E: Error> Termination for Result<(), E> {
+impl<T: Termination, E: Debug> Termination for Result<T, E> {
     fn report(self) -> usize {
         match self {
-            Ok(()) => ().report(),
-            Err(e) => Err::<!, _>(e).report(),
+            Ok(t) => t.report(),
+            Err(e) => {
+                log::debug!("main function ended with error: {e:?}");
+                1
+            }
         }
-    }
-}
-
-impl<E: Error> Termination for Result<!, E> {
-    fn report(self) -> usize {
-        match self {
-            Ok(t) => t,
-            Err(e) => log::error!("main function ended with error: {e}"),
-        }
-        1
     }
 }
 
