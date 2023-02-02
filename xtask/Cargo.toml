@@ -10,7 +10,7 @@ path = "src/main.rs"
 
 [dependencies]
 # Local crates
-bootfs = {path = "../../src/lib/bootfs", features = ["gen"]}
+bootfs = {path = "../src/lib/bootfs", features = ["gen"]}
 # External crates
 cc = "1.0"
 quote = "1.0"

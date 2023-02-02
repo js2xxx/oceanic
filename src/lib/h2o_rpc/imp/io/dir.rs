@@ -4,9 +4,9 @@ use alloc::string::String;
 use entry::EntryServer;
 use solvent::ipc::Channel;
 #[cfg(feature = "std")]
-use solvent_core::path::PathBuf;
-#[cfg(feature = "std")]
 use solvent::obj::Handle;
+#[cfg(feature = "std")]
+use solvent_core::path::PathBuf;
 
 use super::*;
 

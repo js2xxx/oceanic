@@ -1,6 +1,9 @@
 #[cfg(feature = "runtime")]
 use entry::EntryServer;
-use solvent::{ipc::{Channel, Packet}, mem::Phys};
+use solvent::{
+    ipc::{Channel, Packet},
+    mem::Phys,
+};
 
 use super::*;
 
