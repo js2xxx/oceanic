@@ -1,6 +1,6 @@
 #![feature(exit_status_error)]
 
-use std::{error::Error, env::set_current_dir};
+use std::error::Error;
 
 use structopt::StructOpt;
 

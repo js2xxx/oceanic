@@ -73,6 +73,7 @@ pub fn try_get_root_virt() -> Result<Ref<'static, Virt>> {
     init_or(|| unsafe { ROOT_VIRT.as_ref().map(Into::into).ok_or(ENOENT) })
 }
 
+#[track_caller]
 pub fn root_virt() -> Ref<'static, Virt> {
     try_get_root_virt().expect("Failed to get the root virt: uninitialized or failed to receive")
 }
@@ -88,6 +89,7 @@ where
     })
 }
 
+#[track_caller]
 pub fn with_startup_args<F, R>(f: F) -> R
 where
     F: FnOnce(&mut StartupArgs) -> R,
@@ -117,6 +119,7 @@ pub fn try_take_startup_handle(info: HandleInfo) -> Result<Handle> {
 }
 
 /// Note: The ownership of the handle is transferred.
+#[track_caller]
 pub fn take_startup_handle(info: HandleInfo) -> Handle {
     try_take_startup_handle(info).expect(
         "Failed to take the startup handle: uninitialized, failed to receive or already taken",
@@ -133,6 +136,7 @@ pub fn try_get_envs() -> Result<&'static [u8]> {
     init_or(|| Ok(unsafe { ENVS }))
 }
 
+#[track_caller]
 pub fn envs() -> &'static [u8] {
     try_get_envs().expect("Failed to get environment variables: uninitialized")
 }
