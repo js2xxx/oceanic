@@ -2,9 +2,8 @@ use alloc::{
     borrow::ToOwned,
     string::{String, ToString},
 };
-use core::ffi::CStr;
 
-use solvent_core::ffi::OsString;
+use solvent_core::ffi::{OsStr, OsString};
 
 use crate::rt::ARGS;
 
@@ -12,11 +11,8 @@ pub fn args() -> impl Iterator<Item = String> {
     args_os().map(|s| s.to_str().unwrap().to_string())
 }
 
-pub fn args_os() -> impl Iterator<Item = &'static CStr> {
-    unsafe {
-        ARGS.split_inclusive(|&b| b == 0)
-            .map(|s| CStr::from_bytes_with_nul(s).unwrap())
-    }
+pub fn args_os() -> impl Iterator<Item = &'static OsStr> {
+    unsafe { ARGS.split(|&b| b == 0).map(OsStr::from_bytes) }
 }
 
 pub fn vars_os() -> impl Iterator<Item = (OsString, OsString)> {

@@ -404,7 +404,7 @@ fn build_end(
                 HandleType::RootVirt.into(),
                 Virt::into_raw(root_virt.clone()),
             ),
-            (HandleType::VdsoPhys.into(), Phys::into_raw(vdso)),
+            (HandleType::VdsoPhys.into(), Phys::into_raw(vdso.clone())),
             (HandleType::ProgramPhys.into(), Phys::into_raw(executable)),
             (
                 HandleType::LoadRpc.into(),
@@ -422,7 +422,7 @@ fn build_end(
         .send(&me, &mut packet)
         .map_err(Error::SendStartupArgs)?;
 
-    startup_args(handles, local_fs, args, environ, root_virt)
+    startup_args(handles, local_fs, args, environ, root_virt, vdso)
         .send(&me, &mut packet)
         .map_err(Error::SendStartupArgs)?;
 
@@ -488,6 +488,7 @@ fn startup_args(
     args: Vec<String>,
     mut environ: BTreeMap<String, String>,
     root_virt: Virt,
+    vdso: Phys,
 ) -> StartupArgs {
     local_fs
         .into_iter()
@@ -504,6 +505,7 @@ fn startup_args(
             }
         });
     handles.insert(HandleType::RootVirt.into(), Virt::into_raw(root_virt));
+    handles.insert(HandleType::VdsoPhys.into(), Phys::into_raw(vdso));
     let args = args
         .into_iter()
         .flat_map(|arg| arg.into_bytes().into_iter().chain([0]))

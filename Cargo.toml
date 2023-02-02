@@ -11,7 +11,7 @@ members = [
   "src/lib/h2o_rpc/core",
   "src/lib/h2o_rpc/macros",
   "src/lib/h2o_rpc/gen",
-  "tools/*",
+  "xtask",
 ]
 
 exclude = ["src/bin/.cargo"]

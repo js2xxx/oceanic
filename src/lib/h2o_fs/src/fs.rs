@@ -158,23 +158,27 @@ impl Node {
     ) -> Result<(Arsc<Node>, Peekable<Components>), Error> {
         let mut node = self;
         let mut comps = path.components().peekable();
-        while let Some(comp) = comps.next() {
-            let Component::Normal(comp) = comp else {
-                unreachable!()
-            };
-            let comp = comp.to_str().unwrap();
-
+        loop {
             node = if let Node::Dir(ref dir) = *node {
+                let comp = match comps.next() {
+                    Some(comp) => comp,
+                    None => break,
+                };
+                let Component::Normal(comp) = comp else {
+                    unreachable!()
+                };
+                let comp = comp.to_str().unwrap();
+
                 let entries = dir.lock();
                 if let Some(child) = entries.get(comp) {
                     Arsc::clone(child)
                 } else {
                     drop(entries);
-                    return Ok((node, comps));
+                    return Err(Error::NotFound);
                 }
             } else {
-                return Err(Error::LocalFs(path.into()));
-            };
+                return Ok((node, comps));
+            }
         }
         Ok((node, comps))
     }
@@ -371,19 +375,18 @@ impl LocalFs {
                 };
                 Ok(DirIter::Local(builder.build()))
             }
-            Node::Remote(ref remote) if comps.peek().is_some() => {
-                let path = PathBuf::from_iter(comps);
-                let (t, conn) = Channel::new();
-                remote.open(path, OpenOptions::READ, conn)??;
-                Ok(DirIter::Remote(DirectorySyncClient::from(t).into()))
-            }
             Node::Remote(ref remote) => {
                 let metadata = remote.metadata()??;
                 if metadata.file_type != FileType::Directory {
                     return Err(Error::InvalidType(metadata.file_type));
                 }
                 let (t, conn) = Channel::new();
-                remote.clone_connection(conn)?;
+                if comps.peek().is_some() {
+                    let path = PathBuf::from_iter(comps);
+                    remote.open(path, OpenOptions::READ, conn)??;
+                } else {
+                    remote.clone_connection(conn)?;
+                }
                 Ok(DirIter::Remote(DirectorySyncClient::from(t).into()))
             }
         }

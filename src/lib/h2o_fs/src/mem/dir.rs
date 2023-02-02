@@ -97,7 +97,7 @@ impl Entry for MemDir {
 impl Directory for MemDir {
     async fn next_dirent(&self, last: Option<String>) -> Result<DirEntry, Error> {
         let (name, entry) = match last {
-            Some(last) => self.entries.range(last..).next(),
+            Some(last) => self.entries.range(last..).nth(1),
             None => self.entries.iter().next(),
         }
         .map(|(name, entry)| (name.clone(), entry.clone()))
@@ -263,7 +263,7 @@ impl Directory for MemDirMut {
     async fn next_dirent(&self, last: Option<String>) -> Result<DirEntry, Error> {
         let entries = self.entries.lock();
         let (name, entry) = match last {
-            Some(last) => entries.range(last..).next(),
+            Some(last) => entries.range(last..).nth(1),
             None => entries.iter().next(),
         }
         .map(|(name, entry)| (name.clone(), entry.clone()))
