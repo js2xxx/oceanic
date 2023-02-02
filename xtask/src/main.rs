@@ -16,6 +16,7 @@ const H2O_SYSCALL: &str = "h2o/libs/syscall";
 
 const OC_LIB: &str = "src/lib";
 const OC_BIN: &str = "src/bin";
+const OC_DRV: &str = "src/drv";
 
 const BOOTFS: &str = "target/bootfs";
 
