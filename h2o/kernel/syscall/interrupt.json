@@ -22,16 +22,12 @@
             ]
         },
         {
-            "name": "sv_intr_wait",
+            "name": "sv_intr_query",
             "returns": "()",
             "args": [
                 {
                     "name": "hdl",
                     "ty": "Handle"
-                },
-                {
-                    "name": "timeout_us",
-                    "ty": "u64"
                 },
                 {
                     "name": "last_time",

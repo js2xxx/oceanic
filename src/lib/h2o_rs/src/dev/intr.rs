@@ -1,5 +1,3 @@
-use core::time::Duration;
-
 pub use sv_call::res::IntrConfig;
 use sv_call::{c_ty::Status, Syscall, ETIME, SV_INTERRUPT};
 
@@ -23,29 +21,21 @@ impl Interrupt {
         }
     }
 
-    pub fn wait(&self, timeout: Duration) -> Result<Instant> {
+    pub fn last_time(&self) -> Result<Instant> {
         let mut ins = 0u128;
         unsafe {
             // SAFETY: We don't move the ownership of the handle.
-            sv_call::sv_intr_wait(
-                unsafe { self.raw() },
-                crate::time::try_into_us(timeout)?,
-                &mut ins as *mut _ as *mut _,
-            )
-            .into_res()?;
+            sv_call::sv_intr_query(unsafe { self.raw() }, &mut ins as *mut _ as *mut _)
+                .into_res()?;
         }
         Ok(unsafe { Instant::from_raw(ins) })
     }
 
-    pub fn pack_wait(&self, timeout: Duration) -> Result<PackIntrWait> {
+    pub fn pack_query(&self) -> Result<PackIntrWait> {
         let mut ins = 0u128;
         let syscall = unsafe {
             // SAFETY: We don't move the ownership of the handle.
-            sv_call::sv_pack_intr_wait(
-                unsafe { self.raw() },
-                crate::time::try_into_us(timeout)?,
-                &mut ins as *mut _ as *mut _,
-            )
+            sv_call::sv_pack_intr_query(unsafe { self.raw() }, &mut ins as *mut _ as *mut _)
         };
         Ok(PackIntrWait { ins, syscall })
     }
