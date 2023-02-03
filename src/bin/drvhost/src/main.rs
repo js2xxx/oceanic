@@ -3,12 +3,13 @@
 #![feature(allocator_api)]
 #![feature(error_in_core)]
 
-mod instance;
 mod ffi;
+mod instance;
 
 use alloc::boxed::Box;
-use solvent_std::env;
 use core::error::Error;
+
+use solvent_std::env;
 
 extern crate alloc;
 

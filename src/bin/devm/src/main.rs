@@ -17,7 +17,7 @@ extern crate alloc;
 async fn main() {
     let drvhost = driver_host().expect("Failed to get driver host");
 
-    let root_driver = "boot/drv/libh2o_platform.so";
+    let root_driver = "boot/drv/libpc.so";
 
     let bootfs = solvent_fs::open_dir("/boot", OpenOptions::READ).expect("Failed to open bootfs");
     let bootfs = bootfs.into_async().expect("Failed to get loader");

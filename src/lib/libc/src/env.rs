@@ -2,6 +2,7 @@ use alloc::vec::Vec;
 use core::{
     ffi::{c_char, c_void},
     panic::PanicInfo,
+    ptr,
 };
 
 use solvent::prelude::{Channel, Handle, Object};
@@ -22,6 +23,7 @@ unsafe extern "C" fn __libc_start_main(init_chan: Handle, main: Main) -> ! {
     let mut environ = svrt::envs()
         .split_inclusive(|&b| b == 0)
         .map(|s| s.as_ptr() as *mut i8)
+        .chain([ptr::null_mut()])
         .collect::<Vec<_>>();
 
     __libc_start_init();
