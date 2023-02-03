@@ -6,7 +6,7 @@ use std::{
     process::Command,
 };
 
-use crate::{H2O_BOOT, H2O_KERNEL, H2O_TINIT, OC_BIN, OC_LIB, OC_DRV};
+use crate::{H2O_BOOT, H2O_KERNEL, H2O_TINIT, OC_BIN, OC_DRV, OC_LIB};
 
 pub(crate) fn check() -> Result<(), Box<dyn Error>> {
     let cargo = env::var("CARGO").unwrap_or_else(|_| "cargo".to_string());
