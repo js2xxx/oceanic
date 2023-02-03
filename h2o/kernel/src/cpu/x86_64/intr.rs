@@ -14,7 +14,11 @@ use spin::Mutex;
 pub use self::def::{ExVec, ALLOC_VEC};
 use super::apic::{Polarity, TriggerMode, LAPIC_ID};
 use crate::{
-    cpu::{arch::seg::ndt::USR_CODE_X64, intr::IntrHandler, time::Instant},
+    cpu::{
+        arch::seg::ndt::USR_CODE_X64,
+        intr::{IntrHandler, Msi},
+        time::Instant,
+    },
     dev::ioapic,
     mem::space::PageFaultErrCode,
     sched::{
@@ -58,6 +62,21 @@ impl Manager {
         })
     }
 
+    #[inline]
+    pub fn config(gsi: u32, trig_mode: TriggerMode, polarity: Polarity) -> sv_call::Result {
+        PREEMPT.scope(|| unsafe { ioapic::chip().lock().config(gsi, trig_mode, polarity) })
+    }
+
+    #[inline]
+    pub fn mask(gsi: u32, masked: bool) -> sv_call::Result {
+        PREEMPT.scope(|| unsafe { ioapic::chip().lock().mask(gsi, masked) })
+    }
+
+    #[inline]
+    pub fn eoi(gsi: u32) -> sv_call::Result {
+        PREEMPT.scope(|| unsafe { ioapic::chip().lock().eoi(gsi) })
+    }
+
     pub fn select_cpu() -> usize {
         MANAGER
             .iter()
@@ -85,7 +104,7 @@ impl Manager {
         let apic_id = *LAPIC_ID.read().get(&cpu).ok_or(sv_call::EINVAL)?;
         let manager = MANAGER.get(cpu).ok_or(sv_call::ENODEV)?;
 
-        let vec = manager.map.lock().allocate_with::<_, sv_call::Error>(
+        let vec = manager.map.lock().allocate_with(
             1,
             |_| {
                 manager.count.fetch_add(1, Ordering::SeqCst);
@@ -124,19 +143,39 @@ impl Manager {
         Ok(())
     }
 
-    #[inline]
-    pub fn config(gsi: u32, trig_mode: TriggerMode, polarity: Polarity) -> sv_call::Result {
-        PREEMPT.scope(|| unsafe { ioapic::chip().lock().config(gsi, trig_mode, polarity) })
+    pub fn allocate_msi(num_vec: u8, cpu: usize) -> sv_call::Result<Msi> {
+        const MAX_NUM_VEC: u8 = 32;
+        let num_vec = num_vec
+            .checked_next_power_of_two()
+            .filter(|&size| size <= MAX_NUM_VEC)
+            .ok_or(sv_call::EINVAL)?;
+
+        let manager = MANAGER.get(cpu).ok_or(sv_call::ENODEV)?;
+        let apic_id = *LAPIC_ID.read().get(&cpu).ok_or(sv_call::EINVAL)?;
+
+        let start = PREEMPT.scope(|| {
+            manager.map.lock().allocate_with(
+                num_vec,
+                |_| {
+                    manager.count.fetch_add(num_vec as usize, Ordering::SeqCst);
+                    Ok(())
+                },
+                sv_call::ENOMEM,
+            )
+        })?;
+
+        Ok(Msi {
+            target_address: minfo::LAPIC_BASE as u32 | (apic_id << 12),
+            target_data: start as u32,
+            vecs: start..(start + num_vec),
+            cpu,
+        })
     }
 
-    #[inline]
-    pub fn mask(gsi: u32, masked: bool) -> sv_call::Result {
-        PREEMPT.scope(|| unsafe { ioapic::chip().lock().mask(gsi, masked) })
-    }
-
-    #[inline]
-    pub fn eoi(gsi: u32) -> sv_call::Result {
-        PREEMPT.scope(|| unsafe { ioapic::chip().lock().eoi(gsi) })
+    pub fn deallocate_msi(msi: Msi) -> sv_call::Result {
+        let manager = MANAGER.get(msi.cpu).ok_or(sv_call::ENODEV)?;
+        PREEMPT.scope(|| manager.map.lock().remove(msi.vecs.start));
+        Ok(())
     }
 }
 
