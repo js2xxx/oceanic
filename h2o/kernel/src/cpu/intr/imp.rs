@@ -7,7 +7,7 @@ use super::arch::MANAGER;
 use crate::{
     cpu::time::Instant,
     dev::Resource,
-    sched::{task::hdl::DefaultFeature, Event, EventData, PREEMPT, SIG_GENERIC},
+    sched::{task::hdl::DefaultFeature, Event, EventData, SIG_GENERIC},
 };
 
 const MAX_TIMES: usize = 100;
@@ -92,7 +92,6 @@ mod syscall {
         cpu::{
             arch::apic::{Polarity, TriggerMode},
             intr::arch::MANAGER,
-            time,
         },
         sched::SCHED,
         syscall::{Out, UserPtr},
@@ -129,48 +128,16 @@ mod syscall {
         SCHED.with_current(|cur| unsafe { cur.space().handles().insert_raw(intr, Some(event)) })
     }
 
-    // fn intr_query(hdl: Handle, last_time: UserPtr<Out, u128>) -> Result {
-    //     hdl.check_null()?;
-    //     last_time.check()?;
-
-    //     SCHED.with_current(|cur| {
-    //         let intr = cur.space().handles().get::<Interrupt>(hdl)?;
-    //         let data = intr.last_time().ok_or(ENOENT)?;
-    //         last_time.write(unsafe { data.raw() })
-    //     })
-    // }
-
     #[syscall]
-    fn intr_wait(hdl: Handle, timeout_us: u64, last_time: UserPtr<Out, u128>) -> Result {
+    fn intr_query(hdl: Handle, last_time: UserPtr<Out, u128>) -> Result {
         hdl.check_null()?;
         last_time.check()?;
 
-        let pree = PREEMPT.lock();
-        let intr_obj = unsafe { (*SCHED.current()).as_ref().ok_or(ESRCH)? }
-            .space()
-            .handles()
-            .get::<Interrupt>(hdl)?;
-        if !intr_obj.features().contains(Feature::WAIT) {
-            return Err(EPERM);
-        }
-        let intr = Arc::clone(&intr_obj);
-        drop(intr_obj);
-
-        if timeout_us > 0 {
-            let blocker = crate::sched::Blocker::new(
-                &(Arc::clone(&intr) as _),
-                intr.level_triggered,
-                false,
-                SIG_GENERIC,
-            );
-            blocker.wait(Some(pree), time::from_us(timeout_us))?;
-            if !blocker.detach().0 {
-                return Err(ETIME);
-            }
-        }
-
-        last_time.write(unsafe { intr.last_time().unwrap().raw() })?;
-        Ok(())
+        SCHED.with_current(|cur| {
+            let intr = cur.space().handles().get::<Interrupt>(hdl)?;
+            let data = intr.last_time().ok_or(ENOENT)?;
+            last_time.write(unsafe { data.raw() })
+        })
     }
 
     #[syscall]
