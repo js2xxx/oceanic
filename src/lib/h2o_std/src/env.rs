@@ -12,7 +12,11 @@ pub fn args() -> impl Iterator<Item = String> {
 }
 
 pub fn args_os() -> impl Iterator<Item = &'static OsStr> {
-    unsafe { ARGS.split(|&b| b == 0).map(OsStr::from_bytes) }
+    unsafe {
+        ARGS.split(|&b| b == 0)
+            .filter(|s| s != &[])
+            .map(OsStr::from_bytes)
+    }
 }
 
 pub fn vars_os() -> impl Iterator<Item = (OsString, OsString)> {

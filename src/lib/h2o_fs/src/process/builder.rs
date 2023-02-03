@@ -85,16 +85,23 @@ impl Builder {
         self
     }
 
-    pub fn executable(&mut self, executable: Phys, name: String) -> Result<&mut Self, Phys> {
-        if self.executable.is_some() {
-            return Err(executable);
+    pub fn executable(
+        &mut self,
+        executable: Phys,
+        name: impl Into<String>,
+    ) -> Result<&mut Self, Phys> {
+        fn inner(this: &mut Builder, executable: Phys, name: String) -> Result<&mut Builder, Phys> {
+            if this.executable.is_some() {
+                return Err(executable);
+            }
+            let executable = executable
+                .reduce_features(Feature::SEND | Feature::READ | Feature::EXECUTE)
+                .expect("Failed to adjust features for executable");
+            this.executable = Some((executable, name.clone()));
+            this.args.insert(0, name);
+            Ok(this)
         }
-        let executable = executable
-            .reduce_features(Feature::SEND | Feature::READ | Feature::EXECUTE)
-            .expect("Failed to adjust features for executable");
-        self.executable = Some((executable, name.clone()));
-        self.args.insert(0, name);
-        Ok(self)
+        inner(self, executable, name.into())
     }
 
     pub fn loader_sync(&mut self, loader: LoaderSyncClient) -> Result<&mut Self, LoaderSyncClient> {

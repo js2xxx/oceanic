@@ -4,7 +4,7 @@
 
 mod boot;
 
-use alloc::{string::ToString, vec};
+use alloc::vec;
 
 use solvent_fs::process::Process;
 use solvent_rpc::{io::OpenOptions, sync::Client};
@@ -35,7 +35,7 @@ async fn main() {
         .expect("Failed to export vfs");
 
     let mut task = Process::builder()
-        .executable(devm, "devm".to_string())
+        .executable(devm, "devm")
         .expect("Failed to add executable")
         .load_dirs(vec![bootfs])
         .expect("Failed to add loader client")

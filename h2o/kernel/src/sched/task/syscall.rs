@@ -171,10 +171,7 @@ fn task_new(
             tid,
         }
     };
-    SCHED.with_current(|cur| {
-        let st_h = cur.space().handles().insert(st_data, None)?;
-        unsafe { st.write(st_h) }
-    })?;
+    SCHED.with_current(|cur| st.write(cur.space().handles().insert(st_data, None)?))?;
 
     Ok(hdl)
 }

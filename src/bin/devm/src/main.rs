@@ -31,7 +31,7 @@ async fn main() {
     vfs.push(("use/devm".into(), instance.into()));
 
     let mut task = Process::builder()
-        .executable(drvhost, root_driver.into())
+        .executable(drvhost, "drvhost")
         .expect("Failed to set executable")
         .arg(root_driver)
         .load_dirs(vec![bootfs])
