@@ -8,6 +8,7 @@ use crate::{error::Result, obj::Object, time::Instant};
 #[derive(Debug)]
 pub struct Interrupt(sv_call::Handle);
 crate::impl_obj!(Interrupt, SV_INTERRUPT);
+crate::impl_obj!(@DROP, Interrupt);
 
 impl Interrupt {
     pub fn acquire(res: &GsiRes, gsi: u32, config: IntrConfig) -> Result<Interrupt> {
@@ -38,16 +39,6 @@ impl Interrupt {
             sv_call::sv_pack_intr_query(unsafe { self.raw() }, &mut ins as *mut _ as *mut _)
         };
         Ok(PackIntrWait { ins, syscall })
-    }
-}
-
-impl Drop for Interrupt {
-    fn drop(&mut self) {
-        unsafe {
-            sv_call::sv_intr_drop(unsafe { self.raw() })
-                .into_res()
-                .expect("Failed to drop an interrupt");
-        }
     }
 }
 

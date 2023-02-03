@@ -34,16 +34,6 @@
                     "ty": "*mut ()"
                 }
             ]
-        },
-        {
-            "name": "sv_intr_drop",
-            "returns": "()",
-            "args": [
-                {
-                    "name": "hdl",
-                    "ty": "Handle"
-                }
-            ]
         }
     ]
 }

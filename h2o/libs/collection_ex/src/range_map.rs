@@ -29,15 +29,10 @@ impl<K, V> RangeMap<K, V> {
         &self.range
     }
 
-    pub fn allocate_with<F, E, R>(
-        &mut self,
-        size: K,
-        value: F,
-        no_fit: impl Into<E>,
-    ) -> Result<(K, R), E>
+    pub fn allocate_with<F, E>(&mut self, size: K, value: F, no_fit: impl Into<E>) -> Result<K, E>
     where
         K: Ord + Sub<Output = K> + Add<Output = K> + Copy,
-        F: FnOnce(Range<K>) -> Result<(V, R), E>,
+        F: FnOnce(Range<K>) -> Result<V, E>,
     {
         let mut range = None;
 
@@ -56,9 +51,9 @@ impl<K, V> RangeMap<K, V> {
 
         if let Some(range) = range {
             let start = range.start;
-            let (value, ret) = value(range.clone())?;
+            let value = value(range.clone())?;
             self.inner.entry(start).or_insert((range, value));
-            Ok((start, ret))
+            Ok(start)
         } else {
             Err(no_fit.into())
         }
