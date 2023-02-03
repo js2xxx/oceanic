@@ -123,10 +123,8 @@ mod syscall {
         let requeue = futex.requeue(&other, requeue)?;
         drop(pree);
 
-        unsafe {
-            wake_num.write(wake)?;
-            requeue_num.write(requeue)?;
-        }
+        wake_num.write(wake)?;
+        requeue_num.write(requeue)?;
 
         Ok(())
     }

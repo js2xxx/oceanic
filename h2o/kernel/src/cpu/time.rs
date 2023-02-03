@@ -126,10 +126,7 @@ mod syscall {
     #[syscall]
     pub(super) fn time_get(ptr: UserPtr<Out, u128>) -> Result {
         #[cfg(target_arch = "x86_64")]
-        unsafe {
-            let raw = super::Instant::now().raw();
-            ptr.write(raw)?
-        };
+        ptr.write(unsafe { super::Instant::now().raw() })?;
         Ok(())
     }
 }

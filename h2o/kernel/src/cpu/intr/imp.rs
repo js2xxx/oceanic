@@ -1,6 +1,6 @@
 use alloc::sync::Arc;
 
-use spin::Mutex;
+use crossbeam_queue::ArrayQueue;
 use sv_call::Feature;
 
 use super::arch::MANAGER;
@@ -10,10 +10,12 @@ use crate::{
     sched::{task::hdl::DefaultFeature, Event, EventData, PREEMPT, SIG_GENERIC},
 };
 
+const MAX_TIMES: usize = 100;
+
 #[derive(Debug)]
 pub struct Interrupt {
     gsi: u32,
-    last_time: Mutex<Option<Instant>>,
+    last_time: ArrayQueue<Instant>,
     level_triggered: bool,
     event_data: EventData,
 }
@@ -31,7 +33,7 @@ impl Event for Interrupt {
     }
 
     fn notify(&self, clear: usize, set: usize) -> usize {
-        PREEMPT.scope(|| *self.last_time.lock() = Some(Instant::now()));
+        self.last_time.force_push(Instant::now());
 
         let signal = self.notify_impl(clear, set);
 
@@ -49,7 +51,7 @@ impl Interrupt {
         if res.magic_eq(super::gsi_resource()) && res.range().contains(&gsi) {
             Ok(Arc::try_new(Interrupt {
                 gsi,
-                last_time: Mutex::new(None),
+                last_time: ArrayQueue::new(MAX_TIMES),
                 level_triggered,
                 event_data: EventData::new(0),
             })?)
@@ -60,7 +62,7 @@ impl Interrupt {
 
     #[inline]
     pub fn last_time(&self) -> Option<Instant> {
-        PREEMPT.scope(|| *self.last_time.lock())
+        self.last_time.pop()
     }
 
     #[inline]
@@ -127,6 +129,17 @@ mod syscall {
         SCHED.with_current(|cur| unsafe { cur.space().handles().insert_raw(intr, Some(event)) })
     }
 
+    // fn intr_query(hdl: Handle, last_time: UserPtr<Out, u128>) -> Result {
+    //     hdl.check_null()?;
+    //     last_time.check()?;
+
+    //     SCHED.with_current(|cur| {
+    //         let intr = cur.space().handles().get::<Interrupt>(hdl)?;
+    //         let data = intr.last_time().ok_or(ENOENT)?;
+    //         last_time.write(unsafe { data.raw() })
+    //     })
+    // }
+
     #[syscall]
     fn intr_wait(hdl: Handle, timeout_us: u64, last_time: UserPtr<Out, u128>) -> Result {
         hdl.check_null()?;
@@ -156,7 +169,7 @@ mod syscall {
             }
         }
 
-        unsafe { last_time.write(intr.last_time().unwrap().raw()) }?;
+        last_time.write(unsafe { intr.last_time().unwrap().raw() })?;
         Ok(())
     }
 

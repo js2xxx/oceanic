@@ -213,14 +213,14 @@ fn space_new(root_virt: UserPtr<Out, Handle>) -> Result<Handle> {
         let space = TaskSpace::new()?;
         let virt = Arc::downgrade(space.mem().root());
         let ret = cur.space().handles().insert_raw(space, None)?;
-        unsafe {
-            let virt = cur.space().handles().insert_unchecked(
+        let virt = unsafe {
+            cur.space().handles().insert_unchecked(
                 virt,
                 Weak::<space::Virt>::default_features() | Feature::SEND,
                 None,
-            )?;
-            root_virt.write(virt)?;
-        }
+            )?
+        };
+        root_virt.write(virt)?;
         Ok(ret)
     })
 }
@@ -248,7 +248,7 @@ fn virt_info(hdl: Handle, size: UserPtr<Out, usize>) -> Result<*mut u8> {
         let virt = virt.upgrade().ok_or(EKILLED)?;
         let base = virt.range().start;
         if !size.as_ptr().is_null() {
-            unsafe { size.write(virt.len()) }?;
+            size.write(virt.len())?;
         }
         Ok(*base)
     })
@@ -282,10 +282,10 @@ fn virt_map(hdl: Handle, mi_ptr: UserPtr<InOut, VirtMapInfo>) -> Result<*mut u8>
         let size = if mi.len == 0 { phys.len() } else { mi.len };
         let layout = Layout::from_size_align(size, mi.align)?;
         let addr = virt.map(offset, Ref::into_raw(phys), mi.phys_offset, layout, flags)?;
-        unsafe {
-            let len = UserPtr::<Out, _>::new(ptr::addr_of_mut!((*mi_ptr.as_ptr()).len));
-            len.write(size)?;
-        }
+
+        let len = UserPtr::<Out, _>::new(unsafe { ptr::addr_of_mut!((*mi_ptr.as_ptr()).len) });
+        len.write(size)?;
+
         Ok(*addr)
     })
 }
@@ -318,12 +318,10 @@ fn mem_info(info: UserPtr<Out, MemInfo>) -> Result {
     info.check()?;
     let all_available = super::ALL_AVAILABLE.load(core::sync::atomic::Ordering::Relaxed);
     let current_used = super::heap::current_used();
-    unsafe {
-        info.write(MemInfo {
-            all_available,
-            current_used,
-        })
-    }
+    info.write(MemInfo {
+        all_available,
+        current_used,
+    })
 }
 
 #[syscall]

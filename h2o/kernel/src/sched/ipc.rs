@@ -296,9 +296,10 @@ mod syscall {
         result: UserPtr<Out, usize>,
     ) -> Result<usize> {
         disp.check_null()?;
+
         let mut key = 0;
         let mut signal = 0;
-        let (c, r) = SCHED.with_current(|cur| {
+        let (canceled, r) = SCHED.with_current(|cur| {
             let disp = cur.space().handles().get::<Dispatcher>(disp)?;
             if !disp.features().contains(Feature::READ) {
                 return Err(EPERM);
@@ -307,12 +308,9 @@ mod syscall {
         })?;
 
         if !signal_slot.as_ptr().is_null() {
-            if c {
-                signal_slot.write(0)?;
-            } else {
-                signal_slot.write(signal)?;
-            }
+            signal_slot.write(if canceled { 0 } else { signal })?;
         }
+
         let r = r.map_or(0, crate::syscall::handle);
         if !result.as_ptr().is_null() {
             result.write(r)?;
