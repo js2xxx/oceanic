@@ -1,6 +1,7 @@
 mod imp;
 
 use alloc::sync::Arc;
+use core::ops::Range;
 
 use archop::Azy;
 
@@ -24,6 +25,15 @@ pub enum IsaIrq {
     Ps2Mouse = 12,
     Ide0 = 14,
     Ide1 = 15,
+}
+
+#[derive(Debug, Clone)]
+pub struct Msi {
+    pub target_address: u32,
+    pub target_data: u32,
+
+    pub vecs: Range<u8>,
+    pub cpu: usize,
 }
 
 pub type IntrHandler = fn(*mut u8);

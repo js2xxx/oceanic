@@ -1,7 +1,7 @@
 pub mod ipi;
 pub mod timer;
 
-use alloc::{collections::BTreeMap, sync::Arc};
+use alloc::collections::BTreeMap;
 use core::{
     arch::asm,
     ops::{BitOr, BitOrAssign},
@@ -18,14 +18,15 @@ use crate::mem::space::{self, Flags, PhysTrait};
 
 pub static LAPIC_ID: RwLock<BTreeMap<usize, u32>> = RwLock::new(BTreeMap::new());
 static LAPIC_BASE: Azy<usize> = Azy::new(|| {
-    let phys =
-        space::new_phys(PAddr::new(0xFEE00000), PAGE_SIZE).expect("Failed to acquire LAPIC base");
+    let phys = space::new_phys(PAddr::new(minfo::LAPIC_BASE), PAGE_SIZE)
+        .expect("Failed to acquire LAPIC base");
+    let layout = space::page_aligned(phys.len());
     space::KRL
         .map(
             None,
-            Arc::clone(&phys),
+            phys,
             0,
-            space::page_aligned(phys.len()),
+            layout,
             Flags::READABLE | Flags::WRITABLE | Flags::UNCACHED,
         )
         .expect("Failed to allocate memory")
