@@ -11,6 +11,28 @@ virtual machines or bare metals should be taken into account by the user.
 Currently, the project only supports x86_64 architecture, and it will probably
 support aarch64 in the future. 
 
+# Features
+
+- **Pure microkernel architecture**: Only necessary functions such as memory management, task scheduling and inter-process communication are owned by the kernel, leaving others to the userspace tasks.
+- **Fully asynchronous kernel objects**: Every system call supports **proactor** async API based on async dispatcher objects, which is theoretically more convenient and more resource-friendly than Linux's `io-uring`.
+- **Fully asynchronous drivers**: Drivers are represented by dynamic libraries, loaded by driver hosts and controlled by the device manager. The DDK library enables drivers to run as async tasks on driver hosts, and multiple drivers can run on single driver host as they wish.
+- **Type-based task management**: Every task's state are represented by Rust's type system instead of a single state field, and its structure doesn't need to rely on reference-counted pointers. The running tasks are owned by the scheduler, while the blocking ones by futex references or suspend tokens, thus decreasing code complexity.
+- **Isolated and local VFS**: (Inspired by Fuchsia) Every process has its own VFS, and it's the task's choice whether to share the VFS with its child tasks.
+
+# Road map
+
+## Current working
+
+- [ ] Complete the DDK library.
+- [ ] Implement basic drivers (PCI, ACPI, etc).
+
+## Further to-dos (may change)
+
+- Implement storage drivers.
+- Implement some storage FSes (FAT, etc).
+- Complete the device manager and the program manager implementation.
+- Merge into Rust std.
+
 # Source tree
 
 - `debug` - contains the decompiled assembly files, debug symbols, object file informations. and the serial log files of the virtual machines.
@@ -28,8 +50,7 @@ support aarch64 in the future.
    ```sh
    # Select the nightly channel for rust
    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-   bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"
-   sudo apt install build-essential qemu-system-x86
+   sudo apt install build-essential qemu-system-x86 llvm
    ```
 
 2. Add the following target:
