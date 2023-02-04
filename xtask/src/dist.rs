@@ -49,6 +49,7 @@ impl Dist {
         fs::create_dir_all(PathBuf::from(&target_root).join("sysroot/usr/lib"))?;
         fs::create_dir_all(src_root.join(H2O_KERNEL).join("target"))?;
         fs::create_dir_all(src_root.join("h2o/libs/syscall/target"))?;
+        fs::create_dir_all("debug")?;
 
         // Generate syscall stubs
         crate::gen::gen_syscall(
