@@ -1,6 +1,7 @@
 # Oceanic: A PC desktop OS
 
 [![996.icu](https://img.shields.io/badge/link-996.icu-red.svg)](https://996.icu)
+[![CI](https://github.com/js2xxx/oceanic/actions/workflows/ci.yml/badge.svg)](https://github.com/js2xxx/oceanic/actions/workflows/ci.yml)
 
 [中文说明](README.zh-cn.md)
 
