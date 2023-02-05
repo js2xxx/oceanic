@@ -2,33 +2,36 @@ name: CI
 
 on:
   push:
-    branches: [ "master" ]
+    branches: ["master"]
   pull_request:
-    branches: [ "master" ]
+    branches: ["master"]
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v3
-    - name: Cache LLVM
-      id: cache-llvm
-      uses: actions/cache@v3
-      with:
-        path: ../llvm
-        key: llvm-14.0
-    - name: Install LLVM
-      uses: KyleMayes/install-llvm-action@v1
-      with:
-        version: "14.0"
-        directory: ../llvm
-        cached: ${{ steps.cache-llvm.output.cache-hit }}
-    - name: Create LLVM symlinks
-      run: ln -s ${{ env.LLVM_PATH }}/bin/llvm-ifs llvm-ifs && ln -s ${{ env.LLVM_PATH }}/bin/llvm-objdump llvm-objdump
-    - name: Build
-      run: cargo xtask dist --release img
+      - uses: actions/checkout@v3
+
+      - name: Install nasm
+        run: sudo apt install nasm
+
+      - name: Cache LLVM
+        id: cache-llvm
+        uses: actions/cache@v3
+        with:
+          path: ../llvm
+          key: llvm-14.0
+
+      - name: Install LLVM
+        uses: KyleMayes/install-llvm-action@v1
+        with:
+          version: "14.0"
+          directory: ../llvm
+          cached: ${{ steps.cache-llvm.output.cache-hit }}
+
+      - name: Build
+        run: cargo xtask dist --release img

@@ -45,7 +45,8 @@
    ```sh
    # 配置 Rust 时需要选择 nightly 通道
    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-   sudo apt install build-essential qemu-system-x86 llvm
+   sudo apt install build-essential qemu-system-x86 llvm-14 nasm
+   export LLVM_PATH="/usr/lib/llvm-14"
    ```
 
 2. 添加下列目标：

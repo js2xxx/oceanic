@@ -50,7 +50,8 @@ support aarch64 in the future.
    ```sh
    # Select the nightly channel for rust
    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-   sudo apt install build-essential qemu-system-x86 llvm
+   sudo apt install build-essential qemu-system-x86 llvm-14 nasm
+   export LLVM_PATH="/usr/lib/llvm-14"
    ```
 
 2. Add the following target:

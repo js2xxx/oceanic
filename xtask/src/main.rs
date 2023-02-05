@@ -1,4 +1,5 @@
 #![feature(exit_status_error)]
+#![feature(once_cell)]
 
 use structopt::StructOpt;
 
