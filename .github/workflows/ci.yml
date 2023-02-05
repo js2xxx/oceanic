@@ -23,14 +23,14 @@ jobs:
         id: cache-llvm
         uses: actions/cache@v3
         with:
-          path: ~/llvm
+          path: llvm
           key: llvm-14.0
 
       - name: Install LLVM
         uses: KyleMayes/install-llvm-action@v1
         with:
           version: "14.0"
-          directory: ~/llvm
+          directory: llvm
           cached: ${{ steps.cache-llvm.output.cache-hit }}
 
       - name: Cache cargo crates
@@ -46,5 +46,16 @@ jobs:
             ~/.cargo/git/db/
           key: cargo-crates
 
+      - name: Configure sccache
+        uses: visvirial/sccache-action@v1
+
       - name: Build
         run: cargo xtask dist --release img
+
+  fmt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Check format
+        run: cargo fmt --all --check
