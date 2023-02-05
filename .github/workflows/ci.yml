@@ -17,20 +17,20 @@ jobs:
       - uses: actions/checkout@v3
 
       - name: Install nasm and qemu-utils
-        run: sudo apt install nasm qemu-utils
+        run: sudo apt-get install nasm qemu-utils
 
       - name: Cache LLVM
         id: cache-llvm
         uses: actions/cache@v3
         with:
-          path: ../llvm
+          path: ~/llvm
           key: llvm-14.0
 
       - name: Install LLVM
         uses: KyleMayes/install-llvm-action@v1
         with:
           version: "14.0"
-          directory: ../llvm
+          directory: ~/llvm
           cached: ${{ steps.cache-llvm.output.cache-hit }}
 
       - name: Cache cargo crates
