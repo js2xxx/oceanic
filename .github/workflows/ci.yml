@@ -37,8 +37,14 @@ jobs:
         id: cache-cargo
         uses: actions/cache@v3
         with:
-          path: ~/.cargo/registry
-          key: cargo-crate
+          path: |
+            ~/.cargo/.crates.toml
+            ~/.cargo/.crates2.json
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: cargo-crates
 
       - name: Build
         run: cargo xtask dist --release img
