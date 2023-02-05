@@ -114,7 +114,7 @@ impl Dist {
     }
 
     fn build_vdso(
-        self,
+        &self,
         src_root: &Path,
         cargo: &String,
         target_root: &String,
