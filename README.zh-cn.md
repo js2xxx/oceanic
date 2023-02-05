@@ -1,6 +1,7 @@
 # 海洋OS：一个个人电脑操作系统
 
 [![996.icu](https://img.shields.io/badge/link-996.icu-red.svg)](https://996.icu)
+[![CI](https://github.com/js2xxx/oceanic/actions/workflows/ci.yml/badge.svg)](https://github.com/js2xxx/oceanic/actions/workflows/ci.yml)
 
 **警告:** 这个项目还在非常早的开发阶段，操作系统尚未准备好用户程序环境。使用者或开发者应该考虑任何在虚拟机或裸机中运行的风险。
 
