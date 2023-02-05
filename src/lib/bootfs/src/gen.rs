@@ -1,4 +1,4 @@
-use std::{boxed::Box, collections::VecDeque, error::Error, io::Write, mem, vec::Vec};
+use std::{collections::VecDeque, io::Write, mem, vec::Vec};
 
 use plain::Plain;
 
@@ -59,7 +59,7 @@ fn write_typed<T: ?Sized + Plain>(
     data: &T,
     size: usize,
     output: &mut impl Write,
-) -> Result<(), Box<dyn Error>> {
+) -> anyhow::Result<()> {
     let alsize = mem::size_of_val(data);
     let size = alsize.max(size);
 
@@ -72,7 +72,7 @@ fn write_typed<T: ?Sized + Plain>(
     Ok(())
 }
 
-pub fn generate(input: &Entry, output: &mut impl Write) -> Result<(), Box<dyn Error>> {
+pub fn generate(input: &Entry, output: &mut impl Write) -> anyhow::Result<()> {
     let mut entries = Vec::new();
     let mut contents = Vec::new();
     split(input, &mut entries, &mut contents);

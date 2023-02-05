@@ -1,6 +1,5 @@
 #![feature(exit_status_error)]
-
-use std::error::Error;
+#![feature(once_cell)]
 
 use structopt::StructOpt;
 
@@ -26,7 +25,7 @@ enum Cmd {
     Check,
 }
 
-fn main() -> Result<(), Box<dyn Error>> {
+fn main() -> anyhow::Result<()> {
     let args = Cmd::from_args();
     match args {
         Cmd::Dist(dist) => dist.build(),
