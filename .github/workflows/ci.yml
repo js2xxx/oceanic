@@ -16,5 +16,18 @@ jobs:
 
     steps:
     - uses: actions/checkout@v3
+    - name: Cache LLVM
+      id: cache-llvm
+      uses: actions/cache@v2
+      with:
+        path: ../llvm
+        key: llvm-14.0
+    - name: Install LLVM
+      uses: KyleMayes/install-llvm-action@v1
+      with:
+        version: "14.0"
+        cached: ${{ steps.cache-llvm.output.cache-hit }}
+    - name: Create LLVM symlinks
+      run: ln -s ${{ env.LLVM_PATH }}/bin/llvm-ifs llvm-ifs && ln -s ${{ env.LLVM_PATH }}/bin/llvm-objdump llvm-objdump
     - name: Build
       run: cargo xtask dist --release img

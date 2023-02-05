@@ -12,6 +12,7 @@ path = "src/main.rs"
 # Local crates
 bootfs = {path = "../src/lib/bootfs", features = ["gen"]}
 # External crates
+anyhow = "1.0"
 cc = "1.0"
 quote = "1.0"
 rand = "0.8"

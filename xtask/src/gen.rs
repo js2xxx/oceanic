@@ -1,7 +1,7 @@
 mod bootfs;
 mod syscall;
 
-use std::{error::Error, fs, io::BufWriter, path::Path};
+use std::{fs, io::BufWriter, path::Path};
 
 use rand::{prelude::SliceRandom, thread_rng};
 
@@ -13,7 +13,7 @@ pub fn gen_syscall(
     call_file: impl AsRef<Path>,
     stub_file: impl AsRef<Path>,
     num_file: impl AsRef<Path>,
-) -> Result<(), Box<dyn Error>> {
+) -> anyhow::Result<()> {
     let Syscall {
         mut types,
         mut funcs,
@@ -33,7 +33,7 @@ pub fn gen_syscall(
     Ok(())
 }
 
-pub fn gen_bootfs(output: impl AsRef<Path>) -> Result<(), Box<dyn Error>> {
+pub fn gen_bootfs(output: impl AsRef<Path>) -> anyhow::Result<()> {
     let data = bootfs::parse(crate::BOOTFS)?;
     let mut file = BufWriter::new(fs::File::create(output)?);
     ::bootfs::gen::generate(&data, &mut file)?;

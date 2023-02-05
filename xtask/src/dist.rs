@@ -1,13 +1,13 @@
 use std::{
     collections::HashSet,
     env,
-    error::Error,
     ffi::OsString,
     fs,
     path::{Path, PathBuf},
     process::Command,
 };
 
+use anyhow::Context;
 use structopt::StructOpt;
 
 use crate::{
@@ -36,20 +36,13 @@ impl Dist {
         }
     }
 
-    pub fn build(self) -> Result<(), Box<dyn Error>> {
+    pub fn build(self) -> Result<(), anyhow::Error> {
         let cargo = env::var("CARGO").unwrap_or_else(|_| "cargo".to_string());
         let src_root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
         let target_root = env::var("CARGO_TARGET_DIR")
             .unwrap_or_else(|_| src_root.join("target").to_string_lossy().to_string());
 
-        fs::create_dir_all(PathBuf::from(&target_root).join("bootfs/lib"))?;
-        fs::create_dir_all(PathBuf::from(&target_root).join("bootfs/drv"))?;
-        fs::create_dir_all(PathBuf::from(&target_root).join("bootfs/bin"))?;
-        fs::create_dir_all(PathBuf::from(&target_root).join("sysroot/usr/include"))?;
-        fs::create_dir_all(PathBuf::from(&target_root).join("sysroot/usr/lib"))?;
-        fs::create_dir_all(src_root.join(H2O_KERNEL).join("target"))?;
-        fs::create_dir_all(src_root.join("h2o/libs/syscall/target"))?;
-        fs::create_dir_all("debug")?;
+        create_dir_all(&target_root, src_root)?;
 
         // Generate syscall stubs
         crate::gen::gen_syscall(
@@ -58,7 +51,8 @@ impl Dist {
             src_root.join("h2o/libs/syscall/target/call.rs"),
             src_root.join("h2o/libs/syscall/target/stub.rs"),
             src_root.join("h2o/libs/syscall/target/num.rs"),
-        )?;
+        )
+        .context("failed to generate syscalls")?;
 
         // Build h2o_boot
         self.build_impl(
@@ -68,71 +62,12 @@ impl Dist {
             src_root.join(H2O_BOOT),
             Path::new(&target_root).join("x86_64-unknown-uefi"),
             &target_root,
-        )?;
+        )
+        .context("failed to build h2o_boot")?;
 
         // Build the VDSO
-        {
-            let target_triple = src_root.join(".cargo/x86_64-pc-oceanic.json");
-            let cd = src_root.join(H2O_SYSCALL);
-            let ldscript = cd.join("syscall.ld");
-
-            println!("Building VDSO");
-
-            let mut cmd = Command::new(&cargo);
-            let cmd = cmd.current_dir(&cd).arg("rustc").args([
-                "--crate-type=cdylib",
-                &format!("--target={}", target_triple.to_string_lossy()),
-                "-Zunstable-options",
-                "-Zbuild-std=core,compiler_builtins,alloc,panic_abort",
-                "-Zbuild-std-features=compiler-builtins-mem",
-                "--release", /* VDSO can always be the release version and discard the debug
-                              * symbols. */
-                "--no-default-features",
-                "--features",
-                "call",
-                "--features",
-                "vdso",
-            ]);
-            cmd.args([
-                "--",
-                &format!("-Clink-arg=-T{}", ldscript.to_string_lossy()),
-            ])
-            .status()?
-            .exit_ok()?;
-
-            // Copy the binary to target.
-            let bin_dir = Path::new(&target_root).join("x86_64-pc-oceanic/release");
-            let path = src_root.join(H2O_KERNEL).join("target/vdso");
-            fs::copy(bin_dir.join("libsv_call.so"), &path)?;
-            Command::new("llvm-ifs")
-                .arg("--input-format=ELF")
-                .arg(format!(
-                    "--output-elf={}/sysroot/usr/lib/libh2o.so",
-                    target_root
-                ))
-                .arg(&path)
-                .status()?
-                .exit_ok()?;
-
-            let out = Command::new("llvm-objdump")
-                .arg("--syms")
-                .arg(&path)
-                .output()?
-                .stdout;
-            let s = String::from_utf8_lossy(&out);
-            let (constants_offset, _) = s
-                .split('\n')
-                .find(|s| s.ends_with("CONSTANTS"))
-                .and_then(|s| s.split_once(' '))
-                .expect("Failed to get CONSTANTS");
-
-            fs::write(
-                src_root.join(H2O_KERNEL).join("target/constant_offset.rs"),
-                format!("0x{}", constants_offset),
-            )?;
-
-            self.gen_debug("vdso", src_root.join(H2O_KERNEL).join("target"), DEBUG_DIR)?;
-        }
+        self.build_vdso(src_root, &cargo, &target_root)
+            .context("failed to build VDSO")?;
 
         // Build h2o_kernel
         self.build_impl(
@@ -142,7 +77,8 @@ impl Dist {
             src_root.join(H2O_KERNEL),
             Path::new(&target_root).join("x86_64-h2o-kernel"),
             &target_root,
-        )?;
+        )
+        .context("failed to build h2o_kernel")?;
 
         // Build h2o_tinit
         self.build_impl(
@@ -152,12 +88,16 @@ impl Dist {
             src_root.join(H2O_TINIT),
             Path::new(&target_root).join("x86_64-h2o-tinit"),
             &target_root,
-        )?;
+        )
+        .context("failed to build h2o_tinit")?;
 
-        self.build_lib(&cargo, src_root, &target_root)?;
-        self.build_bin(&cargo, src_root, &target_root)?;
+        self.build_lib(&cargo, src_root, &target_root)
+            .context("failed to build libraries")?;
+        self.build_bin(&cargo, src_root, &target_root)
+            .context("failed to build binaries or drivers")?;
 
-        crate::gen::gen_bootfs(Path::new(BOOTFS).join("../BOOT.fs"))?;
+        crate::gen::gen_bootfs(Path::new(BOOTFS).join("../BOOT.fs"))
+            .context("failed to generate BOOTFS")?;
 
         match &self.ty {
             Type::Img => {
@@ -173,12 +113,86 @@ impl Dist {
         Ok(())
     }
 
+    fn build_vdso(
+        self,
+        src_root: &Path,
+        cargo: &String,
+        target_root: &String,
+    ) -> Result<(), anyhow::Error> {
+        let target_triple = src_root.join(".cargo/x86_64-pc-oceanic.json");
+        let cd = src_root.join(H2O_SYSCALL);
+        let ldscript = cd.join("syscall.ld");
+
+        println!("Building VDSO");
+
+        let mut cmd = Command::new(cargo);
+
+        let cmd = cmd.current_dir(&cd).arg("rustc").args([
+            "--crate-type=cdylib",
+            &format!("--target={}", target_triple.to_string_lossy()),
+            "-Zunstable-options",
+            "-Zbuild-std=core,compiler_builtins,alloc,panic_abort",
+            "-Zbuild-std-features=compiler-builtins-mem",
+            "--release", /* VDSO can always be the release version and discard the debug
+                          * symbols. */
+            "--no-default-features",
+            "--features",
+            "call",
+            "--features",
+            "vdso",
+        ]);
+
+        cmd.args([
+            "--",
+            &format!("-Clink-arg=-T{}", ldscript.to_string_lossy()),
+        ])
+        .status()?
+        .exit_ok()?;
+
+        let bin_dir = Path::new(target_root).join("x86_64-pc-oceanic/release");
+        let path = src_root.join(H2O_KERNEL).join("target/vdso");
+
+        fs::copy(bin_dir.join("libsv_call.so"), &path)?;
+
+        Command::new("llvm-ifs")
+            .arg("--input-format=ELF")
+            .arg(format!(
+                "--output-elf={}/sysroot/usr/lib/libh2o.so",
+                target_root
+            ))
+            .arg(&path)
+            .status()?
+            .exit_ok()?;
+
+        let out = Command::new("llvm-objdump")
+            .arg("--syms")
+            .arg(&path)
+            .output()?
+            .stdout;
+
+        let s = String::from_utf8_lossy(&out);
+        let (constants_offset, _) = s
+            .split('\n')
+            .find(|s| s.ends_with("CONSTANTS"))
+            .and_then(|s| s.split_once(' '))
+            .expect("Failed to get CONSTANTS");
+
+        fs::write(
+            src_root.join(H2O_KERNEL).join("target/constant_offset.rs"),
+            format!("0x{}", constants_offset),
+        )?;
+
+        self.gen_debug("vdso", src_root.join(H2O_KERNEL).join("target"), DEBUG_DIR)?;
+
+        Ok(())
+    }
+
     fn build_lib(
         &self,
         cargo: &str,
         src_root: impl AsRef<Path>,
         target_root: &str,
-    ) -> Result<(), Box<dyn Error>> {
+    ) -> anyhow::Result<()> {
         let src_root = src_root.as_ref().join(OC_LIB);
         let bin_dir = Path::new(target_root).join("x86_64-pc-oceanic");
         let dst_root = Path::new(target_root).join("bootfs/lib");
@@ -221,7 +235,7 @@ impl Dist {
         cargo: &str,
         src_root: impl AsRef<Path>,
         target_root: &str,
-    ) -> Result<(), Box<dyn Error>> {
+    ) -> anyhow::Result<()> {
         let bin_dir = Path::new(target_root).join("x86_64-pc-oceanic");
         let dep_root = Path::new(target_root).join("bootfs/lib");
 
@@ -233,7 +247,7 @@ impl Dist {
         let mut build = |src_root: PathBuf,
                          dst_root: PathBuf,
                          is_dylib: bool|
-         -> Result<(), Box<dyn Error>> {
+         -> anyhow::Result<()> {
             for ent in fs::read_dir(src_root)?.flatten() {
                 let ty = ent.file_type()?;
                 let name = ent.file_name();
@@ -285,7 +299,7 @@ impl Dist {
         src_dir: impl AsRef<Path>,
         bin_dir: impl AsRef<Path>,
         target_dir: impl AsRef<Path>,
-    ) -> Result<(), Box<dyn Error>> {
+    ) -> anyhow::Result<()> {
         println!("Building {:?}", dst_name.as_ref());
 
         let mut cmd = Command::new(cargo);
@@ -305,7 +319,7 @@ impl Dist {
         target_name: impl AsRef<Path>,
         target_dir: impl AsRef<Path>,
         dbg_dir: impl AsRef<Path>,
-    ) -> Result<(), Box<dyn Error>> {
+    ) -> anyhow::Result<()> {
         let target_path = target_dir.as_ref().join(&target_name);
         {
             let mut sym_name = OsString::from(target_name.as_ref().as_os_str());
@@ -346,4 +360,19 @@ impl Dist {
         }
         Ok(())
     }
+}
+
+fn create_dir_all(target_root: &String, src_root: &Path) -> Result<(), anyhow::Error> {
+    let create_dir = |path: &Path| -> anyhow::Result<()> {
+        fs::create_dir_all(path).with_context(|| format!("failed to create dir {path:?}"))
+    };
+    create_dir(&PathBuf::from(target_root).join("bootfs/lib"))?;
+    create_dir(&PathBuf::from(target_root).join("bootfs/drv"))?;
+    create_dir(&PathBuf::from(target_root).join("bootfs/bin"))?;
+    create_dir(&PathBuf::from(target_root).join("sysroot/usr/include"))?;
+    create_dir(&PathBuf::from(target_root).join("sysroot/usr/lib"))?;
+    create_dir(&src_root.join(H2O_KERNEL).join("target"))?;
+    create_dir(&src_root.join("h2o/libs/syscall/target"))?;
+    create_dir("debug".as_ref())?;
+    Ok(())
 }

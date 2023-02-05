@@ -1,5 +1,4 @@
 use std::{
-    error::Error,
     fs,
     io::{BufWriter, Write},
     path::Path,
@@ -37,13 +36,13 @@ impl Syscall {
     }
 }
 
-fn parse_file(file: impl AsRef<Path>) -> Result<Syscall, Box<dyn Error>> {
+fn parse_file(file: impl AsRef<Path>) -> anyhow::Result<Syscall> {
     // println!("parsing file {:?}", file.as_ref());
     let file = fs::File::open(file)?;
     Ok(serde_json::from_reader(&file)?)
 }
 
-pub fn parse_dir(dir: impl AsRef<Path>) -> Result<Syscall, Box<dyn Error>> {
+pub fn parse_dir(dir: impl AsRef<Path>) -> anyhow::Result<Syscall> {
     fs::read_dir(dir)?
         .flatten()
         .try_fold(Syscall::default(), |mut ret, ent| {
@@ -55,7 +54,7 @@ pub fn parse_dir(dir: impl AsRef<Path>) -> Result<Syscall, Box<dyn Error>> {
         })
 }
 
-pub fn gen_wrappers(funcs: &[SyscallFn], output: impl AsRef<Path>) -> Result<(), Box<dyn Error>> {
+pub fn gen_wrappers(funcs: &[SyscallFn], output: impl AsRef<Path>) -> anyhow::Result<()> {
     let mut output = BufWriter::new(fs::File::create(output)?);
 
     write!(output, "[")?;
@@ -77,7 +76,7 @@ pub fn gen_wrappers(funcs: &[SyscallFn], output: impl AsRef<Path>) -> Result<(),
     Ok(())
 }
 
-pub fn gen_rust_calls(funcs: &[SyscallFn], output: impl AsRef<Path>) -> Result<(), Box<dyn Error>> {
+pub fn gen_rust_calls(funcs: &[SyscallFn], output: impl AsRef<Path>) -> anyhow::Result<()> {
     let mut output = BufWriter::new(fs::File::create(output)?);
 
     for (i, func) in funcs.iter().enumerate() {
@@ -139,7 +138,7 @@ pub fn gen_rust_calls(funcs: &[SyscallFn], output: impl AsRef<Path>) -> Result<(
     Ok(())
 }
 
-pub fn gen_rust_stubs(funcs: &[SyscallFn], output: impl AsRef<Path>) -> Result<(), Box<dyn Error>> {
+pub fn gen_rust_stubs(funcs: &[SyscallFn], output: impl AsRef<Path>) -> anyhow::Result<()> {
     let mut output = BufWriter::new(fs::File::create(output)?);
 
     write!(output, "#[link(name = \"h2o\")] extern \"C\" {{")?;
@@ -180,7 +179,7 @@ pub fn gen_rust_nums(
     types: &[String],
     funcs: &[SyscallFn],
     output: impl AsRef<Path>,
-) -> Result<(), Box<dyn Error>> {
+) -> anyhow::Result<()> {
     let mut output = BufWriter::new(fs::File::create(output)?);
 
     for (i, func) in funcs.iter().enumerate() {
