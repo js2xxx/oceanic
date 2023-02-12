@@ -339,16 +339,14 @@ impl Dist {
                 .arg(&target_path)
                 .arg(dbg_dir.as_ref().join(sym_name))
                 .status()
-                .context("failed to extract debug symbols")?
-                .exit_ok()
-                .context("llvm-objcopy returned error while extracting debug symbols")?;
+                .context("failed to extract debug symbols")?;
             Command::new(&*LLVM_OBJCOPY)
                 .arg("--strip-debug")
                 .arg(&target_path)
                 .status()
-                .context("failed to strip debug symbols")?
-                .exit_ok()
-                .context("llvm-objcopy returned error while stripping debug symbols")?;
+                .context("failed to strip debug symbols")?;
+            // TODO: Check the return status. By far the generated `BOOTX64.efi`
+            // contains no symbol info, so no check for now.
         }
         {
             let mut asm_name = OsString::from(target_name.as_ref().as_os_str());
