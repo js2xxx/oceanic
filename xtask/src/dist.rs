@@ -150,13 +150,15 @@ impl Dist {
             "--",
             &format!("-Clink-arg=-T{}", ldscript.to_string_lossy()),
         ])
-        .status()?
-        .exit_ok()?;
+        .status()
+        .context("failed to execute cargo")?
+        .exit_ok()
+        .context("cargo returned error")?;
 
         let bin_dir = Path::new(target_root).join("x86_64-pc-oceanic/release");
         let path = src_root.join(H2O_KERNEL).join("target/vdso");
 
-        fs::copy(bin_dir.join("libsv_call.so"), &path)?;
+        fs::copy(bin_dir.join("libsv_call.so"), &path).context("failed to copy the binary file")?;
 
         Command::new(&*LLVM_IFS)
             .arg("--input-format=ELF")
@@ -165,13 +167,16 @@ impl Dist {
                 target_root
             ))
             .arg(&path)
-            .status()?
-            .exit_ok()?;
+            .status()
+            .context("failed to execute llvm-ifs")?
+            .exit_ok()
+            .context("llvm-ifs returned error")?;
 
         let out = Command::new(&*LLVM_OBJDUMP)
             .arg("--syms")
             .arg(&path)
-            .output()?
+            .output()
+            .context("failed to execute llvm-objdump")?
             .stdout;
 
         let s = String::from_utf8_lossy(&out);
@@ -184,9 +189,11 @@ impl Dist {
         fs::write(
             src_root.join(H2O_KERNEL).join("target/constant_offset.rs"),
             format!("0x{}", constants_offset),
-        )?;
+        )
+        .context("failed to write to constant file")?;
 
-        self.gen_debug("vdso", src_root.join(H2O_KERNEL).join("target"), DEBUG_DIR)?;
+        self.gen_debug("vdso", src_root.join(H2O_KERNEL).join("target"), DEBUG_DIR)
+            .context("failed to generate debug info")?;
 
         Ok(())
     }
@@ -202,7 +209,8 @@ impl Dist {
             src_root.join("libc/ldso"),
             &bin_dir,
             &dst_root,
-        )?;
+        )
+        .context("failed to build LDSO")?;
 
         Command::new(&*LLVM_IFS)
             .arg("--input-format=ELF")
@@ -213,8 +221,10 @@ impl Dist {
                     .to_string_lossy()
             ))
             .arg(bin_dir.join(self.profile()).join("libldso.so"))
-            .status()?
-            .exit_ok()?;
+            .status()
+            .context("failed to execute llvm-ifs")?
+            .exit_ok()
+            .context("llvm-ifs returned error")?;
 
         self.build_impl(
             "libco2.so",
@@ -222,7 +232,8 @@ impl Dist {
             src_root.join("libc"),
             &bin_dir,
             &dst_root,
-        )?;
+        )
+        .context("failed to build libc")?;
 
         Ok(())
     }
@@ -251,7 +262,8 @@ impl Dist {
                     } else {
                         name
                     };
-                    self.build_impl(&dst_name, &dst_name, ent.path(), &bin_dir, &dst_root)?;
+                    self.build_impl(&dst_name, &dst_name, ent.path(), &bin_dir, &dst_root)
+                        .with_context(|| format!("failed to build {:?}", ent.path()))?;
                     for dep in fs::read_dir(bin_dir.join(self.profile()).join("deps"))?.flatten() {
                         let name = dep.file_name();
                         match name.to_str() {
@@ -298,10 +310,17 @@ impl Dist {
         if self.release {
             cmd.arg("--release");
         }
-        cmd.status()?.exit_ok()?;
+        cmd.status()
+            .context("failed to execute cargo")?
+            .exit_ok()
+            .context("cargo returned error")?;
+
         let bin_dir = bin_dir.as_ref().join(self.profile());
-        fs::copy(bin_dir.join(bin_name), target_dir.as_ref().join(&dst_name))?;
-        self.gen_debug(dst_name, target_dir, DEBUG_DIR)?;
+        fs::copy(bin_dir.join(bin_name), target_dir.as_ref().join(&dst_name))
+            .context("failed to copy the binary file")?;
+
+        self.gen_debug(dst_name, target_dir, DEBUG_DIR)
+            .context("failed to generate debug info")?;
         Ok(())
     }
 
@@ -319,11 +338,17 @@ impl Dist {
                 .arg("--only-keep-debug")
                 .arg(&target_path)
                 .arg(dbg_dir.as_ref().join(sym_name))
-                .status()?;
+                .status()
+                .context("failed to extract debug symbols")?
+                .exit_ok()
+                .context("llvm-objcopy returned error while extracting debug symbols")?;
             Command::new(&*LLVM_OBJCOPY)
                 .arg("--strip-debug")
                 .arg(&target_path)
-                .status()?;
+                .status()
+                .context("failed to strip debug symbols")?
+                .exit_ok()
+                .context("llvm-objcopy returned error while stripping debug symbols")?;
         }
         {
             let mut asm_name = OsString::from(target_name.as_ref().as_os_str());
@@ -333,9 +358,11 @@ impl Dist {
                 Command::new("ndisasm")
                     .arg(&target_path)
                     .arg("-b 64")
-                    .output()?
+                    .output()
+                    .context("failed to disassemble the binary file")?
                     .stdout,
-            )?;
+            )
+            .context("failed to write to disassembled file")?;
         }
         {
             let mut txt_name = OsString::from(target_name.as_ref().as_os_str());
@@ -345,9 +372,11 @@ impl Dist {
                 Command::new(&*LLVM_OBJDUMP)
                     .arg("-x")
                     .arg(&target_path)
-                    .output()?
+                    .output()
+                    .context("failed to dump debug info")?
                     .stdout,
-            )?;
+            )
+            .context("failed to write to debug info file")?;
         }
         Ok(())
     }
