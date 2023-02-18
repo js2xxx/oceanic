@@ -57,6 +57,8 @@ fn get_logo_data() -> (Vec<BltPixel>, (usize, usize)) {
         (size.width, size.height)
     };
 
+    // SAFETY: we know that LOGO_FILE is a valid 24-bit RGB bitmap, and its width is
+    // a multiple of 4.
     let blt_data = unsafe {
         let data = bmp.image_data();
         core::slice::from_raw_parts(
@@ -67,6 +69,12 @@ fn get_logo_data() -> (Vec<BltPixel>, (usize, usize)) {
 
     let mut blt_buffer = alloc::vec::Vec::with_capacity((w + w * h) as usize);
     blt_buffer.extend_from_slice(blt_data);
+
+    // BLT buffer's storage is reversed horizontally, different from BMP storage.
+    blt_buffer
+        .chunks_mut(w as usize)
+        .for_each(|line| line.reverse());
+
     blt_buffer.resize(blt_buffer.len() + w as usize, BltPixel::from(0));
 
     (blt_buffer, (w as usize, h as usize))

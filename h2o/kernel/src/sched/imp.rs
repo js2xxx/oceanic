@@ -338,13 +338,9 @@ impl Scheduler {
     {
         self.canary.assert();
 
-        let mut next = match next {
-            Some(next) => next,
-            None => match self.run_queue.pop() {
-                Some(task) => task,
-                None => return Err(sv_call::ENOENT),
-            },
-        };
+        let mut next = next
+            .or_else(|| self.run_queue.pop())
+            .ok_or(sv_call::ENOENT)?;
         log::trace!("Switching to task {:?}, P{}", next.tid.raw(), PREEMPT.raw());
 
         next.running_state = task::RunningState::running(cur_time);

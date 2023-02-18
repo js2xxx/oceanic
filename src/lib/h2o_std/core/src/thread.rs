@@ -262,9 +262,9 @@ impl fmt::Debug for Thread {
 }
 
 fn _assert_sync_and_send() {
-    fn _assert_both<T: Send + Sync>() {}
-    _assert_both::<JoinHandle<()>>();
-    _assert_both::<Thread>();
+    struct AssertBoth<T: Send + Sync>(core::marker::PhantomData<T>);
+    let _ = AssertBoth::<JoinHandle<()>>(core::marker::PhantomData);
+    let _ = AssertBoth::<Thread>(core::marker::PhantomData);
 }
 
 #[inline]
