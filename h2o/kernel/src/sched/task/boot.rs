@@ -86,7 +86,7 @@ pub fn setup() {
     objects.push(hdl::Ref::from_raw(pio_res, None).expect("Failed to create port I/O resource"));
 
     let gsi_res = Arc::clone(crate::dev::intr_resource());
-    objects.push(hdl::Ref::from_raw(gsi_res, None).expect("Failed to create GSI resource"));
+    objects.push(hdl::Ref::from_raw(gsi_res, None).expect("Failed to create interrupt resource"));
 
     unsafe {
         objects.push(

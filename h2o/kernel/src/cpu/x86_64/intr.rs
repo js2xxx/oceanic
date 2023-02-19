@@ -3,20 +3,22 @@ pub(super) mod def;
 use alloc::vec::Vec;
 use core::{
     iter,
+    ops::Range,
     sync::atomic::{AtomicUsize, Ordering},
 };
 
 use archop::Azy;
 use array_macro::array;
-use collection_ex::RangeMap;
+use bitvec::{bitbox, prelude::BitBox};
 use spin::Mutex;
+use sv_call::res::Msi;
 
 pub use self::def::{ExVec, ALLOC_VEC};
 use super::apic::LAPIC_ID;
 use crate::{
     cpu::{
         arch::seg::ndt::USR_CODE_X64,
-        intr::{IntrHandler, Msi},
+        intr::{Interrupt, IntrHandler},
         time::Instant,
     },
     mem::space::PageFaultErrCode,
@@ -31,10 +33,11 @@ static MANAGER: Azy<Vec<Manager>> = Azy::new(|| {
         .take(crate::cpu::count())
         .collect()
 });
+const ALLOC_VEC_INDEX: Range<usize> = (ALLOC_VEC.start as usize)..(ALLOC_VEC.end as usize);
 
 pub struct Manager {
-    map: Mutex<RangeMap<u8, ()>>,
-    slots: [Mutex<Option<(IntrHandler, *mut u8)>>; u8::MAX as usize + 1],
+    map: Mutex<BitBox>,
+    slots: [Mutex<Option<(IntrHandler, *const Interrupt)>>; u8::MAX as usize + 1],
     count: AtomicUsize,
 }
 
@@ -44,7 +47,7 @@ unsafe impl Send for Manager {}
 impl Manager {
     pub fn new() -> Self {
         Manager {
-            map: Mutex::new(RangeMap::new(ALLOC_VEC)),
+            map: Mutex::new(bitbox![0; 256]),
             slots: array![_ => Mutex::new(None); 256],
             count: AtomicUsize::new(0),
         }
@@ -76,23 +79,34 @@ impl Manager {
             .1
     }
 
-    pub fn register(cpu: usize, handler: (IntrHandler, *mut u8)) -> sv_call::Result<u8> {
+    pub fn register(cpu: usize, handler: (IntrHandler, *const Interrupt)) -> sv_call::Result<u8> {
         let _pree = PREEMPT.lock();
 
         let manager = MANAGER.get(cpu).ok_or(sv_call::ENODEV)?;
 
-        let vec = manager.map.lock().allocate_with(
-            1,
-            |_| {
-                manager.count.fetch_add(1, Ordering::SeqCst);
-                Ok(())
-            },
-            sv_call::ENOSPC,
-        )?;
+        let vec = {
+            let mut map = manager.map.lock();
+            let index = map[ALLOC_VEC_INDEX].first_zero().ok_or(sv_call::ENOSPC)?;
+            let vec = index + ALLOC_VEC_INDEX.start;
+            map.set(vec, true);
+            manager.count.fetch_add(1, Ordering::SeqCst);
+            vec as u8
+        };
 
         *manager.slots[vec as usize].lock() = Some(handler);
 
         Ok(vec)
+    }
+
+    pub fn register_handler(
+        cpu: usize,
+        vec: u8,
+        handler: (fn(*const Interrupt), *const Interrupt),
+    ) -> sv_call::Result {
+        let manager = MANAGER.get(cpu).ok_or(sv_call::ENODEV)?;
+
+        *manager.slots[vec as usize].lock() = Some(handler);
+        Ok(())
     }
 
     pub fn deregister(vec: u8, cpu: usize) -> sv_call::Result {
@@ -106,9 +120,9 @@ impl Manager {
         *manager.slots[vec as usize].lock() = None;
 
         {
-            let mut lock = manager.map.lock();
+            let mut map = manager.map.lock();
             manager.count.fetch_sub(1, Ordering::SeqCst);
-            lock.remove(vec);
+            map.set(vec as _, false);
         }
 
         Ok(())
@@ -116,7 +130,7 @@ impl Manager {
 
     pub fn allocate_msi(num_vec: u8, cpu: usize) -> sv_call::Result<Msi> {
         const MAX_NUM_VEC: u8 = 32;
-        let num_vec = num_vec
+        let vec_len = num_vec
             .checked_next_power_of_two()
             .filter(|&size| size <= MAX_NUM_VEC)
             .ok_or(sv_call::EINVAL)?;
@@ -124,29 +138,34 @@ impl Manager {
         let manager = MANAGER.get(cpu).ok_or(sv_call::ENODEV)?;
         let apic_id = *LAPIC_ID.read().get(&cpu).ok_or(sv_call::EINVAL)?;
 
-        let start = PREEMPT.scope(|| {
-            manager.map.lock().allocate_with(
-                num_vec,
-                |_| {
-                    manager.count.fetch_add(num_vec as usize, Ordering::SeqCst);
-                    Ok(())
-                },
-                sv_call::ENOMEM,
-            )
+        let vec_start = PREEMPT.scope(|| {
+            let mut map = manager.map.lock();
+
+            let mut start = ALLOC_VEC_INDEX.start;
+            while start + vec_len as usize <= ALLOC_VEC_INDEX.end {
+                let slots = map
+                    .get_mut(start..(start + vec_len as usize))
+                    .ok_or(sv_call::ENOSPC)?;
+                match slots.first_one() {
+                    Some(delta) => start += delta + 1,
+                    None => {
+                        slots.fill(true);
+                        manager.count.fetch_add(vec_len as usize, Ordering::SeqCst);
+
+                        return Ok(start as u8);
+                    }
+                }
+            }
+            Err(sv_call::ENOSPC)
         })?;
 
         Ok(Msi {
             target_address: minfo::LAPIC_BASE as u32 | (apic_id << 12),
-            target_data: start as u32,
-            vecs: start..(start + num_vec),
-            cpu,
+            target_data: vec_start as u32,
+            vec_start,
+            vec_len,
+            apic_id,
         })
-    }
-
-    pub fn deallocate_msi(msi: Msi) -> sv_call::Result {
-        let manager = MANAGER.get(msi.cpu).ok_or(sv_call::ENODEV)?;
-        PREEMPT.scope(|| manager.map.lock().remove(msi.vecs.start));
-        Ok(())
     }
 }
 

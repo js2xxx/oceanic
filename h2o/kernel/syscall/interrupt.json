@@ -22,6 +22,28 @@
             ]
         },
         {
+            "name": "sv_intr_msi",
+            "returns": "Handle",
+            "args": [
+                {
+                    "name": "res",
+                    "ty": "Handle"
+                },
+                {
+                    "name": "num",
+                    "ty": "usize"
+                },
+                {
+                    "name": "intr",
+                    "ty": "*mut Handle"
+                },
+                {
+                    "name": "msi",
+                    "ty": "*mut Msi"
+                }
+        ]
+        },
+        {
             "name": "sv_intr_query",
             "returns": "()",
             "args": [

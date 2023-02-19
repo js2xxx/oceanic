@@ -1,7 +1,7 @@
-use alloc::sync::Arc;
+use alloc::{sync::Arc, vec::Vec};
 
 use crossbeam_queue::ArrayQueue;
-use sv_call::Feature;
+use sv_call::{res::Msi, Feature};
 
 use super::{arch::Manager, IntrRes};
 use crate::{
@@ -44,7 +44,29 @@ impl Interrupt {
             last_time: ArrayQueue::new(MAX_TIMES),
             event_data: Default::default(),
         });
+        // SAFETY: The arc has data written.
         unsafe { Ok(uninit.assume_init()) }
+    }
+
+    pub fn new_msi(_: &IntrRes, num: usize) -> sv_call::Result<(Vec<Arc<Self>>, Msi)> {
+        let cpu = Manager::select_cpu();
+        let msi = Manager::allocate_msi(num.try_into()?, cpu)?;
+
+        let intrs = (msi.vec_start..(msi.vec_start + msi.vec_len))
+            .map(|vec| {
+                let mut uninit = Arc::try_new_uninit()?;
+                Manager::register_handler(cpu, vec, (handler, uninit.as_ptr() as _))?;
+                Arc::get_mut(&mut uninit).unwrap().write(Interrupt {
+                    vec,
+                    cpu,
+                    last_time: ArrayQueue::new(MAX_TIMES),
+                    event_data: Default::default(),
+                });
+                // SAFETY: The arc has data written.
+                unsafe { Ok(uninit.assume_init()) }
+            })
+            .collect::<sv_call::Result<Vec<_>>>()?;
+        Ok((intrs, msi))
     }
 
     #[inline]
@@ -66,15 +88,17 @@ unsafe impl DefaultFeature for Interrupt {
     }
 }
 
-fn handler(arg: *mut u8) {
-    let intr = unsafe { &*arg.cast::<Interrupt>() };
+fn handler(arg: *const Interrupt) {
+    // SAFETY: The function is only called before the interrupt's destruction, for
+    // the calling of `Manager::deregister` in its drop implementation.
+    let intr = unsafe { &*arg };
     intr.notify(0, SIG_GENERIC);
 }
 
 mod syscall {
     use alloc::sync::Arc;
 
-    use sv_call::*;
+    use sv_call::{res::Msi, *};
 
     use super::Interrupt;
     use crate::{
@@ -99,6 +123,31 @@ mod syscall {
 
             let event = Arc::downgrade(&intr) as _;
             cur.space().handles().insert(intr, Some(event))
+        })
+    }
+
+    #[syscall]
+    fn intr_msi(
+        res: Handle,
+        num: usize,
+        intr_ptr: UserPtr<Out, Handle>,
+        msi_ptr: UserPtr<Out, Msi>,
+    ) -> Result {
+        res.check_null()?;
+        intr_ptr.check_slice(num)?;
+
+        SCHED.with_current(|cur| {
+            let res = cur.space().handles().get::<IntrRes>(res)?;
+
+            let (intrs, msi) = Interrupt::new_msi(&res, num)?;
+
+            for (index, intr) in intrs.into_iter().enumerate() {
+                let event = Arc::downgrade(&intr) as _;
+                let handle = cur.space().handles().insert(intr, Some(event))?;
+                let ptr = UserPtr::<Out, _>::new(unsafe { intr_ptr.as_ptr().add(index) });
+                ptr.write(handle)?
+            }
+            msi_ptr.write(msi)
         })
     }
 
