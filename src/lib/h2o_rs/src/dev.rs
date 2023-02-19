@@ -3,7 +3,7 @@ mod pio;
 mod res;
 
 pub use self::{
-    intr::{Interrupt, PackIntrWait},
+    intr::*,
     pio::PortIo,
-    res::{GsiRes, MemRes, PioRes},
+    res::{IntrRes, MemRes, PioRes},
 };

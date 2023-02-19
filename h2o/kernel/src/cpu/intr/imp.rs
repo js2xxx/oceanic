@@ -3,10 +3,9 @@ use alloc::sync::Arc;
 use crossbeam_queue::ArrayQueue;
 use sv_call::Feature;
 
-use super::arch::Manager;
+use super::{arch::Manager, IntrRes};
 use crate::{
     cpu::time::Instant,
-    dev::Resource,
     sched::{task::hdl::DefaultFeature, Event, EventData, SIG_GENERIC},
 };
 
@@ -14,10 +13,9 @@ const MAX_TIMES: usize = 100;
 
 #[derive(Debug)]
 pub struct Interrupt {
-    gsi: u32,
+    vec: u8,
     cpu: usize,
     last_time: ArrayQueue<Instant>,
-    level_triggered: bool,
     event_data: EventData,
 }
 
@@ -26,62 +24,39 @@ impl Event for Interrupt {
         &self.event_data
     }
 
-    fn wait(&self, waiter: Arc<dyn crate::sched::Waiter>) {
-        if self.level_triggered {
-            Manager::mask(self.gsi, false).unwrap();
-        }
-        self.wait_impl(waiter);
-    }
-
     fn notify(&self, clear: usize, set: usize) -> usize {
         self.last_time.force_push(Instant::now());
 
-        let signal = self.notify_impl(clear, set);
-
-        if self.level_triggered {
-            Manager::mask(self.gsi, true).unwrap();
-        }
-        Manager::eoi(self.gsi).unwrap();
-        signal
+        self.notify_impl(clear, set)
     }
 }
 
 impl Interrupt {
     #[inline]
-    pub fn new(
-        res: &Resource<u32>,
-        gsi: u32,
-        cpu: usize,
-        level_triggered: bool,
-    ) -> sv_call::Result<Arc<Self>> {
-        if res.magic_eq(super::gsi_resource()) && res.range().contains(&gsi) {
-            Ok(Arc::try_new(Interrupt {
-                gsi,
-                cpu,
-                last_time: ArrayQueue::new(MAX_TIMES),
-                level_triggered,
-                event_data: EventData::new(0),
-            })?)
-        } else {
-            Err(sv_call::EPERM)
-        }
+    pub fn new(_: &IntrRes) -> sv_call::Result<Arc<Self>> {
+        let cpu = Manager::select_cpu();
+        let mut uninit = Arc::try_new_uninit()?;
+
+        let vec = Manager::register(cpu, (handler, uninit.as_ptr() as _))?;
+        Arc::get_mut(&mut uninit).unwrap().write(Interrupt {
+            vec,
+            cpu,
+            last_time: ArrayQueue::new(MAX_TIMES),
+            event_data: Default::default(),
+        });
+        unsafe { Ok(uninit.assume_init()) }
     }
 
     #[inline]
     pub fn last_time(&self) -> Option<Instant> {
         self.last_time.pop()
     }
-
-    #[inline]
-    pub fn gsi(&self) -> u32 {
-        self.gsi
-    }
 }
 
 impl Drop for Interrupt {
     fn drop(&mut self) {
         self.cancel();
-        let _ = Manager::deregister(self.gsi, self.cpu);
+        let _ = Manager::deregister(self.vec, self.cpu);
     }
 }
 
@@ -99,43 +74,32 @@ fn handler(arg: *mut u8) {
 mod syscall {
     use alloc::sync::Arc;
 
-    use sv_call::{res::IntrConfig, *};
+    use sv_call::*;
 
-    use super::*;
+    use super::Interrupt;
     use crate::{
-        cpu::arch::apic::{Polarity, TriggerMode},
+        cpu::{arch::apic::LAPIC_ID, intr::IntrRes},
         sched::SCHED,
         syscall::{Out, UserPtr},
     };
 
     #[syscall]
-    fn intr_new(res: Handle, gsi: u32, config: IntrConfig) -> Result<Handle> {
-        let level_triggered = config.contains(IntrConfig::LEVEL_TRIGGERED);
-        let trig_mode = if level_triggered {
-            TriggerMode::Level
-        } else {
-            TriggerMode::Edge
-        };
-        let polarity = if config.contains(IntrConfig::ACTIVE_HIGH) {
-            Polarity::High
-        } else {
-            Polarity::Low
-        };
+    fn intr_new(res: Handle, vec: UserPtr<Out, u8>, apic_id: UserPtr<Out, u32>) -> Result<Handle> {
+        res.check_null()?;
+        vec.check()?;
+        apic_id.check()?;
 
-        let cpu = Manager::select_cpu();
+        SCHED.with_current(|cur| {
+            let res = cur.space().handles().get::<IntrRes>(res)?;
+            let intr = Interrupt::new(&res)?;
+            let a = *LAPIC_ID.read().get(&intr.cpu).unwrap();
 
-        let intr = SCHED.with_current(|cur| {
-            let handles = cur.space().handles();
-            let res = handles.get::<Resource<u32>>(res)?;
-            Interrupt::new(&res, gsi, cpu, level_triggered)
-        })?;
+            vec.write(intr.vec)?;
+            apic_id.write(a)?;
 
-        Manager::config(gsi, trig_mode, polarity)?;
-        Manager::register(gsi, cpu, (handler, (&*intr as *const Interrupt) as *mut u8))?;
-        Manager::mask(gsi, false)?;
-
-        let event = Arc::downgrade(&intr) as _;
-        SCHED.with_current(|cur| unsafe { cur.space().handles().insert_raw(intr, Some(event)) })
+            let event = Arc::downgrade(&intr) as _;
+            cur.space().handles().insert(intr, Some(event))
+        })
     }
 
     #[syscall]

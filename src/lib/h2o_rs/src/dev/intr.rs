@@ -1,7 +1,6 @@
-pub use sv_call::res::IntrConfig;
 use sv_call::{c_ty::Status, Syscall, ETIME, SV_INTERRUPT};
 
-use super::GsiRes;
+use super::IntrRes;
 use crate::{error::Result, obj::Object, time::Instant};
 
 #[repr(transparent)]
@@ -10,15 +9,22 @@ pub struct Interrupt(sv_call::Handle);
 crate::impl_obj!(Interrupt, SV_INTERRUPT);
 crate::impl_obj!(@DROP, Interrupt);
 
+#[derive(Debug, Copy, Clone, Default)]
+pub struct IntrInfo {
+    pub vec: u8,
+    pub apic_id: u32,
+}
+
 impl Interrupt {
-    pub fn acquire(res: &GsiRes, gsi: u32, config: IntrConfig) -> Result<Interrupt> {
+    pub fn allocate(res: &IntrRes) -> Result<(Interrupt, IntrInfo)> {
+        let mut intr_info = IntrInfo::default();
         unsafe {
             // SAFETY: We don't move the ownership of the resource handle, and it represents
             // a valid GSI resource.
-            sv_call::sv_intr_new(unsafe { res.raw() }, gsi, config)
+            sv_call::sv_intr_new(unsafe { res.raw() }, &mut intr_info.vec as _, &mut intr_info.apic_id as _)
             .into_res()
             // SAFETY: The handle is freshly allocated.
-            .map(|handle| unsafe { Self::from_raw(handle) })
+            .map(|handle| (unsafe { Self::from_raw(handle) }, intr_info))
         }
     }
 

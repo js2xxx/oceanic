@@ -13,7 +13,7 @@ macro_rules! impl_obj_for {
         $macro!($crate::mem::Phys);
         $macro!($crate::dev::Interrupt);
         $macro!($crate::dev::MemRes);
-        $macro!($crate::dev::GsiRes);
+        $macro!($crate::dev::IntrRes);
         $macro!($crate::dev::PioRes);
         $macro!($crate::time::Timer);
         $macro!($crate::obj::Dispatcher);

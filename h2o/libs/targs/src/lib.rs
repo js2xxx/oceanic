@@ -5,7 +5,7 @@
 pub enum HandleIndex {
     MemRes = 0,
     PioRes = 1,
-    GsiRes = 2,
+    IntrRes = 2,
     Vdso = 3,
     Bootfs = 4,
     RootVirt = 5,

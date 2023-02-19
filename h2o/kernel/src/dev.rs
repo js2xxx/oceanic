@@ -13,7 +13,7 @@ use alloc::sync::Arc;
 use archop::Azy;
 
 pub use self::res::Resource;
-pub use crate::{cpu::intr::gsi_resource, mem::mem_resource};
+pub use crate::{cpu::intr::intr_resource, mem::mem_resource};
 
 static PIO_RESOURCE: Azy<Arc<Resource<u16>>> = Azy::new(|| {
     let ret = Resource::new_root(archop::rand::get(), 0..u16::MAX);

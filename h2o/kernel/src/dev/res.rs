@@ -105,7 +105,6 @@ mod syscall {
         match ty {
             res::RES_MEM => res_alloc_typed(hdl, base, size),
             res::RES_PIO => res_alloc_typed(hdl, u16::try_from(base)?, u16::try_from(size)?),
-            res::RES_GSI => res_alloc_typed(hdl, u32::try_from(base)?, u32::try_from(size)?),
             _ => Err(ETYPE),
         }
     }
