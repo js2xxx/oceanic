@@ -1,3 +1,10 @@
+#[cfg(feature = "alloc")]
+use alloc::vec::Vec;
+#[cfg(feature = "alloc")]
+use core::mem;
+
+#[cfg(feature = "alloc")]
+use sv_call::res::Msi;
 use sv_call::{c_ty::Status, Syscall, ETIME, SV_INTERRUPT};
 
 use super::IntrRes;
@@ -20,11 +27,31 @@ impl Interrupt {
         let mut intr_info = IntrInfo::default();
         unsafe {
             // SAFETY: We don't move the ownership of the resource handle, and it represents
-            // a valid GSI resource.
+            // a valid interrupt resource.
             sv_call::sv_intr_new(unsafe { res.raw() }, &mut intr_info.vec as _, &mut intr_info.apic_id as _)
             .into_res()
             // SAFETY: The handle is freshly allocated.
             .map(|handle| (unsafe { Self::from_raw(handle) }, intr_info))
+        }
+    }
+
+    #[cfg(feature = "alloc")]
+    pub fn allocate_msi(res: &IntrRes, num: usize) -> Result<(Vec<Interrupt>, Msi)> {
+        let mut intr = Vec::with_capacity(num);
+        let mut msi = Msi::default();
+
+        unsafe {
+            // SAFETY: We don't move the ownership of the resource handle, and it represents
+            // a valid interrupt resource.
+            sv_call::sv_intr_msi(unsafe { res.raw() }, num, intr.as_mut_ptr(), &mut msi as _)
+        }
+        .into_res()?;
+
+        // SAFETY: The interrupts are filled in, and #[repr(transparent)] so we can
+        // transmute it directly.
+        unsafe {
+            intr.set_len(num);
+            Ok((mem::transmute(intr), msi))
         }
     }
 

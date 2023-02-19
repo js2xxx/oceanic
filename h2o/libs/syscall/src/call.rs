@@ -14,7 +14,7 @@ pub struct Syscall {
 }
 
 #[cfg(all(not(feature = "stub"), feature = "call"))]
-use crate::{c_ty::*, ipc::RawPacket, mem::*, task::ExecInfo, Feature, Handle, SerdeReg};
+use crate::{c_ty::*, ipc::RawPacket, mem::*, res::*, task::ExecInfo, Feature, Handle, SerdeReg};
 
 #[cfg(feature = "vdso")]
 #[no_mangle]
