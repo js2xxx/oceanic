@@ -12,14 +12,13 @@ use collection_ex::RangeMap;
 use spin::Mutex;
 
 pub use self::def::{ExVec, ALLOC_VEC};
-use super::apic::{Polarity, TriggerMode, LAPIC_ID};
+use super::apic::LAPIC_ID;
 use crate::{
     cpu::{
         arch::seg::ndt::USR_CODE_X64,
         intr::{IntrHandler, Msi},
         time::Instant,
     },
-    dev::ioapic,
     mem::space::PageFaultErrCode,
     sched::{
         task::{self, ctx::arch::Frame},
@@ -60,21 +59,6 @@ impl Manager {
                 log::trace!("Unhandled interrupt #{:?}", vec);
             }
         })
-    }
-
-    #[inline]
-    pub fn config(gsi: u32, trig_mode: TriggerMode, polarity: Polarity) -> sv_call::Result {
-        PREEMPT.scope(|| unsafe { ioapic::chip().lock().config(gsi, trig_mode, polarity) })
-    }
-
-    #[inline]
-    pub fn mask(gsi: u32, masked: bool) -> sv_call::Result {
-        PREEMPT.scope(|| unsafe { ioapic::chip().lock().mask(gsi, masked) })
-    }
-
-    #[inline]
-    pub fn eoi(gsi: u32) -> sv_call::Result {
-        PREEMPT.scope(|| unsafe { ioapic::chip().lock().eoi(gsi) })
     }
 
     pub fn select_cpu() -> usize {
