@@ -85,7 +85,7 @@ pub fn setup() {
     let pio_res = Arc::clone(crate::dev::pio_resource());
     objects.push(hdl::Ref::from_raw(pio_res, None).expect("Failed to create port I/O resource"));
 
-    let gsi_res = Arc::clone(crate::dev::gsi_resource());
+    let gsi_res = Arc::clone(crate::dev::intr_resource());
     objects.push(hdl::Ref::from_raw(gsi_res, None).expect("Failed to create GSI resource"));
 
     unsafe {

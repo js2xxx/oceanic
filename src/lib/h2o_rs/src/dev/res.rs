@@ -1,6 +1,6 @@
 use core::ops::Range;
 
-use sv_call::{res::*, SV_GSIRES, SV_MEMRES, SV_PIORES};
+use sv_call::{res::*, SV_INTRRES, SV_MEMRES, SV_PIORES};
 
 use crate::{error::Result, obj::Object};
 trait ResData: Copy {
@@ -58,4 +58,10 @@ macro_rules! impl_resource {
 
 impl_resource!(MemRes, usize, RES_MEM, SV_MEMRES);
 impl_resource!(PioRes, u16, RES_PIO, SV_PIORES);
-impl_resource!(GsiRes, u32, RES_GSI, SV_GSIRES);
+
+#[repr(transparent)]
+#[derive(Debug)]
+pub struct IntrRes(sv_call::Handle);
+crate::impl_obj!(IntrRes, SV_INTRRES);
+crate::impl_obj!(@CLONE, IntrRes);
+crate::impl_obj!(@DROP, IntrRes);

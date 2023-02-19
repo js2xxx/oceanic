@@ -92,16 +92,9 @@ impl Manager {
             .1
     }
 
-    pub fn register(gsi: u32, cpu: usize, handler: (IntrHandler, *mut u8)) -> sv_call::Result {
+    pub fn register(cpu: usize, handler: (IntrHandler, *mut u8)) -> sv_call::Result<u8> {
         let _pree = PREEMPT.lock();
-        let mut ioapic = ioapic::chip().lock();
-        let entry = ioapic.get_entry(gsi)?;
 
-        if ALLOC_VEC.contains(&entry.vec()) {
-            return Err(sv_call::EEXIST);
-        }
-
-        let apic_id = *LAPIC_ID.read().get(&cpu).ok_or(sv_call::EINVAL)?;
         let manager = MANAGER.get(cpu).ok_or(sv_call::ENODEV)?;
 
         let vec = manager.map.lock().allocate_with(
@@ -110,21 +103,16 @@ impl Manager {
                 manager.count.fetch_add(1, Ordering::SeqCst);
                 Ok(())
             },
-            sv_call::ENOMEM,
+            sv_call::ENOSPC,
         )?;
 
         *manager.slots[vec as usize].lock() = Some(handler);
-        unsafe { ioapic.config_dest(gsi, vec, apic_id) }?;
 
-        Ok(())
+        Ok(vec)
     }
 
-    pub fn deregister(gsi: u32, cpu: usize) -> sv_call::Result {
+    pub fn deregister(vec: u8, cpu: usize) -> sv_call::Result {
         let _pree = PREEMPT.lock();
-        let mut ioapic = ioapic::chip().lock();
-        let entry = ioapic.get_entry(gsi)?;
-
-        let vec = entry.vec();
 
         if !ALLOC_VEC.contains(&vec) {
             return Err(sv_call::ENOENT);
@@ -132,7 +120,6 @@ impl Manager {
         let manager = MANAGER.get(cpu).ok_or(sv_call::ENODEV)?;
 
         *manager.slots[vec as usize].lock() = None;
-        unsafe { ioapic.deconfig(gsi) }?;
 
         {
             let mut lock = manager.map.lock();

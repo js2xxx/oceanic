@@ -12,12 +12,12 @@
                     "ty": "Handle"
                 },
                 {
-                    "name": "gsi",
-                    "ty": "u32"
+                    "name": "vec",
+                    "ty": "*mut u8"
                 },
                 {
-                    "name": "config",
-                    "ty": "IntrConfig"
+                    "name": "cpu",
+                    "ty": "*mut u32"
                 }
             ]
         },

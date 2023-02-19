@@ -4,13 +4,11 @@ use alloc::sync::Arc;
 use core::ops::Range;
 
 use archop::Azy;
+use sv_call::Feature;
 
 pub use self::imp::Interrupt;
 pub use super::arch::intr as arch;
-use crate::{
-    dev::{ioapic, Resource},
-    sched::PREEMPT,
-};
+use crate::sched::{task::hdl::DefaultFeature, PREEMPT};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 #[repr(u8)]
@@ -38,17 +36,17 @@ pub struct Msi {
 
 pub type IntrHandler = fn(*mut u8);
 
-static GSI_RES: Azy<Arc<Resource<u32>>> = Azy::new(|| {
-    PREEMPT.scope(|| {
-        let range = ioapic::chip()
-            .lock()
-            .gsi_range()
-            .expect("Failed to get GSI range");
-        Resource::new_root(archop::rand::get(), range)
-    })
-});
+pub struct IntrRes;
+
+unsafe impl DefaultFeature for IntrRes {
+    fn default_features() -> Feature {
+        Feature::SEND | Feature::SYNC
+    }
+}
+
+static INTR_RES: Azy<Arc<IntrRes>> = Azy::new(|| PREEMPT.scope(|| Arc::new(IntrRes)));
 
 #[inline]
-pub fn gsi_resource() -> &'static Arc<Resource<u32>> {
-    &GSI_RES
+pub fn intr_resource() -> &'static Arc<IntrRes> {
+    &INTR_RES
 }
