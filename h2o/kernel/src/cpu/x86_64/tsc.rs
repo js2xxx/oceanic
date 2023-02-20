@@ -1,4 +1,4 @@
-use archop::{msr::rdtsc, Azy};
+use archop::msr::rdtsc;
 use raw_cpuid::CpuId;
 
 use crate::cpu::time::{
@@ -6,25 +6,34 @@ use crate::cpu::time::{
     Instant,
 };
 
-pub static TSC_CLOCK: Azy<TscClock> = Azy::new(|| {
-    if CpuId::new()
-        .get_advanced_power_mgmt_info()
-        .map_or(true, |info| !info.has_invariant_tsc())
-    {
-        log::warn!("The TSC is not invariant. Ticks will be unreliable.");
-    }
-
-    let khz = crate::cpu::time::chip::calibrate(|| {}, rdtsc, rdtsc, || {});
-    let initial = rdtsc();
-    let (mul, sft) = factor_from_freq(khz);
-    log::info!("CPU Timestamp frequency: {} KHz", khz);
-    TscClock { initial, mul, sft }
-});
-
 pub struct TscClock {
     pub initial: u64,
     pub mul: u128,
     pub sft: u128,
+}
+
+impl TscClock {
+    pub fn new() -> Self {
+        if CpuId::new()
+            .get_advanced_power_mgmt_info()
+            .map_or(true, |info| !info.has_invariant_tsc())
+        {
+            log::warn!("The TSC is not invariant. Ticks will be unreliable.");
+        }
+
+        let khz = crate::cpu::time::chip::calibrate(|| {}, rdtsc, rdtsc, || {});
+
+        let initial = rdtsc();
+        let (mul, sft) = factor_from_freq(khz);
+        log::info!("CPU Timestamp frequency: {} KHz", khz);
+        TscClock { initial, mul, sft }
+    }
+}
+
+impl Default for TscClock {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ClockChip for TscClock {

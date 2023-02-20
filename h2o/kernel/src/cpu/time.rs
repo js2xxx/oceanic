@@ -6,6 +6,7 @@ use core::{
     time::Duration,
 };
 
+use self::chip::ClockChip;
 pub use self::timer::{tick as timer_tick, Timer};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]

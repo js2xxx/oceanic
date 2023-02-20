@@ -8,7 +8,7 @@ use targs::Targs;
 
 use super::{hdl::DefaultFeature, *};
 use crate::{
-    cpu::arch::tsc::TSC_CLOCK,
+    cpu::time::chip::CLOCK,
     mem::space::{self, Flags, Phys, PhysTrait, Virt},
     sched::SCHED,
 };
@@ -56,9 +56,9 @@ fn flags_to_feat(flags: Flags) -> Feature {
 pub fn setup() {
     unsafe {
         let constants = sv_call::Constants {
-            ticks_offset: TSC_CLOCK.initial,
-            ticks_multiplier: TSC_CLOCK.mul,
-            ticks_shift: TSC_CLOCK.sft,
+            ticks_offset: CLOCK.initial,
+            ticks_multiplier: CLOCK.mul,
+            ticks_shift: CLOCK.sft,
             has_builtin_rand: archop::rand::has_builtin(),
             num_cpus: crate::cpu::count(),
         };

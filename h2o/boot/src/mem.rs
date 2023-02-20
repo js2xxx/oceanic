@@ -82,11 +82,6 @@ pub fn init(syst: &SystemTable<Boot>) {
 
     unsafe { ROOT_TABLE.as_mut_ptr().write(rt) };
 
-    let phys = paging::PAddr::new(0);
-    let virt_efi =
-        paging::LAddr::from(EFI_ID_OFFSET)..paging::LAddr::from(INITIAL_ID_SPACE + EFI_ID_OFFSET);
-    let pg_attr = paging::Attr::KERNEL_RW;
-
     for i in (paging::NR_ENTRIES / 2)..paging::NR_ENTRIES {
         let phys = unsafe { alloc(syst).allocate_zeroed(EFI_ID_OFFSET) }
             .expect("Failed to allocate a page");
@@ -98,6 +93,11 @@ pub fn init(syst: &SystemTable<Boot>) {
         "mapping kernel's pages 0 ~ 4G: root_phys = {:?}",
         rt.as_ptr()
     );
+    let phys = paging::PAddr::new(0);
+    let virt_efi =
+        paging::LAddr::from(EFI_ID_OFFSET)..paging::LAddr::from(INITIAL_ID_SPACE + EFI_ID_OFFSET);
+    let pg_attr = paging::Attr::KERNEL_RW;
+    
     maps(syst, virt_efi, phys, pg_attr).expect("Failed to map virtual memory for H2O boot");
 }
 

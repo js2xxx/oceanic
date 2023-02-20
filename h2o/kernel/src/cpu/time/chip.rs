@@ -3,16 +3,21 @@ use core::sync::atomic::Ordering::Release;
 use archop::Azy;
 
 use super::Instant;
-use crate::{cpu::arch::tsc::TSC_CLOCK, dev::hpet::HPET_CLOCK};
+use crate::{
+    cpu::arch::tsc::TscClock,
+    dev::hpet::{HpetClock, HPET_CLOCK},
+};
 
-pub static CLOCK: Azy<&'static dyn ClockChip> = Azy::new(|| {
-    let ret: &crate::cpu::arch::tsc::TscClock = &TSC_CLOCK;
+pub static CLOCK: Azy<TscClock> = Azy::new(|| {
+    let ret = TscClock::new();
     crate::logger::HAS_TIME.store(true, Release);
-    ret as _
+    ret
 });
 
-static CALIB_CLOCK: Azy<&'static dyn CalibrationClock> =
-    Azy::new(|| HPET_CLOCK.as_ref().expect("No available clock"));
+#[inline]
+fn calib_clock() -> &'static HpetClock {
+    HPET_CLOCK.as_ref().expect("No available clock")
+}
 
 pub trait ClockChip: Send + Sync {
     fn get(&self) -> Instant;
@@ -37,20 +42,22 @@ pub fn calibrate(
     get_end: impl Fn() -> u64,
     cleanup: impl Fn(),
 ) -> u64 {
+    let calib_clock = calib_clock();
+
     let tries = 3;
     let iter_ms = [10u64, 20];
     let mut best = [u64::MAX, u64::MAX];
     for (best, &duration) in best.iter_mut().zip(iter_ms.iter()) {
         for _ in 0..tries {
             unsafe {
-                CALIB_CLOCK.prepare(duration);
+                calib_clock.prepare(duration);
                 prepare();
 
                 let start = get_start();
-                CALIB_CLOCK.cycle(duration);
+                calib_clock.cycle(duration);
                 *best = (*best).min(get_end() - start);
 
-                CALIB_CLOCK.cleanup();
+                calib_clock.cleanup();
                 cleanup();
             }
         }

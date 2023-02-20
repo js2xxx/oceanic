@@ -12,7 +12,7 @@ pub const TRAMPOLINE_RANGE: core::ops::Range<usize> = 0..0x100000;
 
 pub const LAPIC_BASE: usize = 0xFEE0_0000;
 
-pub const INITIAL_ID_SPACE: usize = 0x1_0000_0000;
+pub const INITIAL_ID_SPACE: usize = 0x2_0000_0000;
 
 pub use pmm::{KMEM_PHYS_BASE, PF_SIZE};
 
