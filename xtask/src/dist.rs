@@ -103,7 +103,9 @@ impl Dist {
         self.build_lib(src_root, &target_root)
             .context("failed to build libraries")?;
         self.build_bin(src_root, &target_root)
-            .context("failed to build binaries or drivers")?;
+            .context("failed to build binaries")?;
+        self.build_drv(src_root, &target_root)
+            .context("failed to build drivers")?;
 
         crate::gen::gen_bootfs(Path::new(BOOTFS).join("../BOOT.fs"))
             .context("failed to generate BOOTFS")?;
@@ -247,50 +249,66 @@ impl Dist {
             .map(ToString::to_string)
             .collect::<HashSet<_>>();
 
-        let mut build = |src_root: PathBuf,
-                         dst_root: PathBuf,
-                         is_dylib: bool|
-         -> anyhow::Result<()> {
-            for ent in fs::read_dir(src_root)?.flatten() {
-                let ty = ent.file_type()?;
-                let name = ent.file_name();
-                if ty.is_dir() && name != ".cargo" {
-                    let dst_name = if is_dylib {
-                        let name = name.to_string_lossy().replace('-', "_");
-                        let name = "lib".to_string() + &name + ".so";
-                        OsString::from(name)
-                    } else {
-                        name
-                    };
-                    self.build_impl(&dst_name, &dst_name, ent.path(), &bin_dir, &dst_root)
-                        .with_context(|| format!("failed to build {:?}", ent.path()))?;
-                    for dep in fs::read_dir(bin_dir.join(self.profile()).join("deps"))?.flatten() {
-                        let name = dep.file_name();
-                        match name.to_str() {
-                            Some(name)
-                                if name.ends_with(".so") && dep_lib.insert(name.to_string()) =>
-                            {
-                                fs::copy(dep.path(), dep_root.join(name))?;
-                                self.gen_debug(name, &dep_root, DEBUG_DIR)?;
-                            }
-                            _ => {}
+        let src_root = src_root.as_ref().join(OC_BIN);
+        let dst_root = Path::new(target_root).join("bootfs/bin");
+        for ent in fs::read_dir(src_root)?.flatten() {
+            let ty = ent.file_type()?;
+            let name = ent.file_name();
+            if ty.is_dir() && name != ".cargo" {
+                self.build_impl(&name, &name, ent.path(), &bin_dir, &dst_root)
+                    .with_context(|| format!("failed to build {:?}", ent.path()))?;
+                for dep in fs::read_dir(bin_dir.join(self.profile()).join("deps"))?.flatten() {
+                    let name = dep.file_name();
+                    match name.to_str() {
+                        Some(name) if name.ends_with(".so") && dep_lib.insert(name.to_string()) => {
+                            fs::copy(dep.path(), dep_root.join(name))?;
+                            self.gen_debug(name, &dep_root, DEBUG_DIR)?;
                         }
+                        _ => {}
                     }
                 }
             }
-            Ok(())
-        };
+        }
+        Ok(())
+    }
 
-        build(
-            src_root.as_ref().join(OC_BIN),
-            Path::new(target_root).join("bootfs/bin"),
-            false,
-        )?;
-        build(
-            src_root.as_ref().join(OC_DRV),
-            Path::new(target_root).join("bootfs/drv"),
-            true,
-        )?;
+    fn build_drv(&self, src_root: impl AsRef<Path>, target_root: &str) -> anyhow::Result<()> {
+        let bin_dir = Path::new(target_root).join("x86_64-pc-oceanic");
+        let dep_root = Path::new(target_root).join("bootfs/lib");
+
+        let mut dep_lib = ["libldso.so", "libco2.so"]
+            .into_iter()
+            .map(ToString::to_string)
+            .collect::<HashSet<_>>();
+
+        let src_root = src_root.as_ref().join(OC_DRV);
+        let dst_root = Path::new(target_root).join("bootfs/drv");
+
+        for ent in fs::read_dir(src_root)?.flatten() {
+            let ty = ent.file_type()?;
+            let name = ent.file_name();
+            if ty.is_dir() && name != ".cargo" {
+                let dst_name = {
+                    let name = name.to_string_lossy().replace('-', "_");
+                    let name = "lib".to_string() + &name + ".so";
+                    OsString::from(name)
+                };
+                self.gen_drv_manifest(&dst_name, ent.path(), &dst_root)
+                    .with_context(|| format!("failed to gen {:?}'s manifest", ent.path()))?;
+                self.build_impl(&dst_name, &dst_name, ent.path(), &bin_dir, &dst_root)
+                    .with_context(|| format!("failed to build {:?}", ent.path()))?;
+                for dep in fs::read_dir(bin_dir.join(self.profile()).join("deps"))?.flatten() {
+                    let name = dep.file_name();
+                    match name.to_str() {
+                        Some(name) if name.ends_with(".so") && dep_lib.insert(name.to_string()) => {
+                            fs::copy(dep.path(), dep_root.join(name))?;
+                            self.gen_debug(name, &dep_root, DEBUG_DIR)?;
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
 
         Ok(())
     }
@@ -376,6 +394,29 @@ impl Dist {
             )
             .context("failed to write to debug info file")?;
         }
+        Ok(())
+    }
+
+    fn gen_drv_manifest(
+        &self,
+        dst_name: impl AsRef<Path>,
+        src_dir: impl AsRef<Path>,
+        target_dir: impl AsRef<Path>,
+    ) -> Result<(), anyhow::Error> {
+        let file = src_dir.as_ref().join("Cargo.toml");
+        let content = fs::read_to_string(file).context("failed to read Cargo.toml")?;
+        let table = content.parse::<toml_edit::Document>()?;
+        let driver_man = table
+            .get("package")
+            .and_then(|v| v.get("metadata"))
+            .and_then(|v| v.get("oceanic-driver"))
+            .context("failed to get `package.metadata.oceanic-driver` in Cargo.toml")?;
+
+        let dst_file = target_dir
+            .as_ref()
+            .join(dst_name.as_ref().with_extension("toml"));
+        fs::write(dst_file, driver_man.to_string()).context("failed to write driver manifest")?;
+
         Ok(())
     }
 }

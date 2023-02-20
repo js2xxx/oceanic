@@ -48,7 +48,7 @@ pub fn parse_dir(dir: impl AsRef<Path>) -> anyhow::Result<Syscall> {
         .try_fold(Syscall::default(), |mut ret, ent| {
             let ty = ent.file_type()?;
             if ty.is_file() {
-                ret.append(&mut parse_file(&ent.path())?);
+                ret.append(&mut parse_file(ent.path())?);
             }
             Ok(ret)
         })

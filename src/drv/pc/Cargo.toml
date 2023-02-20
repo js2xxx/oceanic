@@ -3,6 +3,9 @@ edition = "2021"
 name = "pc"
 version = "0.1.0"
 
+[package.metadata.oceanic-driver]
+match = ["root"]
+
 [lib]
 crate-type = ["cdylib"]
 
