@@ -97,7 +97,7 @@ pub fn init(syst: &SystemTable<Boot>) {
     let virt_efi =
         paging::LAddr::from(EFI_ID_OFFSET)..paging::LAddr::from(INITIAL_ID_SPACE + EFI_ID_OFFSET);
     let pg_attr = paging::Attr::KERNEL_RW;
-    
+
     maps(syst, virt_efi, phys, pg_attr).expect("Failed to map virtual memory for H2O boot");
 }
 
