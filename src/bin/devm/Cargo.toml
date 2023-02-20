@@ -11,5 +11,6 @@ solvent-fs = {path = "../../lib/h2o_fs"}
 solvent-rpc = {path = "../../lib/h2o_rpc"}
 solvent-std = {path = "../../lib/h2o_std"}
 # External crates
-log = "0.4"
 futures-lite = {version = "1.12", default-features = false, features = ["alloc"]}
+log = "0.4"
+serde = {version = "1.0", default-features = false, features = ["derive", "alloc"]}

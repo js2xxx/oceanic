@@ -62,7 +62,7 @@ mod ddk {
     ///
     /// The init function should be signatured `async fn(Channel)`.
     #[macro_export]
-    macro_rules! entry {
+    macro_rules! driver {
         ($init:ident) => {
             #[allow(improper_ctypes)]
             #[no_mangle]

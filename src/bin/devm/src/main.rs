@@ -2,6 +2,7 @@
 #![no_main]
 
 mod device;
+mod driver;
 
 use alloc::vec;
 
