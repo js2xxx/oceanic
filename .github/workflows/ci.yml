@@ -12,7 +12,6 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v3
 
@@ -44,7 +43,11 @@ jobs:
             ~/.cargo/registry/index/
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
+            target/
           key: cargo-crates
+
+      - name: Install Rust toolchains
+        uses: dtolnay/rust-toolchain@nightly
 
       - name: Configure sccache
         uses: visvirial/sccache-action@v1
@@ -52,10 +55,39 @@ jobs:
       - name: Build
         run: cargo xtask dist --release img
 
-  fmt:
+  lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
 
+      # - name: Cache cargo crates
+      #   id: cache-cargo
+      #   uses: actions/cache@v3
+      #   with:
+      #     path: |
+      #       ~/.cargo/.crates.toml
+      #       ~/.cargo/.crates2.json
+      #       ~/.cargo/bin/
+      #       ~/.cargo/registry/index/
+      #       ~/.cargo/registry/cache/
+      #       ~/.cargo/git/db/
+      #       target/
+      #     key: cargo-crates-lint
+
+      - name: Install Rust toolchains
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rustfmt, clippy
+        
+      # - name: Check clippy
+      #   run: cargo xtask check
+
       - name: Check format
         run: cargo fmt --all --check
+
+  cargo-deny:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Check advisories, licenses, bans, and sources
+        uses: EmbarkStudios/cargo-deny-action@v1

@@ -9,7 +9,7 @@ use std::{
 };
 
 use anyhow::Context;
-use structopt::StructOpt;
+use clap::{Parser, Subcommand};
 
 use crate::{
     BOOTFS, DEBUG_DIR, H2O_BOOT, H2O_KERNEL, H2O_SYSCALL, H2O_TINIT, OC_BIN, OC_DRV, OC_LIB,
@@ -27,16 +27,16 @@ static LLVM_OBJDUMP: LazyLock<PathBuf> =
     LazyLock::new(|| Path::new(&*LLVM).join("bin/llvm-objdump"));
 static LLVM_IFS: LazyLock<PathBuf> = LazyLock::new(|| Path::new(&*LLVM).join("bin/llvm-ifs"));
 
-#[derive(Debug, StructOpt)]
+#[derive(Debug, Subcommand)]
 pub enum Type {
     Img,
 }
 
-#[derive(Debug, StructOpt)]
+#[derive(Debug, Parser)]
 pub struct Dist {
-    #[structopt(subcommand)]
+    #[command(subcommand)]
     ty: Type,
-    #[structopt(long = "--release", parse(from_flag))]
+    #[arg(long, short)]
     release: bool,
 }
 
@@ -421,7 +421,7 @@ impl Dist {
     }
 }
 
-fn create_dir_all(target_root: &String, src_root: &Path) -> Result<(), anyhow::Error> {
+pub fn create_dir_all(target_root: &String, src_root: &Path) -> Result<(), anyhow::Error> {
     let create_dir = |path: &Path| -> anyhow::Result<()> {
         fs::create_dir_all(path).with_context(|| format!("failed to create dir {path:?}"))
     };

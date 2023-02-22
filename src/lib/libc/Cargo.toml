@@ -19,4 +19,4 @@ log = "0.4"
 memchr = {version = "2.4", default-features = false}
 
 [build-dependencies]
-cbindgen = "0.24"
+cbindgen = {version = "0.24", default-features = false}

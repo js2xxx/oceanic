@@ -21,4 +21,4 @@ log = "0.4"
 spin = {version = "0.9", features = ["use_ticket_mutex"]}
 
 [build-dependencies]
-cbindgen = "0.24"
+cbindgen = {version = "0.24", default-features = false}

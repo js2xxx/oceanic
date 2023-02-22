@@ -38,7 +38,7 @@ derive_builder = {version = "0.10", default-features = false}
 enum_dispatch = "0.3"
 goblin = {version = "0.5", default-features = false, features = ["elf32", "elf64", "endian_fd"]}
 log = "0.4"
-memoffset = "0.6"
+memoffset = "0.8"
 modular-bitfield = "0.11"
 paste = "1.0"
 raw-cpuid = "10"

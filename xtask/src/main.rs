@@ -1,7 +1,7 @@
 #![feature(exit_status_error)]
 #![feature(once_cell)]
 
-use structopt::StructOpt;
+use clap::Parser;
 
 mod check;
 mod dist;
@@ -19,16 +19,16 @@ const OC_DRV: &str = "src/drv";
 
 const BOOTFS: &str = "target/bootfs";
 
-#[derive(Debug, StructOpt)]
+#[derive(Debug, Parser)]
 enum Cmd {
     Dist(dist::Dist),
-    Check,
+    Check(check::Check),
 }
 
 fn main() -> anyhow::Result<()> {
-    let args = Cmd::from_args();
+    let args = Cmd::parse();
     match args {
         Cmd::Dist(dist) => dist.build(),
-        Cmd::Check => check::check(),
+        Cmd::Check(check) => check.run(),
     }
 }
