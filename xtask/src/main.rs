@@ -22,13 +22,13 @@ const BOOTFS: &str = "target/bootfs";
 #[derive(Debug, Parser)]
 enum Cmd {
     Dist(dist::Dist),
-    Check,
+    Check(check::Check),
 }
 
 fn main() -> anyhow::Result<()> {
     let args = Cmd::parse();
     match args {
         Cmd::Dist(dist) => dist.build(),
-        Cmd::Check => check::check(),
+        Cmd::Check(check) => check.run(),
     }
 }
