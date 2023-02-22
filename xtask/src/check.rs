@@ -4,6 +4,7 @@ use std::{
     process::Command,
 };
 
+use anyhow::Context;
 use clap::Parser;
 
 use crate::{H2O_BOOT, H2O_KERNEL, H2O_TINIT, OC_BIN, OC_DRV, OC_LIB};
@@ -23,6 +24,16 @@ impl Check {
             .unwrap_or_else(|_| src_root.join("target").to_string_lossy().to_string());
 
         crate::dist::create_dir_all(&target_root, src_root)?;
+
+        // Generate syscall stubs
+        crate::gen::gen_syscall(
+            src_root.join(H2O_KERNEL).join("syscall"),
+            src_root.join(H2O_KERNEL).join("target/wrapper.rs"),
+            src_root.join("h2o/libs/syscall/target/call.rs"),
+            src_root.join("h2o/libs/syscall/target/stub.rs"),
+            src_root.join("h2o/libs/syscall/target/num.rs"),
+        )
+        .context("failed to generate syscalls")?;
 
         let check = |dir: PathBuf| -> anyhow::Result<()> {
             let mut cmd = Command::new(&cargo);

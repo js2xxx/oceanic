@@ -46,14 +46,7 @@ jobs:
             target/
           key: cargo-crates
 
-      - uses: actions/cache@v3
-        id: cache-rustup
-        with:
-          path: ~/.rustup
-          key: ${{ steps.rust-toolchain.outputs.cacheid }}
-
       - name: Install Rust toolchains
-        id: rust-toolchain
         uses: dtolnay/rust-toolchain@nightly
 
       - name: Configure sccache
