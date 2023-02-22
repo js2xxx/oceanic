@@ -8,4 +8,4 @@ async fn init(_driver_instance: Channel) {
     log::debug!("Hello from driver");
 }
 
-solvent_ddk::entry!(init);
+solvent_ddk::driver!(init);

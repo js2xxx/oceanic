@@ -1,5 +1,6 @@
 [package]
 edition = "2021"
+license = "MIT OR Apache-2.0"
 name = "solvent-ddk"
 version = "0.1.0"
 
@@ -16,4 +17,5 @@ solvent-core = {path = "../h2o_std/core"}
 solvent-fs = {path = "../h2o_fs", default-features = false}
 solvent-rpc = {path = "../h2o_rpc", default-features = false}
 # External crates
+async-task = {version = "4.3", default-features = false}
 log = "0.4"
