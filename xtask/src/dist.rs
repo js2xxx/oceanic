@@ -421,7 +421,7 @@ impl Dist {
     }
 }
 
-fn create_dir_all(target_root: &String, src_root: &Path) -> Result<(), anyhow::Error> {
+pub fn create_dir_all(target_root: &String, src_root: &Path) -> Result<(), anyhow::Error> {
     let create_dir = |path: &Path| -> anyhow::Result<()> {
         fs::create_dir_all(path).with_context(|| format!("failed to create dir {path:?}"))
     };

@@ -17,10 +17,12 @@ pub struct Check {
 impl Check {
     pub fn run(self) -> anyhow::Result<()> {
         let cargo = env::var("CARGO").unwrap_or_else(|_| "cargo".to_string());
-        let src_root = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .ancestors()
-            .nth(1)
-            .unwrap();
+
+        let src_root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+        let target_root = env::var("CARGO_TARGET_DIR")
+            .unwrap_or_else(|_| src_root.join("target").to_string_lossy().to_string());
+
+        crate::dist::create_dir_all(&target_root, src_root)?;
 
         let check = |dir: PathBuf| -> anyhow::Result<()> {
             let mut cmd = Command::new(&cargo);
