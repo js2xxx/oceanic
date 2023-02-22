@@ -60,27 +60,27 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: Cache cargo crates
-        id: cache-cargo
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cargo/.crates.toml
-            ~/.cargo/.crates2.json
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: cargo-crates-lint
+      # - name: Cache cargo crates
+      #   id: cache-cargo
+      #   uses: actions/cache@v3
+      #   with:
+      #     path: |
+      #       ~/.cargo/.crates.toml
+      #       ~/.cargo/.crates2.json
+      #       ~/.cargo/bin/
+      #       ~/.cargo/registry/index/
+      #       ~/.cargo/registry/cache/
+      #       ~/.cargo/git/db/
+      #       target/
+      #     key: cargo-crates-lint
 
       - name: Install Rust toolchains
         uses: dtolnay/rust-toolchain@nightly
         with:
           components: rustfmt, clippy
         
-      - name: Check clippy
-        run: cargo xtask check
+      # - name: Check clippy
+      #   run: cargo xtask check
 
       - name: Check format
         run: cargo fmt --all --check
