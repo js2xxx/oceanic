@@ -14,7 +14,8 @@ paging = {path = "../libs/paging"}
 # External crates
 goblin = {version = "0.5", default-features = false, features = ["elf32", "elf64", "endian_fd"]}
 log = "0.4"
-raw-cpuid = "9.0"
+raw-cpuid = "10"
+
 static_assertions = "1.1"
 tinybmp = "0.4"
 uefi = {version = "0.11", features = ["logger", "alloc"]}
