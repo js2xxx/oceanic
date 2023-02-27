@@ -602,7 +602,7 @@ mod std_local {
         }
 
         let old = LOCAL_FS.replace(local_fs);
-        atomic::fence(atomic::Ordering::Release);
+        atomic::fence(atomic::Ordering::SeqCst);
 
         assert!(
             old.is_none(),
