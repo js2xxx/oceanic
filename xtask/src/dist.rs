@@ -10,6 +10,7 @@ use std::{
 
 use anyhow::Context;
 use clap::{Parser, Subcommand};
+use serde::Deserialize;
 
 use crate::{
     BOOTFS, DEBUG_DIR, H2O_BOOT, H2O_KERNEL, H2O_SYSCALL, H2O_TINIT, OC_BIN, OC_DRV, OC_LIB,
@@ -255,6 +256,8 @@ impl Dist {
             let ty = ent.file_type()?;
             let name = ent.file_name();
             if ty.is_dir() && name != ".cargo" {
+                self.gen_manifest(&name, ent.path(), &dst_root)
+                    .with_context(|| format!("failed to gen {:?}'s manifest", ent.path()))?;
                 self.build_impl(&name, &name, ent.path(), &bin_dir, &dst_root)
                     .with_context(|| format!("failed to build {:?}", ent.path()))?;
                 for dep in fs::read_dir(bin_dir.join(self.profile()).join("deps"))?.flatten() {
@@ -293,7 +296,7 @@ impl Dist {
                     let name = "lib".to_string() + &name + ".so";
                     OsString::from(name)
                 };
-                self.gen_drv_manifest(&dst_name, ent.path(), &dst_root)
+                self.gen_manifest(&dst_name, ent.path(), &dst_root)
                     .with_context(|| format!("failed to gen {:?}'s manifest", ent.path()))?;
                 self.build_impl(&dst_name, &dst_name, ent.path(), &bin_dir, &dst_root)
                     .with_context(|| format!("failed to build {:?}", ent.path()))?;
@@ -397,7 +400,7 @@ impl Dist {
         Ok(())
     }
 
-    fn gen_drv_manifest(
+    fn gen_manifest(
         &self,
         dst_name: impl AsRef<Path>,
         src_dir: impl AsRef<Path>,
@@ -405,17 +408,22 @@ impl Dist {
     ) -> Result<(), anyhow::Error> {
         let file = src_dir.as_ref().join("Cargo.toml");
         let content = fs::read_to_string(file).context("failed to read Cargo.toml")?;
-        let table = content.parse::<toml_edit::Document>()?;
-        let driver_man = table
+        let table = content.parse::<toml::Table>()?;
+        let man = table
             .get("package")
             .and_then(|v| v.get("metadata"))
-            .and_then(|v| v.get("oceanic-driver"))
-            .context("failed to get `package.metadata.oceanic-driver` in Cargo.toml")?;
+            .and_then(|v| v.get("osc"))
+            .context("failed to get `package.metadata.osc` in Cargo.toml")?;
+
+        let comp = osc::Component::deserialize(man.clone())
+            .context("failed to deserialize component config")?;
+
+        let cfg = postcard::to_stdvec(&comp).context("failed to generate config file")?;
 
         let dst_file = target_dir
             .as_ref()
-            .join(dst_name.as_ref().with_extension("toml"));
-        fs::write(dst_file, driver_man.to_string()).context("failed to write driver manifest")?;
+            .join(dst_name.as_ref().with_extension("cfg"));
+        fs::write(dst_file, cfg).context("failed to write driver manifest")?;
 
         Ok(())
     }
