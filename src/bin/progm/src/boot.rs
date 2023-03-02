@@ -58,7 +58,7 @@ unsafe fn build_inner(
                 );
                 let len = data.len();
                 let data = root_phys
-                    .create_sub(offset, (len + PAGE_MASK) & !PAGE_MASK, false)
+                    .create_sub(offset, len, false)
                     .expect("Failed to create sub phys");
                 let file = MemFile::new(data, Permission::READ | Permission::EXECUTE);
                 ret.push(RecursiveBuild::Entry(name, Arsc::new(file)));

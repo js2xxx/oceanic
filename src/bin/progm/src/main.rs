@@ -3,6 +3,7 @@
 #![feature(slice_ptr_get)]
 
 mod boot;
+mod com;
 
 use alloc::vec;
 
@@ -20,6 +21,8 @@ async fn main() {
     solvent_std::env::args().for_each(|arg| log::debug!("{arg}"));
 
     solvent_async::test::test_disp().await;
+
+    com::get_boot_coms().await.expect("failed to get boot coms");
 
     let bootfs = solvent_fs::open_dir("/boot", OpenOptions::READ).expect("Failed to open bootfs");
     let bootfs = bootfs.into_async().expect("Failed to get loader");

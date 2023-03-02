@@ -418,7 +418,8 @@ impl Dist {
         let comp = osc::Component::deserialize(man.clone())
             .context("failed to deserialize component config")?;
 
-        let cfg = postcard::to_stdvec(&comp).context("failed to generate config file")?;
+        let cfg = bincode::encode_to_vec(comp, bincode::config::standard())
+            .context("failed to generate config file")?;
 
         let dst_file = target_dir
             .as_ref()

@@ -14,9 +14,9 @@ bootfs = {path = "../src/lib/bootfs", features = ["gen"]}
 osc = {path = "../src/lib/osc"}
 # External crates
 anyhow = "1.0"
+bincode = {version = "2.0.0-rc.2"}
 cc = "1.0"
 clap = {version = "4.1", features = ["derive"]}
-postcard = {version = "1.0", default-features = false, features = ["use-std"]}
 quote = "1.0"
 rand = "0.8"
 serde = {version = "1.0", default-features = false, features = ["derive", "alloc"]}
