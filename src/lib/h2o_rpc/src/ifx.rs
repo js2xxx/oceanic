@@ -3,6 +3,8 @@ use solvent_rpc_core::packet::{Deserializer, SerdePacket, Serializer};
 
 #[cfg(feature = "std")]
 pub trait Protocol {
+    const PATH: &'static str;
+
     type Client: crate::Client;
     type Server: crate::Server;
 

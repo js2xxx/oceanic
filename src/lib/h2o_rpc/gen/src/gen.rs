@@ -36,7 +36,15 @@ pub fn gen(items: Vec<ProtoItem>, target_root: &Path) -> Result<(), Box<dyn Erro
             }
         };
         match item.ty {
-            ProtoType::Protocol(proto) => write!(writer, "{}", proto.quote()?)?,
+            ProtoType::Protocol(proto) => {
+                let path = path
+                    .with_extension("")
+                    .join(proto.ident.to_string())
+                    .to_string_lossy()
+                    .replace('/', "::");
+                let content = proto.quote(path.strip_prefix("imp::").unwrap())?;
+                write!(writer, "{content}")?
+            }
             ProtoType::Item(item) => write!(writer, "{}", item.to_token_stream())?,
         }
     }
