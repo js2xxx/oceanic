@@ -81,7 +81,8 @@ impl Phys {
         let alloc_size = size.round_up_bit(PAGE_SHIFT);
 
         let mut inner = Arsc::try_new_uninit()?;
-        let layout = unsafe { Layout::from_size_align_unchecked(alloc_size, PAGE_SIZE) }.pad_to_align();
+        let layout =
+            unsafe { Layout::from_size_align_unchecked(alloc_size, PAGE_SIZE) }.pad_to_align();
         let mem = if zeroed {
             Global.allocate_zeroed(layout)
         } else {

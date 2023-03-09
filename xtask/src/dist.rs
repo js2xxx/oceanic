@@ -374,9 +374,9 @@ impl Dist {
             asm_name.push(".asm");
             fs::write(
                 dbg_dir.as_ref().join(asm_name),
-                Command::new("ndisasm")
+                Command::new(&*LLVM_OBJDUMP)
+                    .args(["-d", "-Mintel"])
                     .arg(&target_path)
-                    .arg("-b 64")
                     .output()
                     .context("failed to disassemble the binary file")?
                     .stdout,
