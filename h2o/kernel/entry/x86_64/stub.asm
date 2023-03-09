@@ -258,7 +258,8 @@ switch_kframe:
       ; Switch the stack (a.k.a. the context).
       mov   rsp, rsi
 
-      push  .pop_regs
+      lea   rdi, [rel .pop_regs]
+      push  rdi
       retfq
 .pop_regs:
       pop   qword [rcx]

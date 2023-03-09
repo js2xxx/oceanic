@@ -9,7 +9,7 @@ SECTIONS
 
       .text :
       {
-            entry.asm.o
+            *(.text.init*)
             *(.text*)
       }
 
@@ -43,6 +43,12 @@ SECTIONS
             . += 1M;
             INIT_STACK = .;
       }
+
+      .dynsym ALIGN (4K) : { *(.dynsym) }
+      .gnu.hash : { *(.gnu.hash) }
+      .hash : { *(.hash) }
+      .dynstr : { *(.dynstr) }
+      .rela.dyn : { *(.rela.dyn) }
 
 	/DISCARD/ :
 	{

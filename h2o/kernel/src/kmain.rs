@@ -31,6 +31,8 @@
 #![feature(unsize)]
 #![feature(vec_into_raw_parts)]
 
+core::arch::global_asm!(include_str!("../entry/x86_64/entry.asm"));
+
 pub mod cpu;
 pub mod dev;
 mod logger;

@@ -23,17 +23,18 @@ fn main() -> Result<(), Box<dyn Error>> {
         asm_build(tram_src, &tram_dst, &[])?;
     }
 
-    for file in Path::new("entry/x86_64").read_dir()?.flatten() {
-        let mut dst_name = file.file_name().to_string_lossy().to_string();
-        dst_name += ".o";
+    let file = "stub.asm".to_string();
+    let path = Path::new("entry/x86_64").join(&file);
 
-        let src_path = file.path();
-        let dst_path = format!("{target_dir}/{dst_name}");
+    let mut dst_name = file;
+    dst_name += ".o";
 
-        asm_build(src_path.to_str().unwrap(), &dst_path, &["-f", "elf64"])?;
-        println!("cargo:rustc-link-arg={dst_path}");
-        println!("cargo:rerun-if-changed={}", src_path.to_str().unwrap());
-    }
+    let src_path = path;
+    let dst_path = format!("{target_dir}/{dst_name}");
+
+    asm_build(src_path.to_str().unwrap(), &dst_path, &["-f", "elf64"])?;
+    println!("cargo:rustc-link-arg={dst_path}");
+    println!("cargo:rerun-if-changed={}", src_path.to_str().unwrap());
 
     println!(
         "cargo:rustc-link-arg=-T{}/h2o.ld",

@@ -86,7 +86,7 @@ impl Dist {
             "h2o",
             "KERNEL",
             src_root.join(H2O_KERNEL),
-            Path::new(&target_root).join("x86_64-h2o-kernel"),
+            Path::new(&target_root).join("x86_64-unknown-none"),
             &target_root,
         )
         .context("failed to build h2o_kernel")?;
@@ -96,7 +96,7 @@ impl Dist {
             "tinit",
             "TINIT",
             src_root.join(H2O_TINIT),
-            Path::new(&target_root).join("x86_64-h2o-tinit"),
+            Path::new(&target_root).join("x86_64-unknown-none"),
             &target_root,
         )
         .context("failed to build h2o_tinit")?;

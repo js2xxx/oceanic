@@ -1,72 +1,94 @@
-extern kmain
-extern INIT_STACK
+.extern kmain
+.extern INIT_STACK
 
-[section .text]
-global kentry:function
+.section .text.init
+.global kentry
+.type kentry, @function
 kentry:
-      mov   rsp, INIT_STACK
-      call  kmain
+    .cfi_startproc
+
+    lea   rsp, [rip + INIT_STACK]
+    call  kmain
 
 .lp:
-      sti
-      hlt
-      jmp   .lp
+    sti
+    hlt
+    jmp   .lp
 
-global reset_seg:function
-; fn reset_seg(di code_selector, si data_selector)
+    .cfi_endproc
+
+.section .text
+
+.global reset_seg
+.type reset_seg, @function
+
+# fn reset_seg(di code_selector, si data_selector)
 reset_seg:
-      push  rdi
-      push  .ret
-      retfq
+    .cfi_startproc
 
-.ret:
-      mov   ds, si
-      mov   es, si
-      mov   ss, si
-      
-      ret
+    push  rdi
+    lea   rdi, [rip + .Lret_rs]
+    push  rdi
+    retfq
 
-global cpu_in_intr:function
-; fn cpu_in_intr() -> u32
+.Lret_rs:
+    mov   ds, si
+    mov   es, si
+    mov   ss, si
+    
+    ret
+    .cfi_endproc
+
+.global cpu_in_intr
+.type cpu_in_intr, @function
+
+# fn cpu_in_intr() -> u32
 cpu_in_intr:
-      mov   ax, cs
-      cmp   ax, 0xC
-      je    .true
-      mov   eax, 0
-      jmp   .ret
-.true:
-      mov   eax, 1
-.ret:
-      ret
+    .cfi_startproc
 
-global checked_copy:function
-; fn checked_copy(
-; (rdi) dst: *mut u64, 
-; (rsi) src: *const u64, 
-; (rdx) pf_resume: *mut Option<NonZeroU64>,
-; (rcx) count: usize, 
-;) -> (usize, usize)
+    mov   ax, cs
+    cmp   ax, 0xC
+    je    .Ltrue
+    mov   eax, 0
+    jmp   .Lret
+.Ltrue:
+    mov   eax, 1
+.Lret:
+    ret
+    .cfi_endproc
+
+.global checked_copy
+.type checked_copy, @function
+# fn checked_copy(
+#   (rdi) dst: *mut u64, 
+#   (rsi) src: *const u64, 
+#   (rdx) pf_resume: *mut Option<NonZeroU64>,
+#   (rcx) count: usize, 
+# ) -> (usize, usize)
 checked_copy:
-      mov   rax, .fault
-      mov   r11, rdx
-      mov   [r11], rax
+    .cfi_startproc
 
-      mov   r10, rcx
-      shr   rcx, 3
-      rep   movsq
-      and   r10, 7
-      jz    .ok
-      mov   rcx, r10
-      rep   movsb
-.ok:
-      xor   rdx, rdx
-      xor   rax, rax
+    lea   rax, [rip + .Lfault]
+    mov   r11, rdx
+    mov   [r11], rax
 
-.ret:
-      mov   qword [r11], 0
-      mov   r11, 0
-      ret
+    mov   r10, rcx
+    shr   rcx, 3
+    rep   movsq
+    and   r10, 7
+    jz    .Lok
+    mov   rcx, r10
+    rep   movsb
+.Lok:
+    xor   rdx, rdx
+    xor   rax, rax
 
-.fault:
-      add   rdx, 1
-      jmp   .ret
+.Lret_copy:
+    mov   qword ptr [r11], 0
+    mov   r11, 0
+    ret
+
+.Lfault:
+    add   rdx, 1
+    jmp   .Lret_copy
+    .cfi_endproc
