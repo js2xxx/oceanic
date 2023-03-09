@@ -78,10 +78,11 @@ impl Phys {
         if size == 0 {
             return Err(sv_call::ENOMEM);
         }
-        let size = size.round_up_bit(PAGE_SHIFT);
+        let alloc_size = size.round_up_bit(PAGE_SHIFT);
 
         let mut inner = Arsc::try_new_uninit()?;
-        let layout = unsafe { Layout::from_size_align_unchecked(size, PAGE_SIZE) }.pad_to_align();
+        let layout =
+            unsafe { Layout::from_size_align_unchecked(alloc_size, PAGE_SIZE) }.pad_to_align();
         let mem = if zeroed {
             Global.allocate_zeroed(layout)
         } else {
@@ -131,7 +132,7 @@ impl PhysTrait for Phys {
     fn unpin(&self, _: usize, _: usize) {}
 
     fn create_sub(&self, offset: usize, len: usize, copy: bool) -> Result<Arc<super::Phys>> {
-        if offset.contains_bit(PAGE_SHIFT) || len.contains_bit(PAGE_SHIFT) {
+        if offset.contains_bit(PAGE_SHIFT) {
             return Err(sv_call::EALIGN);
         }
 

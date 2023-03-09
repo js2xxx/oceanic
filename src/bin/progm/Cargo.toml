@@ -4,9 +4,14 @@ license = "MIT OR Apache-2.0"
 name = "progm"
 version = "0.1.0"
 
+[package.metadata.osc.header]
+path = "progm"
+type = "binary"
+
 [dependencies]
 # Local crates
 bootfs = {path = "../../lib/bootfs"}
+osc = {path = "../../lib/osc"}
 solvent = {path = "../../lib/h2o_rs"}
 solvent-async = {path = "../../lib/h2o_async"}
 solvent-fs = {path = "../../lib/h2o_fs"}
@@ -14,7 +19,10 @@ solvent-rpc = {path = "../../lib/h2o_rpc"}
 solvent-std = {path = "../../lib/h2o_std"}
 svrt = {path = "../../lib/svrt"}
 # External crates
+anyhow = {version = "1.0", default-features = false}
 async-task = {version = "4.3", default-features = false}
+bincode = {version = "2.0.0-rc.2", default-features = false, features = ["alloc", "derive"]}
 either = {version = "1.6", default-features = false}
 futures-lite = {version = "1.12", default-features = false, features = ["alloc"]}
 log = "0.4"
+serde = {version = "1.0", default-features = false, features = ["derive", "alloc"]}

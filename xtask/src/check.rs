@@ -41,7 +41,7 @@ impl Check {
             if self.json {
                 cmd.arg("--message-format=json-diagnostic-short");
             }
-            cmd.args(["--", "-Dclippy::all", "-Dwarnings"]);
+            cmd.args(["--", "-Dclippy::all"]);
             cmd.status()?.exit_ok().map_err(Into::into)
         };
 

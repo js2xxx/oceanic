@@ -1,7 +1,9 @@
-use core::{fmt, ops::Range};
+use core::{arch::global_asm, fmt, ops::Range};
 
 pub use crate::cpu::arch::seg::idt::NR_VECTORS;
 use crate::sched::task::ctx::arch::Frame;
+
+global_asm!(include_str!("stub.asm"));
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
@@ -66,6 +68,7 @@ pub enum ApicVec {
 }
 
 pub const ALLOC_VEC: Range<u8> = 0x40..0xFF;
+pub const NR_ALLOC_VEC: usize = (ALLOC_VEC.end - ALLOC_VEC.start) as usize;
 
 type IdtRoute = unsafe extern "C" fn();
 
@@ -84,7 +87,7 @@ macro_rules! single_ent {
 macro_rules! hdl {
     ($name:ident, | $frame_arg:ident | $body:expr) => {
         paste::paste! {
-            extern "C" { pub fn [<rout_ $name>](); }
+            extern "C" { fn [<rout_ $name>](); }
             #[no_mangle]
             unsafe extern "C" fn [<hdl_ $name>]($frame_arg: *mut Frame) {
                 { $body };
@@ -106,6 +109,8 @@ pub enum IdtInit {
     Single(IdtEntry),
     Multiple(&'static [IdtEntry]),
 }
+use array_macro::array;
+use spin::Lazy;
 use IdtInit::*;
 
 pub struct IdtEntry {
@@ -126,37 +131,37 @@ impl IdtEntry {
     }
 }
 
-pub static IDT_INIT: &[IdtInit] = &[
-    // x86 exceptions
-    single_ent!(ExVec::DivideBy0, div_0, 0, 0),
-    single_ent!(ExVec::Debug, debug, 0, 0),
-    single_ent!(ExVec::Nmi, nmi, 0, 0),
-    single_ent!(ExVec::Breakpoint, breakpoint, 0, 0),
-    single_ent!(ExVec::Overflow, overflow, 0, 3),
-    single_ent!(ExVec::Bound, bound, 0, 0),
-    single_ent!(ExVec::InvalidOp, invalid_op, 0, 0),
-    single_ent!(ExVec::DeviceNa, device_na, 0, 0),
-    single_ent!(ExVec::DoubleFault, double_fault, 0, 0),
-    single_ent!(ExVec::CoprocOverrun, coproc_overrun, 0, 0),
-    single_ent!(ExVec::InvalidTss, invalid_tss, 0, 0),
-    single_ent!(ExVec::SegmentNa, segment_na, 0, 0),
-    single_ent!(ExVec::StackFault, stack_fault, 0, 0),
-    single_ent!(ExVec::GeneralProt, general_prot, 0, 0),
-    single_ent!(ExVec::PageFault, page_fault, 0, 0),
-    single_ent!(ExVec::FloatPoint, fp_excep, 0, 0),
-    single_ent!(ExVec::Alignment, alignment, 0, 0),
-    // single_ent!(ExVec::MachineCheck, mach_check, 0, 0),
-    single_ent!(ExVec::SimdExcep, simd, 0, 0),
-    // Local APIC interrupts
-    single_ent!(ApicVec::Timer, lapic_timer, 0, 0),
-    single_ent!(ApicVec::Error, lapic_error, 0, 0),
-    single_ent!(ApicVec::IpiTaskMigrate, lapic_ipi_task_migrate, 0, 0),
-    single_ent!(ApicVec::Spurious, lapic_spurious, 0, 0),
-    // All other allocable interrupts
-    Multiple(repeat::repeat! {"&[" for i in 0x40..0xFF {
-          IdtEntry::new(#i, [<rout_ #i>], 0, 0)
-    }"," "]"}),
-];
+pub static IDT_INIT: Lazy<[IdtInit; 23]> = Lazy::new(|| {
+    [
+        // x86 exceptions
+        single_ent!(ExVec::DivideBy0, div_0, 0, 0),
+        single_ent!(ExVec::Debug, debug, 0, 0),
+        single_ent!(ExVec::Nmi, nmi, 0, 0),
+        single_ent!(ExVec::Breakpoint, breakpoint, 0, 0),
+        single_ent!(ExVec::Overflow, overflow, 0, 3),
+        single_ent!(ExVec::Bound, bound, 0, 0),
+        single_ent!(ExVec::InvalidOp, invalid_op, 0, 0),
+        single_ent!(ExVec::DeviceNa, device_na, 0, 0),
+        single_ent!(ExVec::DoubleFault, double_fault, 0, 0),
+        single_ent!(ExVec::CoprocOverrun, coproc_overrun, 0, 0),
+        single_ent!(ExVec::InvalidTss, invalid_tss, 0, 0),
+        single_ent!(ExVec::SegmentNa, segment_na, 0, 0),
+        single_ent!(ExVec::StackFault, stack_fault, 0, 0),
+        single_ent!(ExVec::GeneralProt, general_prot, 0, 0),
+        single_ent!(ExVec::PageFault, page_fault, 0, 0),
+        single_ent!(ExVec::FloatPoint, fp_excep, 0, 0),
+        single_ent!(ExVec::Alignment, alignment, 0, 0),
+        // single_ent!(ExVec::MachineCheck, mach_check, 0, 0),
+        single_ent!(ExVec::SimdExcep, simd, 0, 0),
+        // Local APIC interrupts
+        single_ent!(ApicVec::Timer, lapic_timer, 0, 0),
+        single_ent!(ApicVec::Error, lapic_error, 0, 0),
+        single_ent!(ApicVec::IpiTaskMigrate, lapic_ipi_task_migrate, 0, 0),
+        single_ent!(ApicVec::Spurious, lapic_spurious, 0, 0),
+        // All other allocable interrupts
+        Multiple(&*COMMON_INTR),
+    ]
+});
 
 // x86 exceptions
 hdl!(
@@ -199,9 +204,17 @@ hdl!(lapic_spurious, |_frame| {
 });
 
 // All other allocable interrupts
-
-extern "C" {
-    repeat::repeat! {
-          for i in 0x40..0xFF { fn [<rout_ #i>](); }
+static COMMON_INTR: Lazy<[IdtEntry; NR_ALLOC_VEC]> = Lazy::new(|| {
+    extern "C" {
+        static common_intr_entries: u64;
     }
-}
+    let ptr = unsafe { &common_intr_entries as *const u64 };
+    array![
+        index => {
+            let vec = ALLOC_VEC.start + index as u8;
+            let route = unsafe { core::mem::transmute(ptr.add(index)) };
+            IdtEntry::new(vec, route, 0, 0)
+        };
+        NR_ALLOC_VEC
+    ]
+});

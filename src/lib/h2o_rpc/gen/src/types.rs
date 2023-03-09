@@ -429,7 +429,7 @@ impl Method {
 }
 
 impl Protocol {
-    pub fn quote(self) -> Result<TokenStream> {
+    pub fn quote(self, path: &str) -> Result<TokenStream> {
         let Protocol {
             vis,
             event,
@@ -493,6 +493,8 @@ impl Protocol {
                 pub struct #ident;
 
                 impl solvent_rpc::Protocol for #ident {
+                    const PATH: &'static str = #path;
+
                     type Client = #client;
                     type Server = #server;
 

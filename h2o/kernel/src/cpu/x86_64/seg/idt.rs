@@ -35,7 +35,7 @@ static IDT: Lazy<IntDescTable> = Lazy::new(|| {
         array[entry.vec as u16 as usize] = desc;
     };
 
-    for init in IDT_INIT {
+    for init in &*IDT_INIT {
         match init {
             IdtInit::Single(ent) => set_ent(ent),
             IdtInit::Multiple(entries) => {

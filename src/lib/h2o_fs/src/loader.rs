@@ -15,10 +15,10 @@ use solvent_rpc::{
     Protocol, Server,
 };
 
-pub async fn get_object_from_dir<D: Borrow<DirectoryClient>, P: AsRef<Path>>(
+pub async fn get_object_from_dir(
     disp: DispSender,
-    dir: D,
-    path: P,
+    dir: impl Borrow<DirectoryClient>,
+    path: impl AsRef<Path>,
 ) -> Result<Phys, Error> {
     let (file, server) = File::with_disp(disp);
     let dir = dir.borrow();
@@ -31,10 +31,10 @@ pub async fn get_object_from_dir<D: Borrow<DirectoryClient>, P: AsRef<Path>>(
     file.phys(PhysOptions::Copy).await?
 }
 
-pub async fn get_object<D: Borrow<DirectoryClient>, P: AsRef<Path>>(
+pub async fn get_object(
     disp: &DispSender,
-    dir: impl Iterator<Item = D>,
-    path: P,
+    dir: impl Iterator<Item = impl Borrow<DirectoryClient>>,
+    path: impl AsRef<Path>,
 ) -> Option<Phys> {
     let path = path.as_ref();
     for dir in dir {
@@ -46,10 +46,10 @@ pub async fn get_object<D: Borrow<DirectoryClient>, P: AsRef<Path>>(
     None
 }
 
-pub async fn serve<D: Borrow<DirectoryClient>>(
+pub async fn serve(
     disp: DispSender,
     server: LoaderServer,
-    dir: impl Iterator<Item = D> + Clone,
+    dir: impl Iterator<Item = impl Borrow<DirectoryClient>> + Clone,
 ) {
     let (mut request, _) = server.serve();
     while let Some(request) = request.next().await {

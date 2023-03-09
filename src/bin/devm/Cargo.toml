@@ -4,6 +4,10 @@ license = "MIT OR Apache-2.0"
 name = "devm"
 version = "0.1.0"
 
+[package.metadata.osc.header]
+path = "devm"
+type = "binary"
+
 [dependencies]
 # Local crates
 solvent = {path = "../../lib/h2o_rs"}

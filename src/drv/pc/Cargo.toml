@@ -4,8 +4,10 @@ license = "MIT OR Apache-2.0"
 name = "pc"
 version = "0.1.0"
 
-[package.metadata.oceanic-driver]
-match = ["root"]
+[package.metadata.osc.header]
+matches = ["root"]
+path = "libpc.so"
+type = "driver"
 
 [lib]
 crate-type = ["cdylib"]
