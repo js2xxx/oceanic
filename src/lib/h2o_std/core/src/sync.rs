@@ -1,4 +1,3 @@
-mod arsc;
 mod cell;
 pub mod channel;
 mod chash_map;
@@ -14,8 +13,9 @@ pub(crate) mod imp;
 
 pub use alloc::sync::{Arc, Weak};
 
+pub use arsc_rs::Arsc;
+
 pub use self::{
-    arsc::Arsc,
     cell::{Lazy, OnceCell},
     chash_map::{CHashMap, ReadGuard as CHashMapReadGuard, WriteGuard as CHashMapWriteGuard},
     condvar::Condvar,

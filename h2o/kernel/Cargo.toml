@@ -26,6 +26,7 @@ targs = {path = "../libs/targs"}
 # External crates
 acpi = "4.1"
 array-macro = "2.1"
+arsc-rs = "0.1"
 bitflags = "1.3"
 bitvec = {version = "1.0", default-features = false, features = ["atomic"]}
 bytes = {version = "1.1", default-features = false}

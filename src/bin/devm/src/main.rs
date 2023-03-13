@@ -43,7 +43,7 @@ async fn main() {
         .expect("Failed to build the process");
     log::debug!("Starting the root driver");
 
-    let node = RpcNode::new(|server, _| async move { device::handle_driver(server).await });
+    let node = RpcNode::new(|server, _| device::handle_driver(server));
     node.open_conn(spawner(), Default::default(), server);
 
     let ret = task.ajoin().await.expect("Failed to join the process");
