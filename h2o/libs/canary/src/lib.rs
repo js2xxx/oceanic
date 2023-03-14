@@ -1,10 +1,8 @@
 #![no_std]
 #![feature(const_type_id)]
-#![feature(core_intrinsics)]
 
 use core::{
     any::{type_name, TypeId},
-    intrinsics::unlikely,
     marker::PhantomData,
 };
 
@@ -31,14 +29,18 @@ impl<T: 'static> Canary<T> {
     #[inline]
     #[track_caller]
     pub fn assert(&self) {
-        if unlikely(!self.check()) {
+        #[cold]
+        fn assert_failed<T: 'static>(id: TypeId) {
             panic!(
                 "Canary of type {} ({:?}) check failed, invalid value = {:?}, from function {}",
                 type_name::<T>(),
                 TypeId::of::<T>(),
-                self.id,
+                id,
                 core::panic::Location::caller()
             );
+        }
+        if !self.check() {
+            assert_failed::<T>(self.id)
         }
     }
 }
