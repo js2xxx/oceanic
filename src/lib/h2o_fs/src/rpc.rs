@@ -14,6 +14,46 @@ use solvent_rpc::{
 
 use crate::{dir::EventTokens, entry::Entry, spawn::Spawner};
 
+#[cfg(feature = "std-local")]
+pub fn connect_sync_at<P>(path: impl AsRef<Path>) -> Result<P::SyncClient, Error>
+where
+    P: solvent_rpc::Protocol,
+{
+    let (client, server) = Channel::new();
+    crate::fs::local().open(
+        path,
+        OpenOptions::READ | OpenOptions::WRITE | OpenOptions::EXPECT_RPC,
+        server,
+    )?;
+    Ok(P::SyncClient::from(client))
+}
+
+#[cfg(all(feature = "std-local"))]
+
+pub fn connect_sync<P: solvent_rpc::Protocol>() -> Result<P::SyncClient, Error> {
+    self::connect_sync_at::<P>(Path::new("use").join(P::PATH))
+}
+
+#[cfg(all(feature = "std-local", feature = "runtime"))]
+pub fn connect_at<P>(path: impl AsRef<Path>) -> Result<P::Client, Error>
+where
+    P: solvent_rpc::Protocol,
+{
+    let (client, server) = Channel::new();
+    crate::fs::local().open(
+        path,
+        OpenOptions::READ | OpenOptions::WRITE | OpenOptions::EXPECT_RPC,
+        server,
+    )?;
+    Ok(P::Client::from(AsyncChannel::new(client)))
+}
+
+#[cfg(all(feature = "std-local", feature = "runtime"))]
+
+pub fn connect<P: solvent_rpc::Protocol>() -> Result<P::Client, Error> {
+    self::connect_at::<P>(Path::new("use").join(P::PATH))
+}
+
 pub struct RpcNode<S, G, F>
 where
     S: Server + Send + Sync + 'static,
