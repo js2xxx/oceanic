@@ -3,7 +3,6 @@
 #![allow(unused_unsafe)]
 #![feature(alloc_error_handler)]
 #![feature(alloc_layout_extra)]
-#![feature(box_syntax)]
 #![feature(int_roundings)]
 #![feature(lang_items)]
 #![feature(min_specialization)]

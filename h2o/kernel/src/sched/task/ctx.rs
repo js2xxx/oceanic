@@ -177,7 +177,7 @@ pub struct ExtFrame(Box<ExtFrameData>);
 
 impl ExtFrame {
     pub fn zeroed() -> Self {
-        ExtFrame(box ExtFrameData([0; arch::EXTENDED_FRAME_SIZE]))
+        ExtFrame(Box::new(ExtFrameData([0; arch::EXTENDED_FRAME_SIZE])))
     }
 
     pub unsafe fn save(&mut self) {

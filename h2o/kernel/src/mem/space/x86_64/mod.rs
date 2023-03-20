@@ -17,7 +17,7 @@ use crate::sched::{task::ctx::x86_64::Frame, SCHED};
 
 /// The root page table at initialization time.
 static KERNEL_ROOT: Azy<(Box<Table>, u64)> = Azy::new(|| {
-    let mut table = box Table::zeroed();
+    let mut table = Box::new(Table::zeroed());
 
     let cr3 = unsafe { archop::reg::cr3::read() };
     let cr3_laddr = PAddr::new(cr3 as usize).to_laddr(minfo::ID_OFFSET);
@@ -96,7 +96,7 @@ impl Space {
     /// The space's root page table must contains the page tables of the kernel
     /// half otherwise if loaded the kernel will crash due to #PF.
     pub fn new() -> Space {
-        let rt = box Table::zeroed();
+        let rt = Box::new(Table::zeroed());
         let cr3 = Box::into_raw(rt);
 
         let space = Space {
