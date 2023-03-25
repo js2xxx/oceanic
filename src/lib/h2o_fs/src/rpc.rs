@@ -14,6 +14,71 @@ use solvent_rpc::{
 
 use crate::{dir::EventTokens, entry::Entry, spawn::Spawner};
 
+#[cfg(feature = "std-local")]
+fn local_channel(path: impl AsRef<Path>) -> Result<Channel, Error> {
+    let (client, server) = Channel::new();
+    crate::fs::local().open(
+        path,
+        OpenOptions::READ | OpenOptions::WRITE | OpenOptions::EXPECT_RPC,
+        server,
+    )?;
+    Ok(client)
+}
+
+#[cfg(feature = "std-local")]
+#[inline]
+pub fn connect_sync_at<P>(path: impl AsRef<Path>) -> Result<P::SyncClient, Error>
+where
+    P: solvent_rpc::Protocol,
+{
+    local_channel(path).map(P::SyncClient::from)
+}
+
+#[cfg(all(feature = "std-local"))]
+#[inline]
+pub fn connect_sync<P: solvent_rpc::Protocol>() -> Result<P::SyncClient, Error> {
+    self::connect_sync_at::<P>(Path::new("use").join(P::PATH))
+}
+
+#[cfg(all(feature = "std-local", feature = "runtime"))]
+#[inline]
+pub fn connect_at<P>(path: impl AsRef<Path>) -> Result<P::Client, Error>
+where
+    P: solvent_rpc::Protocol,
+{
+    local_channel(path).map(|client| P::Client::from(AsyncChannel::new(client)))
+}
+
+#[cfg(all(feature = "std-local", feature = "runtime"))]
+#[inline]
+pub fn connect<P: solvent_rpc::Protocol>() -> Result<P::Client, Error> {
+    self::connect_at::<P>(Path::new("use").join(P::PATH))
+}
+
+#[cfg(all(feature = "std-local", feature = "runtime"))]
+pub fn serve_at<S, G, F>(path: impl AsRef<Path>, func: G) -> Result<(), Error>
+where
+    S: Server + Send + Sync + 'static,
+    G: Fn(S, Spawner) -> F + Sync + Send + 'static,
+    F: Future<Output = ()> + Sync + Send + 'static,
+{
+    let conn = local_channel(path)?;
+    RpcNode::new(func).open_conn(crate::spawner(), Default::default(), conn);
+    Ok(())
+}
+
+#[cfg(all(feature = "std-local", feature = "runtime"))]
+#[inline]
+pub fn serve<P, G, F>(func: G) -> Result<(), Error>
+where
+    P: solvent_rpc::Protocol,
+    P::Server: Send + Sync + 'static,
+    G: Fn(P::Server, Spawner) -> F + Sync + Send + 'static,
+    F: Future<Output = ()> + Sync + Send + 'static,
+{
+    serve_at(Path::new("cap").join(P::PATH), func)
+}
+
 pub struct RpcNode<S, G, F>
 where
     S: Server + Send + Sync + 'static,

@@ -1,4 +1,3 @@
-mod arsc;
 pub mod basic;
 mod channel;
 
@@ -10,13 +9,11 @@ use core::{
     sync::atomic::{AtomicUsize, Ordering::SeqCst},
 };
 
+pub use arsc_rs::Arsc;
 use collection_ex::{CHashMap, FnvHasher};
 pub use sv_call::ipc::{SIG_GENERIC, SIG_READ, SIG_TIMER, SIG_WRITE};
 
-pub use self::{
-    arsc::Arsc,
-    channel::{Channel, Packet},
-};
+pub use self::channel::{Channel, Packet};
 use super::PREEMPT;
 use crate::cpu::arch::apic::TriggerMode;
 

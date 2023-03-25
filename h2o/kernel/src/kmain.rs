@@ -9,7 +9,6 @@
 #![feature(allocator_api)]
 #![feature(assert_matches)]
 #![feature(box_into_inner)]
-#![feature(box_syntax)]
 #![feature(coerce_unsized)]
 #![feature(core_intrinsics)]
 #![feature(downcast_unchecked)]
