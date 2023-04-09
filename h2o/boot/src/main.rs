@@ -9,7 +9,6 @@
 #![no_std]
 #![no_main]
 #![feature(alloc_error_handler)]
-#![feature(nonnull_slice_from_raw_parts)]
 #![feature(panic_info_message)]
 #![feature(slice_ptr_get)]
 #![feature(slice_ptr_len)]

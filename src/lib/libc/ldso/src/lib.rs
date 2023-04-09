@@ -5,7 +5,6 @@
 #![feature(allocator_api)]
 #![feature(int_roundings)]
 #![feature(naked_functions)]
-#![feature(nonnull_slice_from_raw_parts)]
 #![feature(result_option_inspect)]
 #![feature(slice_ptr_get)]
 #![feature(slice_ptr_len)]

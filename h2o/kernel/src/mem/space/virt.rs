@@ -189,7 +189,7 @@ impl Virt {
         let vdso = *space.vdso.lock();
         for (&base, child) in children
             .range(..end)
-            .take_while(|(&base, child)| start <= child.end(base))
+            .take_while(|(&base, child)| start < child.end(base))
         {
             let child_end = child.end(base);
             if !(start <= base && child_end <= end) {
@@ -232,7 +232,7 @@ impl Virt {
         let vdso = *space.vdso.lock();
         for (&base, child) in children
             .range(..end)
-            .take_while(|(&base, child)| start <= child.end(base))
+            .take_while(|(&base, child)| start < child.end(base))
         {
             let child_end = child.end(base);
             if !(start <= base && child_end <= end) {
@@ -355,7 +355,7 @@ fn find_range(
 }
 
 fn check_alloc(map: &ChildMap, request: Range<LAddr>) -> bool {
-    let prev = map.range(..request.end).next();
+    let prev = map.range(..request.end).last();
     !matches!(prev, Some((&base, prev)) if prev.end(base) > request.start)
 }
 

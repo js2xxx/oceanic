@@ -5,7 +5,6 @@
 #![feature(error_in_core)]
 #![feature(int_roundings)]
 #![feature(never_type)]
-#![feature(nonnull_slice_from_raw_parts)]
 #![feature(thread_local)]
 
 extern crate alloc;

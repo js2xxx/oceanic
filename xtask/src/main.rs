@@ -1,5 +1,5 @@
 #![feature(exit_status_error)]
-#![feature(once_cell)]
+#![feature(lazy_cell)]
 
 use clap::Parser;
 

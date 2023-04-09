@@ -1,5 +1,4 @@
 #![no_std]
-#![feature(nonnull_slice_from_raw_parts)]
 #![feature(step_trait)]
 
 mod addr;
