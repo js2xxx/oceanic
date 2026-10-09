@@ -94,9 +94,3 @@ support aarch64 in the future.
 6. If you want to run the OS with other VM softwares, check the run.sh first,
    and manually create VM configuration files as you wish. Don't forget to add
    the virtual disk and the serial log or no output will be present!
-
-# Contributions
-
-If you want to make contributions, be sure to contact me first.
-* Email: [akucxy@163.com](mailto:akucxy@163.com)
-* QQ: 2534027071
